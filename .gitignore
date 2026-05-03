@@ -1,2 +1,14 @@
 # Claude AI generated files
 .claude/
+
+# npm
+node_modules/
+npm-debug.log
+.npm/
+
+# Shopify CLI local state
+.shopify/
+
+# Editor
+.vscode/
+.idea/

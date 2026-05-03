@@ -1,463 +1,205 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repo.
 
 ## Screenshots
 
-When the user references screenshots, or when troubleshooting any issue, always proactively check for the latest screenshot without waiting to be asked. Use this command to find the most recent file:
+When the user references screenshots, or when troubleshooting any issue, proactively check for the latest screenshot without waiting to be asked. The user's screenshots directory is configured in their private global `~/.claude/CLAUDE.md`; ask for the path the first time it is referenced in a session if you do not already have it from prior context. Do not commit literal local-machine paths to this repo (see "Sensitive Content" below).
+
+## Project overview
+
+Custom Shopify theme based on **Horizon**, Shopify's flagship theme. Latest Liquid Storefronts features including theme blocks. Server-rendered, progressive enhancement, native web platform features.
+
+This is a private, single-merchant theme. **Not a Shopify Theme Store submission.** Theme-Store gating criteria (Lighthouse thresholds, 10-color-role ecosystem requirement, etc.) do not apply unless explicitly called out below.
+
+The repo is **standalone, not a GitHub fork** of `Shopify/horizon`. Attribution lives in `LICENSE.md` (Shopify MIT, preserved verbatim) and the README's "Staying current with Horizon" section. Pull upstream updates via `git remote add upstream https://github.com/Shopify/horizon.git` + `git fetch upstream` + `git merge upstream/main`. The first commit on `main` is an imported Horizon baseline tree, so merges from upstream do not need `--allow-unrelated-histories`.
+
+## Sensitive Content
+
+This repository is **public**. Real personal contact metadata, internal strategy / legal advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy that is also displayed on the storefront (founder narrative, About / FAQ pages, photography filenames that don't expose personal identifiers) is intentional and fine to commit.
+
+The scope is broad on purpose: git history rewrites on a public repo are expensive and incomplete (forks, cached diffs, search index), so the only durable defense is to never let it land in the first place. The repo was deleted-and-recreated once already to scrub embedded metadata; do not reintroduce it. The `secret-scan` job in `.github/workflows/pr-checks.yml` (Gitleaks) catches token-shaped strings on every PR, but it does not catch personal emails, addresses, or merchant-keyed prose - those are the author's responsibility per the Pre-push checklist below.
+
+### What is sensitive (do not commit)
+
+- **Personal contact metadata**: personal email addresses (Gmail, iCloud, etc.), personal phone numbers, full home / fulfilment addresses, personal social handles. The brand identifies itself via the public storefront; individual operators do not need to.
+- **Commit-author email**: the local `git config user.email` for this repo must be a non-personal address (`seth@pertsfoundry.com` or the GitHub no-reply form). Personal Gmail in `Author:` lines is a commit-metadata leak that no diff will ever show.
+- **Dev-machine identifiers**: absolute filesystem paths that include a username (`/Users/Seth/...`, `/c/Users/Seth/...`, `/mnt/c/Users/Seth/...`, `~/repos/...`). Use placeholders in docs (`<screenshots-dir>`, `<repo-root>`) and let the user's private global `~/.claude/CLAUDE.md` hold the real path.
+- **Internal advisory / strategy docs**: legal-exposure analyses, ADA-risk playbooks, insurance posture notes, settlement-range guidance, demand-letter response checklists, tax / accounting research. These belong in a private notes location (1Password, private gist, `~/notes/`), never in `docs/` of a public theme repo.
+- **Operating location below state level**: city, county, ZIP, or any detail that could pinpoint a home-based operation. Brand-level state-or-larger framing in storefront copy is fine; legal-exposure framing tied to a specific jurisdiction is not.
+- **Tokens of any kind**: `SHOPIFY_CLI_THEME_TOKEN`, GitHub PATs, Shopify Admin API tokens, third-party app keys (Judge.me, Klaviyo, etc.), Anthropic / OpenAI keys. CI references `${{ secrets.* }}` only.
+- **Real customer / order / financial data**, even truncated. Use synthetic fixtures (`Test Customer`, `order-id-12345`, `Acme Corp`).
+- **Pre-publish drafts** that name real third parties (vendors, suppliers, partners) outside what's already on the storefront.
+
+### What is NOT sensitive (and is fine to commit)
+
+- **Founder narrative and brand voice**: the operators' first names, husband-and-wife framing, prior-career mentions, pet references - anything that already appears on the storefront's About or FAQ page is part of the brand and intentional. Image filenames that encode pet names (`Kitkat-Rory.jpg`) are fine when the same names appear in the visible copy.
+- The brand name "Sapphire Shadow Studio" and the public store handle `sapphire-shadow-studio`. The repo identifies itself.
+- Live theme numeric ID (`#181702754604`). Public on every storefront page render; not authentication material.
+- The `*.myshopify.com` storefront domain and any custom storefront domain.
+- App-embed install UUIDs that the Shopify admin assigns to installed apps (Shopify Inbox, Judge.me) - observable in any browser DOM inspection.
+- Public Shopify policies content (shipping, returns, refund) that is also served under `/policies/...` on the storefront.
+- State-level location framing in storefront copy (not in legal / strategy context).
+- Synthetic test fixtures.
+
+### Pre-push checklist
+
+Before every `git push`, every `gh pr create`, every `gh pr comment`, and every `gh issue create`:
+
+1. **Scan the full branch diff** (`git diff origin/main..HEAD`) and **every commit message** (`git log origin/main..HEAD --format=%B`) for: personal email addresses, personal phone, machine paths, tokens, merchant-keyed strategy framing, sub-state location detail.
+2. **Scan the rendered PR / issue / comment body** for the same categories. Content typed into `gh pr create --body` does not pass through the diff scan and is not covered by Gitleaks.
+3. **Verify the `secret-scan` CI check is green** on the latest PR run. Red means stop and triage, not "rebase past it."
+4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form before any commit. Personal Gmail in author metadata doesn't show up in diffs and slips through every other check.
+5. If anything sensitive is found:
+   - **Pre-push (history not yet on remote)**: rewrite locally with `git rebase -i` or `git commit --amend`. Replace with neutral descriptors. Re-run all checks before pushing.
+   - **Already on remote**: stop. Surface to the user before any further action - force-pushing rewritten history to a public repo is a visible event that warrants explicit consent. For a confirmed token, treat as compromised and rotate in addition to (not instead of) history rewrite.
+6. Default to redacted-by-default in commit messages and doc entries: describe the *change* (what was edited in the template / block / workflow), not the *real-world entity* that prompted it.
+
+### Memory notes
+
+Memory files under `~/.claude/projects/.../memory/` may contain real operator and merchant context **for the assistant's use only**. Never paste memory content into the repo, PR bodies, or commit messages; treat memory as a private context store, not a documentation source.
+
+## Before making changes
+
+This repo uses a **PR-based deploy model**. Direct edits to `main` and to the live theme are not part of the workflow.
+
+### Code changes
+
+1. Branch from `main`: `git switch -c <feature-branch> origin/main`.
+2. Develop locally: `npm ci && npx shopify theme dev`. The dev server runs against an unpublished development theme created on the fly; storefront edits to the dev theme do not touch the live theme or `shopify-sync`.
+3. Open a PR. CI runs four jobs in `pr-checks.yml`:
+   - `theme-check` (linter, `--fail-level error`).
+   - `pr-reconcile-check` (fails if `shopify-sync` has commits not in the branch; posts the resolution snippet as a sticky PR comment).
+   - `lint-workflows` (actionlint + zizmor; only runs when `.github/` paths changed).
+   - `secret-scan` (Gitleaks, full history scan; required check).
+4. `preview.yml` deploys the branch to a per-PR unpublished theme `pr-<n>-preview` and posts a sticky PR comment with editor + preview URLs. Updated on every push, deleted on PR close.
+5. If `pr-reconcile-check` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
+6. On merge to `main`, `deploy.yml` pushes the theme to live (`shopify theme push --live --allow-live`).
+
+### Admin-side edits
+
+All theme-customizer / code-editor edits **must** be made on the unpublished `EDIT HERE - Admin Sync` theme (connected to `shopify-sync` via the Shopify GitHub Integration), NOT on the live theme. Edits there are auto-committed to `shopify-sync` by `shopify[bot]`. The daily `sync-reconcile.yml` workflow opens an auto-merge PR from `shopify-sync` into `main`.
+
+To inspect what is currently live without altering the working tree: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`. **Never** pull live into the working tree (the working tree is the source of truth, not the storefront).
+
+### Live theme
+
+Live theme is `#181702754604`. **Disconnected** from GitHub. Only `deploy.yml` writes to it. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme instead. `drift-watch.yml` (weekly) files an issue if it detects unauthorized direct edits.
+
+For full architecture details, see `.github/workflows/` and the README CI/CD section.
+
+## Pre-PR review
+
+Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific notes:
+
+- **infra-reviewer**: run on any change touching `.github/workflows/`. The `deploy`, `preview`, `sync-reconcile`, `drift-watch`, and `pr-checks` workflows are interlocked; a change to one usually requires verifying the others.
+- **test-engineer**: skip. There is no JavaScript test framework configured.
+- **prompt-reviewer**: run only when this `CLAUDE.md`, agent definitions, or `.claude/` content change.
+- **security-auditor focus areas** for theme work: Liquid output filters (`| escape`, `| json`, `| script_tag`), metafield exposure, form CSRF tokens, untrusted user input rendered into HTML attributes.
+
+Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have already triaged the finding as a known false positive.
+
+## Development commands
 
 ```bash
-ls -t "/c/Users/Seth/Pictures/Screenshots/" | head -5
+# Local dev
+npm ci
+npx shopify theme dev                                                       # local dev server
+
+# Linting
+npx shopify theme check
+
+# Inspect the live theme read-only into a scratch dir
+npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete
 ```
 
-Then read the most recent file returned. The screenshots directory is `/c/Users/Seth/Pictures/Screenshots/` (use forward-slash path format, not backslash).
+**Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Pushes to the live theme happen exclusively via `.github/workflows/deploy.yml` on merge to `main`. Admin-side edits flow through the sync theme into `shopify-sync`.
 
-## Project Overview
+## Shopify best practices
 
-This is a **custom Shopify theme based on Horizon**, Shopify's flagship theme. It uses the latest Liquid Storefronts features including theme blocks, following a server-rendered, progressive enhancement philosophy with native web platform features.
-
-## Before Making Changes
-
-**ALWAYS pull the latest theme from Shopify before making any changes** to ensure the local codebase is in sync with the live store:
-
-```bash
-shopify theme pull -s sapphire-shadow-studio --live
-```
-
-This is critical because merchants or apps may have made changes directly in the Shopify admin. Failing to pull first risks overwriting those changes.
-
-## Shopify Best Practices
-
-All code changes must follow Shopify's official best practices: https://shopify.dev/docs/storefronts/themes/best-practices
-
-### Core Principles
-
-- **Performance first**: Minimize JavaScript, leverage native browser capabilities, optimize for speed
-- **Mobile-first design**: Prioritize mobile device experience as the majority of traffic is mobile
-- **Accessibility built-in**: Design inclusively from the start, not as an afterthought
-- **No deceptive practices**: No code obfuscation, no search engine manipulation
-- **Merchant customization**: Provide flexible options for brand expression while keeping configuration intuitive
-
-### Required Reading
-
-**Design & Coding:**
-
-#### [Templates, Sections, and Blocks](https://shopify.dev/docs/storefronts/themes/best-practices/templates-sections-blocks)
-
-**Sections:**
-- Structure templates so default content lives in a main section
-- Ensure sections are fully customizable (add, remove, reorder)
-- Use sections for layout and content control at the page/section-group level
-
-**Blocks:**
-- Scope theme settings to individual blocks
-- Choose layouts that maintain logical flow regardless of block type or sequence
-- Balance flexibility with simplicity—avoid excessive granularity
-
-**Block Layout Do's:**
-- Stack blocks vertically for hierarchical text content
-- Stack horizontally with wrapping or sliding controls on narrow viewports
-- Group related settings into single blocks to simplify editing
-- Design layouts independent of specific block types/order
-
-**Block Layout Don'ts:**
-- Don't squeeze blocks into narrow viewports without wrapping
-- Don't rely on specific block sequences to dictate grid layouts
-- Don't create overly granular blocks (e.g., separate blocks for author, date, comments)
-
-**App Blocks:** Include only when clear conversion use cases exist, layout won't break with unexpected types, and section purpose remains consistent
-
----
-
-#### [Performance](https://shopify.dev/docs/storefronts/themes/best-practices/performance)
-
-**JavaScript Optimization:**
-- Minified bundle size must not exceed **16 KB**
-- Prioritize HTML/CSS for core functionality; JavaScript is progressive enhancement only
-- Wrap JS in function scope (IIFE pattern) to avoid global namespace collisions
-- Avoid large frameworks (React, Angular, Vue) and utility libraries (jQuery)
-- Use `defer` or `async` attributes to prevent parser-blocking
-- Target modern browsers with >1% market share; skip polyfills for older browsers
-
-**Images & Resources:**
-- Use `image_tag` filter with srcset for responsive images
-- Apply `loading: 'lazy'` to below-the-fold images; never lazy-load above-the-fold content
-- Limit to **2 resource hints per template** using `preload_tag`
-- Use system fonts to eliminate additional resource downloads
-- Use import-on-interaction patterns for components not always needed
-
-**CDN & Assets:**
-- Host all assets on Shopify's CDN via `/assets` folder (enables HTTP/2 prioritization)
-
-**Liquid Optimization:**
-- Perform complex operations (sorting, filtering) before loops, not within them
-- Use Shopify Theme Inspector for Chrome to identify slow-rendering code
-- Use Theme Check to identify performance issues
-
-**Lighthouse Requirements:**
-- Minimum average score of **60** across home, product, and collection pages for Theme Store
-- Formula: `[(product × 31) + (collection × 33) + (home × 13)] / 77`
-- Use Shopify's Lighthouse CI GitHub action for continuous integration
-
-##### [Platform-Level Optimizations](https://shopify.dev/docs/storefronts/themes/best-practices/performance/platform)
-
-**CDN & Delivery:**
-- Shopify CDN backed by Cloudflare with Brotli/gzip compression
-- HTTP/3 and TLS 1.3 protocols
-- Most assets load via `cdn.shopify.com`; storefront-specific content uses `{shop}.myshopify.com/cdn`
-
-**Automatic Asset Versioning:**
-- `asset_url` filter appends version numbers (e.g., `?v=1384022871`) for rapid cache invalidation
-- Without this filter, changes may take 24+ hours to propagate
-- Only the `v` parameter is recognized; arbitrary query parameters won't bypass caching
-
-**Automatic Minification:**
-- Shopify minifies CSS and ES5-valid JavaScript upon request
-- Results cached until file updates
-- Original files delivered if minification would increase size or extension is `.min.js`/`.min.css`
-
-**Built-in Optimizations:**
-- Speculation rules auto-injected to preload likely next pages (supporting browsers)
-- `es-module-shims` polyfill included automatically for import map compatibility
-- Storefront Renderer (SFR) improves performance for cache misses
-
-**Pagination Limits:** Array pagination caps at 25,000 objects; counts above return 25,001
-
----
-
-#### [Accessibility](https://shopify.dev/docs/storefronts/themes/best-practices/accessibility)
-
-**WCAG 2.0 Core Principles:** Perceivable, Operable, Understandable, Robust
-
-**Keyboard Navigation:**
-- All interactive elements must be keyboard-accessible
-- Focus indicators must be visible and consistent
-- Focus order follows DOM sequence (top-to-bottom, left-to-right)
-- Avoid positive `tabindex` values and `autofocus` attributes; use only `0` or `-1`
-- Never rely on mouse hover for visibility or functionality
-- Dropdowns: Enter/Space to open, Tab into menu, Escape to close and return focus
-
-**Page Structure:**
-- Set `lang` attribute on `<html>` element
-- Enable viewport zooming; avoid `maximum-scale` and `user-scalable="no"`
-- Include skip links with `tabindex="-1"` on main content
-- Use `<h1>` through `<h6>` in sequential order
-- Wrap navigation in `<nav>` elements; use `aria-current` for active items
-- Avoid `role="menu"` for navigation; use semantic HTML
-
-**Forms:**
-- All fields require associated `<label>` with `for` attribute or `aria-label`
-- Mark required inputs with `required` attribute
-- Use `autocomplete` attributes for browser field population
-- Apply `aria-describedby` to inputs with error messages
-- Use `aria-live` for dynamic changes (price updates, form errors)
-
-**Contrast Requirements:**
-- Small text (<24px regular, <18.5px bold): **4.5:1** ratio
-- Large text (≥24px regular, ≥18.5px bold): **3.0:1** ratio
-- Icons and input borders: **3.0:1** ratio
-- Never use color alone to convey information
-
-**Media:**
-- No autoplay for media content
-- Provide closed captions and descriptive audio for videos
-- Support Space key to pause/play media
-- All `<img>` elements need `alt` attributes; use empty `alt=""` for decorative images
-
-**Modals/Drawers:**
-- Move focus to labeling element when opened
-- Keep keyboard focus contained within modal
-- Support Escape to close and restore focus
-- Use `role="dialog"` to identify modals
-
-**Touch Targets:** Primary touch targets must be at least **44×44 pixels**
-
----
-
-#### [Design](https://shopify.dev/docs/storefronts/themes/best-practices/design)
-
-**Merchant Experience:**
-- Design sections tailored to target audience with template-specific functionality
-- Minimize theme settings to essentials; avoid niche configurations
-- Use blocks to improve section usability and enable content reordering
-- Create empty states and placeholders that leverage existing store data
-- Design "antifragile" components that look professional despite inconsistent assets
-- Provide robust layouts regardless of content amount
-- Prevent critical actions from being obscured by third-party floating elements
-
-**Customer Experience:**
-- Include sections for brand identity, value proposition, and differentiation
-- Design prominent, discoverable navigation with clear menu interactions
-- Emphasize product title, price, and buy button prominence
-- Maintain consistent scale, spacing, weight, and layouts across all pages
-- Limit steps required to make a purchase
-- Enable accelerated checkout by default
-- Optimize for mobile-first experience
-- Use standard, recognizable iconography to minimize cognitive load
-
-##### [Color System](https://shopify.dev/docs/storefronts/themes/best-practices/design/color-system)
-
-**Color Schemes:**
-- Group related elements and their colors in visually representative ways
-- Create distinct yet visually balanced schemes
-- Include elements used throughout the theme
-- Prioritize optimizing for when multiple objects can share the same color reference
-- Avoid overwhelming merchants with unnecessary granular color options
-
-**Color Roles (10 required for ecosystem compatibility):**
-- Use semantically predictable role names to prevent ambiguity
-- Enable consistent scheme previews across Shopify ecosystem
-- Allow predictable integration with third-party apps
-
-**Implementation:**
-- Apply color schemes consistently for optimal contrast, legibility, and accessibility
-- Use clear, descriptive names that communicate each color picker's purpose
-- Supplement with separate color settings for decorative elements without accessibility requirements
-- Never hardcode colors on elements requiring accessible contrast ratios—always use configurable settings
-
----
-
-#### [Deceptive Code Practices](https://shopify.dev/docs/storefronts/themes/best-practices/deceptive-code)
-
-**Prohibited Practices (subject to Partner governance action):**
-
-**Code Obfuscation:**
-- Never convert clear, readable code into intentionally difficult-to-understand versions
-- "There is no legitimate reason for developers to inject obfuscated code into themes"
-- Obfuscation degrades site performance and hides behavior from users
-
-**Search Engine Manipulation:**
-- Never include code that misleads search engines about site content
-- No cloaking (presenting different content to search engines than users)
-- Never attempt to artificially improve page speed scores through deceptive means
-
----
-
-**Tools & Build Processes:**
-
-#### [Version Control](https://shopify.dev/docs/storefronts/themes/best-practices/version-control)
-
-**Branch Strategy:**
-- Connect `main` or `master` branch to store with published themes
-- Use non-main branches for temporary campaigns/sales events
-- When using build pipeline, establish a dedicated deploy branch separate from master
-
-**Source and Compiled Code:**
-- GitHub integration requires default theme folder structure (no custom `src`/`dist` directories)
-- Recommended: Use separate branches with `git subtree` to extract compiled code
-- "The only commits in production branches are updates to production code"
-- Changes to compiled code must be manually backfilled into source code
-
-**Alternative Approaches:**
-- Separate repositories (for transitioning from source-only models)
-- Mixed structure (`main.js` and `main.min.js` together)—risks merchant edits to compiled code
-- Source-only versioning with CI/CD deployment (sacrifices GitHub integration tracking)
-
----
-
-#### [File Transformation](https://shopify.dev/docs/storefronts/themes/best-practices/file-transformation)
-
-**Common Transformations:**
-- Stylesheet consolidation (combining scoped CSS into fewer bundles)
-- SCSS preprocessing to Shopify-compatible CSS
-- PostCSS (linting, variables, transpilation, vendor prefixing via Autoprefixer)
-- Section modularization (separate Liquid, JS, CSS, JSON files before compilation)
-- Critical CSS inlining for above-the-fold styles
-- JavaScript bundling for reduced file sizes
-
-**Managing Compiled Code:**
-- Track changes when merchants/apps edit compiled files through admin
-- Backfill merchant modifications from compiled to source code before recompilation
-
-**Just-in-Time (JIT) Transformations:**
-- Generate optimized runtime files on-demand from source code
-- Eliminates backfilling overhead and maintains unified codebase
-- Note: Shopify automatically minifies CSS and JavaScript files
-
----
-
-#### [Theme Editor](https://shopify.dev/docs/storefronts/themes/best-practices/editor)
-
-Build themes that integrate smoothly with the theme editor, providing merchants with a clear, intuitive, and powerful editing experience.
-
-##### [Integrating Sections and Blocks](https://shopify.dev/docs/storefronts/themes/best-practices/editor/integrate-sections-and-blocks)
-
-**Core Principle:** When the editor modifies sections/blocks, it dynamically updates the DOM without full page reloads. Associated JavaScript won't automatically re-execute.
-
-**JavaScript Events (all bubble with `event.target`, `blockId`, `sectionId`, `load` details):**
-- `shopify:section:load` — Section added or re-rendered; re-execute initialization code
-- `shopify:section:unload` — Section deleted or re-rendering; cleanup listeners and variables
-- `shopify:section:select` — Section selected; ensure it remains visible
-- `shopify:section:deselect` — Section deselected
-- `shopify:block:select` — Block selected; maintain visibility during selection
-- `shopify:block:deselect` — Block deselected
-- `shopify:inspector:activate` / `shopify:inspector:deactivate` — Preview inspector state changes
-
-**Detection Methods:**
-
-*Liquid:*
-- `request.design_mode` — Returns `true` in theme editor
-- `request.visual_preview_mode` — Detects preview mode
-
-*JavaScript:*
-- `Shopify.designMode` — `true` if in theme editor, `undefined` if not
-- `Shopify.inspectMode` — `true` if preview inspector is active
-- `Shopify.visualPreviewMode` — Detects visual preview mode
-
-**Implementation Requirements:**
-- Sections require `presets` in schema to be added via theme editor
-- Blocks must include `shopify_attributes` property for proper targeting
-- When a section/block is selected, it must become and remain visible while selected
-
-##### [Preview Inspector](https://shopify.dev/docs/storefronts/themes/best-practices/editor/preview-inspector)
-
-The preview inspector draws outlines around sections and blocks using `Element.getBoundingClientRect()`.
-
-**CSS Guidelines:**
-- **Avoid negative margins** to position blocks inside sections—blocks will show outside section outline
-- Use `margin` or `gap` for spacing between blocks, **not padding** (causes outline misalignment)
-- Remove hidden elements from DOM entirely or use `display: none`—visually hidden elements generate outlines without interactive elements
-
-**Layout Considerations:**
-- Deactivate fixed-position elements (sticky headers) when preview inspector is active
-- Fixed elements can obstruct inspection experience
-
-**Data Attributes:**
-- Sections use `data-shopify-editor-section` attribute
-- Blocks use `data-shopify-editor-blocks` attribute
-- During duplication, ensure only target element retains these attributes
-
-## Development Commands
-
-```bash
-# Linting and validation
-shopify theme check
-
-# Development server (requires Shopify CLI)
-shopify theme dev
-
-# Push theme to store
-shopify theme push
-
-# Pull theme from store
-shopify theme pull
-```
+Follow https://shopify.dev/docs/storefronts/themes/best-practices when relevant. When a task depends on a specific best-practice page, fetch it on demand with `WebFetch` rather than relying on memorized summaries; the `shopify.dev` Liquid reference is authoritative.
 
 ## Architecture
 
-### Directory Structure
+### Directory structure
 
-- **layout/** - Base templates (`theme.liquid`, `password.liquid`)
-- **templates/** - JSON templates defining page structure with section/block composition
-- **sections/** - Page sections with `{% schema %}` blocks for merchant configuration
-- **blocks/** - Reusable theme blocks that can be nested (new Shopify architecture)
-- **snippets/** - Reusable Liquid partials rendered with `{% render %}`
-- **assets/** - CSS, JavaScript, and static files
-- **locales/** - Translation files (`en.default.json` is required)
-- **config/** - Theme settings schema and data
+- **layout/** - Base templates (`theme.liquid`, `password.liquid`).
+- **templates/** - JSON templates defining page structure with section/block composition. Alternate templates use the dot-suffix form (e.g. `product.alternate.json`). The template root must include an `order` array defining the section sequence and a `sections` map keyed by those names.
+- **sections/** - Page sections with `{% schema %}` blocks for merchant configuration.
+- **blocks/** - Reusable theme blocks that can be nested.
+- **snippets/** - Reusable Liquid partials rendered with `{% render %}`.
+- **assets/** - CSS, JavaScript, static files. **Flat directory** (no subdirectories allowed). **No build step**: files ship as-is via `deploy.yml`. Reference assets from Liquid via `{{ 'filename' | asset_url }}` or `{{ 'filename' | asset_url | image_tag }}`. Inline icons / small SVGs can be loaded with `{{ 'icon-name.svg' | inline_asset_content }}`.
+- **locales/** - Translation files. `en.default.json` is the canonical source; non-English locales should be kept in sync but English is the source of truth.
+- **config/** - `settings_schema.json` and `settings_data.json`.
 
-### Component Framework
+### Component framework
 
-JavaScript uses a custom web component framework in `assets/component.js`:
+JavaScript uses a custom web-component framework in `assets/component.js`:
 
 ```javascript
 import { Component } from '@theme/component';
 
 class MyComponent extends Component {
-  // Use refs for DOM element access
-  refs = {}; // Auto-populated from ref="name" attributes
+  refs = {};                    // Auto-populated from ref="name" attributes
 
-  // Declarative event handlers via on:click="/methodName"
-  handleClick(event) { }
+  handleClick(event) { }        // Bound via on:click="/methodName"
 }
 ```
 
-**Key patterns:**
-- Use `ref="elementName"` attributes in HTML for element references
-- Use `ref="items[]"` for array refs
-- Use `on:eventname="/methodName"` for declarative event binding
-- Events: click, change, select, focus, blur, submit, input, keydown, keyup, toggle
+Key patterns:
 
-### Theme Blocks vs Snippets
+- Element refs: declare via `ref="elementName"` (or `ref="items[]"` for arrays) in HTML; access through `this.refs`.
+- Event binding: `on:event="/methodName"` in HTML, never `addEventListener` for DOM events the framework can wire. Supported events: click, change, select, focus, blur, submit, input, keydown, keyup, toggle.
+- Validate required refs in `connectedCallback` and throw a descriptive error if missing.
+- Private methods use `#` prefix; public API stays explicit.
+- Parent-to-child: invoke public methods on the child component directly. Child-to-parent: emit a `CustomEvent` with a typed `detail` payload.
+- Cancel in-flight `fetch` with `AbortController` before issuing a new request; cancel in `disconnectedCallback` to prevent leaks.
+- Optimistic UI updates must revert on error; dispatch a custom event on success for cross-component sync.
+- Build URLs with `URL` and `URLSearchParams`; never concatenate query strings by hand.
 
-- **Blocks** (`blocks/`): Have `{% schema %}` definitions, appear in theme editor, support nesting via `{% content_for 'blocks' %}`
-- **Snippets** (`snippets/`): Pure Liquid partials with `{% doc %}` documentation, no schema
+JSDoc patterns for the component framework:
 
-## Coding Standards
+- Declare a `@typedef` for the refs object and pass it as the `Component<Refs>` generic.
+- Mark optional refs with `[name]`.
+- Document custom events emitted by the component, including the shape of `detail`.
 
-### Liquid
+### Theme editor integration
 
-- Use `{% liquid %}` for multiline logic blocks
-- Inline variables in HTML attributes rather than declaring many variables upfront
-- All snippets require `{% doc %}` documentation with `@param` and `@example`
-- Use translation keys: `{{ 'namespace.key' | t }}`
-- **NEVER edit `{% schema %}` blocks directly** - schemas may be generated from source
+Sections / blocks update without full page reload in the theme editor; associated JavaScript will not auto-execute. Listen for these events on `document`:
 
-### CSS
+- `shopify:section:load` - re-execute initialisation for the loaded section.
+- `shopify:section:unload` - clean up listeners and timers.
+- `shopify:section:select` / `shopify:section:deselect` - selection state.
+- `shopify:block:select` / `shopify:block:deselect` - block selection state.
+- `shopify:inspector:activate` / `shopify:inspector:deactivate` - preview inspector toggling.
 
-- **BEM naming**: `.block__element--modifier`
-- **Single class selectors** (`0 1 0` specificity) where possible
-- **CSS variables**: Namespace to component (e.g., `--product-card-padding`)
-- **No IDs as selectors**, avoid `!important`
-- **Logical properties**: Use `padding-inline`, `margin-block`, `inset` for RTL support
-- **Container queries** for responsive components
-- **Mobile-first** media queries (`min-width`)
-- Use `{% stylesheet %}` tag in sections/blocks for scoped CSS
+Detect editor mode in JavaScript via `Shopify.designMode` (`true` in editor, `undefined` otherwise). In Liquid, use `request.design_mode`.
 
-### JavaScript
+When the preview inspector is active, deactivate fixed-position elements (sticky headers) so they do not obscure inspection outlines. Use `margin` / `gap` for spacing between blocks, not `padding` (padding misaligns the inspector outline).
 
-- Zero external dependencies - use native browser APIs
-- `const` over `let`, `for...of` over `.forEach()`
-- `async/await` over `.then()` chaining
-- Early returns over nested conditionals
-- JSDoc type annotations for parameters and return types
+### Theme blocks vs snippets vs sections
 
-### HTML
+- **Blocks** (`blocks/`): have `{% schema %}` definitions, appear in theme editor, support nesting via `{% content_for 'blocks' %}`. Only ONE `{% content_for 'blocks' %}` per file (capture if you need it in multiple places).
+- **Snippets** (`snippets/`): pure Liquid partials with `{% doc %}` documentation, no schema.
+- **Sections** (`sections/`): page-scope containers that hold blocks. Conventional class name: `'section-' | append: section.type`. Scope per-section CSS variables to the wrapper (e.g. `--section-padding-block`) and apply via inline `style`. Use `block_order` only when a preset declares blocks as an object (not an array).
 
-- Use native elements: `<details>`, `<dialog>`, `popover` attribute
-- IDs use CamelCase with section/block ID suffix: `id="ProductModal-{{ section.id }}"`
-- Semantic HTML with proper ARIA attributes
-- `tabindex="0"` for custom interactive elements, never positive values
+## Block development
 
-### Accessibility (Always Applied)
+### Block file structure
 
-- Skip link required at page top
-- `lang` attribute on `<html>`
-- Viewport must allow zoom (no `maximum-scale=1.0` or `user-scalable=no`)
-- Respect `prefers-reduced-motion`
-- WCAG AA contrast ratios (4.5:1 normal text, 3:1 large text)
-- Focus indicators on all interactive elements (`:focus-visible`)
-
-### Translations
-
-- Keys in `locales/en.default.json` (required), max 3 levels deep
-- Schema translations in `locales/en.default.schema.json`
-- Use snake_case for key names
-- Translation key format: `'t:names.keyname'` for schemas
-
-## Block Development
-
-### Static Blocks
-```liquid
-{% content_for 'block', type: 'text', id: 'unique-id' %}
-```
-
-### Dynamic Blocks
-```liquid
-{% content_for 'blocks' %}
-```
-
-**Critical**: Only ONE `{% content_for 'blocks' %}` per file. Capture first if needed in multiple places.
-
-### Block Structure
 ```liquid
 {% doc %}
-  Description and @example
+  Description of the block.
+
+  @param {string} [optional_param] - Optional inputs in brackets.
+
+  @example
+  {% content_for 'block', type: 'block-name', id: 'unique-id' %}
 {% enddoc %}
 
 <div {{ block.shopify_attributes }} class="block-name">
   {{ block.settings.text }}
-  {% content_for 'blocks' %}  {# if nesting blocks #}
+  {% content_for 'blocks' %}        {# only if nesting blocks #}
 </div>
 
 {% stylesheet %}
@@ -472,8 +214,143 @@ class MyComponent extends Component {
 {% endschema %}
 ```
 
-## Theme Settings
+### Static vs dynamic block invocations
 
-Global CSS variables are defined in `snippets/theme-styles-variables.liquid`.
+Static (locked into the schema, cannot be removed / reordered in the editor):
 
-Color schemes use `color_scheme_group` in `config/settings_schema.json` and are rendered via `snippets/color-schemes.liquid`.
+```liquid
+{% content_for 'block', type: 'text', id: 'unique-id' %}
+```
+
+Dynamic (merchant adds via the editor):
+
+```liquid
+{% content_for 'blocks' %}
+```
+
+**Critical**: only ONE `{% content_for 'blocks' %}` per file. If you need to render the same dynamic-block region in multiple places, capture it once into a variable and emit the variable.
+
+### Schema targeting and rendering
+
+- Restrict which block types may nest inside a section / block via `"blocks": [...]` in schema. Use `{ "type": "@theme" }` to allow any theme block, `{ "type": "@app" }` for app blocks, or specific names for restricted lists.
+- A block invoked with a static ID (`{% content_for 'block', type: 'text', id: 'unique-id' %}`) is locked in the editor and may pre-set defaults via `settings: { ... }` on the call site.
+- `{% schema %} ... "tag": null` removes the auto-wrapping element. When you do this, you are responsible for emitting `{{ block.shopify_attributes }}` on your own root element.
+- **NEVER edit `{% schema %}` blocks directly** when schemas are generated from source files; modify the source schema and regenerate.
+
+## Coding standards
+
+### Liquid
+
+- Use `{% liquid %}` for multiline logic blocks.
+- Inline variables in HTML attributes rather than declaring many variables upfront.
+- All snippets require `{% doc %}` documentation with `@param` and `@example`.
+- Use translation keys: `{{ 'namespace.key' | t }}`.
+- **NEVER edit `{% schema %}` blocks directly** - schemas may be generated from source.
+- Use `{% assign %}` only when needed: filter parameters that need a complex string, the same calculation reused more than once, or extreme logical complexity. Otherwise inline. Use `{% capture %}` only for multi-line content that won't fit inline.
+- Never invent custom Liquid filters, tags, or objects; only use documented Shopify Liquid.
+- `{% doc %}` parameter conventions: type in braces (`{string}`, `{object}`, `{array}`), optional parameters in brackets (`[name]`), nested properties as `object.property`.
+
+### CSS
+
+- **BEM naming**: `.block__element--modifier`.
+- **Single class selectors** (specificity `0 1 0`) where possible.
+- **CSS variables**: namespace to component (e.g. `--product-card-padding`).
+- **No IDs as selectors**; avoid `!important`.
+- **Logical properties**: `padding-inline`, `margin-block`, `inset` for RTL support.
+- **Container queries** for responsive components; declare with `container-type: inline-size` on the wrapper.
+- **Mobile-first** media queries (`min-width`).
+- Use `{% stylesheet %}` tags inside sections / blocks for scoped CSS. Standalone CSS files in `assets/` are for shared / global styles.
+- `:has()` performance: anchor selectors as close to the matched child as possible; prefer `>` or `+` combinators inside `:has()`. For dynamic state, prefer server-rendered classes over client-side `:has()` checks.
+- Never animate layout properties (`width`, `height`, `margin`, `padding`); animate `transform` and `opacity` instead.
+- Use `contain` on grid / list containers for rendering performance.
+- Property-order convention inside a rule: layout, box model, typography, visual, animation / transform.
+- Defensive CSS: `min-width: 0` on flex children to prevent overflow; `aspect-ratio` to reserve space and prevent layout shift; clamp long content rather than letting it spill.
+- Use `dvh` (dynamic viewport height) instead of `vh` for mobile layouts to account for the on-screen keyboard.
+- Apply per-section / per-block setting values via inline `style="--var: value"`; do not generate per-instance class names.
+- Use `@layer` to organise theme CSS (resets, base, components, utilities) and prevent specificity wars.
+
+### HTML
+
+- Use native elements: `<details>`, `<dialog>`, `popover` attribute.
+- IDs use CamelCase with section / block ID suffix: `id="ProductModal-{{ section.id }}"`.
+- Semantic HTML with proper ARIA attributes.
+- `tabindex="0"` for custom interactive elements; never positive values.
+- Use `<search>` for search forms, `<output>` for calculated form results.
+- Prefer typed inputs (`type="search|tel|url|date|time|datetime-local|month|week|color"`) for native validation and mobile keyboards.
+- Use `pattern=` for regex validation; `formnovalidate` / `formaction` on submit buttons when a button needs to bypass validation or post elsewhere.
+- Pair `@supports` feature queries with `@media` for progressive enhancement.
+- Provide `@media print` styles for receipts / order pages.
+- View transitions: declare `@view-transition` and per-element `view-transition-name` for smooth navigation.
+- Avoid `position: fixed` near the bottom of the viewport on mobile; the on-screen keyboard will overlap it.
+
+### JavaScript
+
+- Zero external dependencies; use native browser APIs.
+- `const` over `let`; `for...of` over `.forEach()`.
+- `async / await` over `.then()` chaining.
+- Early returns over nested conditionals.
+- JSDoc type annotations for parameters and return types.
+- Component-framework conventions and JSDoc patterns are covered under "Architecture > Component framework" above; consult that section before extending or adding components.
+
+### Accessibility (always applied)
+
+These are global rules. Component-specific patterns (accordion, modal, tabs, slider, etc.) are documented under "Component-specific accessibility patterns" below.
+
+- Skip link required at page top; the element referenced by `href="#main"` must have `tabindex="-1"` so it can receive focus. Hide the skip link with sr-only / clip-path techniques, never `display: none`.
+- `lang` attribute on `<html>`.
+- Viewport must allow zoom (no `maximum-scale=1.0` or `user-scalable=no`).
+- Respect `prefers-reduced-motion`.
+- WCAG AA contrast: 4.5:1 for normal text, 3:1 for large text and UI elements (icons, input borders).
+- Focus indicators on all interactive elements (`:focus-visible`).
+- Animation / motion: never exceed 3 Hz flashing (avoid sub-0.33s strobes); parallax / scroll-jacking effects need a user-controllable off switch; auto-running content longer than 5 s needs a pause control.
+- High-contrast mode: provide `@media (prefers-contrast: more)` overrides for help text, borders, and focus indicators.
+- Landmark hygiene: cap landmarks at ~10; multiple `<nav>` / `<aside>` / `<section>` regions each need an `aria-label` or `aria-labelledby`.
+- Form error / success summaries: heading gets `tabindex="-1"`; on submission, use `requestAnimationFrame` to ensure the heading is visible before calling `.focus()` and `.scrollIntoView()`.
+- Auto-updating regions (chat, live counters): `aria-live="polite"` (or `role="log"` for chronological message history); pair with a visible pause control. Notifications combine sound + visual badge + title-bar change + `aria-live`.
+- Time limits: warn 20 s before expiry and offer to extend / disable; minimum interaction window is 20 hours for non-critical flows.
+- `title` attribute: only on `<iframe>`; never on other elements (creates redundant tooltips and inconsistent screen-reader output).
+- Touch targets: at least 44x44 CSS pixels.
+- All `<img>` elements need `alt`; use empty `alt=""` for decorative images.
+
+### Component-specific accessibility patterns
+
+Match the role / attribute set exactly when implementing one of these widgets. Anything not covered here is governed by the global rules above plus WCAG.
+
+- **Accordion** - Trigger is `<button aria-expanded="true|false" aria-controls="<panelId>">`; panel has `id` and optional `role="region" aria-labelledby="<headerId>"`. Esc closes the panel and returns focus to the trigger.
+- **Breadcrumb** - `<nav aria-label="Breadcrumb"><ol><li><a></a></li>...</ol></nav>`; current page link uses `aria-current="page"`.
+- **Cart drawer** - Activator: `aria-haspopup="dialog"`. Drawer: `role="dialog" aria-modal="true" aria-label="Shopping Cart"`. Close button is first in DOM, focus is trapped, Esc closes and restores activator focus. Quantity inputs announce with `aria-live="polite"`. After removing an item, move focus to the close button.
+- **Chat window** - Message history is `role="log"` (preserves DOM-order chronology, not column reading). Live chat surface is `role="region"` (or `role="dialog"` if modal). Each message includes the author (visible or sr-only). Auto-refresh has a pause control. Notifications: badge + `aria-live` + tab-title update; timeout warning fires 20 s before expiry.
+- **Color swatch** - Wrap radios in `<fieldset><legend>` (or `role="group" aria-labelledby`). Hide native radios with `appearance: none`, never `display: none`. Provide a `data-label` / tooltip for the colour name; colour alone is insufficient. Arrow keys navigate.
+- **Combobox** - Input: `role="combobox" aria-expanded aria-haspopup="listbox" aria-controls="<listboxId>" aria-autocomplete="list|both|inline|none"`. When expanded, `aria-activedescendant` points to the active option's `id`. Listbox is `role="listbox"`; options are `role="option" aria-selected`. A status region announces filtered counts. Down / Up navigate without closing; Home / End jump to ends.
+- **Carousel** - Wrapper: `role="region" aria-roledescription="carousel" aria-label`. Slides: `role="group" aria-roledescription="slide" aria-label`. Rotation toggle has a dynamic `aria-label` ("Start slide rotation" / "Stop slide rotation"). Next / Previous always enabled (wrap, never disabled). Auto-rotation interval >= 5 s; pause on focus / hover and resume on blur. `aria-live="off"` while rotating, `"polite"` when paused. Inactive slides hidden with `visibility: hidden`.
+- **Disclosure** - `<button aria-expanded="true|false">` toggles a sibling element. Enter / Space activate. Distinct from accordion in that there is no panel role.
+- **Dropdown navigation** - `<nav aria-label="Main navigation"><ul><li><a></a></li>...</ul></nav>`. Active link: `aria-current="page"`. Submenu launchers: `<button aria-expanded aria-controls="<menuId>">`. Mobile drawer is `role="dialog" aria-modal="true"` with launcher carrying `aria-haspopup="dialog"`. Do not use `role="menu"` for site navigation.
+- **Flip card** - `<button type="button" aria-pressed="true|false">` controls front / back state; sides toggle with `visibility: hidden|visible`. Button label is descriptive.
+- **Form** - All inputs need `<label for>` or `aria-label` / `aria-labelledby`. Required fields combine `required` and `aria-required="true"`. Radio / checkbox groups wrap in `<fieldset><legend>` (or `role="group" aria-labelledby`). Errors: `aria-describedby` (or `aria-errormessage`) on the input plus `role="alert"` on the message. Help text in `<small>`. Critical forms (legal / financial) need confirmation / review / reversibility.
+- **Modal** - `role="dialog" aria-modal="true" aria-labelledby="<titleId>"` (or `aria-label`). Launcher: `aria-haspopup="dialog"`. Close button first in DOM; focus trapped; Esc closes and restores launcher focus.
+- **Product card** - `<article>` wrapper with `aria-labelledby="<headingId>"`; heading has the matching `id`. Title and link as `<h2><a href>`. Images carry descriptive `alt`. If price has no visible label, give it `aria-label`.
+- **Slider** (range input) - `role="slider" aria-valuenow aria-valuemin aria-valuemax aria-valuetext aria-label`. Right / Up arrow: increase. Left / Down: decrease. Home / End: bounds. PageUp / PageDown: larger steps.
+- **Switch** - `<input type="checkbox">` (or `role="switch" aria-checked`). Label describes the function ("Wi-Fi"), not the state ("On"). Provide redundant On / Off visual indicators.
+- **Tab** - Tablist: `role="tablist" aria-label`. Tabs: `role="tab" aria-selected aria-controls="<panelId>"`. Panels: `role="tabpanel" aria-labelledby="<tabId>"`. Left / Right (or Up / Down for vertical) move; Space / Enter activates; Home / End jump to ends.
+- **Tooltip** - Trigger: `<button aria-expanded aria-controls="<tooltipId>">`. Tooltip: `role="tooltip"` with matching `id`. Enter / Space shows; Esc hides. Hover and tap also toggle. Tooltip content is non-interactive and a sibling, not a descendant of the trigger.
+
+## Translations
+
+- Keys live in `locales/en.default.json` (storefront) and `locales/en.default.schema.json` (schema).
+- Maximum nesting depth: 3.
+- snake_case key names.
+- Schema-side reference: `t:names.<key>`. Storefront-side reference: `'namespace.key' | t`.
+- Add the key to the appropriate locale file **before** referencing it; theme-check fails on dangling keys.
+- When adding storefront-visible strings, mirror the key into non-English locale files (`locales/it.json`, `locales/ro.json`, etc.) with `TODO` placeholders if real translations are not yet available.
+
+## Theme settings
+
+Global CSS variables: `snippets/theme-styles-variables.liquid`. Color schemes: `color_scheme_group` in `config/settings_schema.json`, rendered via `snippets/color-schemes.liquid`.
+
+### Settings authoring
+
+- `config/settings_schema.json` opens with a `theme_info` object (`theme_name`, `theme_version`, `theme_author`, support / docs URLs). Group later entries by category (Typography, Layout, Performance, etc.).
+- Setting `label` text: under 30 characters, title case, no redundant type qualifier ("Columns", not "Number of columns").
+- Translation keys for setting labels: `t:names.<key>`. Add the key to `locales/en.default.schema.json` first; theme-check will flag dangling keys.
+- Within a settings group, order: resource pickers (collection / product / blog / page) first, then visual-impact order (layout -> typography -> color), with `header` entries to introduce groups.
+- Presets that use nested blocks must declare a `block_order` array.

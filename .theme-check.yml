@@ -1,6 +1,14 @@
 extends: theme-check:recommended
 ignore:
   - node_modules/**
+
+# Suppressed checks (from THEME_CHECK_NON_ACTIONABLE.md)
+JSONMissingBlock:
+  # Disabled: Judge.me Reviews app blocks (shopify://apps/judge-me-reviews/...)
+  # render at runtime; the checker cannot resolve them and emits 3 false-positive
+  # errors. Re-enable if Judge.me is uninstalled.
+  enabled: false
+
 # AssetPreload:
 #   enabled: true
 #   severity: 1

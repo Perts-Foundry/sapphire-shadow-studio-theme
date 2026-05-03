@@ -1,8 +1,8 @@
 # Theme Check: Non-Actionable Findings
 
-**Last Updated:** February 2, 2026
+**Last Updated:** May 3, 2026
 **Theme Version:** Horizon (Custom)
-**Total Non-Actionable Findings:** 23 (3 errors, 20 warnings)
+**Remaining Non-Actionable Findings:** 20 warnings (3 errors moved to suppressed-via-config as of 2026-05-03)
 
 ## Overview
 
@@ -10,13 +10,17 @@ This document catalogs all non-actionable findings from Shopify Theme Check. The
 
 All genuinely actionable issues have been resolved. The remaining findings documented here are safe to ignore.
 
+### Suppressed-via-config
+
+As of the CI/CD cutover (2026-05-03), the JSONMissingBlock check is **disabled in `.theme-check.yml`** so that the 3 known false-positive errors from Judge.me Reviews app blocks do not block PRs under the new `--fail-level error` CI gate. The findings are still documented below for historical context. Re-enable the check if Judge.me is uninstalled.
+
 ---
 
-## Errors (3 total)
+## Suppressed Errors (formerly Errors, now disabled in config)
 
 ### 1. JSONMissingBlock - Judge.me Reviews App Blocks
 
-**Severity:** Error
+**Severity:** Disabled in `.theme-check.yml` (was Error)
 **Count:** 3 occurrences
 **File:** `templates/product.json`
 

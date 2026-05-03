@@ -1,0 +1,125 @@
+name: sync-reconcile
+
+on:
+  schedule:
+    # 13:00 UTC = 09:00 EDT (Mar-Nov) / 08:00 EST (Nov-Mar). GitHub cron runs in UTC; no TZ.
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: sync-reconcile
+  cancel-in-progress: false
+
+jobs:
+  sync-reconcile:
+    name: sync-reconcile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout shopify-sync
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: shopify-sync
+          persist-credentials: false
+
+      - name: Determine sync status
+        id: status
+        run: |
+          set -euo pipefail
+          git fetch --prune --no-tags origin main
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          if [ "$AHEAD" -gt 0 ]; then
+            git log --oneline origin/main..HEAD > /tmp/commits.txt
+            DIFF_FILES=$(git diff --name-only origin/main..HEAD)
+            DIFF_LOC=$(git diff --numstat origin/main..HEAD | awk '{ sum += $1 + $2 } END { print sum + 0 }')
+            {
+              echo "files<<EOF"
+              echo "$DIFF_FILES"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "loc=$DIFF_LOC" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Diff sanity check
+        if: steps.status.outputs.ahead != '0'
+        env:
+          FILES: ${{ steps.status.outputs.files }}
+          LOC: ${{ steps.status.outputs.loc }}
+        run: |
+          set -euo pipefail
+          SUSPICIOUS=0
+          REASONS=""
+          if echo "$FILES" | grep -E '^\.github/' >/dev/null; then
+            SUSPICIOUS=1
+            REASONS="${REASONS}- touches .github/ (admin edits should not modify CI config)\n"
+          fi
+          if echo "$FILES" | grep -E '^layout/theme\.liquid$' >/dev/null; then
+            SUSPICIOUS=1
+            REASONS="${REASONS}- modifies layout/theme.liquid (rare from admin)\n"
+          fi
+          if [ "${LOC:-0}" -gt 1000 ]; then
+            SUSPICIOUS=1
+            REASONS="${REASONS}- exceeds 1000 LOC ($LOC lines changed)\n"
+          fi
+          if [ "$SUSPICIOUS" -eq 1 ]; then
+            BODY=$(printf "Sync-reconcile diff looks unusual:\n%b\nFiles changed:\n\`\`\`\n%s\n\`\`\`\n\nReview manually before merging shopify-sync into main." "$REASONS" "$FILES")
+            gh issue create \
+              --title "Suspicious sync-reconcile diff (LOC=${LOC})" \
+              --label deploy-attention \
+              --body "$BODY"
+            echo "::error::Diff sanity check failed; auto-PR aborted. Issue filed."
+            exit 1
+          fi
+
+      - name: Open or refresh reconcile PR
+        if: steps.status.outputs.ahead != '0'
+        env:
+          AHEAD: ${{ steps.status.outputs.ahead }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          TITLE="chore: reconcile shopify-sync -> main (${AHEAD} commits, ${DATE})"
+          BODY=$(printf 'Auto-generated reconcile of admin-side commits on \\`shopify-sync\\`.\n\nCommits:\n```\n%s\n```\n' "$(cat /tmp/commits.txt)")
+          EXISTING=$(gh pr list --head shopify-sync --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "$TITLE" --body "$BODY"
+            NUM="$EXISTING"
+          else
+            URL=$(gh pr create --base main --head shopify-sync --label auto-reconcile --title "$TITLE" --body "$BODY")
+            NUM="${URL##*/}"
+          fi
+          if ! gh pr merge "$NUM" --auto --merge 2>/tmp/merge.txt; then
+            if grep -qiE 'auto.merge.*already|already enabled|clean merge state' /tmp/merge.txt; then
+              echo "auto-merge already enabled; ok"
+            else
+              cat /tmp/merge.txt
+              exit 1
+            fi
+          fi
+
+      - name: Stale auto-reconcile PR alarm
+        if: always()
+        run: |
+          set -euo pipefail
+          STALE=$(gh pr list --label auto-reconcile --state open --json number,createdAt \
+            --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
+          if [ -n "$STALE" ]; then
+            for n in $STALE; do
+              gh issue create \
+                --title "Stale auto-reconcile PR #$n" \
+                --label deploy-attention \
+                --body "PR #$n has been open more than 3 days. Required checks may be failing or there is a merge conflict." || true
+            done
+            echo "::error::Stale auto-reconcile PRs detected"
+            exit 1
+          fi

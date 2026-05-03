@@ -1,91 +1,79 @@
-# Horizon
+# Sapphire Shadow Studio theme
 
-[Getting started](#getting-started) |
-[Staying up to date with Horizon changes](#staying-up-to-date-with-horizon-changes) |
-[Developer tools](#developer-tools) |
-[Contributing](#contributing) |
-[License](#license)
+Custom Shopify theme based on Shopify's [Horizon](https://github.com/Shopify/horizon) flagship theme.
 
-Horizon is the flagship of a new generation of first party Shopify themes. It incorporates the latest Liquid Storefronts features, including [theme blocks](https://shopify.dev/docs/storefronts/themes/architecture/blocks/theme-blocks/quick-start?framework=liquid).
+[Local development](#local-development) | [CI/CD](#cicd) | [Branches and themes](#branches-and-themes) | [Secrets and rotation](#secrets-and-rotation) | [Rollback](#rollback) | [Staying current with Horizon](#staying-current-with-horizon) | [License](#license)
 
-- **Web-native in its purest form:** Themes run on the [evergreen web](https://www.w3.org/2001/tag/doc/evergreen-web/). We leverage the latest web browsers to their fullest, while maintaining support for the older ones through progressive enhancement—not polyfills.
-- **Lean, fast, and reliable:** Functionality and design defaults to “no” until it meets this requirement. Code ships on quality. Themes must be built with purpose. They shouldn’t support each and every feature in Shopify.
-- **Server-rendered:** HTML must be rendered by Shopify servers using Liquid. Business logic and platform primitives such as translations and money formatting don’t belong on the client. Async and on-demand rendering of parts of the page is OK, but we do it sparingly as a progressive enhancement.
-- **Functional, not pixel-perfect:** The Web doesn’t require each page to be rendered pixel-perfect by each browser engine. Using semantic markup, progressive enhancement, and clever design, we ensure that themes remain functional regardless of the browser.
-
-## Getting started
-
-We recommend using the Skeleton Theme as a starting point for a theme development project. [Learn more on Shopify.dev](https://shopify.dev/themes/getting-started/create).
-
-To create a new theme project based on Horizon:
-
-```sh
-git clone https://github.com/Shopify/horizon.git
-```
-
-Install the [Shopify CLI](https://shopify.dev/docs/storefronts/themes/tools/cli) to connect your local project to a Shopify store. Learn about the [theme developer tools](https://shopify.dev/docs/storefronts/themes/tools) available, and the suggested [developer tools](#developer-tools) below.
-
-Please note that the `main` branch may include code for features not yet released. You may encounter Liquid API properties that are not publicly documented, but will be when the feature is officially rolled out.
-
-### Shopify Theme Store development
-
-If you're building a theme for the Shopify Theme Store, then do not use Horizon as a starting point. Themes based on, derived from, or incorporating Horizon are not eligible for submission to to the Shopify Theme Store. Use the [Skeleton Theme](https://github.com/Shopify/skeleton-theme) instead.
-
-## Staying up to date with Horizon changes
-
-Say you're building a new theme off Horizon but you still want to be able to pull in the latest changes, you can add a remote `upstream` pointing to this Horizon repository.
-
-1. Navigate to your local theme folder.
-2. Verify the list of remotes and validate that you have both an `origin` and `upstream`:
-
-```sh
-git remote -v
-```
-
-3. If you don't see an `upstream`, you can add one that points to Shopify's Horizon repository:
-
-```sh
-git remote add upstream https://github.com/Shopify/horizon.git
-```
-
-4. Pull in the latest Horizon changes into your repository:
-
-```sh
-git fetch upstream
-git pull upstream main
-```
-
-## Developer tools
-
-There are a number of really useful tools that the Shopify Themes team uses during development. Horizon is already set up to work with these tools.
-
-### Shopify CLI
-
-[Shopify CLI](https://shopify.dev/docs/storefronts/themes/tools/cli) helps you build Shopify themes faster and is used to automate and enhance your local development workflow. It comes bundled with a suite of commands for developing Shopify themes—everything from working with themes on a Shopify store (e.g. creating, publishing, deleting themes) or launching a development server for local theme development.
-
-You can follow this [quick start guide for theme developers](https://shopify.dev/docs/themes/tools/cli) to get started.
-
-### Theme Check
-
-We recommend using [Theme Check](https://github.com/shopify/theme-check) as a way to validate and lint your Shopify themes.
-
-We've added Theme Check to Horizon's [list of VS Code extensions](/.vscode/extensions.json) so if you're using Visual Studio Code as your code editor of choice, you'll be prompted to install the [Theme Check VS Code](https://marketplace.visualstudio.com/items?itemName=Shopify.theme-check-vscode) extension upon opening VS Code after you've forked and cloned Horizon.
-
-You can also run it from a terminal with the following Shopify CLI command:
+## Local development
 
 ```bash
-shopify theme check
+npm ci                       # install pinned Shopify CLI
+npx shopify theme dev        # local dev server (hot reload)
+npx shopify theme check      # lint
 ```
 
-You can follow the [theme check documentation](https://shopify.dev/docs/storefronts/themes/tools/theme-check) for more details.
+The Shopify CLI version is pinned in `package.json` and `package-lock.json`. Always use `npx shopify` (not a globally installed CLI) to ensure CI and local match.
 
-#### Shopify/theme-check-action
+Branch from `main` for any code change. PRs run theme-check and deploy a per-PR preview theme; see CI/CD below.
 
-Horizon runs [Theme Check](#Theme-Check) on every commit via [Shopify/theme-check-action](https://github.com/Shopify/theme-check-action).
+## CI/CD
 
-## Contributing
+Five workflows in `.github/workflows/`:
 
-We are not accepting contributions to Horizon at this time.
+| Workflow | Triggers | Purpose |
+|---|---|---|
+| `pr-checks.yml` | PR; push to `main`/`shopify-sync` (theme-check job only) | Three parallel jobs. `theme-check`: lints theme via `Shopify/theme-check-action`. `pr-reconcile-check`: fails the PR if `shopify-sync` has commits not in the branch. `lint-workflows`: runs `actionlint` and `zizmor` when `.github/` paths change. All three jobs are required checks on `main` (context: `pr-checks / <job-name>`). |
+| `preview.yml` | PR open/sync/close | Creates a per-PR unpublished theme `pr-<n>-preview`, comments link on the PR, deletes on close. |
+| `sync-reconcile.yml` | Daily 13:00 UTC; manual | Opens an auto-merge PR from `shopify-sync` to `main` when admin edits arrive. |
+| `deploy.yml` | Push to `main`; manual | Deploys to live theme `#181702754604`. Asserts live ID, runs smoke checks, files an issue on failure. |
+| `drift-watch.yml` | Weekly Mondays; manual | Detects direct edits to live; sweeps stale rollback snapshots and orphan preview themes. |
+
+All workflows run on `ubuntu-24.04`, pin third-party actions to commit SHAs, set `permissions: {}` at workflow root, and bind any job that handles the Shopify token to the `shopify-write` GitHub Environment. Action SHAs are kept current by Dependabot (`.github/dependabot.yml`).
+
+## Branches and themes
+
+| Ref | Role |
+|---|---|
+| `main` | Source of truth. Protected: PR + required checks + branch up-to-date. |
+| `shopify-sync` | Captures admin edits via the Shopify GitHub Integration on the unpublished `EDIT HERE - Admin Sync` theme. Protected against force-push; `shopify[bot]` writes here. |
+| Feature branches | Cut from `main`, PR'd back. Per-PR preview theme `pr-<n>-preview`. |
+| Live theme `#181702754604` | Customer-facing. **Disconnected** from GitHub. Only `deploy.yml` writes to it. Never edit via admin Customize/Code editor. |
+
+## Secrets and rotation
+
+| Name | Type | Source |
+|---|---|---|
+| `SHOPIFY_CLI_THEME_TOKEN` | Repo **secret** | Shopify "Theme Access" app on the store. **Rotate every 90 days.** |
+| `SHOPIFY_FLAG_STORE` | Repo **variable** | `sapphire-shadow-studio.myshopify.com`. |
+| `shopify-write` | GitHub Environment | Required reviewer = self. Token doesn't hydrate without explicit approval. |
+
+To rotate the token: in admin, regenerate the Theme Access password; paste it into the GitHub repo secret (`Settings -> Secrets and variables -> Actions`). Do not echo to terminal.
+
+## Rollback
+
+If the live theme is in a bad state:
+
+1. **Most recent commit was bad**: revert it on `main` (`git revert <sha> && git push`). `deploy.yml` re-runs and ships the revert. Total recovery time is one deploy cycle (~3 min).
+2. **CI is broken and you need a hotfix**: bypass branch protection and push directly to `main` with a `[hotfix]` commit prefix. `deploy.yml` runs and files an audit issue automatically.
+3. **CI cannot deploy at all**: pull the last known-good SHA locally and `npx shopify theme push --live --allow-live` directly until CI is fixed.
+4. **Need a known-good snapshot**: `drift-watch.yml` keeps weekly `rollback-YYYYMMDDTHHMMSSZ` unpublished themes for 14 days. In admin, publish the most recent one to recover instantly, then dig into what went wrong.
+
+The cutover-state baseline is tagged `v1-ci-cutover`.
+
+## Staying current with Horizon
+
+Horizon's upstream lives at https://github.com/Shopify/horizon. To pull updates:
+
+```bash
+git remote add upstream https://github.com/Shopify/horizon.git  # one-time
+git fetch upstream
+git switch -c chore/horizon-merge-$(date +%Y-%m-%d)
+git merge upstream/main
+# resolve conflicts; the customizations under blocks/, snippets/, sections/ usually conflict
+git push -u origin HEAD
+```
+
+Open a PR; CI runs as normal.
 
 ## License
 

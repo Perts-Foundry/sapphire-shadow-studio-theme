@@ -1,0 +1,215 @@
+name: preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions: {}
+
+env:
+  SHOPIFY_CLI_TTY: "0"
+  CI: "1"
+  SHOPIFY_FLAG_NO_COLOR: "true"
+
+jobs:
+  deploy-preview:
+    if: |
+      github.event.action != 'closed'
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+    name: deploy-preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: shopify-write
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: preview-deploy-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      theme_id: ${{ steps.push.outputs.theme_id }}
+      editor_url: ${{ steps.push.outputs.editor_url }}
+      preview_url: ${{ steps.push.outputs.preview_url }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Shopify CLI
+        run: npm ci
+
+      - name: Push or update preview theme
+        id: push
+        env:
+          SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          THEME_NAME="pr-${PR_NUMBER}-preview"
+          npx shopify theme list --json > themes.json
+          MATCHES=$(jq --arg n "$THEME_NAME" '[.[] | select(.name==$n)]' themes.json)
+          COUNT=$(jq 'length' <<<"$MATCHES")
+          if [ "$COUNT" -gt 1 ]; then
+            echo "::error::Multiple themes named ${THEME_NAME} exist; manual cleanup required."
+            jq <<<"$MATCHES"
+            exit 1
+          fi
+          if [ "$COUNT" -eq 1 ]; then
+            EXISTING_ID=$(jq -r '.[0].id' <<<"$MATCHES")
+            echo "Reusing theme ${EXISTING_ID}"
+            npx shopify theme push --theme "$EXISTING_ID" --json > push.json
+          else
+            echo "Creating new unpublished theme"
+            npx shopify theme push --unpublished --json > push.json
+            NEW_ID=$(jq -r '.theme.id' push.json)
+            npx shopify theme rename --theme "$NEW_ID" --name "$THEME_NAME"
+          fi
+          THEME_ID=$(jq -r '.theme.id' push.json)
+          EDITOR_URL=$(jq -r '.theme.editor_url // empty' push.json)
+          PREVIEW_URL=$(jq -r '.theme.preview_url // empty' push.json)
+          if [ -z "$EDITOR_URL" ]; then
+            EDITOR_URL="https://admin.shopify.com/store/sapphire-shadow-studio/themes/${THEME_ID}/editor"
+          fi
+          if [ -z "$PREVIEW_URL" ]; then
+            PREVIEW_URL="https://${SHOPIFY_FLAG_STORE}/?preview_theme_id=${THEME_ID}"
+          fi
+          {
+            echo "theme_id=$THEME_ID"
+            echo "editor_url=$EDITOR_URL"
+            echo "preview_url=$PREVIEW_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upsert preview comment
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          THEME_ID: ${{ steps.push.outputs.theme_id }}
+          EDITOR_URL: ${{ steps.push.outputs.editor_url }}
+          PREVIEW_URL: ${{ steps.push.outputs.preview_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- sapphire-preview-bot -->';
+            const themeId = process.env.THEME_ID;
+            const editorUrl = process.env.EDITOR_URL;
+            const previewUrl = process.env.PREVIEW_URL;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const sha = (process.env.SHA || '').slice(0, 7);
+            const body = `${marker}\n\n**Preview theme deployed** (id \`${themeId}\`, last commit \`${sha}\`)\n\n- [Open preview](${previewUrl})\n- [Edit in admin](${editorUrl})\n\nUpdated on every push to the PR; deleted when the PR closes.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: keep.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+            for (const dup of dupes) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: dup.id,
+              });
+            }
+
+  cleanup:
+    if: github.event.action == 'closed'
+    name: cleanup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: shopify-write
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: preview-cleanup-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20"
+
+      - name: Install Shopify CLI
+        run: npm install -g @shopify/cli@3.94.3
+
+      - name: Delete preview theme(s)
+        env:
+          SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          THEME_NAME="pr-${PR_NUMBER}-preview"
+          shopify theme list --json > themes.json
+          IDS=$(jq -r --arg n "$THEME_NAME" '.[] | select(.name==$n) | .id' themes.json)
+          if [ -z "$IDS" ]; then
+            echo "No preview theme found for ${THEME_NAME}"
+          else
+            for id in $IDS; do
+              echo "Deleting theme ${id}"
+              shopify theme delete --theme "$id" --force || true
+            done
+          fi
+
+      - name: Update preview comment to deleted
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const marker = '<!-- sapphire-preview-bot -->';
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const body = `${marker}\n\nPreview theme deleted.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: keep.id,
+                body,
+              });
+            }
+            for (const dup of dupes) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: dup.id,
+              });
+            }

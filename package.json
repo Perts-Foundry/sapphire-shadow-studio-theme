@@ -1,0 +1,17 @@
+{
+  "name": "sapphire-shadow-studio-theme",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Custom Shopify theme based on Horizon. CI tooling pinned via @shopify/cli devDependency.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "shopify": "shopify",
+    "theme:check": "shopify theme check",
+    "theme:dev": "shopify theme dev"
+  },
+  "devDependencies": {
+    "@shopify/cli": "3.94.3"
+  }
+}
