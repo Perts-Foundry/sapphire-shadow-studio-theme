@@ -1,0 +1,957 @@
+{% doc %}
+  @prompt
+    Create an about page, Use this for filling in information and updating this. 
+    
+    # About Sapphire Shadow Studio
+    
+    ---
+    
+    ## More than sweaters—it's about creating something that actually matters
+    
+    Behind every cozy custom sweater from Sapphire Shadow Studio is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for. This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning.
+    
+    ---
+    
+    ## How late nights and big dreams became a business
+    
+    Sapphire Shadow Studio was born from one woman's leap of faith—and her husband's unwavering belief that she could pull it off.
+    
+    For nearly a decade, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. The schedule dictated everything. Time with family and friends became something squeezed into gaps rather than built around. Creativity? That lived somewhere in the margins, waiting.
+    
+    Then came the late nights with a different kind of purpose. Sketching designs instead of charting vitals. Testing fabrics instead of taking temperatures. What started as a search for better work-life balance evolved into something bigger: a creative outlet that finally felt like *hers*.
+    
+    The shop didn't launch overnight. It grew from conversations at the kitchen table, from designs that got scrapped and restarted, from figuring out how to turn "I think I could do this" into "We're actually doing this." And through all of it, one person never doubted for a second that it would work.
+    
+    ---
+    
+    ## Meet the team behind the seams
+    
+    **Maddie** is the heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Her years in healthcare taught her something that translates surprisingly well to custom apparel: attention to detail isn't optional when the outcome matters. Every sweater gets the same care she once gave to patients—thorough, thoughtful, and never rushed.
+    
+    **Seth** is the behind-the-scenes force who makes everything actually *work*. He handles the website, manages all the backend tech and coding, and serves as the honest eye that vets every design before it goes live. Professional and smart with just enough goofiness to keep things fun, he's been Maddie's biggest fan from day one. The shop simply wouldn't exist without his constant support, quiet encouragement, and steady belief that this dream was worth chasing.
+    
+    Together, they're proof that a husband-wife team can build something real—where one person's creativity meets the other's technical expertise, and both share an absolute refusal to cut corners.
+    
+    ---
+    
+    ## Why "good enough" never makes the cut
+    
+    Some shops chase trends. Some chase volume. Sapphire Shadow Studio chases *quality*—the kind people actually notice when a sweater arrives at their door.
+    
+    Here's what that looks like in practice:
+    
+    Every product starts with materials that pass a simple test: would Maddie and Seth want to own it themselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out. The goal isn't to offer the most options—it's to offer options worth buying.
+    
+    **Nothing gets rushed.** Each design goes through rounds of testing and refinement. Does it look as good in person as it does on screen? Does it hold up after washing? Does it feel like something special, or just something ordinary? These questions matter because once a product carries the Sapphire Shadow name, it represents everything the studio stands for.
+    
+    **Every order gets personal attention.** This isn't a warehouse operation where robots pack boxes. When an order comes through, real people handle it—checking details, ensuring quality, packaging with care. It's the opposite of anonymous, and that's entirely intentional.
+    
+    ---
+    
+    ## Custom sweaters and personalized products for anyone who wants something different
+    
+    Sapphire Shadow Studio creates custom sweaters and personalized apparel designed to stand out. Fun, unique, eye-catching—these aren't the kind of pieces that blend into the background of a closet. They're the ones that start conversations.
+    
+    Whether someone's shopping for themselves or hunting for a gift that actually feels thoughtful, the studio's designs offer something the big retailers can't: personality backed by quality. Every product is made for people who appreciate when something feels genuinely *made for them*.
+    
+    The target audience? Honestly, it's anyone who's tired of settling for generic. Parents looking for memorable family gear. Friends who want matching pieces that aren't mass-produced. Individuals who simply want to wear something that reflects who they are. If someone values fun, creativity, and products made with actual care, they've found their people.
+    
+    ---
+    
+    ## The Sapphire Shadow promise
+    
+    When customers shop here, they're not supporting a faceless corporation. They're supporting a husband-and-wife team working fr
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-about-page-{{ ai_gen_id }} {
+    display: block;
+    width: 100%;
+  }
+
+  .ai-about-hero-{{ ai_gen_id }} {
+    padding: 60px 20px;
+    text-align: center;
+    background-color: {{ block.settings.hero_bg_color }};
+    margin-bottom: 20px;
+  }
+
+  .ai-about-hero-content-{{ ai_gen_id }} {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .ai-about-hero-title-{{ ai_gen_id }} {
+    font-size: {{ block.settings.hero_title_size }}px;
+    color: {{ block.settings.hero_text_color }};
+    margin: 0 0 20px;
+    font-weight: 700;
+  }
+
+  .ai-about-hero-text-{{ ai_gen_id }} {
+    font-size: {{ block.settings.hero_text_size }}px;
+    color: {{ block.settings.hero_text_color }};
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .ai-about-section-{{ ai_gen_id }} {
+    padding: 20px 20px;
+    margin-bottom: 20px;
+  }
+
+  .ai-about-section-content-{{ ai_gen_id }} {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .ai-about-section-title-{{ ai_gen_id }} {
+    font-size: {{ block.settings.section_title_size }}px;
+    color: {{ block.settings.text_color }};
+    margin: 0 0 20px;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .ai-about-mission-{{ ai_gen_id }} {
+    background-color: {{ block.settings.mission_bg_color }};
+  }
+
+  .ai-about-mission-text-{{ ai_gen_id }} {
+    font-size: {{ block.settings.body_text_size }}px;
+    color: {{ block.settings.text_color }};
+    line-height: 1.8;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .ai-about-values-grid-{{ ai_gen_id }} {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 30px;
+    margin-top: 40px;
+  }
+
+  .ai-about-value-card-{{ ai_gen_id }} {
+    padding: 30px;
+    background-color: {{ block.settings.card_bg_color }};
+    border-radius: {{ block.settings.card_border_radius }}px;
+    text-align: center;
+    border: 1px solid {{ block.settings.card_border_color }};
+  }
+
+  .ai-about-value-icon-{{ ai_gen_id }} {
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: {{ block.settings.icon_bg_color }};
+    border-radius: 50%;
+  }
+
+  .ai-about-value-icon-{{ ai_gen_id }} svg {
+    width: 30px;
+    height: 30px;
+    stroke: {{ block.settings.icon_color }};
+  }
+
+  .ai-about-value-title-{{ ai_gen_id }} {
+    font-size: 20px;
+    color: {{ block.settings.text_color }};
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+
+  .ai-about-value-text-{{ ai_gen_id }} {
+    font-size: {{ block.settings.body_text_size }}px;
+    color: {{ block.settings.text_color }};
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .ai-about-team-carousel-{{ ai_gen_id }} {
+    position: relative;
+    margin-top: 40px;
+    max-width: 400px;
+    margin-inline: auto;
+  }
+
+  .ai-about-team-carousel-track-{{ ai_gen_id }} {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ai-about-team-member-{{ ai_gen_id }} {
+    text-align: center;
+    opacity: 0;
+    visibility: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out;
+  }
+
+  .ai-about-team-member-{{ ai_gen_id }}.active {
+    opacity: 1;
+    visibility: visible;
+    position: relative;
+  }
+
+  .ai-about-team-dots-{{ ai_gen_id }} {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .ai-about-team-dot-{{ ai_gen_id }} {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid {{ block.settings.text_color }};
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.3s ease;
+  }
+
+  .ai-about-team-dot-{{ ai_gen_id }}:hover,
+  .ai-about-team-dot-{{ ai_gen_id }}.active {
+    background: {{ block.settings.text_color }};
+  }
+
+  .ai-about-team-image-wrapper-{{ ai_gen_id }} {
+    width: 100%;
+    aspect-ratio: 1;
+    margin-bottom: 20px;
+    overflow: hidden;
+    border-radius: {{ block.settings.team_image_radius }}px;
+  }
+
+  .ai-about-team-image-{{ ai_gen_id }} {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .ai-about-team-placeholder-{{ ai_gen_id }} {
+    width: 100%;
+    height: 100%;
+    background-color: #f4f4f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ai-about-team-placeholder-{{ ai_gen_id }} svg {
+    width: 60%;
+    height: 60%;
+  }
+
+  .ai-about-team-name-{{ ai_gen_id }} {
+    font-size: 20px;
+    color: {{ block.settings.text_color }};
+    margin: 0 0 5px;
+    font-weight: 600;
+  }
+
+  .ai-about-team-role-{{ ai_gen_id }} {
+    font-size: 16px;
+    color: {{ block.settings.text_color }};
+    opacity: 0.7;
+    margin: 0 0 10px;
+  }
+
+  .ai-about-team-bio-{{ ai_gen_id }} {
+    font-size: {{ block.settings.body_text_size }}px;
+    color: {{ block.settings.text_color }};
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .ai-about-story-{{ ai_gen_id }} {
+    background-color: {{ block.settings.story_bg_color }};
+  }
+
+  .ai-about-story-content-{{ ai_gen_id }} {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+
+  .ai-about-story-image-wrapper-{{ ai_gen_id }} {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: {{ block.settings.story_image_radius }}px;
+  }
+
+  .ai-about-story-image-{{ ai_gen_id }} {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .ai-about-story-placeholder-{{ ai_gen_id }} {
+    width: 100%;
+    height: 100%;
+    background-color: #f4f4f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ai-about-story-placeholder-{{ ai_gen_id }} svg {
+    width: 50%;
+    height: 50%;
+  }
+
+  .ai-about-story-text-{{ ai_gen_id }} {
+    font-size: {{ block.settings.body_text_size }}px;
+    color: {{ block.settings.text_color }};
+    line-height: 1.8;
+  }
+
+  @media screen and (max-width: 768px) {
+    .ai-about-hero-{{ ai_gen_id }} {
+      padding: 40px 20px;
+      margin-bottom: 20px;
+    }
+
+    .ai-about-hero-title-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.hero_title_size }}px * 0.7);
+    }
+
+    .ai-about-section-{{ ai_gen_id }} {
+      padding: 20px 20px;
+      margin-bottom: 20px;
+    }
+
+    .ai-about-section-title-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.section_title_size }}px * 0.8);
+    }
+
+    .ai-about-values-grid-{{ ai_gen_id }} {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    .ai-about-team-carousel-{{ ai_gen_id }} {
+      max-width: 100%;
+    }
+
+    .ai-about-story-content-{{ ai_gen_id }} {
+      grid-template-columns: 1fr;
+      gap: 30px;
+    }
+  }
+{% endstyle %}
+
+<div class="ai-about-page-{{ ai_gen_id }}" {{ block.shopify_attributes }}>
+  {% if block.settings.show_hero %}
+    <div class="ai-about-hero-{{ ai_gen_id }}">
+      <div class="ai-about-hero-content-{{ ai_gen_id }}">
+        {% if block.settings.hero_title != blank %}
+          <h1 class="ai-about-hero-title-{{ ai_gen_id }}">{{ block.settings.hero_title }}</h1>
+        {% endif %}
+        {% if block.settings.hero_text != blank %}
+          <div class="ai-about-hero-text-{{ ai_gen_id }}">{{ block.settings.hero_text }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if block.settings.show_mission %}
+    <div class="ai-about-section-{{ ai_gen_id }} ai-about-mission-{{ ai_gen_id }}">
+      <div class="ai-about-section-content-{{ ai_gen_id }}">
+        {% if block.settings.mission_title != blank %}
+          <h2 class="ai-about-section-title-{{ ai_gen_id }}">{{ block.settings.mission_title }}</h2>
+        {% endif %}
+        {% if block.settings.mission_text != blank %}
+          <div class="ai-about-mission-text-{{ ai_gen_id }}">{{ block.settings.mission_text }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if block.settings.show_values %}
+    <div class="ai-about-section-{{ ai_gen_id }}">
+      <div class="ai-about-section-content-{{ ai_gen_id }}">
+        {% if block.settings.values_title != blank %}
+          <h2 class="ai-about-section-title-{{ ai_gen_id }}">{{ block.settings.values_title }}</h2>
+        {% endif %}
+        <div class="ai-about-values-grid-{{ ai_gen_id }}">
+          {% for i in (1..4) %}
+            {% liquid
+              assign value_title_key = 'value_' | append: i | append: '_title'
+              assign value_text_key = 'value_' | append: i | append: '_text'
+              assign value_title = block.settings[value_title_key]
+              assign value_text = block.settings[value_text_key]
+            %}
+            {% if value_title != blank or value_text != blank %}
+              <div class="ai-about-value-card-{{ ai_gen_id }}">
+                <div class="ai-about-value-icon-{{ ai_gen_id }}">
+                  {% case i %}
+                    {% when 1 %}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                      </svg>
+                    {% when 2 %}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                      </svg>
+                    {% when 3 %}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                    {% when 4 %}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
+                  {% endcase %}
+                </div>
+                {% if value_title != blank %}
+                  <h3 class="ai-about-value-title-{{ ai_gen_id }}">{{ value_title }}</h3>
+                {% endif %}
+                {% if value_text != blank %}
+                  <div class="ai-about-value-text-{{ ai_gen_id }}">{{ value_text }}</div>
+                {% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if block.settings.show_story %}
+    <div class="ai-about-section-{{ ai_gen_id }} ai-about-story-{{ ai_gen_id }}">
+      <div class="ai-about-section-content-{{ ai_gen_id }}">
+        {% if block.settings.story_title != blank %}
+          <h2 class="ai-about-section-title-{{ ai_gen_id }}">{{ block.settings.story_title }}</h2>
+        {% endif %}
+        <div class="ai-about-story-content-{{ ai_gen_id }}">
+          <div class="ai-about-story-image-wrapper-{{ ai_gen_id }}">
+            {% if block.settings.story_image %}
+              <img
+                src="{{ block.settings.story_image | image_url: width: 800 }}"
+                alt="{{ block.settings.story_image.alt | escape }}"
+                loading="lazy"
+                width="{{ block.settings.story_image.width }}"
+                height="{{ block.settings.story_image.height }}"
+                class="ai-about-story-image-{{ ai_gen_id }}"
+              >
+            {% else %}
+              <div class="ai-about-story-placeholder-{{ ai_gen_id }}">
+                {{ 'image' | placeholder_svg_tag }}
+              </div>
+            {% endif %}
+          </div>
+          <div>
+            {% if block.settings.story_text != blank %}
+              <div class="ai-about-story-text-{{ ai_gen_id }}">{{ block.settings.story_text }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if block.settings.show_team %}
+    <div class="ai-about-section-{{ ai_gen_id }}">
+      <div class="ai-about-section-content-{{ ai_gen_id }}">
+        {% if block.settings.team_title != blank %}
+          <h2 class="ai-about-section-title-{{ ai_gen_id }}">{{ block.settings.team_title }}</h2>
+        {% endif %}
+        <div class="ai-about-team-carousel-{{ ai_gen_id }}" data-rotation-speed="{{ block.settings.team_rotation_speed | default: 5 }}">
+          <div class="ai-about-team-carousel-track-{{ ai_gen_id }}">
+            {% for i in (1..3) %}
+              {% liquid
+                assign member_image_key = 'team_member_' | append: i | append: '_image'
+                assign member_name_key = 'team_member_' | append: i | append: '_name'
+                assign member_role_key = 'team_member_' | append: i | append: '_role'
+                assign member_bio_key = 'team_member_' | append: i | append: '_bio'
+                assign member_image = block.settings[member_image_key]
+                assign member_name = block.settings[member_name_key]
+                assign member_role = block.settings[member_role_key]
+                assign member_bio = block.settings[member_bio_key]
+              %}
+              {% if member_name != blank or member_role != blank or member_bio != blank %}
+                <div class="ai-about-team-member-{{ ai_gen_id }}{% if forloop.first %} active{% endif %}" data-index="{{ forloop.index0 }}">
+                  <div class="ai-about-team-image-wrapper-{{ ai_gen_id }}">
+                    {% if member_image %}
+                      <img
+                        src="{{ member_image | image_url: width: 400 }}"
+                        alt="{{ member_image.alt | escape }}"
+                        loading="lazy"
+                        width="{{ member_image.width }}"
+                        height="{{ member_image.height }}"
+                        class="ai-about-team-image-{{ ai_gen_id }}"
+                      >
+                    {% else %}
+                      <div class="ai-about-team-placeholder-{{ ai_gen_id }}">
+                        {{ 'image' | placeholder_svg_tag }}
+                      </div>
+                    {% endif %}
+                  </div>
+                  {% if member_name != blank %}
+                    <h3 class="ai-about-team-name-{{ ai_gen_id }}">{{ member_name }}</h3>
+                  {% endif %}
+                  {% if member_role != blank %}
+                    <div class="ai-about-team-role-{{ ai_gen_id }}">{{ member_role }}</div>
+                  {% endif %}
+                  {% if member_bio != blank %}
+                    <div class="ai-about-team-bio-{{ ai_gen_id }}">{{ member_bio }}</div>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="ai-about-team-dots-{{ ai_gen_id }}">
+            {% for i in (1..3) %}
+              <button class="ai-about-team-dot-{{ ai_gen_id }}{% if forloop.first %} active{% endif %}" data-index="{{ forloop.index0 }}" aria-label="View team member {{ i }}"></button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  (function() {
+    const carousel = document.querySelector('.ai-about-team-carousel-{{ ai_gen_id }}');
+    if (!carousel) return;
+
+    const members = carousel.querySelectorAll('.ai-about-team-member-{{ ai_gen_id }}');
+    const dots = carousel.querySelectorAll('.ai-about-team-dot-{{ ai_gen_id }}');
+    const rotationSpeed = parseInt(carousel.dataset.rotationSpeed, 10) * 1000 || 5000;
+    let currentIndex = 0;
+    let intervalId;
+
+    function showMember(index) {
+      members.forEach((member, i) => {
+        member.classList.toggle('active', i === index);
+      });
+      dots.forEach((dot, i) => {
+        dot.classList.toggle('active', i === index);
+      });
+      currentIndex = index;
+    }
+
+    function nextMember() {
+      const nextIndex = (currentIndex + 1) % members.length;
+      showMember(nextIndex);
+    }
+
+    function startRotation() {
+      intervalId = setInterval(nextMember, rotationSpeed);
+    }
+
+    function stopRotation() {
+      clearInterval(intervalId);
+    }
+
+    dots.forEach((dot, index) => {
+      dot.addEventListener('click', () => {
+        stopRotation();
+        showMember(index);
+        startRotation();
+      });
+    });
+
+    carousel.addEventListener('mouseenter', stopRotation);
+    carousel.addEventListener('mouseleave', startRotation);
+
+    if (typeof Shopify !== 'undefined' && Shopify.designMode) {
+      document.addEventListener('shopify:section:load', () => {
+        stopRotation();
+        startRotation();
+      });
+    }
+
+    startRotation();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "About page",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Hero section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_hero",
+      "label": "Show hero section",
+      "default": true
+    },
+    {
+      "type": "inline_richtext",
+      "id": "hero_title",
+      "label": "Title",
+      "default": "About Sapphire Shadow Studio"
+    },
+    {
+      "type": "richtext",
+      "id": "hero_text",
+      "label": "Text",
+      "default": "<p>More than sweaters—it's about creating something that actually matters. Behind every cozy custom sweater is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for.</p>"
+    },
+    {
+      "type": "color",
+      "id": "hero_bg_color",
+      "label": "Background color",
+      "default": "#f5f5f5"
+    },
+    {
+      "type": "color",
+      "id": "hero_text_color",
+      "label": "Text color",
+      "default": "#000000"
+    },
+    {
+      "type": "range",
+      "id": "hero_title_size",
+      "min": 24,
+      "max": 72,
+      "step": 2,
+      "unit": "px",
+      "label": "Title size",
+      "default": 48
+    },
+    {
+      "type": "range",
+      "id": "hero_text_size",
+      "min": 14,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "label": "Text size",
+      "default": 18
+    },
+    {
+      "type": "header",
+      "content": "Mission section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_mission",
+      "label": "Show mission section",
+      "default": true
+    },
+    {
+      "type": "inline_richtext",
+      "id": "mission_title",
+      "label": "Title",
+      "default": "What we believe"
+    },
+    {
+      "type": "richtext",
+      "id": "mission_text",
+      "label": "Text",
+      "default": "<p>This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning. Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out.</p>"
+    },
+    {
+      "type": "color",
+      "id": "mission_bg_color",
+      "label": "Background color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "header",
+      "content": "Values section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_values",
+      "label": "Show values section",
+      "default": true
+    },
+    {
+      "type": "inline_richtext",
+      "id": "values_title",
+      "label": "Title",
+      "default": "Why good enough never makes the cut"
+    },
+    {
+      "type": "inline_richtext",
+      "id": "value_1_title",
+      "label": "Value 1 title",
+      "default": "Quality First"
+    },
+    {
+      "type": "richtext",
+      "id": "value_1_text",
+      "label": "Value 1 text",
+      "default": "<p>Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected.</p>"
+    },
+    {
+      "type": "inline_richtext",
+      "id": "value_2_title",
+      "label": "Value 2 title",
+      "default": "Personal Attention"
+    },
+    {
+      "type": "richtext",
+      "id": "value_2_text",
+      "label": "Value 2 text",
+      "default": "<p>Every order gets personal attention. Real people handle it—checking details, ensuring quality, packaging with care. It's the opposite of anonymous.</p>"
+    },
+    {
+      "type": "inline_richtext",
+      "id": "value_3_title",
+      "label": "Value 3 title",
+      "default": "Never Rushed"
+    },
+    {
+      "type": "richtext",
+      "id": "value_3_text",
+      "label": "Value 3 text",
+      "default": "<p>Each design goes through rounds of testing and refinement. Does it look as good in person as it does on screen? Does it hold up after washing?</p>"
+    },
+    {
+      "type": "inline_richtext",
+      "id": "value_4_title",
+      "label": "Value 4 title",
+      "default": "Made for You"
+    },
+    {
+      "type": "richtext",
+      "id": "value_4_text",
+      "label": "Value 4 text",
+      "default": "<p>Fun, unique, eye-catching designs that aren't the kind of pieces that blend into the background. They're the ones that start conversations.</p>"
+    },
+    {
+      "type": "header",
+      "content": "Story section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_story",
+      "label": "Show story section",
+      "default": true
+    },
+    {
+      "type": "inline_richtext",
+      "id": "story_title",
+      "label": "Title",
+      "default": "How late nights and big dreams became a business"
+    },
+    {
+      "type": "richtext",
+      "id": "story_text",
+      "label": "Text",
+      "default": "<p>Sapphire Shadow Studio was born from one woman's leap of faith—and her husband's unwavering belief that she could pull it off.</p><p>For nearly a decade, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. The schedule dictated everything. Time with family and friends became something squeezed into gaps rather than built around. Creativity? That lived somewhere in the margins, waiting.</p><p>Then came the late nights with a different kind of purpose. Sketching designs instead of charting vitals. Testing fabrics instead of taking temperatures. What started as a search for better work-life balance evolved into something bigger: a creative outlet that finally felt like hers.</p>"
+    },
+    {
+      "type": "image_picker",
+      "id": "story_image",
+      "label": "Image"
+    },
+    {
+      "type": "color",
+      "id": "story_bg_color",
+      "label": "Background color",
+      "default": "#f5f5f5"
+    },
+    {
+      "type": "range",
+      "id": "story_image_radius",
+      "min": 0,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "label": "Image border radius",
+      "default": 8
+    },
+    {
+      "type": "header",
+      "content": "Team section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_team",
+      "label": "Show team section",
+      "default": true
+    },
+    {
+      "type": "inline_richtext",
+      "id": "team_title",
+      "label": "Title",
+      "default": "Meet the team behind the seams"
+    },
+    {
+      "type": "image_picker",
+      "id": "team_member_1_image",
+      "label": "Team member 1 image"
+    },
+    {
+      "type": "text",
+      "id": "team_member_1_name",
+      "label": "Team member 1 name",
+      "default": "Maddie"
+    },
+    {
+      "type": "text",
+      "id": "team_member_1_role",
+      "label": "Team member 1 role",
+      "default": "Founder & Creative Director"
+    },
+    {
+      "type": "textarea",
+      "id": "team_member_1_bio",
+      "label": "Team member 1 bio",
+      "default": "The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Her years in healthcare taught her that attention to detail isn't optional when the outcome matters."
+    },
+    {
+      "type": "image_picker",
+      "id": "team_member_2_image",
+      "label": "Team member 2 image"
+    },
+    {
+      "type": "text",
+      "id": "team_member_2_name",
+      "label": "Team member 2 name",
+      "default": "Seth"
+    },
+    {
+      "type": "text",
+      "id": "team_member_2_role",
+      "label": "Team member 2 role",
+      "default": "Operations & Technology"
+    },
+    {
+      "type": "textarea",
+      "id": "team_member_2_bio",
+      "label": "Team member 2 bio",
+      "default": "The behind-the-scenes force who makes everything actually work. He handles the website, manages all the backend tech and coding, and serves as the honest eye that vets every design before it goes live. Professional and smart with just enough goofiness to keep things fun."
+    },
+    {
+      "type": "image_picker",
+      "id": "team_member_3_image",
+      "label": "Team member 3 image"
+    },
+    {
+      "type": "text",
+      "id": "team_member_3_name",
+      "label": "Team member 3 name",
+      "default": "Our Cats"
+    },
+    {
+      "type": "text",
+      "id": "team_member_3_role",
+      "label": "Team member 3 role",
+      "default": "Chief Morale Officers"
+    },
+    {
+      "type": "textarea",
+      "id": "team_member_3_bio",
+      "label": "Team member 3 bio",
+      "default": "The unofficial supervisors who ensure every work session includes mandatory cuddle breaks. They inspect every package, test every cozy sweater for nap-worthiness, and provide emotional support during late-night creative sessions. Essential team members who work for treats and head scratches."
+    },
+    {
+      "type": "range",
+      "id": "team_rotation_speed",
+      "min": 2,
+      "max": 10,
+      "step": 1,
+      "unit": "s",
+      "label": "Team rotation speed",
+      "default": 5
+    },
+    {
+      "type": "range",
+      "id": "team_image_radius",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "label": "Team image border radius",
+      "default": 50
+    },
+    {
+      "type": "header",
+      "content": "General style"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text color",
+      "default": "#000000"
+    },
+    {
+      "type": "range",
+      "id": "section_title_size",
+      "min": 24,
+      "max": 48,
+      "step": 2,
+      "unit": "px",
+      "label": "Section title size",
+      "default": 36
+    },
+    {
+      "type": "range",
+      "id": "body_text_size",
+      "min": 14,
+      "max": 20,
+      "step": 1,
+      "unit": "px",
+      "label": "Body text size",
+      "default": 16
+    },
+    {
+      "type": "color",
+      "id": "card_bg_color",
+      "label": "Card background color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "card_border_color",
+      "label": "Card border color",
+      "default": "#e6e6e6"
+    },
+    {
+      "type": "range",
+      "id": "card_border_radius",
+      "min": 0,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "label": "Card border radius",
+      "default": 8
+    },
+    {
+      "type": "color",
+      "id": "icon_bg_color",
+      "label": "Icon background color",
+      "default": "#f5f5f5"
+    },
+    {
+      "type": "color",
+      "id": "icon_color",
+      "label": "Icon color",
+      "default": "#000000"
+    }
+  ],
+  "presets": [
+    {
+      "name": "About page"
+    }
+  ]
+}
+{% endschema %}

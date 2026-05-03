@@ -1,0 +1,167 @@
+{% doc %}
+  Applique pattern selector block. Renders a required dropdown for customers to
+  select their applique pattern as a line item property. Pattern options are
+  configured in the theme editor, one per line.
+
+  @example
+    {% content_for 'block', type: 'applique-pattern-select' %}
+{% enddoc %}
+
+{%- liquid
+  assign block_settings = block.settings
+  assign property_name = 'properties[' | append: block_settings.property_key | append: ']'
+  assign product_form_id = 'BuyButtons-ProductForm-section.id' | replace: 'section.id', section.id
+  assign element_id = 'AppliquePattern-' | append: section.id | append: '-' | append: block.id
+  assign patterns_raw = block_settings.pattern_options | newline_to_br
+  assign patterns = patterns_raw | split: '<br />'
+-%}
+
+<div
+  class="applique-pattern-select spacing-style"
+  style="{% render 'spacing-style', settings: block_settings %}"
+  {{ block.shopify_attributes }}
+>
+  {% if block_settings.property_heading != blank %}
+    <p class="applique-pattern-select__heading">
+      {{ block_settings.property_heading | escape }}
+    </p>
+  {% endif %}
+
+  <div class="applique-pattern-select__field">
+    <label for="{{ element_id }}" class="visually-hidden">
+      {{ block_settings.property_heading | escape }}
+    </label>
+    <select
+      id="{{ element_id }}"
+      name="{{ property_name }}"
+      class="applique-pattern-select__select field__input"
+      form="{{ product_form_id }}"
+      required
+      aria-required="true"
+    >
+      <option value="" disabled selected>{{ block_settings.placeholder | escape }}</option>
+      {% for pattern in patterns %}
+        {%- assign trimmed_pattern = pattern | strip -%}
+        {% if trimmed_pattern != blank %}
+          <option value="{{ trimmed_pattern | escape }}">{{ trimmed_pattern | escape }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+{% stylesheet %}
+  .applique-pattern-select {
+    display: block;
+    width: 100%;
+  }
+
+  .applique-pattern-select__heading {
+    margin-inline: 0;
+    margin-block: 0 var(--padding-sm);
+    font-weight: bold;
+  }
+
+  .applique-pattern-select__field {
+    position: relative;
+  }
+
+  .applique-pattern-select__select {
+    width: 100%;
+    cursor: pointer;
+  }
+{% endstylesheet %}
+
+<script type="module">
+  const select = document.getElementById('{{ element_id }}');
+  if (select) {
+    select.addEventListener('invalid', () => {
+      select.setCustomValidity('Please select an applique pattern before adding to cart.');
+    });
+    select.addEventListener('change', () => {
+      select.setCustomValidity('');
+    });
+  }
+</script>
+
+{% schema %}
+{
+  "name": "Applique Pattern Select",
+  "settings": [
+    {
+      "type": "text",
+      "id": "property_heading",
+      "label": "Heading",
+      "default": "Applique Pattern"
+    },
+    {
+      "type": "text",
+      "id": "property_key",
+      "label": "Line item property key",
+      "default": "Applique Pattern",
+      "info": "This name appears on the order. Use only letters, numbers, and spaces."
+    },
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Placeholder text",
+      "default": "Select a pattern"
+    },
+    {
+      "type": "textarea",
+      "id": "pattern_options",
+      "label": "Pattern options (one per line)"
+    },
+    {
+      "type": "header",
+      "content": "Padding"
+    },
+    {
+      "type": "range",
+      "id": "padding-block-start",
+      "label": "Top",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "padding-block-end",
+      "label": "Bottom",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "padding-inline-start",
+      "label": "Left",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "padding-inline-end",
+      "label": "Right",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 0
+    }
+  ],
+  "presets": [
+    {
+      "name": "Applique Pattern Select",
+      "category": "Product"
+    }
+  ]
+}
+{% endschema %}

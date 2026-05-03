@@ -1,0 +1,324 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "type": "footer",
+  "name": "t:names.footer",
+  "sections": {
+    "footer": {
+      "type": "footer",
+      "blocks": {
+        "group_wErUQf": {
+          "type": "group",
+          "name": "Join our email list",
+          "settings": {
+            "content_direction": "column",
+            "vertical_on_mobile": true,
+            "horizontal_alignment": "flex-start",
+            "vertical_alignment": "center",
+            "align_baseline": false,
+            "horizontal_alignment_flex_direction_column": "flex-start",
+            "vertical_alignment_flex_direction_column": "center",
+            "gap": 6,
+            "width": "fill",
+            "custom_width": 100,
+            "width_mobile": "fill",
+            "custom_width_mobile": 100,
+            "height": "fit",
+            "custom_height": 100,
+            "inherit_color_scheme": true,
+            "color_scheme": "",
+            "background_media": "none",
+            "video_position": "cover",
+            "background_image_position": "cover",
+            "border": "none",
+            "border_width": 1,
+            "border_opacity": 100,
+            "border_radius": 0,
+            "toggle_overlay": false,
+            "overlay_color": "#00000026",
+            "overlay_style": "solid",
+            "gradient_direction": "to top",
+            "link": "",
+            "open_in_new_tab": false,
+            "placeholder": "",
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {
+            "text_pF6rVi": {
+              "type": "text",
+              "name": "Heading",
+              "settings": {
+                "text": "<h2>Join our email list</h2>",
+                "width": "100%",
+                "max_width": "normal",
+                "alignment": "left",
+                "type_preset": "custom",
+                "font": "var(--font-accent--family)",
+                "font_size": "1.125rem",
+                "line_height": "normal",
+                "letter_spacing": "normal",
+                "case": "none",
+                "wrap": "pretty",
+                "color": "var(--color-foreground)",
+                "background": false,
+                "background_color": "#00000026",
+                "corner_radius": 0,
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
+            "text_HafH7P": {
+              "type": "text",
+              "name": "Text",
+              "settings": {
+                "text": "<p>Stay up to date with our latest products and get occasional cat pics 🐈</p>",
+                "width": "fit-content",
+                "max_width": "normal",
+                "alignment": "left",
+                "type_preset": "custom",
+                "font": "var(--font-body--family)",
+                "font_size": "0.875rem",
+                "line_height": "normal",
+                "letter_spacing": "normal",
+                "case": "none",
+                "wrap": "pretty",
+                "color": "var(--color-foreground)",
+                "background": false,
+                "background_color": "#00000026",
+                "corner_radius": 0,
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            }
+          },
+          "block_order": [
+            "text_pF6rVi",
+            "text_HafH7P"
+          ]
+        },
+        "email-signup_HafH7P": {
+          "type": "email-signup",
+          "name": "Email Signup",
+          "settings": {
+            "width": "fill",
+            "custom_width": 100,
+            "inherit_color_scheme": false,
+            "color_scheme": "sss-dark-scheme",
+            "heading": "",
+            "heading_preset": "h3",
+            "border_style": "all",
+            "border_width": 2,
+            "border_radius": 100,
+            "input_type_preset": "",
+            "style_class": "button",
+            "display_type": "text",
+            "label": "Sign up",
+            "integrated_button": true,
+            "button_type_preset": "paragraph",
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {}
+        }
+      },
+      "block_order": [
+        "group_wErUQf",
+        "email-signup_HafH7P"
+      ],
+      "name": "t:names.footer",
+      "settings": {
+        "section_width": "page-width",
+        "gap": 20,
+        "color_scheme": "scheme-5",
+        "padding-block-start": 8,
+        "padding-block-end": 8
+      }
+    },
+    "links": {
+      "type": "footer-utilities",
+      "blocks": {
+        "footer_links": {
+          "type": "footer-policy-links",
+          "settings": {
+            "font_size": "0.75rem",
+            "case": "none"
+          },
+          "blocks": {
+            "link_about": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/pages/about",
+                "link_label": "About"
+              },
+              "blocks": {}
+            },
+            "link_products": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/collections/all",
+                "link_label": "All Products"
+              },
+              "blocks": {}
+            },
+            "footer_link_B6zd8p": {
+              "type": "footer-link",
+              "name": "Link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "shopify://policies/contact-information",
+                "link_label": "Contact"
+              },
+              "blocks": {}
+            },
+            "link_faq": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/pages/faq",
+                "link_label": "FAQ"
+              },
+              "blocks": {}
+            },
+            "link_privacy": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "privacy",
+                "link_url": "",
+                "link_label": ""
+              },
+              "blocks": {}
+            },
+            "link_refund": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "refund",
+                "link_url": "",
+                "link_label": ""
+              },
+              "blocks": {}
+            },
+            "link_search": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/search",
+                "link_label": "Search"
+              },
+              "blocks": {}
+            },
+            "link_shipping": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "shipping",
+                "link_url": "",
+                "link_label": ""
+              },
+              "blocks": {}
+            },
+            "link_terms": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "terms",
+                "link_url": "",
+                "link_label": ""
+              },
+              "blocks": {}
+            }
+          },
+          "block_order": [
+            "link_about",
+            "link_products",
+            "footer_link_B6zd8p",
+            "link_faq",
+            "link_privacy",
+            "link_refund",
+            "link_search",
+            "link_shipping",
+            "link_terms"
+          ]
+        }
+      },
+      "block_order": [
+        "footer_links"
+      ],
+      "settings": {
+        "section_width": "page-width",
+        "gap": 24,
+        "divider_thickness": 0,
+        "color_scheme": "scheme-5",
+        "padding-block-start": 12,
+        "padding-block-end": 0
+      }
+    },
+    "utilities": {
+      "type": "footer-utilities",
+      "blocks": {
+        "copyright": {
+          "type": "footer-copyright",
+          "settings": {
+            "show_powered_by": true,
+            "font_size": "0.625rem",
+            "case": "none"
+          },
+          "blocks": {}
+        },
+        "social_icons": {
+          "type": "social-links",
+          "settings": {
+            "facebook_url": "https://www.facebook.com",
+            "instagram_url": "https://www.instagram.com",
+            "youtube_url": "https://www.youtube.com",
+            "tiktok_url": "https://www.tiktok.com",
+            "twitter_url": "https://www.twitter.com",
+            "threads_url": "",
+            "linkedin_url": "",
+            "bluesky_url": "",
+            "snapchat_url": "",
+            "pinterest_url": "",
+            "tumblr_url": "",
+            "vimeo_url": "",
+            "custom_url": ""
+          },
+          "blocks": {}
+        }
+      },
+      "block_order": [
+        "copyright",
+        "social_icons"
+      ],
+      "settings": {
+        "section_width": "page-width",
+        "gap": 24,
+        "divider_thickness": 1,
+        "color_scheme": "scheme-5",
+        "padding-block-start": 5,
+        "padding-block-end": 6
+      }
+    }
+  },
+  "order": [
+    "footer",
+    "links",
+    "utilities"
+  ]
+}

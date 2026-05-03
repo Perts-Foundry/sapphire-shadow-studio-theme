@@ -1,0 +1,431 @@
+{% assign section_id = section.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .faq-section-{{ section_id }} {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block-start: {{ section.settings.padding_top }}px;
+    padding-block-end: {{ section.settings.padding_bottom }}px;
+  }
+
+  .faq-title-{{ section_id }} {
+    font-size: {{ section.settings.title_size }}px;
+    color: {{ section.settings.text_color }};
+    text-align: center;
+    margin-block-end: 20px;
+    font-weight: 700;
+  }
+
+  .faq-controls-{{ section_id }} {
+    display: flex;
+    justify-content: center;
+    margin-block-end: 30px;
+  }
+
+  .faq-toggle-all-{{ section_id }} {
+    background: transparent;
+    border: 1px solid {{ section.settings.border_color }};
+    color: {{ section.settings.text_color }};
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .faq-toggle-all-{{ section_id }}:hover {
+    background: {{ section.settings.text_color }};
+    color: #ffffff;
+  }
+
+  .faq-toggle-all-{{ section_id }}:focus-visible {
+    outline: 2px solid {{ section.settings.text_color }};
+    outline-offset: 2px;
+  }
+
+  .faq-list-{{ section_id }} {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .faq-section-{{ section_id }} .faq-item {
+    border-block-end: 1px solid {{ section.settings.border_color }};
+    scroll-margin-top: 100px;
+  }
+
+  .faq-section-{{ section_id }} .faq-item:first-child {
+    border-block-start: 1px solid {{ section.settings.border_color }};
+  }
+
+  .faq-section-{{ section_id }} .faq-question {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: {{ section.settings.question_size }}px;
+    font-weight: 600;
+    color: {{ section.settings.text_color }};
+    gap: 16px;
+  }
+
+  .faq-section-{{ section_id }} .faq-question:hover {
+    opacity: 0.8;
+  }
+
+  .faq-section-{{ section_id }} .faq-question:focus-visible {
+    outline: 2px solid {{ section.settings.text_color }};
+    outline-offset: 2px;
+  }
+
+  .faq-section-{{ section_id }} .faq-icon {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    transition: transform 0.3s ease;
+  }
+
+  .faq-section-{{ section_id }} .faq-item[open] .faq-icon {
+    transform: rotate(45deg);
+  }
+
+  .faq-section-{{ section_id }} .faq-answer {
+    padding: 0 0 20px;
+    font-size: {{ section.settings.answer_size }}px;
+    line-height: 1.7;
+    color: {{ section.settings.text_color }};
+    opacity: 0.85;
+  }
+
+  .faq-section-{{ section_id }} .faq-answer p {
+    margin: 0 0 1em;
+  }
+
+  .faq-section-{{ section_id }} .faq-answer p:last-child {
+    margin-block-end: 0;
+  }
+
+  .faq-section-{{ section_id }} .faq-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: {{ section.settings.text_color }};
+    opacity: 0.6;
+    text-decoration: none;
+    margin-inline-start: auto;
+    padding-inline-start: 16px;
+    flex-shrink: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .faq-section-{{ section_id }} .faq-link:hover {
+    opacity: 1;
+  }
+
+  .faq-section-{{ section_id }} .faq-link:focus-visible {
+    outline: 2px solid {{ section.settings.text_color }};
+    outline-offset: 2px;
+    opacity: 1;
+  }
+
+  .faq-section-{{ section_id }} .faq-link-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .faq-section-{{ section_id }} .faq-item.highlight {
+    animation: faq-highlight-{{ section_id }} 2s ease;
+  }
+
+  @keyframes faq-highlight-{{ section_id }} {
+    0%, 100% { background-color: transparent; }
+    20%, 80% { background-color: {{ section.settings.highlight_color }}; }
+  }
+
+  @media screen and (max-width: 768px) {
+    .faq-section-{{ section_id }} {
+      padding-inline: 16px;
+    }
+
+    .faq-title-{{ section_id }} {
+      font-size: calc({{ section.settings.title_size }}px * 0.75);
+    }
+
+    .faq-section-{{ section_id }} .faq-question {
+      font-size: calc({{ section.settings.question_size }}px * 0.9);
+      padding: 16px 0;
+    }
+
+    .faq-section-{{ section_id }} .faq-answer {
+      padding: 0 0 16px;
+    }
+  }
+{% endstyle %}
+
+<div class="faq-section-{{ section_id }}" {{ section.shopify_attributes }}>
+  {% if section.settings.title != blank %}
+    <h2 class="faq-title-{{ section_id }}">{{ section.settings.title }}</h2>
+  {% endif %}
+
+  {% if section.settings.show_toggle_all %}
+    <div class="faq-controls-{{ section_id }}">
+      <button type="button" class="faq-toggle-all-{{ section_id }}" data-faq-toggle-all>
+        <span data-expand-text>Expand All</span>
+        <span data-collapse-text style="display: none;">Collapse All</span>
+      </button>
+    </div>
+  {% endif %}
+
+  <div class="faq-list-{{ section_id }}">
+    {% for block in section.blocks %}
+      {% liquid
+        if block.settings.custom_anchor != blank
+          assign anchor_id = block.settings.custom_anchor | handleize
+        else
+          assign anchor_id = block.settings.question | handleize | truncate: 50, ''
+        endif
+      %}
+      <details class="faq-item" id="{{ anchor_id }}" {{ block.shopify_attributes }}>
+        <summary class="faq-question">
+          <span>{{ block.settings.question }}</span>
+          <a
+            href="#{{ anchor_id }}"
+            class="faq-link"
+            title="Copy link"
+            onclick="event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + window.location.pathname + '#{{ anchor_id }}').then(() => { this.setAttribute('title', 'Link copied!'); setTimeout(() => this.setAttribute('title', 'Copy link'), 2000); });"
+          >
+            <svg class="faq-link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </a>
+          <svg class="faq-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </summary>
+        <div class="faq-answer">
+          {{ block.settings.answer }}
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  (function() {
+    const faqSection = document.querySelector('.faq-section-{{ section_id }}');
+    if (!faqSection) return;
+
+    const toggleAllButton = faqSection.querySelector('[data-faq-toggle-all]');
+    const expandText = toggleAllButton?.querySelector('[data-expand-text]');
+    const collapseText = toggleAllButton?.querySelector('[data-collapse-text]');
+
+    function getFaqItems() {
+      return Array.from(faqSection.querySelectorAll('.faq-item'));
+    }
+
+    function updateToggleButtonState() {
+      if (!toggleAllButton) return;
+
+      const faqItems = getFaqItems();
+      const allOpen = faqItems.length > 0 && faqItems.every(item => item.open);
+
+      if (allOpen) {
+        expandText.style.display = 'none';
+        collapseText.style.display = 'inline';
+      } else {
+        expandText.style.display = 'inline';
+        collapseText.style.display = 'none';
+      }
+    }
+
+    if (toggleAllButton) {
+      toggleAllButton.addEventListener('click', () => {
+        const faqItems = getFaqItems();
+        const allOpen = faqItems.every(item => item.open);
+
+        faqItems.forEach(item => {
+          item.open = !allOpen;
+        });
+
+        updateToggleButtonState();
+      });
+
+      faqSection.addEventListener('toggle', (event) => {
+        if (event.target.classList.contains('faq-item')) {
+          updateToggleButtonState();
+        }
+      }, true);
+
+      updateToggleButtonState();
+    }
+
+    function openAndScrollToFaq() {
+      const hash = window.location.hash;
+      if (!hash) return;
+
+      const targetId = hash.substring(1);
+      const faqItem = document.getElementById(targetId);
+
+      if (faqItem && faqItem.classList.contains('faq-item') && faqSection.contains(faqItem)) {
+        faqItem.open = true;
+        faqItem.classList.add('highlight');
+        setTimeout(() => {
+          faqItem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+        setTimeout(() => {
+          faqItem.classList.remove('highlight');
+        }, 2500);
+        updateToggleButtonState();
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', openAndScrollToFaq);
+    } else {
+      openAndScrollToFaq();
+    }
+
+    window.addEventListener('hashchange', openAndScrollToFaq);
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "FAQ",
+  "class": "section-wrapper",
+  "tag": "section",
+  "blocks": [
+    {
+      "type": "faq_item",
+      "name": "FAQ Item",
+      "settings": [
+        {
+          "type": "text",
+          "id": "question",
+          "label": "Question",
+          "default": "Your question here?"
+        },
+        {
+          "type": "richtext",
+          "id": "answer",
+          "label": "Answer",
+          "default": "<p>Your answer here.</p>"
+        },
+        {
+          "type": "text",
+          "id": "custom_anchor",
+          "label": "Custom anchor ID (optional)",
+          "info": "Leave blank to auto-generate from question. Used for direct linking to this FAQ."
+        }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Frequently Asked Questions"
+    },
+    {
+      "type": "range",
+      "id": "title_size",
+      "min": 24,
+      "max": 48,
+      "step": 2,
+      "unit": "px",
+      "label": "Title size",
+      "default": 36
+    },
+    {
+      "type": "checkbox",
+      "id": "show_toggle_all",
+      "label": "Show expand/collapse all button",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "range",
+      "id": "question_size",
+      "min": 14,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "label": "Question text size",
+      "default": 18
+    },
+    {
+      "type": "range",
+      "id": "answer_size",
+      "min": 14,
+      "max": 20,
+      "step": 1,
+      "unit": "px",
+      "label": "Answer text size",
+      "default": 16
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border color",
+      "default": "#e5e5e5"
+    },
+    {
+      "type": "color",
+      "id": "highlight_color",
+      "label": "Link highlight color",
+      "default": "#fff3cd"
+    },
+    {
+      "type": "header",
+      "content": "Section Padding"
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Top padding",
+      "default": 60
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Bottom padding",
+      "default": 80
+    }
+  ],
+  "presets": [
+    {
+      "name": "FAQ",
+      "blocks": []
+    }
+  ]
+}
+{% endschema %}

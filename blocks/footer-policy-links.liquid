@@ -1,0 +1,148 @@
+{% doc %}
+  Footer links container - holds individual link blocks that can be reordered.
+  @example {% content_for 'block', type: 'footer-policy-links' %}
+{% enddoc %}
+
+<nav
+  class="footer-links"
+  aria-label="{{ 'accessibility.footer_navigation' | t }}"
+  style="{% render 'typography-style', preset: 'custom', settings: block.settings %}"
+  {{ block.shopify_attributes }}
+>
+  <ul class="footer-links__list list-unstyled">
+    {% content_for 'blocks' %}
+  </ul>
+</nav>
+
+{% stylesheet %}
+  .footer-links__list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 24px;
+    margin: 0;
+    padding: 0;
+  }
+
+  .footer-links__link {
+    color: var(--color-foreground-muted);
+    text-decoration: none;
+    font-size: var(--font-size, 0.75rem);
+    text-transform: var(--text-transform, none);
+    transition: opacity 0.2s ease;
+  }
+
+  .footer-links__link:hover {
+    opacity: 0.7;
+    text-decoration: underline;
+  }
+
+  @media screen and (max-width: 749px) {
+    .footer-links__list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      justify-items: center;
+      gap: 8px 16px;
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Footer links",
+  "tag": null,
+  "blocks": [
+    {
+      "type": "footer-link"
+    }
+  ],
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Add links below and drag to reorder. Choose from policy links or custom URLs."
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "select",
+      "id": "font_size",
+      "label": "Size",
+      "options": [
+        {
+          "value": "0.625rem",
+          "label": "10px"
+        },
+        {
+          "value": "0.75rem",
+          "label": "12px"
+        },
+        {
+          "value": "0.875rem",
+          "label": "14px"
+        },
+        {
+          "value": "1rem",
+          "label": "16px"
+        }
+      ],
+      "default": "0.75rem"
+    },
+    {
+      "type": "select",
+      "id": "case",
+      "label": "Case",
+      "options": [
+        {
+          "value": "none",
+          "label": "Default"
+        },
+        {
+          "value": "uppercase",
+          "label": "Uppercase"
+        }
+      ],
+      "default": "none"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Footer links",
+      "category": "Footer",
+      "blocks": [
+        {
+          "type": "footer-link",
+          "settings": {
+            "policy_type": "privacy"
+          }
+        },
+        {
+          "type": "footer-link",
+          "settings": {
+            "policy_type": "refund"
+          }
+        },
+        {
+          "type": "footer-link",
+          "settings": {
+            "policy_type": "terms"
+          }
+        },
+        {
+          "type": "footer-link",
+          "settings": {
+            "policy_type": "shipping"
+          }
+        },
+        {
+          "type": "footer-link",
+          "settings": {
+            "policy_type": "contact"
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

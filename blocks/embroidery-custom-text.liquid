@@ -1,0 +1,170 @@
+{% doc %}
+  Embroidery custom text option block. Allows customers to add custom text embroidery for an additional charge.
+
+  @example
+    {% content_for 'block', type: 'embroidery-custom-text' %}
+{% enddoc %}
+
+<embroidery-custom-text-component class="embroidery-custom-text" data-price-adjustment="{{ block.settings.price_adjustment }}">
+  <div class="embroidery-custom-text__wrapper">
+    <div class="embroidery-custom-text__checkbox-wrapper">
+      <input
+        type="checkbox"
+        id="EmbroideryToggle-{{ block.id }}"
+        name="embroidery_toggle"
+        class="embroidery-custom-text__checkbox"
+        ref="checkbox"
+        on:change="/handleCheckboxChange"
+      >
+      <label for="EmbroideryToggle-{{ block.id }}" class="embroidery-custom-text__label">
+        {{ block.settings.label }}
+      </label>
+    </div>
+
+    <div class="embroidery-custom-text__input-wrapper" ref="inputWrapper" hidden>
+      <label for="EmbroideryText-{{ block.id }}" class="embroidery-custom-text__input-label visually-hidden">
+        Custom embroidery text
+      </label>
+      <input
+        type="text"
+        id="EmbroideryText-{{ block.id }}"
+        name="properties[Custom Embroidery Text]"
+        class="embroidery-custom-text__input"
+        maxlength="15"
+        placeholder="Enter your custom text (max 15 characters)"
+        ref="textInput"
+        on:input="/handleTextInput"
+        disabled
+      >
+      <span class="embroidery-custom-text__char-count" ref="charCount">0/15</span>
+      <span class="embroidery-custom-text__error" ref="errorMessage" hidden role="alert"></span>
+    </div>
+
+    <input
+      type="hidden"
+      name="properties[_embroidery_price_adjustment]"
+      value="0"
+      ref="priceAdjustmentInput"
+    >
+  </div>
+</embroidery-custom-text-component>
+
+{% stylesheet %}
+  .embroidery-custom-text {
+    display: block;
+    margin-block-start: var(--spacing-4);
+  }
+
+  .embroidery-custom-text__wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+  }
+
+  .embroidery-custom-text__checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+  }
+
+  .embroidery-custom-text__checkbox {
+    width: 1.125rem;
+    height: 1.125rem;
+    cursor: pointer;
+  }
+
+  .embroidery-custom-text__label {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .embroidery-custom-text__input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    padding-inline-start: calc(1.125rem + var(--spacing-2));
+  }
+
+  .embroidery-custom-text__input {
+    width: 100%;
+    padding: var(--spacing-2) var(--spacing-3);
+    border: 1px solid rgb(var(--color-border));
+    border-radius: var(--border-radius-base);
+    font-size: var(--font-size-base);
+    font-family: var(--font-body-family);
+    background-color: rgb(var(--color-background));
+    color: rgb(var(--color-foreground));
+  }
+
+  .embroidery-custom-text__input:focus {
+    outline: 2px solid rgb(var(--color-border-focus));
+    outline-offset: 2px;
+  }
+
+  .embroidery-custom-text__input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .embroidery-custom-text__char-count {
+    font-size: var(--font-size-small);
+    color: rgb(var(--color-foreground) / 0.7);
+    text-align: end;
+  }
+
+  .embroidery-custom-text__error {
+    font-size: var(--font-size-small);
+    color: rgb(var(--color-error, 220 38 38));
+    font-weight: var(--font-weight-medium);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Price adjustment styles (inserted dynamically) */
+  .embroidery-price-adjustment {
+    display: block;
+    margin-block-start: var(--spacing-2);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    color: rgb(var(--color-primary, 0 0 0));
+  }
+{% endstylesheet %}
+
+<script
+  src="{{ 'embroidery-custom-text.js' | asset_url }}"
+  type="module"
+  fetchpriority="low"
+></script>
+
+{% schema %}
+{
+  "name": "Embroidery Custom Text",
+  "settings": [
+    {
+      "type": "text",
+      "id": "label",
+      "label": "Label",
+      "default": "Add Custom Text ( +$5 )"
+    },
+    {
+      "type": "number",
+      "id": "price_adjustment",
+      "label": "Price adjustment (in cents)",
+      "default": 500,
+      "info": "The amount to add to the product price when custom text is selected (e.g., 500 for $5.00)"
+    }
+  ]
+}
+{% endschema %}

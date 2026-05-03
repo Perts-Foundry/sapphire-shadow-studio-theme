@@ -1,0 +1,146 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "sections": {
+    "main": {
+      "type": "main-page",
+      "disabled": true,
+      "settings": {
+        "content_direction": "column",
+        "gap": 16,
+        "color_scheme": "",
+        "padding-block-start": 20,
+        "padding-block-end": 40
+      }
+    },
+    "faq_section": {
+      "type": "faq",
+      "blocks": {
+        "faq_item_hWDtXx": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What is Sapphire Shadow Studio and who runs it?",
+            "answer": "<p>Sapphire Shadow Studio is a small custom craft studio where we make apparel that actually stands out plus some other interests. No mass production, no cutting corners, just quality pieces we'd want to own ourselves.<br/><br/>We're Maddie and Seth, a husband-and-wife team running this whole operation. Maddie designs every piece, Seth handles the tech side, and our cats supervise while demanding lots of pets.<br/><br/>Learn more about our story and why we do what we do on our <a href=\"/pages/about\" target=\"_blank\">About page</a>.<br/></p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_cKhCmD": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What is the quality of your studio items?",
+            "answer": "<p>Nobody likes getting cheap garbage online, especially us.<br/><br/>Every piece at Sapphire Shadow Studio passes our simple test: would we want to own it ourselves? If the answer's no, it doesn't make it into the shop. We use quality materials, obsess over the details, and inspect everything before it ships.<br/><br/>Learn more about our principles on our <a href=\"/pages/about\" target=\"_blank\">About page</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_bAkNEw": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How long will my order take to arrive?",
+            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\">Shipping Policy</a> for all the details!</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_eFjiBw": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Is there free shipping?",
+            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders $75 and up ship free via economy shipping. Below that, it's a $8 flat rate within the US.<br/><br/>Want it faster? Expedited shipping is available at checkout. Full details in our <a href=\"/policies/shipping-policy\" target=\"_blank\">Shipping Policy</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_VPTVLm": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Where do you ship to?",
+            "answer": "<p>Currently we only ship within the United States and U.S. territories.<br/><br/>Stay tuned with our <a href=\"/policies/shipping-policy\" target=\"_blank\">Shipping Policy</a> for updates.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_qQdxkM": {
+          "type": "faq_item",
+          "settings": {
+            "question": "I need an order as fast as possible, can you help?",
+            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after our standard production of 2 business days.<br/><br/><strong>Rush production</strong> speeds up the whole process but you need to <a href=\"/pages/contact\" target=\"_blank\">contact us</a><em> before</em> ordering to arrange it however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>See our <a href=\"/policies/shipping-policy\" target=\"_blank\" title=\"Shipping Policy\">Shipping Policy</a> for more information.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_r9pH89": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I cancel or modify my order after placing it?",
+            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/policies/contact-information\" target=\"_blank\" title=\"Contact Information\">Reach out to us</a> immediately and we'll see what options we can figure out together.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_DmMHGa": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I do a completely custom order/design?",
+            "answer": "<p>Absolutely! We love working on custom projects.</p><p><a href=\"/policies/contact-information\" target=\"_blank\" title=\"Contact Information\">Get in touch</a> with your idea and we'll chat about making it happen. Fair warning: our cats may need to approve the design first.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_kkRPRy": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What is the return/refund policy?",
+            "answer": "<p>The short version: you've got 14 days to return items that are unworn and in original condition. Custom items are final sale, but we've got your back if something arrives damaged or we messed up.<br/><br/>Check out our full <a href=\"/policies/refund-policy\" target=\"_blank\">Refund Policy</a> for all the details.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_JRKEp6": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I return or exchange a personalized/custom item?",
+            "answer": "<p>Nope, custom items are final sale since they're made specifically for you and cannot be resold. </p><p>We're a tiny 2-person operation (plus cats), and we can't resell personalized/custom items, so we're not able to offer returns on those items.</p><p><strong>Super important:</strong> You're responsible for spelling, names, dates, and all customization details. We create exactly what you submit, so double-check everything before ordering!</p><p>Review our <a href=\"/policies/refund-policy\" target=\"_blank\">Refund Policy</a> for full details.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_EF9tVJ": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How do I care for my apparel?",
+            "answer": "<p>Each product page has specific care instructions tailored to that item, so always check there! Treat your embroidery nicely and it'll last as long as the garment itself.</p>",
+            "custom_anchor": ""
+          }
+        }
+      },
+      "block_order": [
+        "faq_item_hWDtXx",
+        "faq_item_cKhCmD",
+        "faq_item_bAkNEw",
+        "faq_item_eFjiBw",
+        "faq_item_VPTVLm",
+        "faq_item_qQdxkM",
+        "faq_item_r9pH89",
+        "faq_item_DmMHGa",
+        "faq_item_kkRPRy",
+        "faq_item_JRKEp6",
+        "faq_item_EF9tVJ"
+      ],
+      "settings": {
+        "title": "Frequently Asked Questions",
+        "title_size": 36,
+        "show_toggle_all": true,
+        "question_size": 18,
+        "answer_size": 16,
+        "text_color": "#000000",
+        "border_color": "#e5e5e5",
+        "highlight_color": "#fff3cd",
+        "padding_top": 28,
+        "padding_bottom": 80
+      }
+    }
+  },
+  "order": [
+    "main",
+    "faq_section"
+  ]
+}

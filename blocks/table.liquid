@@ -1,0 +1,565 @@
+{% doc %}
+  A self-contained table block for displaying structured data such as size charts.
+  Supports 2, 3, or 4 columns with optional header row and alternating row colors.
+  Rows with all-blank cells are automatically hidden.
+
+  @example
+  {% content_for 'block', type: 'table', id: 'size-chart' %}
+{% enddoc %}
+
+{% liquid
+  assign col_count = block.settings.column_count
+  assign stripe_class = ''
+  if block.settings.stripe_rows
+    assign stripe_class = ' table-block--striped'
+  endif
+%}
+
+<figure
+  class="table-block{{ stripe_class }}"
+  data-columns="{{ col_count }}"
+  {{ block.shopify_attributes }}
+>
+  <div class="table-block__scroll">
+    <table class="table-block__table">
+      {% if block.settings.show_header %}
+        <thead>
+          <tr class="table-block__row">
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col1_heading }}</th>
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col2_heading }}</th>
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col3_heading }}</th>
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col4_heading }}</th>
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col5_heading }}</th>
+            <th class="table-block__cell table-block__cell--header" scope="col">{{ block.settings.col6_heading }}</th>
+          </tr>
+        </thead>
+      {% endif %}
+      <tbody>
+        {% unless block.settings.r1c1 == blank and block.settings.r1c2 == blank and block.settings.r1c3 == blank and block.settings.r1c4 == blank and block.settings.r1c5 == blank and block.settings.r1c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r1c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r1c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r1c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r1c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r1c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r1c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r2c1 == blank and block.settings.r2c2 == blank and block.settings.r2c3 == blank and block.settings.r2c4 == blank and block.settings.r2c5 == blank and block.settings.r2c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r2c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r2c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r2c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r2c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r2c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r2c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r3c1 == blank and block.settings.r3c2 == blank and block.settings.r3c3 == blank and block.settings.r3c4 == blank and block.settings.r3c5 == blank and block.settings.r3c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r3c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r3c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r3c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r3c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r3c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r3c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r4c1 == blank and block.settings.r4c2 == blank and block.settings.r4c3 == blank and block.settings.r4c4 == blank and block.settings.r4c5 == blank and block.settings.r4c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r4c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r4c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r4c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r4c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r4c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r4c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r5c1 == blank and block.settings.r5c2 == blank and block.settings.r5c3 == blank and block.settings.r5c4 == blank and block.settings.r5c5 == blank and block.settings.r5c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r5c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r5c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r5c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r5c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r5c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r5c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r6c1 == blank and block.settings.r6c2 == blank and block.settings.r6c3 == blank and block.settings.r6c4 == blank and block.settings.r6c5 == blank and block.settings.r6c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r6c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r6c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r6c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r6c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r6c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r6c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r7c1 == blank and block.settings.r7c2 == blank and block.settings.r7c3 == blank and block.settings.r7c4 == blank and block.settings.r7c5 == blank and block.settings.r7c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r7c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r7c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r7c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r7c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r7c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r7c6 }}</td>
+          </tr>
+        {% endunless %}
+        {% unless block.settings.r8c1 == blank and block.settings.r8c2 == blank and block.settings.r8c3 == blank and block.settings.r8c4 == blank and block.settings.r8c5 == blank and block.settings.r8c6 == blank %}
+          <tr class="table-block__row">
+            <td class="table-block__cell">{{ block.settings.r8c1 }}</td>
+            <td class="table-block__cell">{{ block.settings.r8c2 }}</td>
+            <td class="table-block__cell">{{ block.settings.r8c3 }}</td>
+            <td class="table-block__cell">{{ block.settings.r8c4 }}</td>
+            <td class="table-block__cell">{{ block.settings.r8c5 }}</td>
+            <td class="table-block__cell">{{ block.settings.r8c6 }}</td>
+          </tr>
+        {% endunless %}
+      </tbody>
+    </table>
+  </div>
+</figure>
+
+{% stylesheet %}
+  .table-block {
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .table-block__scroll {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .table-block__table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+  }
+
+  .table-block__cell {
+    padding-block: 0.8rem;
+    padding-inline: 1.1rem;
+    border-block-end: 1px solid var(--color-border);
+    border-inline-end: 1px solid var(--color-border);
+    text-align: start;
+    white-space: nowrap;
+  }
+
+  .table-block__cell:last-child {
+    border-inline-end: none;
+  }
+
+  .table-block__cell--header {
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+  }
+
+  .table-block__row:last-child .table-block__cell {
+    border-block-end: none;
+  }
+
+  [data-columns="2"] .table-block__cell:nth-child(n+3) {
+    display: none;
+  }
+
+  [data-columns="3"] .table-block__cell:nth-child(n+4) {
+    display: none;
+  }
+
+  [data-columns="4"] .table-block__cell:nth-child(n+5) {
+    display: none;
+  }
+
+  [data-columns="5"] .table-block__cell:nth-child(n+6) {
+    display: none;
+  }
+
+  .table-block--striped tbody .table-block__row:nth-child(even) .table-block__cell {
+    background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "t:names.table",
+  "tag": null,
+  "settings": [
+    {
+      "type": "select",
+      "id": "column_count",
+      "label": "t:settings.column_count",
+      "options": [
+        {
+          "value": "2",
+          "label": "t:options.col_2"
+        },
+        {
+          "value": "3",
+          "label": "t:options.col_3"
+        },
+        {
+          "value": "4",
+          "label": "t:options.col_4"
+        },
+        {
+          "value": "5",
+          "label": "t:options.col_5"
+        },
+        {
+          "value": "6",
+          "label": "t:options.col_6"
+        }
+      ],
+      "default": "3"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_header",
+      "label": "t:settings.show_header",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "stripe_rows",
+      "label": "t:settings.stripe_rows",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "col1_heading",
+      "label": "t:settings.col1_heading",
+      "default": "Size"
+    },
+    {
+      "type": "text",
+      "id": "col2_heading",
+      "label": "t:settings.col2_heading",
+      "default": "Chest"
+    },
+    {
+      "type": "text",
+      "id": "col3_heading",
+      "label": "t:settings.col3_heading",
+      "default": "Length"
+    },
+    {
+      "type": "text",
+      "id": "col4_heading",
+      "label": "t:settings.col4_heading"
+    },
+    {
+      "type": "text",
+      "id": "col5_heading",
+      "label": "t:settings.col5_heading"
+    },
+    {
+      "type": "text",
+      "id": "col6_heading",
+      "label": "t:settings.col6_heading"
+    },
+    {
+      "type": "header",
+      "content": "Row 1"
+    },
+    {
+      "type": "text",
+      "id": "r1c1",
+      "label": "t:settings.cell1",
+      "default": "XS"
+    },
+    {
+      "type": "text",
+      "id": "r1c2",
+      "label": "t:settings.cell2",
+      "default": "32\""
+    },
+    {
+      "type": "text",
+      "id": "r1c3",
+      "label": "t:settings.cell3",
+      "default": "26\""
+    },
+    {
+      "type": "text",
+      "id": "r1c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r1c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r1c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 2"
+    },
+    {
+      "type": "text",
+      "id": "r2c1",
+      "label": "t:settings.cell1",
+      "default": "S"
+    },
+    {
+      "type": "text",
+      "id": "r2c2",
+      "label": "t:settings.cell2",
+      "default": "34\""
+    },
+    {
+      "type": "text",
+      "id": "r2c3",
+      "label": "t:settings.cell3",
+      "default": "27\""
+    },
+    {
+      "type": "text",
+      "id": "r2c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r2c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r2c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 3"
+    },
+    {
+      "type": "text",
+      "id": "r3c1",
+      "label": "t:settings.cell1",
+      "default": "M"
+    },
+    {
+      "type": "text",
+      "id": "r3c2",
+      "label": "t:settings.cell2",
+      "default": "36\""
+    },
+    {
+      "type": "text",
+      "id": "r3c3",
+      "label": "t:settings.cell3",
+      "default": "28\""
+    },
+    {
+      "type": "text",
+      "id": "r3c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r3c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r3c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 4"
+    },
+    {
+      "type": "text",
+      "id": "r4c1",
+      "label": "t:settings.cell1",
+      "default": "L"
+    },
+    {
+      "type": "text",
+      "id": "r4c2",
+      "label": "t:settings.cell2",
+      "default": "38\""
+    },
+    {
+      "type": "text",
+      "id": "r4c3",
+      "label": "t:settings.cell3",
+      "default": "29\""
+    },
+    {
+      "type": "text",
+      "id": "r4c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r4c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r4c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 5"
+    },
+    {
+      "type": "text",
+      "id": "r5c1",
+      "label": "t:settings.cell1",
+      "default": "XL"
+    },
+    {
+      "type": "text",
+      "id": "r5c2",
+      "label": "t:settings.cell2",
+      "default": "40\""
+    },
+    {
+      "type": "text",
+      "id": "r5c3",
+      "label": "t:settings.cell3",
+      "default": "30\""
+    },
+    {
+      "type": "text",
+      "id": "r5c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r5c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r5c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 6"
+    },
+    {
+      "type": "text",
+      "id": "r6c1",
+      "label": "t:settings.cell1",
+      "default": "2XL"
+    },
+    {
+      "type": "text",
+      "id": "r6c2",
+      "label": "t:settings.cell2",
+      "default": "42\""
+    },
+    {
+      "type": "text",
+      "id": "r6c3",
+      "label": "t:settings.cell3",
+      "default": "31\""
+    },
+    {
+      "type": "text",
+      "id": "r6c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r6c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r6c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 7"
+    },
+    {
+      "type": "text",
+      "id": "r7c1",
+      "label": "t:settings.cell1"
+    },
+    {
+      "type": "text",
+      "id": "r7c2",
+      "label": "t:settings.cell2"
+    },
+    {
+      "type": "text",
+      "id": "r7c3",
+      "label": "t:settings.cell3"
+    },
+    {
+      "type": "text",
+      "id": "r7c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r7c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r7c6",
+      "label": "t:settings.cell6"
+    },
+    {
+      "type": "header",
+      "content": "Row 8"
+    },
+    {
+      "type": "text",
+      "id": "r8c1",
+      "label": "t:settings.cell1"
+    },
+    {
+      "type": "text",
+      "id": "r8c2",
+      "label": "t:settings.cell2"
+    },
+    {
+      "type": "text",
+      "id": "r8c3",
+      "label": "t:settings.cell3"
+    },
+    {
+      "type": "text",
+      "id": "r8c4",
+      "label": "t:settings.cell4"
+    },
+    {
+      "type": "text",
+      "id": "r8c5",
+      "label": "t:settings.cell5"
+    },
+    {
+      "type": "text",
+      "id": "r8c6",
+      "label": "t:settings.cell6"
+    }
+  ],
+  "presets": [
+    {
+      "name": "t:names.table"
+    }
+  ]
+}
+{% endschema %}

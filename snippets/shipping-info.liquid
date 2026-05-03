@@ -1,0 +1,109 @@
+{% doc %}
+  Displays shipping information with dynamic messaging based on cart total.
+  Shows flat rate shipping and free shipping threshold.
+
+  @param {number} [product_price] - Product price to use for calculating shipping (product page)
+  @param {boolean} [cart_context] - Set to true when rendering in cart context
+  @param {boolean} [is_gift_card] - Set to true for gift card products
+  @example
+    {% render 'shipping-info', product_price: product.price %}
+    {% render 'shipping-info', cart_context: true %}
+    {% render 'shipping-info', product_price: product.price, is_gift_card: true %}
+{% enddoc %}
+
+{% liquid
+  # Get shipping values from theme settings (single source of truth)
+  assign flat_rate_shipping = settings.flat_rate_shipping | default: '8.00'
+  assign free_shipping_threshold = settings.free_shipping_threshold | default: '75.00'
+
+  # Gift cards always qualify for free shipping
+  if is_gift_card
+    assign qualifies_for_free_shipping = true
+  else
+    # Convert to number for calculations
+    assign threshold_number = free_shipping_threshold | times: 1.0
+
+    if cart_context
+      assign current_total = cart.total_price | divided_by: 100.0
+      assign remaining_for_free_shipping = threshold_number | minus: current_total
+    elsif product_price
+      assign product_price_number = product_price | divided_by: 100.0
+      assign remaining_for_free_shipping = threshold_number | minus: product_price_number
+    endif
+
+    if remaining_for_free_shipping <= 0
+      assign qualifies_for_free_shipping = true
+    else
+      assign qualifies_for_free_shipping = false
+    endif
+  endif
+%}
+
+<a href="/policies/shipping-policy" class="shipping-info">
+  {% if qualifies_for_free_shipping %}
+    <svg class="shipping-info__icon shipping-info__icon--success" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="8" cy="8" r="7" fill="currentColor" opacity="0.15"/>
+      <path d="M11.5 5.5L6.75 10.25L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="shipping-info__text">
+      {% if is_gift_card %}
+        Free shipping
+      {% else %}
+        Free shipping on this order
+      {% endif %}
+    </span>
+  {% else %}
+    <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 4.5C1 3.67157 1.67157 3 2.5 3H9.5C10.3284 3 11 3.67157 11 4.5V10.5H2.5C1.67157 10.5 1 9.82843 1 9V4.5Z" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M11 7H12.5L14.5 9V10.5H11V7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+      <circle cx="4" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="12.5" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+    <span class="shipping-info__text">
+      ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
+    </span>
+  {% endif %}
+</a>
+
+{% stylesheet %}
+  .shipping-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: rgb(var(--color-foreground-rgb) / 0.7);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+
+  .shipping-info:hover {
+    color: var(--color-primary);
+  }
+
+  .shipping-info:hover .shipping-info__icon {
+    color: var(--color-primary);
+  }
+
+  .shipping-info__icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    color: rgb(var(--color-foreground-rgb) / 0.5);
+    transition: color 0.2s ease;
+  }
+
+  .shipping-info__icon--success {
+    color: #16a34a;
+  }
+
+  .shipping-info:hover .shipping-info__icon--success {
+    color: #15803d;
+  }
+
+  .shipping-info__text {
+    font-weight: 400;
+  }
+{% endstylesheet %}

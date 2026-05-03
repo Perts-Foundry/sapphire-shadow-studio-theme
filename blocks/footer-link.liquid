@@ -1,0 +1,105 @@
+{% doc %}
+  Single footer link - can be custom URL or a policy link.
+  Used as a child block within footer-links.
+  @example {% content_for 'block', type: 'footer-link' %}
+{% enddoc %}
+
+{% liquid
+  assign link_url = block.settings.link_url
+  assign link_label = block.settings.link_label
+  assign policy_type = block.settings.policy_type
+
+  if policy_type != 'custom'
+    case policy_type
+      when 'privacy'
+        assign policy = shop.privacy_policy
+      when 'refund'
+        assign policy = shop.refund_policy
+      when 'terms'
+        assign policy = shop.terms_of_service
+      when 'shipping'
+        assign policy = shop.shipping_policy
+      when 'subscription'
+        assign policy = shop.subscription_policy
+      when 'contact'
+        assign link_url = '/pages/contact'
+        assign link_label = link_label | default: 'Contact'
+    endcase
+
+    if policy != blank
+      assign link_url = policy.url
+      assign link_label = link_label | default: policy.title
+    endif
+  endif
+%}
+
+{% if link_url != blank %}
+  <li class="footer-links__item" {{ block.shopify_attributes }}>
+    <a href="{{ link_url }}" class="footer-links__link">
+      {{- link_label | default: link_url | escape -}}
+    </a>
+  </li>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Link",
+  "tag": null,
+  "settings": [
+    {
+      "type": "select",
+      "id": "policy_type",
+      "label": "Link type",
+      "options": [
+        {
+          "value": "custom",
+          "label": "Custom link"
+        },
+        {
+          "value": "privacy",
+          "label": "Privacy policy"
+        },
+        {
+          "value": "refund",
+          "label": "Refund policy"
+        },
+        {
+          "value": "terms",
+          "label": "Terms of service"
+        },
+        {
+          "value": "shipping",
+          "label": "Shipping policy"
+        },
+        {
+          "value": "subscription",
+          "label": "Subscription policy"
+        },
+        {
+          "value": "contact",
+          "label": "Contact information"
+        }
+      ],
+      "default": "custom"
+    },
+    {
+      "type": "url",
+      "id": "link_url",
+      "label": "Custom URL",
+      "info": "Only used when Link type is 'Custom link'",
+      "visible_if": "{{ block.settings.policy_type == \"custom\" }}"
+    },
+    {
+      "type": "text",
+      "id": "link_label",
+      "label": "Label",
+      "info": "Leave blank to use default policy name"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Link"
+    }
+  ]
+}
+{% endschema %}
