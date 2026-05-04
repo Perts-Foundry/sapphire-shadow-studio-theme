@@ -72,11 +72,11 @@ jobs:
             REASONS="${REASONS}- exceeds 1000 LOC ($LOC lines changed)\n"
           fi
           if [ "$SUSPICIOUS" -eq 1 ]; then
-            BODY=$(printf "Sync-reconcile diff looks unusual:\n%b\nFiles changed:\n\`\`\`\n%s\n\`\`\`\n\nReview manually before merging shopify-sync into main." "$REASONS" "$FILES")
+            printf "Sync-reconcile diff looks unusual:\n%b\nFiles changed:\n\`\`\`\n%s\n\`\`\`\n\nReview manually before merging shopify-sync into main." "$REASONS" "$FILES" > /tmp/sanity-body.md
             gh issue create \
               --title "Suspicious sync-reconcile diff (LOC=${LOC})" \
               --label deploy-attention \
-              --body "$BODY"
+              --body-file /tmp/sanity-body.md
             echo "::error::Diff sanity check failed; auto-PR aborted. Issue filed."
             exit 1
           fi
@@ -89,22 +89,15 @@ jobs:
           set -euo pipefail
           DATE=$(date -u +%Y-%m-%d)
           TITLE="chore: reconcile shopify-sync -> main (${AHEAD} commits, ${DATE})"
-          BODY=$(printf 'Auto-generated reconcile of admin-side commits on \\`shopify-sync\\`.\n\nCommits:\n```\n%s\n```\n' "$(cat /tmp/commits.txt)")
+          # Auto-merge is no longer enabled here. After Validate succeeds on
+          # this PR, shopify-sync-auto-deploy.yml deploys to live and squash-
+          # merges via the deploy chain.
+          printf 'Auto-generated reconcile of admin-side commits on `shopify-sync`.\n\nValidate runs automatically; on success, `shopify-sync-auto-deploy.yml` ships it to live and merges this PR.\n\nCommits:\n```\n%s\n```\n' "$(cat /tmp/commits.txt)" > /tmp/pr-body.md
           EXISTING=$(gh pr list --head shopify-sync --base main --state open --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
-            gh pr edit "$EXISTING" --title "$TITLE" --body "$BODY"
-            NUM="$EXISTING"
+            gh pr edit "$EXISTING" --title "$TITLE" --body-file /tmp/pr-body.md
           else
-            URL=$(gh pr create --base main --head shopify-sync --label auto-reconcile --title "$TITLE" --body "$BODY")
-            NUM="${URL##*/}"
-          fi
-          if ! gh pr merge "$NUM" --auto --merge 2>/tmp/merge.txt; then
-            if grep -qiE 'auto.merge.*already|already enabled|clean merge state' /tmp/merge.txt; then
-              echo "auto-merge already enabled; ok"
-            else
-              cat /tmp/merge.txt
-              exit 1
-            fi
+            gh pr create --base main --head shopify-sync --label auto-reconcile --title "$TITLE" --body-file /tmp/pr-body.md
           fi
 
       - name: Stale auto-reconcile PR alarm
@@ -115,10 +108,11 @@ jobs:
             --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
           if [ -n "$STALE" ]; then
             for n in $STALE; do
+              printf "PR #%s has been open more than 3 days. Validate may be failing or shopify-sync-auto-deploy stalled. Investigate the validate run, the auto-deploy run, or any merge conflict." "$n" > /tmp/stale-body.md
               gh issue create \
                 --title "Stale auto-reconcile PR #$n" \
                 --label deploy-attention \
-                --body "PR #$n has been open more than 3 days. Required checks may be failing or there is a merge conflict." || true
+                --body-file /tmp/stale-body.md || true
             done
             echo "::error::Stale auto-reconcile PRs detected"
             exit 1

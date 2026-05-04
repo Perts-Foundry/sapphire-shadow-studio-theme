@@ -1,0 +1,278 @@
+name: Shopify theme push
+description: |
+  Push the working tree to a Shopify theme. Two modes:
+  - mode: live  - assert live theme ID, push to live with retry+per-attempt timeout, smoke-test storefront paths.
+  - mode: preview  - look up or create the per-PR pr-N-preview theme, push to it, expose preview URLs.
+
+  Outputs are designed for the parent workflow's success/failure ladder.
+  push-output is ANSI-stripped and token-redacted before exposure.
+
+inputs:
+  mode:
+    description: live or preview
+    required: true
+  shopify-cli-theme-token:
+    description: SHOPIFY_CLI_THEME_TOKEN secret
+    required: true
+  shopify-flag-store:
+    description: SHOPIFY_FLAG_STORE secret (e.g. sapphire-shadow-studio.myshopify.com)
+    required: true
+  live-theme-id:
+    description: Expected live theme ID (required when mode=live; ignored otherwise)
+    required: false
+    default: ""
+  pr-number:
+    description: PR number for pr-N-preview naming (required when mode=preview; ignored otherwise)
+    required: false
+    default: ""
+  smoke-paths:
+    description: |
+      Space-separated storefront paths to smoke-test after live push. Default covers
+      the homepage, cart, and all-products collection. Override at the call site to
+      add a stable product handle once one exists (commit it to CLAUDE.md as a
+      permanent fixture before extending the default).
+    required: false
+    default: "/ /cart /collections/all"
+
+outputs:
+  theme-id:
+    description: Numeric theme ID that was pushed to
+    value: ${{ steps.push.outputs.theme_id }}
+  theme-name:
+    description: Theme name
+    value: ${{ steps.push.outputs.theme_name }}
+  editor-url:
+    description: Theme editor URL (preview mode only)
+    value: ${{ steps.push.outputs.editor_url }}
+  preview-url:
+    description: Preview URL (preview mode only)
+    value: ${{ steps.push.outputs.preview_url }}
+  push-output:
+    description: Last 30 lines of push output, ANSI-stripped and token-redacted
+    value: ${{ steps.push.outputs.push_output }}
+  push-exit-code:
+    description: Push exit code (99 = live theme ID assertion failed)
+    value: ${{ steps.push.outputs.push_exit_code }}
+  smoke-output:
+    description: Smoke test output (live mode only)
+    value: ${{ steps.smoke.outputs.smoke_output }}
+  smoke-exit-code:
+    description: Smoke test exit code (live mode only; 0 = all paths returned 200)
+    value: ${{ steps.smoke.outputs.smoke_exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version: "20"
+        cache: npm
+
+    - name: Install Shopify CLI
+      shell: bash
+      run: npm ci --ignore-scripts
+
+    - name: List themes
+      id: list
+      shell: bash
+      env:
+        SHOPIFY_CLI_THEME_TOKEN: ${{ inputs.shopify-cli-theme-token }}
+        SHOPIFY_FLAG_STORE: ${{ inputs.shopify-flag-store }}
+        SHOPIFY_CLI_TTY: "0"
+        CI: "1"
+        SHOPIFY_FLAG_NO_COLOR: "true"
+      run: |
+        set +x
+        set -euo pipefail
+        npx shopify theme list --json > themes.json
+
+    - name: Push
+      id: push
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        LIVE_THEME_ID: ${{ inputs.live-theme-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        SHOPIFY_CLI_THEME_TOKEN: ${{ inputs.shopify-cli-theme-token }}
+        SHOPIFY_FLAG_STORE: ${{ inputs.shopify-flag-store }}
+        SHOPIFY_CLI_TTY: "0"
+        CI: "1"
+        SHOPIFY_FLAG_NO_COLOR: "true"
+      run: |
+        set +x
+        set -uo pipefail
+
+        # Stage outputs default to empty so the parent workflow's failure ladder
+        # can distinguish "step never ran" from "step ran and produced N".
+        echo "push_exit_code=" >> "$GITHUB_OUTPUT"
+
+        # Helper: capture the last 30 lines of push output, ANSI-strip, redact tokens.
+        capture_push_output() {
+          local input_file="$1"
+          if [ ! -f "$input_file" ]; then
+            return 0
+          fi
+          {
+            echo "push_output<<GHEOF"
+            sed 's/\x1b\[[0-9;]*m//g' "$input_file" \
+              | sed -E 's/(shpat|shpca|shpss|shppa|shpua)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
+              | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+        }
+
+        case "$MODE" in
+          live)
+            if [ -z "$LIVE_THEME_ID" ]; then
+              echo "::error::live-theme-id input required when mode=live"
+              echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+
+            ACTUAL=$(jq -r '[.[] | select(.role=="live")][0].id // empty' themes.json)
+            if [ "$ACTUAL" != "$LIVE_THEME_ID" ]; then
+              echo "::error::live theme ID mismatch (expected ${LIVE_THEME_ID}, got ${ACTUAL})"
+              echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+
+            ATTEMPTS=3
+            EXIT_CODE=1
+            for i in $(seq 1 $ATTEMPTS); do
+              echo "::group::Live theme push attempt ${i}/${ATTEMPTS}"
+              # 8-minute attempt limit + 10s SIGKILL grace; treat 124 (timeout) as
+              # failure for retry purposes. The whole step is bounded by the
+              # caller's timeout-minutes (15) so 3 x 8min cannot starve the runner.
+              timeout --kill-after=10s 8m npx shopify theme push --live --allow-live --json > push.json 2>&1
+              EXIT_CODE=$?
+              echo "::endgroup::"
+              if [ "$EXIT_CODE" -eq 0 ]; then
+                break
+              fi
+              if [ "$i" -lt "$ATTEMPTS" ]; then
+                echo "::warning::Push attempt ${i} failed (exit ${EXIT_CODE}); retrying in 60s"
+                sleep 60
+              fi
+            done
+
+            capture_push_output push.json
+            echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+            if [ "$EXIT_CODE" -eq 0 ]; then
+              THEME_ID=$(jq -r '.theme.id' push.json)
+              THEME_NAME=$(jq -r '.theme.name // "Live theme"' push.json)
+              {
+                echo "theme_id=$THEME_ID"
+                echo "theme_name=$THEME_NAME"
+              } >> "$GITHUB_OUTPUT"
+            fi
+            exit "$EXIT_CODE"
+            ;;
+
+          preview)
+            if [ -z "$PR_NUMBER" ]; then
+              echo "::error::pr-number input required when mode=preview"
+              echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+
+            THEME_NAME="pr-${PR_NUMBER}-preview"
+            MATCHES=$(jq --arg n "$THEME_NAME" '[.[] | select(.name==$n)]' themes.json)
+            COUNT=$(jq 'length' <<<"$MATCHES")
+            if [ "$COUNT" -gt 1 ]; then
+              echo "::error::Multiple themes named ${THEME_NAME} exist; manual cleanup required."
+              jq <<<"$MATCHES"
+              echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            EXIT_CODE=0
+            if [ "$COUNT" -eq 1 ]; then
+              EXISTING_ID=$(jq -r '.[0].id' <<<"$MATCHES")
+              echo "Reusing theme ${EXISTING_ID}"
+              npx shopify theme push --theme "$EXISTING_ID" --json > push.json 2>&1
+              EXIT_CODE=$?
+            else
+              echo "Creating new unpublished theme"
+              npx shopify theme push --unpublished --json > push.json 2>&1
+              EXIT_CODE=$?
+              if [ "$EXIT_CODE" -eq 0 ]; then
+                NEW_ID=$(jq -r '.theme.id' push.json)
+                if ! npx shopify theme rename --theme "$NEW_ID" --name "$THEME_NAME"; then
+                  echo "::error::theme rename failed; new theme ${NEW_ID} is unnamed and will be invisible to subsequent runs (drift-watch's orphan sweep regex requires the pr-N-preview name)."
+                  EXIT_CODE=1
+                fi
+              fi
+            fi
+
+            capture_push_output push.json
+            echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+            if [ "$EXIT_CODE" -ne 0 ]; then
+              exit "$EXIT_CODE"
+            fi
+
+            THEME_ID=$(jq -r '.theme.id' push.json)
+            THEME_NAME_OUT=$(jq -r --arg n "$THEME_NAME" '.theme.name // $n' push.json)
+            EDITOR_URL=$(jq -r '.theme.editor_url // empty' push.json)
+            PREVIEW_URL=$(jq -r '.theme.preview_url // empty' push.json)
+            if [ -z "$EDITOR_URL" ]; then
+              EDITOR_URL="https://admin.shopify.com/store/sapphire-shadow-studio/themes/${THEME_ID}/editor"
+            fi
+            if [ -z "$PREVIEW_URL" ]; then
+              PREVIEW_URL="https://${SHOPIFY_FLAG_STORE}/?preview_theme_id=${THEME_ID}"
+            fi
+            {
+              echo "theme_id=$THEME_ID"
+              echo "theme_name=$THEME_NAME_OUT"
+              echo "editor_url=$EDITOR_URL"
+              echo "preview_url=$PREVIEW_URL"
+            } >> "$GITHUB_OUTPUT"
+            ;;
+
+          *)
+            echo "::error::Unknown mode '${MODE}'; expected 'live' or 'preview'"
+            echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
+            exit 1
+            ;;
+        esac
+
+    - name: Smoke test
+      id: smoke
+      # Explicit success() so the smoke step does not run after a failed push;
+      # custom `if:` expressions strip the implicit success() check on
+      # composite-action steps in some runner versions.
+      if: success() && inputs.mode == 'live'
+      shell: bash
+      env:
+        SHOPIFY_FLAG_STORE: ${{ inputs.shopify-flag-store }}
+        SMOKE_PATHS: ${{ inputs.smoke-paths }}
+      run: |
+        set +x
+        set -uo pipefail
+        EXIT_CODE=0
+        OUTPUT=""
+        for path in $SMOKE_PATHS; do
+          # No -L: do not follow redirects (a misconfigured storefront that
+          # redirects / to a 200 elsewhere should fail the smoke gate).
+          # No -f: with -f curl exits early on HTTP >= 400 and may not write
+          # the actual status code to stdout, so failures all look like 000.
+          # Use -s for quiet, -S for errors-on-stderr, -o /dev/null to discard
+          # body, -w '%{http_code}' to print the actual code.
+          CODE=$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "https://${SHOPIFY_FLAG_STORE}${path}" 2>/dev/null || echo "000")
+          LINE="${path} -> ${CODE}"
+          OUTPUT="${OUTPUT}${LINE}"$'\n'
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Smoke test failed: ${path} returned ${CODE}"
+            EXIT_CODE=1
+          else
+            echo "OK: ${path} -> 200"
+          fi
+        done
+        {
+          echo "smoke_output<<GHEOF"
+          printf '%s' "$OUTPUT"
+          echo "GHEOF"
+          echo "smoke_exit_code=${EXIT_CODE}"
+        } >> "$GITHUB_OUTPUT"
+        exit "$EXIT_CODE"

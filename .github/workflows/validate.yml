@@ -1,40 +1,40 @@
-# Combined PR-time checks. Four parallel jobs share this file because they
-# all gate PR merge, hold no Shopify-CLI token, and run on overlapping
-# trigger surfaces:
+# WARNING: dependabot-auto-deploy.yml and shopify-sync-auto-deploy.yml trigger
+# on this exact workflow name (`workflow_run.workflows: ["validate"]`).
+# Renaming will silently break auto-deploy.
 #
-#   theme-check        - Shopify theme linter. PR + push to main/shopify-sync
-#                        (push-on-shopify-sync gives admin-edit lint failures
-#                        ~30s feedback; push-on-main is a tripwire for any
-#                        admin-bypass commits).
-#   pr-reconcile-check - Enforces the shopify-sync-merged invariant. PR only.
-#   lint-workflows     - actionlint + zizmor. PR only, gated to changes
-#                        touching .github/workflows/** or .github/dependabot.yml.
-#   secret-scan        - Gitleaks against the full git history. PR only.
-#                        Catches token-shaped strings (shpat_, ghp_, AKIA, JWT,
-#                        etc.). Personal emails / addresses / merchant-keyed
-#                        prose are NOT covered; see CLAUDE.md "Sensitive
-#                        Content" pre-push checklist for those.
+# Five jobs:
+#   theme-check        - Shopify theme linter.
+#   pr-reconcile-check - Enforces the shopify-sync-merged invariant.
+#   lint-workflows     - actionlint + zizmor on .github/workflows + .github/actions.
+#                        Always runs (so it is requireable as a branch-protection check).
+#   secret-scan        - Gitleaks against the full git history.
+#   aggregate          - Posts the single sticky validation report comment. Not a gate.
 #
-# Token-bearing workflows (deploy.yml, preview.yml, drift-watch.yml) live in
-# separate files to keep their security boundary distinct.
-name: pr-checks
+# Token-bearing workflows (deploy.yml, preview.yml, drift-watch.yml, both
+# auto-deploys) live in separate files; this workflow holds no Shopify token.
+#
+# Fork PRs are excluded from every job. Validate is the gating check on `main`,
+# and forks were never part of the deploy chain (preview.yml already excludes
+# them). Excluding them here also defends against gitleaks --log-opts="--all"
+# being polluted by a deep fake history.
+name: validate
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  push:
-    branches: [main, shopify-sync]
 
 permissions: {}
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   theme-check:
     name: theme-check
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    concurrency:
-      group: theme-check-${{ github.ref }}
-      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -55,17 +55,9 @@ jobs:
 
   pr-reconcile-check:
     name: pr-reconcile-check
-    # Load-bearing guard: the steps below reference github.event.pull_request.*
-    # throughout. Removing this `if:` would expose the checkout/git-cherry
-    # logic to push contexts where event.pull_request is null.
-    if: github.event_name == 'pull_request'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    concurrency:
-      # Fallback to run_id keeps push-event runs (which are skipped via `if`)
-      # from sharing a single empty-suffix group.
-      group: pr-reconcile-pr-${{ github.event.pull_request.number || github.run_id }}
-      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -150,8 +142,6 @@ jobs:
       - name: Fail if missing
         if: steps.compute.outputs.missing != '0'
         env:
-          # Pass via env (not ${{ }} interpolation in the run script) per
-          # GitHub Actions hardening guidance.
           MISSING: ${{ steps.compute.outputs.missing }}
         run: |
           set -euo pipefail
@@ -160,63 +150,36 @@ jobs:
 
   lint-workflows:
     name: lint-workflows
-    # Load-bearing guard: relies on github.event.pull_request for the changed-paths
-    # detection step.
-    if: github.event_name == 'pull_request'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    concurrency:
-      group: lint-workflows-${{ github.ref }}
-      cancel-in-progress: true
     permissions:
       contents: read
-      pull-requests: read  # for `gh pr diff`
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Detect workflow / dependabot changes
-        id: changed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          if gh pr diff "${PR_NUMBER}" --name-only \
-              | grep -qE '^\.github/workflows/|^\.github/dependabot\.yml$'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No workflow / dependabot changes; skipping actionlint and zizmor."
-          fi
-
       - name: actionlint
-        if: steps.changed.outputs.run == 'true'
         run: |
           set -euo pipefail
           bash <(curl --max-time 60 -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
           ./actionlint -color
 
       - name: zizmor
-        if: steps.changed.outputs.run == 'true'
         run: |
           set -euo pipefail
           python3 -m pip install --user --quiet "zizmor==1.5.2"
-          ~/.local/bin/zizmor --pedantic --format=plain .github/workflows
+          # Scan workflows AND composite actions. zizmor only handles YAML, so
+          # JS under .github/scripts (if/when added) is not covered here.
+          ~/.local/bin/zizmor --pedantic --format=plain .github/workflows .github/actions
 
   secret-scan:
     name: secret-scan
-    # Load-bearing guard: PR-only. Push events to main / shopify-sync are
-    # already gated by branch protection and would not benefit from a second
-    # full-history scan on every commit.
-    if: github.event_name == 'pull_request'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    concurrency:
-      group: secret-scan-${{ github.ref }}
-      cancel-in-progress: true
     permissions:
       contents: read
     steps:
@@ -234,6 +197,105 @@ jobs:
             | tar -xz -C /usr/local/bin gitleaks
 
       - name: Run Gitleaks
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           gitleaks git --log-opts="--all" --no-banner
+
+  aggregate:
+    name: aggregate
+    # `if: always()` so the aggregator runs even when one of the upstream jobs
+    # failed (the comment is the user-facing summary). The aggregator does not
+    # call setFailed; branch protection requires the four sub-jobs individually.
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [theme-check, pr-reconcile-check, lint-workflows, secret-scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Compose & post sticky validation report
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          THEME_CHECK_RESULT: ${{ needs.theme-check.result }}
+          PR_RECONCILE_RESULT: ${{ needs.pr-reconcile-check.result }}
+          LINT_WORKFLOWS_RESULT: ${{ needs.lint-workflows.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+        with:
+          script: |
+            const marker = '<!-- validation-results -->';
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const checks = [
+              ['theme-check', process.env.THEME_CHECK_RESULT],
+              ['pr-reconcile-check', process.env.PR_RECONCILE_RESULT],
+              ['lint-workflows', process.env.LINT_WORKFLOWS_RESULT],
+              ['secret-scan', process.env.SECRET_SCAN_RESULT],
+            ];
+
+            const icon = (r) => r === 'success' ? ':white_check_mark:'
+              : r === 'failure' ? ':x:'
+              : r === 'cancelled' ? ':no_entry:'
+              : r === 'skipped' ? ':next_track_button:'
+              : ':grey_question:';
+
+            // Treat any non-success as a failure for banner purposes.
+            // `cancelled` and `failure` both mean "do not deploy"; `skipped`
+            // for fork-PR paths is gated upstream and should not appear.
+            const nonSuccess = checks.filter(([, r]) => r !== 'success').length;
+            const banner = nonSuccess === 0
+              ? '**All checks passed**; comment `deploy` to deploy and merge.'
+              : `**${nonSuccess} check(s) did not succeed**; please review the table below.`;
+
+            const rows = checks
+              .map(([name, r]) => `| ${icon(r)} | \`${name}\` | ${r || 'unknown'} |`)
+              .join('\n');
+
+            const body = [
+              marker,
+              '## Validation report',
+              '',
+              banner,
+              '',
+              '| | Check | Result |',
+              '|:-:|:--|:--|',
+              rows,
+              '',
+              `[Workflow run](${runUrl})`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: keep.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+            for (const dup of dupes) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: dup.id,
+              });
+            }

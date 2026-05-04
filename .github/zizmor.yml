@@ -1,0 +1,33 @@
+# zizmor static-analysis configuration.
+# https://docs.zizmor.sh/configuration/
+#
+# Suppressions are documented inline with the rationale; zizmor flags some
+# triggers categorically, but the workflows that use them have explicit
+# defence-in-depth applied. Anything new that needs a suppression should
+# include a similar rationale comment.
+
+rules:
+  dangerous-triggers:
+    ignore:
+      # Both auto-deploy workflows are workflow_run-triggered. zizmor flags
+      # workflow_run categorically as "almost always used insecurely" and the
+      # rule cannot evaluate the mitigations. The actual defences are:
+      #
+      #   - `Resolve trusted SHA` step calls actions.getWorkflowRun(run_id)
+      #     and uses the returned head_sha (trustedSha) for every downstream
+      #     API call (checkout ref, getCommit, listFiles, merge sha:).
+      #   - `Find PR` step asserts pr.head.sha === trustedSha and runs
+      #     repos.compareCommits(base: trustedSha, head: pr.head.sha) with
+      #     status === 'identical'.
+      #   - Bot identity gate uses GitHub-API-resolved login fields
+      #     (commit.author.login, commit.committer.login, pull.user.login)
+      #     plus verification.verified === true. Git commit headers are
+      #     not consulted (those are forgeable).
+      #   - Validate run correlation uses checks.listForSuite with the
+      #     workflow_run's check_suite_id, so a stale green Validate from
+      #     an earlier suite cannot be replayed.
+      #   - Refusal if .github/{workflows,actions,scripts} touched
+      #     (CI-self-modification guard).
+      #   - manual-review label as escape hatch.
+      - shopify-sync-auto-deploy.yml
+      - dependabot-auto-deploy.yml

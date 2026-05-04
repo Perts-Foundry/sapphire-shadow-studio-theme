@@ -1,0 +1,49 @@
+# One-time helper to create the GitHub labels the deploy chain depends on.
+# Run via `gh workflow run setup-labels.yml` (or the Actions tab) before
+# merging the CI/CD refactor PR. Idempotent: existing labels are skipped.
+#
+# Labels:
+#   deploy-attention   - filed by sync-reconcile.yml and drift-watch.yml on
+#                        suspicious diff or drift detection.
+#   auto-reconcile     - applied by sync-reconcile.yml to its daily PR; the
+#                        shopify-sync-auto-deploy gate requires it.
+#   auto-deploy-major  - operator-applied. Allows dependabot-auto-deploy to
+#                        ship a major-version bump.
+#   manual-review      - operator-applied. Both auto-deploys skip when
+#                        present; the human comment-deploy path remains.
+name: setup-labels
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  setup-labels:
+    name: setup-labels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create labels (idempotent)
+        run: |
+          set -euo pipefail
+          create_label() {
+            local name="$1" color="$2" desc="$3"
+            if gh label create "$name" --color "$color" --description "$desc" 2>/tmp/label.err; then
+              echo "Created label: $name"
+            elif grep -qi 'already exists' /tmp/label.err; then
+              echo "Label exists: $name"
+            else
+              cat /tmp/label.err
+              exit 1
+            fi
+          }
+          create_label deploy-attention   B60205 "Deploy chain alarm filed by sync-reconcile or drift-watch."
+          create_label auto-reconcile     0E8A16 "Daily shopify-sync to main reconcile PR; auto-deploys after Validate."
+          create_label auto-deploy-major  FBCA04 "Allow dependabot-auto-deploy to ship a major-version bump."
+          create_label manual-review      D93F0B "Skip auto-deploy for this PR; require human comment-deploy."
