@@ -110,9 +110,12 @@ jobs:
         env:
           # SC2016 = "Expressions don't expand in single quotes" - false-
           # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
-          # in drift-watch.yml and sync-reconcile.yml. The runner's actionlint
-          # integrates ubuntu-24.04's preinstalled shellcheck.
-          SHELLCHECK_OPTS: "-e SC2016"
+          # in drift-watch.yml and sync-reconcile.yml.
+          # SC2317 = "Command appears to be unreachable" - false-positive on
+          # the `set +e; OUTPUT=$(...); EXIT_CODE=$?; echo $OUTPUT` capture
+          # pattern used by every check step in this workflow. shellcheck
+          # cannot follow the control flow when subshells set the exit code.
+          SHELLCHECK_OPTS: "-e SC2016 -e SC2317"
         run: |
           set +e
           bash <(curl --max-time 60 -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 >/dev/null

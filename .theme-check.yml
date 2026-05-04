@@ -9,6 +9,20 @@ JSONMissingBlock:
   # errors. Re-enable if Judge.me is uninstalled.
   enabled: false
 
+MatchingTranslations:
+  # Disabled: Horizon ships a wide locale matrix (en, cs, da, de, es, fi, fr,
+  # hr, it, ja, ko, lt, nb, nl, pl, pt, ro, ru, sk, sv, th, tr, vi, zh-CN,
+  # zh-TW, ...). Shopify's translators add keys at different paces per
+  # language, so non-English locale files legitimately lag behind
+  # `en.default.json` between upstream merges. The newer Shopify CLI's
+  # theme-check engine surfaces dozens of cross-locale key-mismatch errors
+  # that are not actionable for a downstream theme; the older
+  # Shopify/theme-check-action did not flag these (the rule was added or
+  # promoted to error-level in a later engine version). Canonical source is
+  # `en.default.json`; stale-but-non-empty translations in other locales
+  # are acceptable.
+  enabled: false
+
 # AssetPreload:
 #   enabled: true
 #   severity: 1
