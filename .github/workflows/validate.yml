@@ -36,6 +36,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      # Belt-and-braces: most CLIs honour NO_COLOR (https://no-color.org/)
+      # and skip ANSI escape sequences entirely. Any tool that ignores it
+      # is still defended by the per-step `sed -E ...` strip in capture.
+      NO_COLOR: "1"
     steps:
       - name: Checkout PR head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -66,7 +71,7 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
-            echo "$OUTPUT" | tail -30
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -103,7 +108,7 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
-            tail -30 /tmp/reconcile.out
+            tail -30 /tmp/reconcile.out | sed -E $'s/\x1b\\[[0-9;]*m//g'
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -128,7 +133,7 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
-            echo "$OUTPUT" | tail -30
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -144,7 +149,7 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
-            echo "$OUTPUT" | tail -30
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -161,7 +166,7 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
-            echo "$OUTPUT" | tail -30
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
