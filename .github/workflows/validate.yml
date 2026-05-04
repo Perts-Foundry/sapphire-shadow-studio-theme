@@ -75,11 +75,16 @@ jobs:
         id: reconcile
         run: |
           set +e
-          {
-            git fetch --prune --no-tags origin shopify-sync main 2>&1 || true
-            BASE=$(git merge-base HEAD origin/shopify-sync)
-            MISSING=$(git cherry HEAD origin/shopify-sync "$BASE" | grep -c '^+' || true)
-            if [ "$MISSING" -gt 0 ]; then
+          # Note: do NOT use `{ ...; exit N; } > file 2>&1` here. A brace
+          # group's redirection does not spawn a subshell, so `exit` would
+          # terminate the whole step before the GITHUB_OUTPUT lines run, and
+          # the aggregator would see an empty exit_code (rendered as
+          # skipped).
+          git fetch --prune --no-tags origin shopify-sync main 2>&1 || true
+          BASE=$(git merge-base HEAD origin/shopify-sync)
+          MISSING=$(git cherry HEAD origin/shopify-sync "$BASE" | grep -c '^+' || true)
+          if [ "$MISSING" -gt 0 ]; then
+            {
               echo "shopify-sync has $MISSING commit(s) not in this branch:"
               echo ""
               git log --oneline HEAD..origin/shopify-sync
@@ -88,14 +93,12 @@ jobs:
               echo "  git fetch origin"
               echo "  git merge origin/shopify-sync"
               echo "  git push"
-            else
-              echo "No unmerged shopify-sync commits."
-            fi
-            exit "$MISSING"
-          } > /tmp/reconcile.out 2>&1
-          EXIT_CODE=$?
-          # Cap MISSING -> 1 for exit-code purposes (anything > 0 is "fail").
-          [ "$EXIT_CODE" -gt 1 ] && EXIT_CODE=1
+            } > /tmp/reconcile.out
+            EXIT_CODE=1
+          else
+            echo "No unmerged shopify-sync commits." > /tmp/reconcile.out
+            EXIT_CODE=0
+          fi
           cat /tmp/reconcile.out
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
@@ -219,11 +222,11 @@ jobs:
             const pass = process.env.PASS_COUNT;
             const fail = process.env.FAIL_COUNT;
             const skip = process.env.SKIP_COUNT;
-            const allPassed = fail === '0' && skip === '0';
-
-            const banner = allPassed
+            const banner = (fail === '0' && skip === '0')
               ? '✅ **All checks passed** — comment `deploy` to deploy and merge.'
-              : `❌ **${fail} Failure(s)** — please review the details below.`;
+              : (fail === '0')
+                ? `⚠️ **${skip} skipped** — every check should run; investigate why.`
+                : `❌ **${fail} Failure(s)** — please review the details below.`;
 
             const status = (code) => {
               if (!code || code === '') return '⏭️';
