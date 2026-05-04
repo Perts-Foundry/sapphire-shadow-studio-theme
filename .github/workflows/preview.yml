@@ -33,35 +33,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      # TEMP DIAGNOSTIC: prints non-secret metadata about the env's
-      # secrets so we can pinpoint the 401 from `npx shopify theme list`.
-      # Length and sha256 fingerprint are not redacted by GitHub's secret
-      # masking layer (they are derived numbers, not the value itself).
-      # Compare locally:
-      #   printf '%s' 'shpat_<token>' | sha256sum | head -c12
-      #   printf '%s' 'sapphire-shadow-studio.myshopify.com' | sha256sum | head -c12
-      # Remove this step after the 401 is resolved.
-      - name: TEMP - diagnose shopify secrets
-        env:
-          SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
-        run: |
-          set +x
-          set -uo pipefail
-          echo "token_length=${#SHOPIFY_CLI_THEME_TOKEN}"
-          echo "token_prefix_first6=${SHOPIFY_CLI_THEME_TOKEN:0:6}"
-          echo "store_length=${#SHOPIFY_FLAG_STORE}"
-          echo "store_prefix_first6=${SHOPIFY_FLAG_STORE:0:6}"
-          echo "store_suffix_last6=${SHOPIFY_FLAG_STORE: -6}"
-          token_hash=$(printf '%s' "${SHOPIFY_CLI_THEME_TOKEN}" | sha256sum | head -c12)
-          store_hash=$(printf '%s' "${SHOPIFY_FLAG_STORE}" | sha256sum | head -c12)
-          echo "token_sha256_12=${token_hash}"
-          echo "store_sha256_12=${store_hash}"
-          token_trimmed_len=$(printf '%s' "${SHOPIFY_CLI_THEME_TOKEN}" | sed 's/[[:space:]]\+$//' | wc -c)
-          store_trimmed_len=$(printf '%s' "${SHOPIFY_FLAG_STORE}" | sed 's/[[:space:]]\+$//' | wc -c)
-          echo "token_trimmed_length=${token_trimmed_len}"
-          echo "store_trimmed_length=${store_trimmed_len}"
-
       - name: Push or update preview theme
         id: push
         uses: ./.github/actions/shopify-theme-push

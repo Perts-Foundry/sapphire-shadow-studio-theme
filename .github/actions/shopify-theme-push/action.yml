@@ -116,7 +116,7 @@ runs:
           {
             echo "push_output<<GHEOF"
             sed 's/\x1b\[[0-9;]*m//g' "$input_file" \
-              | sed -E 's/(shpat|shpca|shpss|shppa|shpua)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
+              | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
               | tail -30
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"

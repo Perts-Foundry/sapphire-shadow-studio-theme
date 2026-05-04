@@ -47,11 +47,13 @@ All workflows run on `ubuntu-24.04`, pin third-party actions to commit SHAs, set
 
 | Name | Type | Source |
 |---|---|---|
-| `SHOPIFY_CLI_THEME_TOKEN` | Environment **secret** on `shopify-deploy` | Shopify "Theme Access" app on the store. **Rotate every 90 days.** |
+| `SHOPIFY_CLI_THEME_TOKEN` | Environment **secret** on `shopify-deploy` | Admin API access token from a Custom App on the store with `read_themes` and `write_themes` scopes (token starts with `shpat_`). |
 | `SHOPIFY_FLAG_STORE` | Environment **secret** on `shopify-deploy` | `sapphire-shadow-studio.myshopify.com`. |
 | `shopify-deploy` | GitHub Environment | No required reviewers. Deploy gate is the comment-trigger plus Validate-on-HEAD-SHA verification plus signed-commit gates on auto-deploy paths. |
 
-To rotate the token: in admin, regenerate the Theme Access password; paste it into the GitHub environment secret (`Settings -> Environments -> shopify-deploy -> Secrets`). Do not echo to terminal.
+**Setup (one-time):** In the Shopify admin, Settings -> Apps and sales channels -> Develop apps -> Create an app (e.g. `sapphire-ci-deploy`). Configure Admin API scopes: `read_themes`, `write_themes`. Install the app on the store. Reveal the Admin API access token (shown once) and paste it into the GitHub environment secret (`Settings -> Environments -> shopify-deploy -> Secrets -> SHOPIFY_CLI_THEME_TOKEN`). Custom App tokens do not expire on a schedule; rotate by uninstalling and recreating the app whenever a credential needs to change. Do not echo to terminal.
+
+The Shopify CLI accepts the same env var (`SHOPIFY_CLI_THEME_TOKEN`) for either a Custom App access token or a Theme Access app password. This repo standardised on Custom App tokens because they avoid an extra third-party app install, do not auto-expire, and reuse Shopify's native admin auth surface.
 
 ## Rollback
 
