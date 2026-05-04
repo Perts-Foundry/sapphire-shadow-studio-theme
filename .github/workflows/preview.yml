@@ -33,6 +33,23 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
+      - name: TEMP - diagnose shopify secrets (round 2)
+        env:
+          SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
+        run: |
+          set +x
+          set -uo pipefail
+          echo "token_length=${#SHOPIFY_CLI_THEME_TOKEN}"
+          echo "token_prefix_first6=${SHOPIFY_CLI_THEME_TOKEN:0:6}"
+          echo "store_length=${#SHOPIFY_FLAG_STORE}"
+          echo "store_prefix_first6=${SHOPIFY_FLAG_STORE:0:6}"
+          echo "store_suffix_last6=${SHOPIFY_FLAG_STORE: -6}"
+          token_hash=$(printf '%s' "${SHOPIFY_CLI_THEME_TOKEN}" | sha256sum | head -c12)
+          store_hash=$(printf '%s' "${SHOPIFY_FLAG_STORE}" | sha256sum | head -c12)
+          echo "token_sha256_12=${token_hash}"
+          echo "store_sha256_12=${store_hash}"
+
       - name: Push or update preview theme
         id: push
         uses: ./.github/actions/shopify-theme-push
