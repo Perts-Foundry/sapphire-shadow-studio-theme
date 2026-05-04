@@ -235,7 +235,7 @@ jobs:
           shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
           shopify-flag-store: ${{ secrets.SHOPIFY_FLAG_STORE }}
           live-theme-id: ${{ env.LIVE_THEME_ID }}
-          smoke-base-url: ${{ vars.SMOKE_BASE_URL }}
+          smoke-base-url: ${{ secrets.SMOKE_BASE_URL }}
 
       - name: Merge PR and report success
         if: success() && steps.pr.outputs.number != ''
