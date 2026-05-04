@@ -197,16 +197,14 @@ runs:
               npx shopify theme push --theme "$EXISTING_ID" --json > push.json 2>&1
               EXIT_CODE=$?
             else
-              echo "Creating new unpublished theme"
-              npx shopify theme push --unpublished --json > push.json 2>&1
+              # `--unpublished --theme <name>` creates a new unpublished
+              # theme with the given name in one non-interactive step. The
+              # earlier two-step pattern (`--unpublished` then `theme rename`)
+              # fails in CI because plain `--unpublished` prompts for a name,
+              # and the prompt aborts under SHOPIFY_CLI_TTY=0.
+              echo "Creating new unpublished theme: ${THEME_NAME}"
+              npx shopify theme push --unpublished --theme "$THEME_NAME" --json > push.json 2>&1
               EXIT_CODE=$?
-              if [ "$EXIT_CODE" -eq 0 ]; then
-                NEW_ID=$(jq -r '.theme.id' push.json)
-                if ! npx shopify theme rename --theme "$NEW_ID" --name "$THEME_NAME"; then
-                  echo "::error::theme rename failed; new theme ${NEW_ID} is unnamed and will be invisible to subsequent runs (drift-watch's orphan sweep regex requires the pr-N-preview name)."
-                  EXIT_CODE=1
-                fi
-              fi
             fi
 
             capture_push_output push.json
