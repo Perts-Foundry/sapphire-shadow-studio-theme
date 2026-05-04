@@ -14,6 +14,8 @@ All genuinely actionable issues have been resolved. The remaining findings docum
 
 As of the CI/CD cutover (2026-05-03), the JSONMissingBlock check is **disabled in `.theme-check.yml`** so that the 3 known false-positive errors from Judge.me Reviews app blocks do not block PRs under the new `--fail-level error` CI gate. The findings are still documented below for historical context. Re-enable the check if Judge.me is uninstalled.
 
+The MatchingTranslations check is also **disabled** as of the comment-driven deploy refactor (2026-05-04). Horizon ships a wide locale matrix and Shopify's translators add keys at different paces per language, so non-English locale files legitimately drift behind `en.default.json` between upstream merges. The newer Shopify CLI's theme-check engine (used by `validate.yml`) flags this as cross-locale key mismatch errors; the older `Shopify/theme-check-action@v2.2.0` did not. Canonical source is `en.default.json`; stale-but-non-empty translations in other locales are acceptable for a downstream theme.
+
 ---
 
 ## Suppressed Errors (formerly Errors, now disabled in config)
