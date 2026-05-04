@@ -15,7 +15,11 @@ inputs:
     description: SHOPIFY_CLI_THEME_TOKEN secret
     required: true
   shopify-flag-store:
-    description: SHOPIFY_FLAG_STORE secret (e.g. sapphire-shadow-studio.myshopify.com)
+    description: |
+      SHOPIFY_FLAG_STORE secret. MUST be the store's internal myshopify
+      handle (e.g. `yr5ye0-ua.myshopify.com`), not the friendly admin alias
+      (`sapphire-shadow-studio.myshopify.com`). Shopify's auth layer rejects
+      the alias with 401; only the internal handle is recognised.
     required: true
   live-theme-id:
     description: Expected live theme ID (required when mode=live; ignored otherwise)

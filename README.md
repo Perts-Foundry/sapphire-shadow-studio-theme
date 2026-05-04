@@ -48,7 +48,7 @@ All workflows run on `ubuntu-24.04`, pin third-party actions to commit SHAs, set
 | Name | Type | Source |
 |---|---|---|
 | `SHOPIFY_CLI_THEME_TOKEN` | Environment **secret** on `shopify-deploy` | Admin API access token from a Custom App on the store with `read_themes` and `write_themes` scopes (token starts with `shpat_`). |
-| `SHOPIFY_FLAG_STORE` | Environment **secret** on `shopify-deploy` | `sapphire-shadow-studio.myshopify.com`. |
+| `SHOPIFY_FLAG_STORE` | Environment **secret** on `shopify-deploy` | The store's **internal myshopify handle** (e.g. `yr5ye0-ua.myshopify.com`), not the friendly admin alias. Shopify rejects auth against the alias with a 401. The internal handle is shown on the Theme Access password email and on `admin/.../themes` URL parameters; you can also recover it via `gql { shop { myshopifyDomain } }` against the Admin API. |
 | `shopify-deploy` | GitHub Environment | No required reviewers. Deploy gate is the comment-trigger plus Validate-on-HEAD-SHA verification plus signed-commit gates on auto-deploy paths. |
 
 **Setup (one-time):** In the Shopify admin, Settings -> Apps and sales channels -> Develop apps -> Create an app (e.g. `sapphire-ci-deploy`). Configure Admin API scopes: `read_themes`, `write_themes`. Install the app on the store. Reveal the Admin API access token (shown once) and paste it into the GitHub environment secret (`Settings -> Environments -> shopify-deploy -> Secrets -> SHOPIFY_CLI_THEME_TOKEN`). Custom App tokens do not expire on a schedule; rotate by uninstalling and recreating the app whenever a credential needs to change. Do not echo to terminal.
