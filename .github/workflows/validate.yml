@@ -162,6 +162,14 @@ jobs:
           persist-credentials: false
 
       - name: actionlint
+        env:
+          # SC2016 = "Expressions don't expand in single quotes" - false-
+          # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
+          # in drift-watch.yml and sync-reconcile.yml. Locally actionlint
+          # passes; CI's actionlint integrates the shellcheck preinstalled on
+          # ubuntu-24.04, which surfaces the info-level finding. Suppress
+          # globally rather than annotating each call site.
+          SHELLCHECK_OPTS: "-e SC2016"
         run: |
           set -euo pipefail
           bash <(curl --max-time 60 -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
