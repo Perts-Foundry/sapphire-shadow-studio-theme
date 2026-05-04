@@ -18,7 +18,7 @@ The repo is **standalone, not a GitHub fork** of `Shopify/horizon`. Attribution 
 
 This repository is **public**. Real personal contact metadata, internal strategy / legal advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy that is also displayed on the storefront (founder narrative, About / FAQ pages, photography filenames that don't expose personal identifiers) is intentional and fine to commit.
 
-The scope is broad on purpose: git history rewrites on a public repo are expensive and incomplete (forks, cached diffs, search index), so the only durable defense is to never let it land in the first place. The repo was deleted-and-recreated once already to scrub embedded metadata; do not reintroduce it. The `secret-scan` job in `.github/workflows/pr-checks.yml` (Gitleaks) catches token-shaped strings on every PR, but it does not catch personal emails, addresses, or merchant-keyed prose - those are the author's responsibility per the Pre-push checklist below.
+The scope is broad on purpose: git history rewrites on a public repo are expensive and incomplete (forks, cached diffs, search index), so the only durable defense is to never let it land in the first place. The repo was deleted-and-recreated once already to scrub embedded metadata; do not reintroduce it. The `secret-scan` job in `.github/workflows/validate.yml` (Gitleaks) catches token-shaped strings on every PR, but it does not catch personal emails, addresses, or merchant-keyed prose - those are the author's responsibility per the Pre-push checklist below.
 
 ### What is sensitive (do not commit)
 
@@ -67,32 +67,51 @@ This repo uses a **PR-based deploy model**. Direct edits to `main` and to the li
 
 1. Branch from `main`: `git switch -c <feature-branch> origin/main`.
 2. Develop locally: `npm ci && npx shopify theme dev`. The dev server runs against an unpublished development theme created on the fly; storefront edits to the dev theme do not touch the live theme or `shopify-sync`.
-3. Open a PR. CI runs four jobs in `pr-checks.yml`:
+3. Open a PR. CI runs four parallel jobs in `validate.yml` plus an aggregator that posts a sticky validation report:
    - `theme-check` (linter, `--fail-level error`).
    - `pr-reconcile-check` (fails if `shopify-sync` has commits not in the branch; posts the resolution snippet as a sticky PR comment).
-   - `lint-workflows` (actionlint + zizmor; only runs when `.github/` paths changed).
-   - `secret-scan` (Gitleaks, full history scan; required check).
+   - `lint-workflows` (actionlint + zizmor on `.github/workflows/` and `.github/actions/`; always runs).
+   - `secret-scan` (Gitleaks, full history scan).
+   To re-run validation, push a new commit to the PR branch (there is no `validate` comment trigger; `issue_comment`-dispatched runs would not be associated with the PR HEAD SHA).
 4. `preview.yml` deploys the branch to a per-PR unpublished theme `pr-<n>-preview` and posts a sticky PR comment with editor + preview URLs. Updated on every push, deleted on PR close.
 5. If `pr-reconcile-check` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
-6. On merge to `main`, `deploy.yml` pushes the theme to live (`shopify theme push --live --allow-live`).
+6. On comment `deploy`, `deploy.yml` verifies Validate passed for the PR HEAD SHA, pushes the theme to live, smoke-tests the storefront, then squash-merges the PR and deletes the branch. On failure, a sticky failure report posts and the PR stays open. Direct push to `main` no longer triggers a deploy.
 
 ### Admin-side edits
 
-All theme-customizer / code-editor edits **must** be made on the unpublished `EDIT HERE - Admin Sync` theme (connected to `shopify-sync` via the Shopify GitHub Integration), NOT on the live theme. Edits there are auto-committed to `shopify-sync` by `shopify[bot]`. The daily `sync-reconcile.yml` workflow opens an auto-merge PR from `shopify-sync` into `main`.
+All theme-customizer / code-editor edits **must** be made on the unpublished `EDIT HERE - Admin Sync` theme (connected to `shopify-sync` via the Shopify GitHub Integration), NOT on the live theme. Edits there are auto-committed to `shopify-sync` by `shopify[bot]`. The daily `sync-reconcile.yml` workflow opens a PR from `shopify-sync` into `main` with the `auto-reconcile` label. After Validate succeeds on that PR, `shopify-sync-auto-deploy.yml` deploys to live and squash-merges automatically; failures leave the PR open with a sticky failure report.
+
+The auto-deploy enforces additional gates beyond Validate; admin edits that trip any of these will halt with a sticky skip-comment naming the reason: signed-commit identity (every commit must be `shopify[bot]` with `verification.verified: true`), HEAD-drift (`pr.head.sha` must equal the SHA Validate ran against), base-staleness (`main` must not have advanced since the PR opened), the `auto-reconcile` label must be present, the diff must not touch `.github/` or `layout/theme.liquid` and must be under 1000 LOC, and the `manual-review` label is the operator escape hatch (skips auto-deploy entirely; a human can still comment `deploy`). The shopify-sync branch itself is never deleted on merge (it is the long-lived integration target).
 
 To inspect what is currently live without altering the working tree: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`. **Never** pull live into the working tree (the working tree is the source of truth, not the storefront).
 
 ### Live theme
 
-Live theme is `#181702754604`. **Disconnected** from GitHub. Only `deploy.yml` writes to it. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme instead. `drift-watch.yml` (weekly) files an issue if it detects unauthorized direct edits.
+Live theme is `#181702754604`. **Disconnected** from GitHub. Only the deploy chain (`deploy.yml`, `shopify-sync-auto-deploy.yml`, `dependabot-auto-deploy.yml`) writes to it; all three paths require Validate green on the PR HEAD SHA before they push. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme instead. `drift-watch.yml` (weekly) files an issue if it detects unauthorized direct edits.
 
 For full architecture details, see `.github/workflows/` and the README CI/CD section.
+
+### Deploy gate trust delta
+
+The deploy chain has **no GitHub Environment required-reviewer gate** (by user choice; the previous `shopify-write` env's required reviewer was self-approval anyway). Three computed gates replace it:
+
+1. **Collaborator-permission check** on the comment author of `deploy.yml`'s `issue_comment` trigger. The `permission-check` job runs in a no-token sandbox and uses `getCollaboratorPermissionLevel` to gate access; only `admin` or `write` collaborators proceed. The workflow-level `if` also pre-filters by `author_association` so non-collaborator comments do not even start a runner.
+2. **Validate-on-HEAD-SHA verification.** Every deploy path checks that Validate succeeded on the exact SHA being deployed. Comment-deploy uses `listWorkflowRuns` filtered by `validate.yml` and `head_sha`, takes the latest completed run, and rejects on stale/in-progress/failure. Auto-deploy paths are stronger: they re-fetch the *triggering* Validate run by `workflow_run.id` via `getWorkflowRun` and assert `conclusion: success`, then thread the `head_sha` returned by that lookup as `trustedSha` through every downstream API call (checkout, merge `sha:`, getCommit, etc.) so a force-push between Validate and auto-deploy aborts cleanly.
+3. **Signed-commit gate on auto-deploy paths.** Both auto-deploy workflows assert all of `verification.verified === true`, `commit.author.login`, `commit.committer.login`, and `pull_request.user.login` equal the expected bot (`shopify[bot]` or `dependabot[bot]`). Git-commit-header fields are not consulted (those are forgeable).
+
+All three gates depend on the workflow files themselves being correct. A compromised collaborator account that can land any PR (or force-push `shopify-sync` or open a `dependabot/`-named PR with a forged signature) bypasses all three with one fewer audit-log entry than the required-reviewer model produced.
+
+Compensations available but not implemented today: split `shopify-deploy` env into `shopify-deploy` (live token) and `shopify-preview` (preview token only) to limit blast radius; add a long-lived `auto-deploy-audit` GitHub issue that records every auto-deploy with SHA, bot, PR, and merge-as for forensic durability beyond the 90-day workflow-log retention. Both are deferred enhancements.
+
+### Why scheduled-deploy.yml is not ported from PFW
+
+The Perts Foundry website (Hugo + Cloudflare Workers) runs a scheduled redeploy on the 1st and 15th of each month so that posts with future `publishDate` fields render on time. Shopify Liquid is server-rendered on every request, so time-gated logic (`{% if 'now' | date: '%s' < ... %}`) evaluates dynamically without a redeploy. A scheduled rebuild is unnecessary for a Shopify theme.
 
 ## Pre-PR review
 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific notes:
 
-- **infra-reviewer**: run on any change touching `.github/workflows/`. The `deploy`, `preview`, `sync-reconcile`, `drift-watch`, and `pr-checks` workflows are interlocked; a change to one usually requires verifying the others.
+- **infra-reviewer**: run on any change touching `.github/workflows/` or `.github/actions/`. The deploy chain (`deploy`, `shopify-sync-auto-deploy`, `dependabot-auto-deploy`) shares the `deploy-production` concurrency group; the two auto-deploy workflows additionally depend on the literal name `validate` for their `workflow_run.workflows: ["validate"]` filter. `preview`, `sync-reconcile`, `drift-watch`, and `validate` use their own concurrency groups (or none) and are coupled only via the `shopify-deploy` environment binding.
 - **test-engineer**: skip. There is no JavaScript test framework configured.
 - **prompt-reviewer**: run only when this `CLAUDE.md`, agent definitions, or `.claude/` content change.
 - **security-auditor focus areas** for theme work: Liquid output filters (`| escape`, `| json`, `| script_tag`), metafield exposure, form CSRF tokens, untrusted user input rendered into HTML attributes.
@@ -113,7 +132,7 @@ npx shopify theme check
 npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete
 ```
 
-**Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Pushes to the live theme happen exclusively via `.github/workflows/deploy.yml` on merge to `main`. Admin-side edits flow through the sync theme into `shopify-sync`.
+**Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Pushes to the live theme happen exclusively via the deploy chain (`deploy.yml` on a `deploy` PR comment; `shopify-sync-auto-deploy.yml` after Validate succeeds on a sync-reconcile PR; `dependabot-auto-deploy.yml` after Validate succeeds on a Dependabot PR with safety gates met). Admin-side edits flow through the sync theme into `shopify-sync`.
 
 ## Shopify best practices
 

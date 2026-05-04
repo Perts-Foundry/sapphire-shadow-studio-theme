@@ -17,7 +17,7 @@ jobs:
     name: drift-watch
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: shopify-write
+    environment: shopify-deploy
     permissions:
       contents: read
       issues: write
@@ -37,12 +37,12 @@ jobs:
           cache: npm
 
       - name: Install Shopify CLI
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Pull live theme
         env:
           SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/live
@@ -69,17 +69,17 @@ jobs:
         if: steps.diff.outputs.drift == 'true'
         run: |
           set -euo pipefail
-          BODY=$(printf 'Live theme differs from \\`main\\` as of %s.\n\nFirst 200 lines of diff:\n```diff\n%s\n```\n\nLikely cause: someone edited the live theme directly via admin Customize / Code editor. All edits should go through the **EDIT HERE - Admin Sync** theme so they are captured on \\`shopify-sync\\` and reconciled into \\`main\\`.' \
-            "$(date -u)" "$(cat /tmp/drift-head.txt)")
+          printf 'Live theme differs from `main` as of %s.\n\nFirst 200 lines of diff:\n```diff\n%s\n```\n\nLikely cause: someone edited the live theme directly via admin Customize / Code editor. All edits should go through the **EDIT HERE - Admin Sync** theme so they are captured on `shopify-sync` and reconciled into `main`.' \
+            "$(date -u)" "$(cat /tmp/drift-head.txt)" > /tmp/drift-body.md
           gh issue create \
             --title "Live theme drifts from main ($(date -u +%Y-%m-%d))" \
             --label deploy-attention \
-            --body "$BODY"
+            --body-file /tmp/drift-body.md
 
       - name: Sweep stale rollback snapshots and orphaned previews
         env:
           SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
         run: |
           set -euo pipefail
           npx shopify theme list --json > themes.json

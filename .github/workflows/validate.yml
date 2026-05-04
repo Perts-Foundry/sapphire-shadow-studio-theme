@@ -1,0 +1,397 @@
+# WARNING: dependabot-auto-deploy.yml and shopify-sync-auto-deploy.yml trigger
+# on this exact workflow name (`workflow_run.workflows: ["validate"]`).
+# Renaming will silently break auto-deploy.
+#
+# Single `validate` job that runs every PR-time check sequentially, captures
+# stdout + exit code per step, and posts a single sticky CI Report comment
+# (marker `<!-- ci-results -->`). Mirrors the shape of the CI report in the
+# resume-curator repo.
+#
+# Required-check name on `main`: `validate / validate` (one context, set in
+# infrastructure repo via `ci_check_contexts = ["validate"]`).
+#
+# Token-bearing workflows (deploy.yml, preview.yml, drift-watch.yml, both
+# auto-deploys) live in separate files; this workflow holds no Shopify token.
+#
+# Fork PRs are excluded; preview.yml does the same. Excluding here also
+# prevents fork history from polluting `gitleaks --log-opts="--all"`.
+name: validate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      # Belt-and-braces: most CLIs honour NO_COLOR (https://no-color.org/)
+      # and skip ANSI escape sequences entirely. Any tool that ignores it
+      # is still defended by the per-step `sed -E ...` strip in capture.
+      NO_COLOR: "1"
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history needed for `git cherry` (reconcile check) and for
+          # `gitleaks --log-opts="--all"` (secret scan).
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Shopify CLI
+        run: npm ci --ignore-scripts
+
+      # ── Theme Check ────────────────────────────────────────────
+      - name: Theme Check
+        id: theme-check
+        run: |
+          set +e
+          OUTPUT=$(npx shopify theme check --fail-level error 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Reconcile (shopify-sync merged invariant) ──────────────
+      - name: Reconcile
+        id: reconcile
+        run: |
+          set +e
+          # Note: do NOT use `{ ...; exit N; } > file 2>&1` here. A brace
+          # group's redirection does not spawn a subshell, so `exit` would
+          # terminate the whole step before the GITHUB_OUTPUT lines run, and
+          # the aggregator would see an empty exit_code (rendered as
+          # skipped).
+          git fetch --prune --no-tags origin shopify-sync main 2>&1 || true
+          BASE=$(git merge-base HEAD origin/shopify-sync)
+          MISSING=$(git cherry HEAD origin/shopify-sync "$BASE" | grep -c '^+' || true)
+          if [ "$MISSING" -gt 0 ]; then
+            {
+              echo "shopify-sync has $MISSING commit(s) not in this branch:"
+              echo ""
+              git log --oneline HEAD..origin/shopify-sync
+              echo ""
+              echo "Resolve locally:"
+              echo "  git fetch origin"
+              echo "  git merge origin/shopify-sync"
+              echo "  git push"
+            } > /tmp/reconcile.out
+            EXIT_CODE=1
+          else
+            echo "No unmerged shopify-sync commits." > /tmp/reconcile.out
+            EXIT_CODE=0
+          fi
+          cat /tmp/reconcile.out
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            tail -30 /tmp/reconcile.out | sed -E $'s/\x1b\\[[0-9;]*m//g'
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── actionlint (workflows + composite actions) ─────────────
+      - name: actionlint
+        id: actionlint
+        env:
+          # SC2016 = "Expressions don't expand in single quotes" - false-
+          # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
+          # in drift-watch.yml and sync-reconcile.yml.
+          # SC2317 = "Command appears to be unreachable" - false-positive on
+          # the `set +e; OUTPUT=$(...); EXIT_CODE=$?; echo $OUTPUT` capture
+          # pattern used by every check step in this workflow. shellcheck
+          # cannot follow the control flow when subshells set the exit code.
+          SHELLCHECK_OPTS: "-e SC2016 -e SC2317"
+        run: |
+          set +e
+          bash <(curl --max-time 60 -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 >/dev/null
+          OUTPUT=$(./actionlint -no-color 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── zizmor (security audit of workflows + composite actions) ─
+      - name: zizmor
+        id: zizmor
+        run: |
+          set +e
+          python3 -m pip install --user --quiet "zizmor==1.5.2"
+          OUTPUT=$(~/.local/bin/zizmor --pedantic --format=plain .github/workflows .github/actions 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Gitleaks (full git history) ────────────────────────────
+      - name: Gitleaks
+        id: gitleaks
+        run: |
+          set +e
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          OUTPUT=$(/tmp/gitleaks git --log-opts="--all" --no-banner 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Aggregate & comment ────────────────────────────────────
+      - name: Collect results
+        id: results
+        if: always()
+        env:
+          THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
+          RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
+          ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
+          GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
+        run: |
+          PASS=0; FAIL=0; SKIP=0
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+            if [ -z "$code" ]; then
+              SKIP=$((SKIP + 1))
+            elif [ "$code" = "0" ]; then
+              PASS=$((PASS + 1))
+            else
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          TOTAL=$((PASS + FAIL + SKIP))
+          {
+            echo "pass=$PASS"
+            echo "fail=$FAIL"
+            echo "skip=$SKIP"
+            echo "total=$TOTAL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PASS_COUNT: ${{ steps.results.outputs.pass }}
+          FAIL_COUNT: ${{ steps.results.outputs.fail }}
+          SKIP_COUNT: ${{ steps.results.outputs.skip }}
+          TOTAL_COUNT: ${{ steps.results.outputs.total }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
+          RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
+          ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
+          GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
+          THEME_CHECK_OUTPUT: ${{ steps.theme-check.outputs.output }}
+          RECONCILE_OUTPUT: ${{ steps.reconcile.outputs.output }}
+          ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
+          ZIZMOR_OUTPUT: ${{ steps.zizmor.outputs.output }}
+          GITLEAKS_OUTPUT: ${{ steps.gitleaks.outputs.output }}
+        with:
+          script: |
+            const marker = '<!-- ci-results -->';
+            const sha = (process.env.PR_SHA || '').substring(0, 7);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pass = process.env.PASS_COUNT;
+            const fail = process.env.FAIL_COUNT;
+            const skip = process.env.SKIP_COUNT;
+            const banner = (fail === '0' && skip === '0')
+              ? '✅ **All checks passed** — comment `deploy` to deploy and merge.'
+              : (fail === '0')
+                ? `⚠️ **${skip} skipped** — every check should run; investigate why.`
+                : `❌ **${fail} Failure(s)** — please review the details below.`;
+
+            const status = (code) => {
+              if (!code || code === '') return '⏭️';
+              return code === '0' ? '✅' : '❌';
+            };
+
+            const sanitize = (s) => (s || '').replace(/`{3,}/g, '``').replace(/<\/?details>/gi, '');
+
+            const themeCheck = process.env.THEME_CHECK_EXIT;
+            const reconcile = process.env.RECONCILE_EXIT;
+            const actionlint = process.env.ACTIONLINT_EXIT;
+            const zizmor = process.env.ZIZMOR_EXIT;
+            const gitleaks = process.env.GITLEAKS_EXIT;
+
+            const themeCheckOut = sanitize(process.env.THEME_CHECK_OUTPUT) || 'No issues found';
+            const reconcileOut = sanitize(process.env.RECONCILE_OUTPUT) || 'No output';
+            const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
+            const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
+            const gitleaksOut = sanitize(process.env.GITLEAKS_OUTPUT) || 'No issues found';
+
+            const body = [
+              marker,
+              `# CI Report`,
+              '',
+              banner,
+              '',
+              `**Commit:** \`${sha}\` | **Run:** [#${context.runNumber}](${runUrl}) | **Results:** ${pass} passed, ${fail} failed, ${skip} skipped`,
+              '',
+              '---',
+              '',
+              '### Theme',
+              '',
+              `| Check | Tool | Result |`,
+              `|:------|:-----|:------:|`,
+              `| **Theme Check** | \`shopify theme check --fail-level error\` | ${status(themeCheck)} |`,
+              `| **Reconcile** | \`git cherry HEAD origin/shopify-sync\` | ${status(reconcile)} |`,
+              '',
+              '### Workflows',
+              '',
+              `| Check | Tool | Result |`,
+              `|:------|:-----|:------:|`,
+              `| **Lint** | \`actionlint\` | ${status(actionlint)} |`,
+              `| **Security audit** | \`zizmor --pedantic\` | ${status(zizmor)} |`,
+              '',
+              '### Security',
+              '',
+              `| Check | Tool | Result |`,
+              `|:------|:-----|:------:|`,
+              `| **Secret Scan** | \`gitleaks\` (full history) | ${status(gitleaks)} |`,
+              '',
+              '---',
+              '',
+              '<details><summary><strong>Theme Check</strong> (<code>shopify theme check</code>)</summary>',
+              '',
+              '```',
+              themeCheckOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Reconcile</strong> (<code>git cherry</code>)</summary>',
+              '',
+              '```',
+              reconcileOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Workflow Lint</strong> (<code>actionlint</code>)</summary>',
+              '',
+              '```',
+              actionlintOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Workflow Security Audit</strong> (<code>zizmor --pedantic</code>)</summary>',
+              '',
+              '```',
+              zizmorOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Secret Scan</strong> (<code>gitleaks</code>)</summary>',
+              '',
+              '```',
+              gitleaksOut,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+            // Cleanup any stale single-purpose comments left behind from the
+            // pre-aggregator era (they are now folded into <!-- ci-results -->).
+            const stale = comments.filter(c =>
+              c.body && (
+                c.body.includes('<!-- validation-results -->') ||
+                c.body.includes('<!-- sapphire-reconcile-bot -->')
+              )
+            );
+            for (const c of stale) {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              } catch (_) { /* swallowed */ }
+            }
+
+      # ── Final status gate ──────────────────────────────────────
+      - name: Check for failures
+        if: always()
+        env:
+          THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
+          RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
+          ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
+          GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
+        run: |
+          check_exit() {
+            local name="$1" code="$2"
+            if [ -z "$code" ]; then
+              echo "::warning::${name} was skipped"
+            elif [ "$code" != "0" ]; then
+              echo "::error::${name} failed"
+              FAILED=1
+            fi
+          }
+
+          FAILED=0
+          check_exit "theme-check" "$THEME_CHECK_EXIT"
+          check_exit "reconcile" "$RECONCILE_EXIT"
+          check_exit "actionlint" "$ACTIONLINT_EXIT"
+          check_exit "zizmor" "$ZIZMOR_EXIT"
+          check_exit "gitleaks" "$GITLEAKS_EXIT"
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
