@@ -37,7 +37,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -134,12 +133,9 @@ jobs:
             REASONS="${REASONS}- exceeds 1000 LOC ($LOC lines changed)\n"
           fi
           if [ "$SUSPICIOUS" -eq 1 ]; then
-            printf "Sync-reconcile diff looks unusual:\n%b\nFiles changed:\n\`\`\`\n%s\n\`\`\`\n\nReview manually before merging shopify-sync into main." "$REASONS" "$FILES" > /tmp/sanity-body.md
-            gh issue create \
-              --title "Suspicious sync-reconcile diff (LOC=${LOC})" \
-              --label deploy-attention \
-              --body-file /tmp/sanity-body.md
-            echo "::error::Diff sanity check failed; auto-PR aborted. Issue filed."
+            # Issues are disabled on this repo. The workflow-run failure
+            # delivers the alarm via the standard GitHub notification path.
+            printf '::error::Diff sanity check failed; auto-PR aborted. LOC=%s. Reasons:\n%b\nFiles:\n%s\n' "$LOC" "$REASONS" "$FILES"
             exit 1
           fi
 
@@ -169,12 +165,12 @@ jobs:
           STALE=$(gh pr list --label auto-reconcile --state open --json number,createdAt \
             --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
           if [ -n "$STALE" ]; then
+            # Issues are disabled on this repo; post the alarm as a PR comment
+            # on each stale PR instead. The workflow-run failure (exit 1)
+            # delivers a second signal via standard GitHub notifications.
             for n in $STALE; do
               printf "PR #%s has been open more than 3 days. Validate may be failing or shopify-sync-auto-deploy stalled. Investigate the validate run, the auto-deploy run, or any merge conflict." "$n" > /tmp/stale-body.md
-              gh issue create \
-                --title "Stale auto-reconcile PR #$n" \
-                --label deploy-attention \
-                --body-file /tmp/stale-body.md || true
+              gh pr comment "$n" --body-file /tmp/stale-body.md || true
             done
             echo "::error::Stale auto-reconcile PRs detected"
             exit 1

@@ -67,12 +67,13 @@ This repo uses a **PR-based deploy model**. Direct edits to `main` and to the li
 
 1. Branch from `main`: `git switch -c <feature-branch> origin/main`.
 2. Develop locally: `npm ci && npx shopify theme dev`. The dev server runs against an unpublished development theme created on the fly; storefront edits to the dev theme do not touch the live theme or `shopify-sync`.
-3. Open a PR. CI runs four parallel jobs in `validate.yml` plus an aggregator that posts a sticky validation report:
+3. Open a PR. CI runs one sequential `validate` job in `validate.yml` with five steps plus an aggregator that posts a sticky CI Report comment:
    - `theme-check` (linter, `--fail-level error`).
-   - `pr-reconcile-check` (fails if `shopify-sync` has commits not in the branch; posts the resolution snippet as a sticky PR comment).
-   - `lint-workflows` (actionlint + zizmor on `.github/workflows/` and `.github/actions/`; always runs).
-   - `secret-scan` (Gitleaks, full history scan).
-   To re-run validation, push a new commit to the PR branch (there is no `validate` comment trigger; `issue_comment`-dispatched runs would not be associated with the PR HEAD SHA).
+   - `reconcile` (fails if `shopify-sync` has commits not in the branch; posts the resolution snippet as a sticky PR comment).
+   - `actionlint` (workflow + composite-action lint).
+   - `zizmor --pedantic` (workflow security audit).
+   - `gitleaks` (full git history secret scan).
+   The single required check on `main` is `validate / validate` (one context). To re-run validation, push a new commit to the PR branch (there is no `validate` comment trigger; `issue_comment`-dispatched runs would not be associated with the PR HEAD SHA).
 4. `preview.yml` deploys the branch to a per-PR unpublished theme `pr-<n>-preview` and posts a sticky PR comment with editor + preview URLs. Updated on every push, deleted on PR close.
 5. If `pr-reconcile-check` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
 6. On comment `deploy`, `deploy.yml` verifies Validate passed for the PR HEAD SHA, pushes the theme to live, smoke-tests the storefront, then squash-merges the PR and deletes the branch. On failure, a sticky failure report posts and the PR stays open. Direct push to `main` no longer triggers a deploy.
@@ -87,7 +88,24 @@ To inspect what is currently live without altering the working tree: `npx shopif
 
 ### Live theme
 
-Live theme is `#181702754604`. **Disconnected** from GitHub. Only the deploy chain (`deploy.yml`, `shopify-sync-auto-deploy.yml`, `dependabot-auto-deploy.yml`) writes to it; all three paths require Validate green on the PR HEAD SHA before they push. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme instead. `drift-watch.yml` (weekly) files an issue if it detects unauthorized direct edits.
+Live theme is `#181702754604`. **Disconnected** from GitHub. Only the deploy chain (`deploy.yml`, `shopify-sync-auto-deploy.yml`, `dependabot-auto-deploy.yml`) writes to it; all three paths require Validate green on the PR HEAD SHA before they push. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme instead. There is no automated drift detection - the "live = main" invariant is operator discipline, not enforced by CI.
+
+### Preview-theme cleanup (orphan recovery)
+
+`pr-N-preview` themes are deleted synchronously by the deploy workflows after a successful merge (via `shopify-theme-push`'s `mode: delete-preview`), and by `preview.yml::cleanup` on user-driven PR closes. There is no longer a scheduled sweep (the prior `drift-watch.yml` weekly job is gone). Accepted trade-off: if the synchronous cleanup ever silently fails (`continue-on-error: true` masks non-zero exits in the deploy chain), or if `preview.yml::cleanup` skips for any reason (concurrency cancellation, runner outage), the orphaned `pr-N-preview` theme persists indefinitely until manually swept.
+
+Manual recovery (run locally with `SHOPIFY_CLI_THEME_TOKEN` set):
+
+```bash
+# List orphans
+npx shopify theme list -s sapphire-shadow-studio --json \
+  | jq -r '.[] | select(.name | test("^pr-[0-9]+-preview$")) | "\(.id)\t\(.name)"'
+
+# Delete a specific orphan
+npx shopify theme delete --theme <id> --force
+```
+
+The deploy report comment surfaces a `cleanup_status` line on every auto-merge; a `:warning: **Preview cleanup warning**` line in that comment is the signal that manual recovery is needed.
 
 For full architecture details, see `.github/workflows/` and the README CI/CD section.
 
@@ -114,15 +132,12 @@ Before adding a new `vars.*` entry, ask: would I be comfortable seeing this valu
 
 ### Token rotation call-site catalog
 
-`SHOPIFY_CLI_THEME_TOKEN` is referenced in seven places. A rename or storage-location change requires updating every site:
+`SHOPIFY_CLI_THEME_TOKEN` is referenced in four places. A rename or storage-location change requires updating every site. All four go through the `shopify-theme-push` composite action; there are no direct-token call sites today.
 
-- `.github/workflows/preview.yml` (deploy-preview job: composite-action input; cleanup job: direct `env:` block).
-- `.github/workflows/deploy.yml` (deploy job: composite-action input).
-- `.github/workflows/drift-watch.yml` (Pull live theme step: direct `env:` block; Sweep stale rollback step: direct `env:` block).
-- `.github/workflows/shopify-sync-auto-deploy.yml` (auto-deploy job: composite-action input).
-- `.github/workflows/dependabot-auto-deploy.yml` (auto-deploy job: composite-action input).
-
-`drift-watch.yml` and `preview.yml::cleanup` are the only paths that bypass the composite action and embed the token directly; account for them when changing the Shopify CLI invocation surface.
+- `.github/workflows/preview.yml` (deploy-preview job: `mode: preview`; cleanup job: `mode: delete-preview`).
+- `.github/workflows/deploy.yml` (deploy job: `mode: live`; delete-preview step: `mode: delete-preview`).
+- `.github/workflows/shopify-sync-auto-deploy.yml` (auto-deploy job: `mode: live`; delete-preview step: `mode: delete-preview`).
+- `.github/workflows/dependabot-auto-deploy.yml` (auto-deploy job: `mode: live`; delete-preview step: `mode: delete-preview`).
 
 ### Why scheduled-deploy.yml is not ported from PFW
 
@@ -132,7 +147,7 @@ The Perts Foundry website (Hugo + Cloudflare Workers) runs a scheduled redeploy 
 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific notes:
 
-- **infra-reviewer**: run on any change touching `.github/workflows/` or `.github/actions/`. The deploy chain (`deploy`, `shopify-sync-auto-deploy`, `dependabot-auto-deploy`) shares the `deploy-production` concurrency group; the two auto-deploy workflows additionally depend on the literal name `validate` for their `workflow_run.workflows: ["validate"]` filter. `preview`, `sync-reconcile`, `drift-watch`, and `validate` use their own concurrency groups (or none); none of the workflows bind a GitHub Environment, and Shopify credentials/handles come from repo-level secrets and variables.
+- **infra-reviewer**: run on any change touching `.github/workflows/` or `.github/actions/`. The deploy chain (`deploy`, `shopify-sync-auto-deploy`, `dependabot-auto-deploy`) shares the `deploy-production` concurrency group; the two auto-deploy workflows additionally depend on the literal name `validate` for their `workflow_run.workflows: ["validate"]` filter. `preview`, `sync-reconcile`, and `validate` use their own concurrency groups (or none); none of the workflows bind a GitHub Environment, and Shopify credentials/handles come from repo-level secrets and variables.
 - **test-engineer**: skip. There is no JavaScript test framework configured.
 - **prompt-reviewer**: run only when this `CLAUDE.md`, agent definitions, or `.claude/` content change.
 - **security-auditor focus areas** for theme work: Liquid output filters (`| escape`, `| json`, `| script_tag`), metafield exposure, form CSRF tokens, untrusted user input rendered into HTML attributes.

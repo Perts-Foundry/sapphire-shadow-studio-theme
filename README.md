@@ -18,17 +18,16 @@ Branch from `main` for any code change. PRs run validate (theme-check, secret sc
 
 ## CI/CD
 
-Seven workflows in `.github/workflows/`. Deploy is **comment-driven**: a write+ collaborator comments `deploy` on a PR, the workflow validates and ships from the PR head, and the PR squash-merges only after the deploy succeeds. Failures post a sticky comment and the PR stays open.
+Six workflows in `.github/workflows/`. Deploy is **comment-driven**: a write+ collaborator comments `deploy` on a PR, the workflow validates and ships from the PR head, and the PR squash-merges only after the deploy succeeds. Failures post a sticky comment and the PR stays open.
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate.yml` | PR open/sync/reopen | Four parallel checks (`theme-check`, `pr-reconcile-check`, `lint-workflows`, `secret-scan`) plus an aggregator that posts the sticky validation report. The required checks on `main`. |
+| `validate.yml` | PR open/sync/reopen | One sequential job with five steps (`theme-check`, `reconcile`, `actionlint`, `zizmor`, `gitleaks`) plus an aggregator that posts a sticky CI Report. Single required check on `main`: `validate / validate`. |
 | `preview.yml` | PR open/sync/close | Creates a per-PR unpublished theme `pr-<n>-preview`, comments link on the PR, deletes on close. |
 | `deploy.yml` | Comment `deploy` on a PR | Verifies validate passed for the PR HEAD SHA, pushes the theme to live, smoke-tests `/`, `/cart`, `/collections/all`, then squash-merges the PR and deletes the branch. Sticky deploy / failure report. |
 | `sync-reconcile.yml` | Push to `main` or `shopify-sync`; daily 13:00 UTC; manual | On push to `shopify-sync`, opens or refreshes a PR to `main` with the `auto-reconcile` label. On push to `main`, fast-forwards `shopify-sync` to `main` when `shopify-sync` has no commits ahead. **Does not auto-merge**; the auto-deploy chain takes over after Validate. |
 | `shopify-sync-auto-deploy.yml` | After validate succeeds on the `shopify-sync` PR | Re-runs the diff-sanity gate, signed-commit gate, base-staleness gate; deploys to live; squash-merges. |
 | `dependabot-auto-deploy.yml` | After validate succeeds on a `dependabot/**` PR | Same shape as shopify-sync-auto-deploy with Dependabot-specific gates: signed by `dependabot[bot]`, refusal if `.github/{workflows,actions,scripts}` modified, major-version bumps require an `auto-deploy-major` label. `manual-review` label is the escape hatch. |
-| `drift-watch.yml` | Weekly Mondays; manual | Detects direct edits to live; sweeps stale rollback snapshots and orphan preview themes. |
 
 All workflows run on `ubuntu-24.04`, pin third-party actions to commit SHAs, and set `permissions: {}` at workflow root with per-job grants. Jobs that handle the Shopify token read it from a repo-level secret directly; there is no GitHub Environment binding. Dependabot keeps action and npm dependencies current (`.github/dependabot.yml`); npm bumps auto-deploy via `dependabot-auto-deploy.yml` after Validate passes, but action-SHA bumps are refused by the auto-deploy guard (it rejects any change under `.github/{workflows,actions,scripts}/` to prevent CI self-modification) and require manual review and a `deploy` comment.
 
@@ -61,7 +60,6 @@ If the live theme is in a bad state:
 
 1. **Most recent merged PR was bad**: open a revert PR (`gh pr create --base main` from `git revert <sha>`). Validate runs; comment `deploy` to ship the revert. Total recovery time is one comment-deploy cycle.
 2. **CI cannot deploy at all**: pull the last known-good SHA locally and run `npx shopify theme push --live --allow-live` directly. Documented break-glass path; logs the operator's local Shopify identity rather than the CI service-account token.
-3. **Need a known-good snapshot**: `drift-watch.yml` keeps weekly `rollback-YYYYMMDDTHHMMSSZ` unpublished themes for 14 days. In admin, publish the most recent one to recover instantly, then dig into what went wrong.
 
 ## Staying current with Horizon
 
