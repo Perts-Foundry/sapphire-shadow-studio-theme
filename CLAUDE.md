@@ -93,7 +93,7 @@ For full architecture details, see `.github/workflows/` and the README CI/CD sec
 
 ### Deploy gate trust delta
 
-The deploy chain has **no GitHub Environment required-reviewer gate** (by user choice; the previous `shopify-write` env's required reviewer was self-approval anyway). Three computed gates replace it:
+The deploy chain has **no GitHub Environment binding at all**. The Shopify token is read from a repo-level secret, the store handle and canonical domain from repo-level variables. Three computed gates govern access:
 
 1. **Collaborator-permission check** on the comment author of `deploy.yml`'s `issue_comment` trigger. The `permission-check` job runs in a no-token sandbox and uses `getCollaboratorPermissionLevel` to gate access; only `admin` or `write` collaborators proceed. The workflow-level `if` also pre-filters by `author_association` so non-collaborator comments do not even start a runner.
 2. **Validate-on-HEAD-SHA verification.** Every deploy path checks that Validate succeeded on the exact SHA being deployed. Comment-deploy uses `listWorkflowRuns` filtered by `validate.yml` and `head_sha`, takes the latest completed run, and rejects on stale/in-progress/failure. Auto-deploy paths are stronger: they re-fetch the *triggering* Validate run by `workflow_run.id` via `getWorkflowRun` and assert `conclusion: success`, then thread the `head_sha` returned by that lookup as `trustedSha` through every downstream API call (checkout, merge `sha:`, getCommit, etc.) so a force-push between Validate and auto-deploy aborts cleanly.
@@ -101,7 +101,7 @@ The deploy chain has **no GitHub Environment required-reviewer gate** (by user c
 
 All three gates depend on the workflow files themselves being correct. A compromised collaborator account that can land any PR (or force-push `shopify-sync` or open a `dependabot/`-named PR with a forged signature) bypasses all three with one fewer audit-log entry than the required-reviewer model produced.
 
-Compensations available but not implemented today: split `shopify-deploy` env into `shopify-deploy` (live token) and `shopify-preview` (preview token only) to limit blast radius; add a long-lived `auto-deploy-audit` GitHub issue that records every auto-deploy with SHA, bot, PR, and merge-as for forensic durability beyond the 90-day workflow-log retention. Both are deferred enhancements.
+Compensations available but not implemented today: introduce a separate preview-only Shopify token (passed to `preview.yml` and `cleanup` via a different repo-level secret) so a leaked preview token cannot push to live; add a long-lived `auto-deploy-audit` GitHub issue that records every auto-deploy with SHA, bot, PR, and merge-as for forensic durability beyond the 90-day workflow-log retention. Both are deferred enhancements.
 
 ### Why scheduled-deploy.yml is not ported from PFW
 
@@ -111,7 +111,7 @@ The Perts Foundry website (Hugo + Cloudflare Workers) runs a scheduled redeploy 
 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific notes:
 
-- **infra-reviewer**: run on any change touching `.github/workflows/` or `.github/actions/`. The deploy chain (`deploy`, `shopify-sync-auto-deploy`, `dependabot-auto-deploy`) shares the `deploy-production` concurrency group; the two auto-deploy workflows additionally depend on the literal name `validate` for their `workflow_run.workflows: ["validate"]` filter. `preview`, `sync-reconcile`, `drift-watch`, and `validate` use their own concurrency groups (or none) and are coupled only via the `shopify-deploy` environment binding.
+- **infra-reviewer**: run on any change touching `.github/workflows/` or `.github/actions/`. The deploy chain (`deploy`, `shopify-sync-auto-deploy`, `dependabot-auto-deploy`) shares the `deploy-production` concurrency group; the two auto-deploy workflows additionally depend on the literal name `validate` for their `workflow_run.workflows: ["validate"]` filter. `preview`, `sync-reconcile`, `drift-watch`, and `validate` use their own concurrency groups (or none); none of the workflows bind a GitHub Environment, and Shopify credentials/handles come from repo-level secrets and variables.
 - **test-engineer**: skip. There is no JavaScript test framework configured.
 - **prompt-reviewer**: run only when this `CLAUDE.md`, agent definitions, or `.claude/` content change.
 - **security-auditor focus areas** for theme work: Liquid output filters (`| escape`, `| json`, `| script_tag`), metafield exposure, form CSRF tokens, untrusted user input rendered into HTML attributes.

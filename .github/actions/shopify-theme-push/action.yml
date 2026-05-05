@@ -12,14 +12,15 @@ inputs:
     description: live or preview
     required: true
   shopify-cli-theme-token:
-    description: SHOPIFY_CLI_THEME_TOKEN secret
+    description: Shopify CLI theme token (Admin API access token, sourced from a repo-level secret).
     required: true
   shopify-flag-store:
     description: |
-      SHOPIFY_FLAG_STORE secret. MUST be the store's internal myshopify
-      handle (e.g. `yr5ye0-ua.myshopify.com`), not the friendly admin alias
-      (`sapphire-shadow-studio.myshopify.com`). Shopify's auth layer rejects
-      the alias with 401; only the internal handle is recognised.
+      Store's internal myshopify handle (e.g. `yr5ye0-ua.myshopify.com`), not
+      the friendly admin alias (`sapphire-shadow-studio.myshopify.com`).
+      Shopify's auth layer rejects the alias with 401; only the internal
+      handle is recognised. Sourced from a repo-level variable (the handle is
+      observable from any storefront response and is not credential material).
     required: true
   live-theme-id:
     description: Expected live theme ID (required when mode=live; ignored otherwise)

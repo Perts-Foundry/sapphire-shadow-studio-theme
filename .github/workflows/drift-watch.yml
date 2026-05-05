@@ -17,7 +17,6 @@ jobs:
     name: drift-watch
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: shopify-deploy
     permissions:
       contents: read
       issues: write
@@ -42,7 +41,7 @@ jobs:
       - name: Pull live theme
         env:
           SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/live
@@ -79,7 +78,7 @@ jobs:
       - name: Sweep stale rollback snapshots and orphaned previews
         env:
           SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
         run: |
           set -euo pipefail
           npx shopify theme list --json > themes.json
