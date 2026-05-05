@@ -12,14 +12,15 @@ inputs:
     description: live or preview
     required: true
   shopify-cli-theme-token:
-    description: SHOPIFY_CLI_THEME_TOKEN secret
+    description: Shopify CLI theme token (Admin API access token, sourced from a repo-level secret).
     required: true
   shopify-flag-store:
     description: |
-      SHOPIFY_FLAG_STORE secret. MUST be the store's internal myshopify
-      handle (e.g. `yr5ye0-ua.myshopify.com`), not the friendly admin alias
-      (`sapphire-shadow-studio.myshopify.com`). Shopify's auth layer rejects
-      the alias with 401; only the internal handle is recognised.
+      Store's internal myshopify handle (e.g. `yr5ye0-ua.myshopify.com`), not
+      the friendly admin alias (`sapphire-shadow-studio.myshopify.com`).
+      Shopify's auth layer rejects the alias with 401; only the internal
+      handle is recognised. Sourced from a repo-level variable (the handle is
+      observable from any storefront response and is not credential material).
     required: true
   live-theme-id:
     description: Expected live theme ID (required when mode=live; ignored otherwise)
@@ -37,6 +38,17 @@ inputs:
       permanent fixture before extending the default).
     required: false
     default: "/ /cart /collections/all"
+  smoke-base-url:
+    description: |
+      Canonical storefront origin to smoke-test (scheme + host, no trailing slash),
+      e.g. https://sapphireshadowstudio.com. When set, smoke probes follow redirects
+      and assert that (a) the final HTTP status is 200 AND (b) the final URL stays
+      on the same host (no cross-host hop). Set this when the storefront has a
+      primary custom domain that the myshopify URL 301s to; otherwise probes hit
+      the redirect and fail. When empty, the legacy no-follow probe of
+      `https://${SHOPIFY_FLAG_STORE}` is used.
+    required: false
+    default: ""
 
 outputs:
   theme-id:
@@ -249,28 +261,56 @@ runs:
       env:
         SHOPIFY_FLAG_STORE: ${{ inputs.shopify-flag-store }}
         SMOKE_PATHS: ${{ inputs.smoke-paths }}
+        SMOKE_BASE_URL: ${{ inputs.smoke-base-url }}
       run: |
         set +x
         set -uo pipefail
         EXIT_CODE=0
         OUTPUT=""
-        for path in $SMOKE_PATHS; do
-          # No -L: do not follow redirects (a misconfigured storefront that
-          # redirects / to a 200 elsewhere should fail the smoke gate).
-          # No -f: with -f curl exits early on HTTP >= 400 and may not write
-          # the actual status code to stdout, so failures all look like 000.
-          # Use -s for quiet, -S for errors-on-stderr, -o /dev/null to discard
-          # body, -w '%{http_code}' to print the actual code.
-          CODE=$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "https://${SHOPIFY_FLAG_STORE}${path}" 2>/dev/null || echo "000")
-          LINE="${path} -> ${CODE}"
-          OUTPUT="${OUTPUT}${LINE}"$'\n'
-          if [ "$CODE" != "200" ]; then
-            echo "::error::Smoke test failed: ${path} returned ${CODE}"
-            EXIT_CODE=1
-          else
-            echo "OK: ${path} -> 200"
-          fi
-        done
+        # Two probe modes:
+        #   - SMOKE_BASE_URL set: follow redirects (-L) and require BOTH a final
+        #     200 AND that the final URL stays on the configured host. Use this
+        #     when the storefront has a primary custom domain (the myshopify URL
+        #     301s to it).
+        #   - SMOKE_BASE_URL empty: legacy no-redirect probe of the myshopify
+        #     handle. Anything other than 200 fails (a 301 here means a custom
+        #     domain is in play and SMOKE_BASE_URL should be set).
+        # Use -s for quiet, -S for errors-on-stderr, -o /dev/null to discard
+        # body, -w to print metrics. No -f (curl -f exits early on HTTP >= 400
+        # and skips the metric line).
+        if [ -n "$SMOKE_BASE_URL" ]; then
+          EXPECTED_HOST=$(printf '%s' "$SMOKE_BASE_URL" | awk -F/ '{print $3}')
+          for path in $SMOKE_PATHS; do
+            URL="${SMOKE_BASE_URL}${path}"
+            RESULT=$(curl -L --max-time 30 -sS -o /dev/null -w '%{http_code} %{url_effective}' "$URL" 2>/dev/null || echo "000 -")
+            CODE=$(printf '%s' "$RESULT" | awk '{print $1}')
+            FINAL_URL=$(printf '%s' "$RESULT" | awk '{print $2}')
+            FINAL_HOST=$(printf '%s' "$FINAL_URL" | awk -F/ '{print $3}')
+            LINE="${path} -> ${CODE} (final: ${FINAL_URL})"
+            OUTPUT="${OUTPUT}${LINE}"$'\n'
+            if [ "$CODE" != "200" ]; then
+              echo "::error::Smoke test failed: ${path} returned ${CODE} (final: ${FINAL_URL})"
+              EXIT_CODE=1
+            elif [ "$FINAL_HOST" != "$EXPECTED_HOST" ]; then
+              echo "::error::Smoke test failed: ${path} redirected off-host (expected ${EXPECTED_HOST}, got ${FINAL_HOST})"
+              EXIT_CODE=1
+            else
+              echo "OK: ${path} -> 200 (${FINAL_HOST})"
+            fi
+          done
+        else
+          for path in $SMOKE_PATHS; do
+            CODE=$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "https://${SHOPIFY_FLAG_STORE}${path}" 2>/dev/null || echo "000")
+            LINE="${path} -> ${CODE}"
+            OUTPUT="${OUTPUT}${LINE}"$'\n'
+            if [ "$CODE" != "200" ]; then
+              echo "::error::Smoke test failed: ${path} returned ${CODE}"
+              EXIT_CODE=1
+            else
+              echo "OK: ${path} -> 200"
+            fi
+          done
+        fi
         {
           echo "smoke_output<<GHEOF"
           printf '%s' "$OUTPUT"

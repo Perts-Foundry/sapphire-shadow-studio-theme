@@ -4,13 +4,14 @@
 # success squash-merges the PR and deletes the branch.
 #
 # Two-job structure:
-#   permission-check - no Shopify token, no environment binding, no
-#                      concurrency group. Catches non-collaborators and stale
-#                      validation before any token is in scope and before the
-#                      live-deploy mutex is held.
-#   deploy           - environment: shopify-deploy, contents+pulls write,
-#                      concurrency: deploy-production. Inherits the trusted
-#                      head SHA from permission-check via job outputs.
+#   permission-check - no Shopify token, no concurrency group. Catches
+#                      non-collaborators and stale validation before any token
+#                      is in scope and before the live-deploy mutex is held.
+#   deploy           - contents+pulls write, concurrency: deploy-production.
+#                      Reads the Shopify token from a repo-level secret and
+#                      the store handle / canonical domain from repo-level
+#                      variables; no GitHub Environment binding. Inherits the
+#                      trusted head SHA from permission-check via job outputs.
 #
 # Author-association pre-filter at the workflow level keeps non-collaborator
 # comments from dispatching a runner at all.
@@ -182,11 +183,13 @@ jobs:
     needs: permission-check
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: shopify-deploy
     permissions:
       contents: write
       pull-requests: write
     concurrency:
+      # Shared with shopify-sync-auto-deploy.yml + dependabot-auto-deploy.yml;
+      # serialises live-theme writes across the three deploy paths. Renaming
+      # this group fragments the live-write mutex.
       group: deploy-production
       cancel-in-progress: false
     env:
@@ -208,8 +211,12 @@ jobs:
         with:
           mode: live
           shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
           live-theme-id: ${{ env.LIVE_THEME_ID }}
+          # format() collapses to '' when vars.SHOPIFY_DOMAIN is unset/empty,
+          # so the action falls back to the legacy myshopify probe instead of
+          # silently constructing the malformed URL `https://`.
+          smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
 
       - name: Merge PR and report success
         if: success()

@@ -20,6 +20,9 @@ on:
 permissions: {}
 
 concurrency:
+  # Shared with deploy.yml + dependabot-auto-deploy.yml; serialises live-theme
+  # writes across the three deploy paths. Renaming this group fragments the
+  # live-write mutex.
   group: deploy-production
   cancel-in-progress: false
 
@@ -29,7 +32,6 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: shopify-deploy
     permissions:
       contents: write
       pull-requests: write
@@ -233,8 +235,10 @@ jobs:
         with:
           mode: live
           shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
           live-theme-id: ${{ env.LIVE_THEME_ID }}
+          # See deploy.yml for the format() guard rationale.
+          smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
 
       - name: Merge PR and report success
         if: success() && steps.pr.outputs.number != ''
