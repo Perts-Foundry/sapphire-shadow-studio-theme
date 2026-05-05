@@ -26,6 +26,10 @@ jobs:
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # `gh label create` shells out to `git` to discover the repo even when
+      # GITHUB_REPOSITORY is set; without GH_REPO it fails with "not a git
+      # repository" because no checkout step runs in this workflow.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Create labels (idempotent)
         run: |
