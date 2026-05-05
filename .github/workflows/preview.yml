@@ -15,7 +15,6 @@ jobs:
     name: deploy-preview
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: shopify-deploy
     permissions:
       contents: read
       pull-requests: write
@@ -39,7 +38,7 @@ jobs:
         with:
           mode: preview
           shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
           pr-number: ${{ github.event.pull_request.number }}
 
       - name: Upsert preview comment
@@ -136,7 +135,6 @@ jobs:
     name: cleanup
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    environment: shopify-deploy
     permissions:
       contents: read
       pull-requests: write
@@ -155,7 +153,7 @@ jobs:
       - name: Delete preview theme(s)
         env:
           SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           SHOPIFY_CLI_TTY: "0"
           CI: "1"
