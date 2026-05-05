@@ -65,14 +65,31 @@ If the live theme is in a bad state:
 
 ## Staying current with Horizon
 
-Horizon's upstream lives at https://github.com/Shopify/horizon. To pull updates:
+Horizon's upstream lives at https://github.com/Shopify/horizon. This repo is **standalone, not a GitHub fork**: attribution lives in [`LICENSE.md`](/LICENSE.md) (Shopify MIT, preserved verbatim), and updates are pulled via plain `git`.
+
+The **first** upstream sync after the 2026-05-03 republish needs `--allow-unrelated-histories` because the new history shares no commit ancestry with `Shopify/horizon`. The repo's root commit (`init: import Horizon baseline at upstream commit 09db732`) carries Horizon's tree at the last sync point but is a separate root commit; git's merge-base uses the commit DAG, not tree equivalence, so the flag is the one-time fix. After the first merge lands, the merge commit becomes the common ancestor and subsequent syncs work normally.
 
 ```bash
 git remote add upstream https://github.com/Shopify/horizon.git  # one-time
 git fetch upstream
 git switch -c chore/horizon-merge-$(date +%Y-%m-%d)
-git merge upstream/main
-# resolve conflicts; the customizations under blocks/, snippets/, sections/ usually conflict
+
+# First sync after the 2026-05-03 republish:
+git merge --allow-unrelated-histories upstream/main
+
+# Subsequent syncs (after the first merge has landed on main):
+# git merge upstream/main
+
+# Expect add/add conflicts on every shared file the first time. To inspect
+# what actually changed upstream since the baseline (rather than what
+# conflicts) diff against the baseline tree:
+#   git diff 71b7cc2 upstream/main -- sections/ snippets/ blocks/ assets/
+# 71b7cc2 is the "init: import Horizon baseline..." commit at the root of
+# this repo's history.
+
+# Resolve conflicts; customisations under blocks/, snippets/, sections/,
+# assets/ usually conflict. Keep ours for diverged customisations; take
+# theirs for Horizon-internal changes you want to adopt.
 git push -u origin HEAD
 ```
 
