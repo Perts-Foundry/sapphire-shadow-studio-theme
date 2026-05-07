@@ -1,9 +1,26 @@
+# Reconciles shopify-sync <-> main. Two arms in one workflow:
+#   (1) push: main fast-forwards shopify-sync to main when shopify-sync has
+#       no commits ahead. Push uses GITHUB_TOKEN, which does not retrigger
+#       this workflow's push: shopify-sync arm. Do not switch to a PAT or
+#       deploy key without adding an actor filter.
+#   (2) push: shopify-sync opens or refreshes the auto-reconcile-labelled
+#       PR; this primarily covers the cold-start case (no PR yet). Once a
+#       PR is open, validate.yml's pull_request: synchronize trigger picks
+#       up subsequent admin commits without sync-reconcile re-running.
+# The 13:00 UTC cron is a safety net for both arms.
+#
+# WARNING: arms (1) and (2) deliberately do NOT share the deploy-production
+# concurrency group with shopify-sync-auto-deploy.yml; the fast-forward
+# step needs to run while the deploy chain is winding down post-merge.
+# Only one git push happens per run, in the fast-forward step itself.
 name: sync-reconcile
 
 on:
   schedule:
     # 13:00 UTC = 09:00 EDT (Mar-Nov) / 08:00 EST (Nov-Mar). GitHub cron runs in UTC; no TZ.
     - cron: '0 13 * * *'
+  push:
+    branches: [main, shopify-sync]
   workflow_dispatch:
 
 permissions: {}
@@ -18,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: write
     env:
@@ -31,10 +48,41 @@ jobs:
           ref: shopify-sync
           persist-credentials: false
 
+      - name: Fast-forward shopify-sync to main when clean
+        run: |
+          set -euo pipefail
+          git fetch --prune --no-tags origin main
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          BEHIND=$(git rev-list --count HEAD..origin/main)
+          if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
+            git merge --ff-only origin/main
+            # Unforced `git push` is load-bearing: a non-fast-forward
+            # rejection is exactly how we detect an admin commit racing
+            # this push. Do not "fix" by adding --force or
+            # --force-with-lease without re-thinking race semantics.
+            # Token is injected via http.extraheader per-command (checkout
+            # uses persist-credentials: false) so the credential stays out
+            # of .git/config for the rest of the job. $GH_TOKEN is the
+            # built-in GITHUB_TOKEN (auto-redacted in workflow logs).
+            if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" push origin shopify-sync 2>&1); then
+              echo "::notice::Fast-forwarded shopify-sync $BEHIND commits to match origin/main"
+            else
+              echo "::warning::Fast-forward push failed (likely raced an admin commit); next cycle will retry. git push said: $PUSH_ERR"
+            fi
+          elif [ "$AHEAD" -gt 0 ]; then
+            echo "Skipping fast-forward: shopify-sync has $AHEAD commit(s) ahead; existing reconcile flow handles."
+          else
+            echo "Already in sync."
+          fi
+
       - name: Determine sync status
         id: status
         run: |
           set -euo pipefail
+          # Intentional re-fetch: keeps this step independently re-runnable
+          # via workflow_dispatch even if the fast-forward step ever moves
+          # or is removed. The cost is a sub-second no-op against the warm
+          # remote.
           git fetch --prune --no-tags origin main
           AHEAD=$(git rev-list --count origin/main..HEAD)
           echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
@@ -48,10 +96,24 @@ jobs:
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
             echo "loc=$DIFF_LOC" >> "$GITHUB_OUTPUT"
+            if [ "$DIFF_LOC" -eq 0 ]; then
+              # Phantom state: shopify-sync has commits ahead of main but
+              # the tree is identical (typically because the previous
+              # auto-reconcile PR was squash-merged into main, leaving the
+              # original bot commit orphaned on shopify-sync). The
+              # downstream "Diff sanity check" and "Open or refresh
+              # reconcile PR" steps both gate on `loc != '0'` so the
+              # phantom does not produce empty-diff PRs. Layered defense
+              # with shopify-sync-auto-deploy.yml's tree-equivalence check
+              # (compareCommits.status === 'identical'). Self-clears when
+              # the next real admin commit arrives and a subsequent
+              # push:main fast-forwards shopify-sync past the orphans.
+              echo "::notice::shopify-sync ahead by $AHEAD but tree is identical to origin/main (phantom state from a prior squash-merge); skipping reconcile PR until a real admin commit arrives."
+            fi
           fi
 
       - name: Diff sanity check
-        if: steps.status.outputs.ahead != '0'
+        if: steps.status.outputs.ahead != '0' && steps.status.outputs.loc != '0'
         env:
           FILES: ${{ steps.status.outputs.files }}
           LOC: ${{ steps.status.outputs.loc }}
@@ -82,7 +144,7 @@ jobs:
           fi
 
       - name: Open or refresh reconcile PR
-        if: steps.status.outputs.ahead != '0'
+        if: steps.status.outputs.ahead != '0' && steps.status.outputs.loc != '0'
         env:
           AHEAD: ${{ steps.status.outputs.ahead }}
         run: |
