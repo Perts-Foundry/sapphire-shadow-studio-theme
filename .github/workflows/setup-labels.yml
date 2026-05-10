@@ -3,11 +3,10 @@
 # merging the CI/CD refactor PR. Idempotent: existing labels are skipped.
 #
 # Labels:
-#   auto-reconcile     - applied by sync-reconcile.yml to the shopify-sync
-#                        to main PR; the shopify-sync-auto-deploy gate
-#                        requires it.
-#   auto-deploy-major  - operator-applied. Allows dependabot-auto-deploy to
-#                        ship a major-version bump.
+#   auto-reconcile     - applied by sync.yml to the shopify-sync to main PR;
+#                        the deploy.yml shopify-sync gate requires it.
+#   auto-deploy-major  - operator-applied. Allows deploy.yml's dependabot
+#                        gate to ship a major-version bump.
 #   manual-review      - operator-applied. Both auto-deploys skip when
 #                        present; the human comment-deploy path remains.
 name: setup-labels
@@ -46,5 +45,5 @@ jobs:
             fi
           }
           create_label auto-reconcile     0E8A16 "shopify-sync to main reconcile PR; auto-deploys after Validate."
-          create_label auto-deploy-major  FBCA04 "Allow dependabot-auto-deploy to ship a major-version bump."
+          create_label auto-deploy-major  FBCA04 "Allow deploy.yml's dependabot gate to ship a major-version bump."
           create_label manual-review      D93F0B "Skip auto-deploy for this PR; require human comment-deploy."

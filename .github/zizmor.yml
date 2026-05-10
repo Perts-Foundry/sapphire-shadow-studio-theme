@@ -9,25 +9,33 @@
 rules:
   dangerous-triggers:
     ignore:
-      # Both auto-deploy workflows are workflow_run-triggered. zizmor flags
-      # workflow_run categorically as "almost always used insecurely" and the
-      # rule cannot evaluate the mitigations. The actual defences are:
+      # deploy.yml's workflow_run arm (auto-deploy for shopify-sync and
+      # dependabot/** PRs). zizmor flags workflow_run categorically as
+      # "almost always used insecurely"; the rule cannot evaluate the
+      # mitigations. The actual defences in deploy.yml's gate job are:
       #
-      #   - `Resolve trusted SHA` step calls actions.getWorkflowRun(run_id)
+      #   - `Resolve trigger context` step calls actions.getWorkflowRun(run_id)
       #     and uses the returned head_sha (trustedSha) for every downstream
-      #     API call (checkout ref, getCommit, listFiles, merge sha:).
-      #   - `Find PR` step asserts pr.head.sha === trustedSha and runs
+      #     API call. The event payload's head_sha is NOT consulted.
+      #   - Re-asserts workflow_run.conclusion === 'success' from the
+      #     getWorkflowRun response (defends against payload replay or
+      #     mutation between trigger and execution).
+      #   - HEAD-drift check: pr.head.sha === trustedSha plus
       #     repos.compareCommits(base: trustedSha, head: pr.head.sha) with
-      #     status === 'identical'.
-      #   - Bot identity gate uses GitHub-API-resolved login fields
-      #     (commit.author.login, commit.committer.login, pull.user.login)
-      #     plus verification.verified === true. Git commit headers are
-      #     not consulted (those are forgeable).
-      #   - Validate run correlation uses checks.listForSuite with the
-      #     workflow_run's check_suite_id, so a stale green Validate from
-      #     an earlier suite cannot be replayed.
-      #   - Refusal if .github/{workflows,actions,scripts} touched
-      #     (CI-self-modification guard).
-      #   - manual-review label as escape hatch.
-      - shopify-sync-auto-deploy.yml
-      - dependabot-auto-deploy.yml
+      #     status === 'identical'. Catches same-tree force-pushes as legit
+      #     and divergent trees as suspicious.
+      #   - Bot identity gate: verification.verified === true AND four
+      #     login fields (commit.author.login, commit.committer.login,
+      #     pull.user.login, plus the expected bot constant) all match.
+      #     Git commit header fields are forgeable and not consulted.
+      #   - For shopify-sync: auto-reconcile label present, manual-review
+      #     label absent, no .github/ or layout/theme.liquid in diff,
+      #     <1000 LOC, base-staleness check (main hasn't advanced).
+      #   - For dependabot/**: manual-review label absent, no
+      #     .github/{workflows,actions,scripts} in diff, major-version
+      #     bumps require auto-deploy-major label, base-staleness check.
+      #   - Defensive head_branch routing from the trusted source (not the
+      #     event payload).
+      #   - The deploy job (token-bearing) has needs: gate; if any gate
+      #     step setFailed(), the deploy job never runs.
+      - deploy.yml

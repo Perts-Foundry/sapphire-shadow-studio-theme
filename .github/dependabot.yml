@@ -13,9 +13,9 @@ updates:
     labels:
       - dependencies
       - github-actions
-    # Group all action bumps into one weekly PR. dependabot-auto-deploy.yml
-    # serializes deploys via the deploy-production concurrency group, so
-    # opening fewer PRs reduces queue churn and HEAD-drift skips.
+    # Group all action bumps into one weekly PR. deploy.yml's dependabot
+    # auto-deploy arm serialises via the deploy-production concurrency group,
+    # so opening fewer PRs reduces queue churn and HEAD-drift skips.
     groups:
       github-actions:
         patterns:
