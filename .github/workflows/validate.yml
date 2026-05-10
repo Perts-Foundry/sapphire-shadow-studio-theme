@@ -10,8 +10,8 @@
 # Required-check name on `main`: `validate / validate` (one context, set in
 # infrastructure repo via `ci_check_contexts = ["validate"]`).
 #
-# Token-bearing workflows (deploy.yml, preview.yml, drift-watch.yml, both
-# auto-deploys) live in separate files; this workflow holds no Shopify token.
+# Token-bearing workflows (deploy.yml, preview.yml, both auto-deploys) live in
+# separate files; this workflow holds no Shopify token.
 #
 # Fork PRs are excluded; preview.yml does the same. Excluding here also
 # prevents fork history from polluting `gitleaks --log-opts="--all"`.
@@ -51,14 +51,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install Shopify CLI
-        run: npm ci --ignore-scripts
+      - name: Setup Shopify CLI
+        uses: ./.github/actions/setup-shopify-cli
 
       # ── Theme Check ────────────────────────────────────────────
       - name: Theme Check
@@ -118,7 +112,7 @@ jobs:
         env:
           # SC2016 = "Expressions don't expand in single quotes" - false-
           # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
-          # in drift-watch.yml and sync-reconcile.yml.
+          # in sync-reconcile.yml.
           # SC2317 = "Command appears to be unreachable" - false-positive on
           # the `set +e; OUTPUT=$(...); EXIT_CODE=$?; echo $OUTPUT` capture
           # pattern used by every check step in this workflow. shellcheck

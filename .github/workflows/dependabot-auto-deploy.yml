@@ -235,18 +235,14 @@ jobs:
           # See deploy.yml for the format() guard rationale.
           smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
 
-      - name: Merge PR and report success
+      - name: Squash merge
+        id: merge
         if: success() && steps.pr.outputs.number != ''
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           PR_SHA: ${{ steps.pr.outputs.sha }}
-          PR_SHORT_SHA: ${{ steps.pr.outputs.short_sha }}
           PR_REF: ${{ steps.pr.outputs.ref }}
-          PR_BASE_REF: ${{ steps.pr.outputs.base_ref }}
-          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
-          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
-          THEME_ID: ${{ steps.push.outputs.theme-id }}
         with:
           script: |
             const RETRYABLE = new Set([500, 502, 503, 504]);
@@ -272,16 +268,9 @@ jobs:
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const marker = '<!-- dependabot-auto-deploy -->';
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const sha = process.env.PR_SHA;
-            const shortSha = process.env.PR_SHORT_SHA;
             const ref = process.env.PR_REF;
-            const baseRef = process.env.PR_BASE_REF;
-            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
-            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
-            const themeId = process.env.THEME_ID || '';
-            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
             let merged = true;
             let mergeError = '';
@@ -318,9 +307,97 @@ jobs:
               } catch (_) { /* swallowed */ }
             }
 
+            core.setOutput('merged', merged ? 'true' : 'false');
+            core.setOutput('merge_error', mergeError);
+            core.setOutput('branch_deleted', branchDeleted ? 'true' : 'false');
+
+      - name: Delete preview theme
+        id: cleanup
+        if: success() && steps.pr.outputs.number != '' && steps.merge.outputs.merged == 'true'
+        # Cleanup runs AFTER successful merge so a runner crash or non-transient
+        # cleanup failure cannot leave the system in `live deployed + PR open +
+        # preview gone`. continue-on-error keeps a leaked preview from blocking
+        # the post-deploy report; the cleanup_status line surfaces failures.
+        continue-on-error: true
+        uses: ./.github/actions/shopify-theme-push
+        with:
+          mode: delete-preview
+          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post auto-deploy report
+        # `if: success()` is correct, NOT `always()`. The cleanup step's
+        # `continue-on-error: true` masks its non-zero exit so the job stays
+        # green; success() therefore still passes here. Switching to
+        # always() would double-report alongside the Report failure step.
+        if: success() && steps.pr.outputs.number != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_SHORT_SHA: ${{ steps.pr.outputs.short_sha }}
+          PR_REF: ${{ steps.pr.outputs.ref }}
+          PR_BASE_REF: ${{ steps.pr.outputs.base_ref }}
+          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
+          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          THEME_ID: ${{ steps.push.outputs.theme-id }}
+          MERGED: ${{ steps.merge.outputs.merged }}
+          MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
+          BRANCH_DELETED: ${{ steps.merge.outputs.branch_deleted }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        with:
+          script: |
+            const RETRYABLE = new Set([500, 502, 503, 504]);
+            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
+            const isTransient = (err) => {
+              if (NON_RETRYABLE.has(err.status)) return false;
+              if (RETRYABLE.has(err.status)) return true;
+              const m = err.message || '';
+              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
+            };
+            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
+              for (let i = 1; i <= attempts; i++) {
+                try { return await fn(); }
+                catch (err) {
+                  if (i < attempts && isTransient(err)) {
+                    const wait = delayMs * Math.pow(2, i - 1);
+                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
+                    await new Promise(r => setTimeout(r, wait));
+                  } else { throw err; }
+                }
+              }
+            };
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const marker = '<!-- dependabot-auto-deploy -->';
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const shortSha = process.env.PR_SHORT_SHA;
+            const ref = process.env.PR_REF;
+            const baseRef = process.env.PR_BASE_REF;
+            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
+            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
+            const themeId = process.env.THEME_ID || '';
+            const merged = process.env.MERGED === 'true';
+            const mergeError = process.env.MERGE_ERROR || '';
+            const branchDeleted = process.env.BRANCH_DELETED === 'true';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
             const mergeStatus = merged
               ? `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchDeleted ? ' and deleted the branch.' : '.'}`
               : `:warning: **Merge skipped:** ${mergeError}`;
+
+            let cleanupLine;
+            if (!merged) {
+              cleanupLine = ':information_source: Preview cleanup skipped (merge did not succeed).';
+            } else if (cleanupOutcome === 'success') {
+              cleanupLine = `:broom: Preview cleanup: ${cleanupStatus || 'no preview theme found'}.`;
+            } else {
+              cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
+            }
 
             const body = [
               marker,
@@ -356,6 +433,8 @@ jobs:
               '---',
               '',
               mergeStatus,
+              '',
+              cleanupLine,
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -440,7 +519,7 @@ jobs:
               errorDetail = pushOutput || 'Push exited non-zero. See the workflow run.';
             } else if (smokeExit !== '0') {
               failStage = 'Smoke test (live theme is currently serving this SHA)';
-              errorDetail = `${smokeOutput || 'A storefront path returned non-200.'}\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Investigate and either fix and re-deploy, or roll back via the rollback-snapshot procedure in README.md.`;
+              errorDetail = `${smokeOutput || 'A storefront path returned non-200.'}\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Investigate and either fix and re-deploy, or roll back per the procedure in README.md (revert PR or break-glass \`shopify theme push --live\`).`;
             } else {
               failStage = 'Post-push';
               errorDetail = 'Merge or comment posting failed. See the workflow run.';

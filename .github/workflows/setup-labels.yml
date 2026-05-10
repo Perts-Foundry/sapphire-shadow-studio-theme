@@ -3,8 +3,6 @@
 # merging the CI/CD refactor PR. Idempotent: existing labels are skipped.
 #
 # Labels:
-#   deploy-attention   - filed by sync-reconcile.yml and drift-watch.yml on
-#                        suspicious diff or drift detection.
 #   auto-reconcile     - applied by sync-reconcile.yml to the shopify-sync
 #                        to main PR; the shopify-sync-auto-deploy gate
 #                        requires it.
@@ -25,10 +23,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      issues: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # `gh label create` shells out to `git` to discover the repo even when
+      # GITHUB_REPOSITORY is set; without GH_REPO it fails with "not a git
+      # repository" because no checkout step runs in this workflow.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Create labels (idempotent)
         run: |
@@ -44,7 +45,6 @@ jobs:
               exit 1
             fi
           }
-          create_label deploy-attention   B60205 "Deploy chain alarm filed by sync-reconcile or drift-watch."
           create_label auto-reconcile     0E8A16 "shopify-sync to main reconcile PR; auto-deploys after Validate."
           create_label auto-deploy-major  FBCA04 "Allow dependabot-auto-deploy to ship a major-version bump."
           create_label manual-review      D93F0B "Skip auto-deploy for this PR; require human comment-deploy."
