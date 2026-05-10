@@ -80,8 +80,12 @@ jobs:
       contents: read
       # write on pull-requests so the rejection sticky comment can post when
       # a gate fails; without it the rejection surfaces only as a workflow
-      # failure with no in-PR explanation.
+      # failure with no in-PR explanation. issues: write is needed for
+      # createForIssueComment reactions (eyes/-1/confused on the comment
+      # path) because reaction endpoints are routed through the issues API
+      # even for PR comments.
       pull-requests: write
+      issues: write
       actions: read
       checks: read
     outputs:
@@ -253,6 +257,13 @@ jobs:
             // ──────────────────────────────────────────────────────────
             // workflow_run path (shopify-sync or dependabot/**).
             // ──────────────────────────────────────────────────────────
+            // Defensive: workflow-level if: should have rejected anything
+            // other than issue_comment or workflow_run, but make the
+            // unreachable case loud rather than silently mis-routing.
+            if (eventName !== 'workflow_run') {
+              core.setFailed(`Unexpected event_name \`${eventName}\`; expected issue_comment or workflow_run.`);
+              return;
+            }
             // Re-fetch the triggering run by id. This is the TRUSTED source
             // for head_sha (the event payload can be replayed; getWorkflowRun
             // returns the live record). Re-assert conclusion=success in case
@@ -286,7 +297,10 @@ jobs:
               expectedBot = 'dependabot[bot]';
               headRefForLookup = headBranch;
             } else {
-              core.info(`Unexpected head_branch \`${headBranch}\`; nothing to do.`);
+              // workflow_run.branches filter should have prevented this, so
+              // a warning is louder than info but not a hard failure (the
+              // workflow filter is the real gate; this is belt-and-braces).
+              core.warning(`Unexpected head_branch \`${headBranch}\`; nothing to do.`);
               return;
             }
 
@@ -395,18 +409,23 @@ jobs:
               owner, repo, pull_number: prNumber,
             });
 
-            // Label gates.
-            if (!pr.labels.some(l => l.name === 'auto-reconcile')) {
-              core.info('PR does not carry auto-reconcile label; ignoring.');
-              return;
-            }
-            if (pr.labels.some(l => l.name === 'manual-review')) {
-              await postSkip('`manual-review` label present; auto-deploy skipped.');
+            // Draft-PR escape hatch: operator marks the auto-reconcile PR
+            // as a draft to halt auto-deploy; convert to ready to resume.
+            // Replaces the prior `manual-review` label mechanism.
+            if (pr.draft) {
+              await postSkip('PR is in draft state; auto-deploy skipped. Mark ready-for-review to resume.');
               return;
             }
 
-            // Bot identity. Uses only GitHub-API-resolved login fields plus
-            // verification.verified. Git commit headers are forgeable.
+            // Bot identity gate on the underlying commits (not the PR opener).
+            // sync.yml opens the auto-reconcile PR using GITHUB_TOKEN, so
+            // pr.user.login is `github-actions[bot]`, not `shopify[bot]`. The
+            // integrity assertion is that the COMMITS on shopify-sync were
+            // authored and committed by shopify[bot] with a verified signature.
+            // Uses only GitHub-API-resolved login fields; Git commit headers
+            // are forgeable. The PR opener identity is also verified to be
+            // GitHub-Actions (proves sync.yml opened it; a hand-opened
+            // shopify-sync PR would fail this).
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
@@ -414,9 +433,14 @@ jobs:
             const authorLogin = commit.author?.login;
             const committerLogin = commit.committer?.login;
             const prUserLogin = pr.user?.login;
-            const expected = 'shopify[bot]';
-            if (!verified || authorLogin !== expected || committerLogin !== expected || prUserLogin !== expected) {
-              await postSkip(`Bot-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}, pr.user=${prUserLogin}; expected ${expected}).`);
+            const expectedCommitBot = 'shopify[bot]';
+            const expectedPrBot = 'github-actions[bot]';
+            if (!verified || authorLogin !== expectedCommitBot || committerLogin !== expectedCommitBot) {
+              await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected ${expectedCommitBot}).`);
+              return;
+            }
+            if (prUserLogin !== expectedPrBot) {
+              await postSkip(`PR-opener-identity gate failed (pr.user=${prUserLogin}; expected ${expectedPrBot}, which means the PR was opened by sync.yml). A hand-opened shopify-sync PR cannot auto-deploy; comment \`deploy\` manually to ship it.`);
               return;
             }
 
@@ -511,9 +535,11 @@ jobs:
               owner, repo, pull_number: prNumber,
             });
 
-            // manual-review escape hatch.
-            if (pr.labels.some(l => l.name === 'manual-review')) {
-              await postSkip('`manual-review` label present; auto-deploy skipped.');
+            // Draft-PR escape hatch: operator converts the Dependabot PR to
+            // a draft to halt auto-deploy; convert to ready to resume.
+            // Replaces the prior `manual-review` label mechanism.
+            if (pr.draft) {
+              await postSkip('PR is in draft state; auto-deploy skipped. Mark ready-for-review to resume.');
               return;
             }
 
@@ -560,13 +586,21 @@ jobs:
               return;
             }
 
-            // Major-version detection.
+            // Major-version detection. Major bumps default-skip auto-deploy
+            // (no label opt-in available); operator comments `deploy` on the
+            // PR to ship a major bump after review. The regex matches
+            // Dependabot's standard "bump X from A.B.C to D.E.F" title form;
+            // non-standard formats (calver, prerelease, two-segment) fall
+            // through as "not a major bump" and auto-deploy, which is the
+            // safer default for ambiguous cases (Dependabot's own
+            // dependency-type metadata could be consulted as a future
+            // hardening, but is not part of the PR object directly).
             const text = `${pr.title}\n\n${pr.body || ''}`;
             const majorRegex = /\bbump\s+\S+\s+from\s+(\d+)\.\d+\.\d+\s+to\s+(\d+)\.\d+\.\d+/i;
             const m = text.match(majorRegex);
             const isMajor = m && m[1] !== m[2];
-            if (isMajor && !pr.labels.some(l => l.name === 'auto-deploy-major')) {
-              await postSkip(`Major-version bump detected (${m[0]}). Add the \`auto-deploy-major\` label to allow auto-deploy.`);
+            if (isMajor) {
+              await postSkip(`Major-version bump detected (${m[0]}); auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
               return;
             }
 
@@ -582,6 +616,7 @@ jobs:
     permissions:
       contents: write          # git push to shopify-sync
       pull-requests: write     # pulls.merge + sticky comment
+      issues: write            # createForIssueComment reactions (rocket / -1)
     concurrency:
       # Serialises live-theme writes across all three trigger paths. With the
       # unified workflow the comment-driven and auto-deploy paths now contend
@@ -763,7 +798,7 @@ jobs:
               echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
             else
               echo "::warning::Fast-forward push failed (likely raced an admin commit): $PUSH_ERR"
-              echo "sync-status=race; sync.yml will retry" >> "$GITHUB_OUTPUT"
+              echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
             fi
           elif [ "$AHEAD" -gt 0 ]; then
             DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
@@ -782,7 +817,7 @@ jobs:
                 echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
               else
                 echo "::warning::Phantom cleanup push failed (likely raced an admin commit): $PUSH_ERR"
-                echo "sync-status=race; sync.yml will retry" >> "$GITHUB_OUTPUT"
+                echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
               fi
             else
               # Real divergence: an admin commit landed during this deploy.
@@ -922,7 +957,7 @@ jobs:
             } else if (syncOutcome === 'success') {
               syncLine = `:arrows_clockwise: shopify-sync: ${syncStatus || 'unknown'}.`;
             } else {
-              syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. sync.yml on the next admin push will reconcile.`;
+              syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. \`sync.yml\` will retry on the next admin push, or at the 13:00 UTC daily cron (whichever comes first).`;
             }
 
             const body = [

@@ -54,11 +54,14 @@ jobs:
         id: status
         run: |
           set -euo pipefail
+          # Default outputs upfront so downstream `if:` checks against
+          # steps.status.outputs.loc are unambiguous even when AHEAD=0.
+          echo "ahead=0" >> "$GITHUB_OUTPUT"
+          echo "loc=0" >> "$GITHUB_OUTPUT"
           git fetch --prune --no-tags origin main
           AHEAD=$(git rev-list --count origin/main..HEAD)
           if [ "$AHEAD" -eq 0 ]; then
             echo "::notice::shopify-sync in sync with main."
-            echo "ahead=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           DIFF_LOC=$(git diff --numstat origin/main..HEAD \
@@ -91,24 +94,29 @@ jobs:
           if [ -n "$EXISTING" ]; then
             gh pr edit "$EXISTING" --title "$TITLE" --body-file /tmp/pr-body.md
           else
-            gh pr create --base main --head shopify-sync --label auto-reconcile \
+            gh pr create --base main --head shopify-sync \
               --title "$TITLE" --body-file /tmp/pr-body.md
           fi
 
-      - name: Stale auto-reconcile PR alarm
+      - name: Stale reconcile PR notice
+        # Always-run; never fails the workflow. The prior `exit 1` here made
+        # every cron firing of `sync` red whenever a stale PR existed, training
+        # operators to ignore the workflow. A workflow notice + per-PR comment
+        # is louder where it matters (the stale PR itself) without polluting
+        # the Actions tab with red runs.
         if: always()
         run: |
           set -euo pipefail
-          # 259200 seconds = 3 days. PRs open this long indicate the
-          # auto-deploy path is stuck (validate red, gate rejecting, etc.).
-          STALE=$(gh pr list --label auto-reconcile --state open \
+          # 259200 seconds = 3 days. There is at most one open shopify-sync
+          # -> main PR at a time (sync.yml upserts), so this loop runs zero
+          # or one times in practice.
+          STALE=$(gh pr list --head shopify-sync --base main --state open \
             --json number,createdAt \
             --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
           if [ -n "$STALE" ]; then
             for n in $STALE; do
-              printf "PR #%s has been open more than 3 days. Auto-deploy may be failing or rejected by a gate. Investigate the validate run, the deploy run, or any merge conflict." "$n" > /tmp/stale-body.md
+              printf "PR #%s has been open more than 3 days. Auto-deploy may be failing or rejected by a gate. Investigate the validate run, the deploy run, or any merge conflict.\n" "$n" > /tmp/stale-body.md
               gh pr comment "$n" --body-file /tmp/stale-body.md || true
             done
-            echo "::error::Stale auto-reconcile PRs detected"
-            exit 1
+            echo "::warning::Stale reconcile PR open >3 days; comment posted on PR(s) $STALE"
           fi
