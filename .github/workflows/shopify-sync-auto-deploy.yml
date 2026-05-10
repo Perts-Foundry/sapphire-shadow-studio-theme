@@ -1,4 +1,4 @@
-# Auto-deploy the daily shopify-sync auto-reconcile PR after Validate succeeds.
+# Auto-deploy the shopify-sync auto-reconcile PR after Validate succeeds.
 # Triggered by `workflow_run` so the deploy chain stays driven by the same
 # Validate-on-HEAD-SHA gate as the human comment-deploy path.
 #

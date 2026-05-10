@@ -5,8 +5,9 @@
 # Labels:
 #   deploy-attention   - filed by sync-reconcile.yml and drift-watch.yml on
 #                        suspicious diff or drift detection.
-#   auto-reconcile     - applied by sync-reconcile.yml to its daily PR; the
-#                        shopify-sync-auto-deploy gate requires it.
+#   auto-reconcile     - applied by sync-reconcile.yml to the shopify-sync
+#                        to main PR; the shopify-sync-auto-deploy gate
+#                        requires it.
 #   auto-deploy-major  - operator-applied. Allows dependabot-auto-deploy to
 #                        ship a major-version bump.
 #   manual-review      - operator-applied. Both auto-deploys skip when
@@ -44,6 +45,6 @@ jobs:
             fi
           }
           create_label deploy-attention   B60205 "Deploy chain alarm filed by sync-reconcile or drift-watch."
-          create_label auto-reconcile     0E8A16 "Daily shopify-sync to main reconcile PR; auto-deploys after Validate."
+          create_label auto-reconcile     0E8A16 "shopify-sync to main reconcile PR; auto-deploys after Validate."
           create_label auto-deploy-major  FBCA04 "Allow dependabot-auto-deploy to ship a major-version bump."
           create_label manual-review      D93F0B "Skip auto-deploy for this PR; require human comment-deploy."
