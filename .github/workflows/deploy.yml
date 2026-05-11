@@ -127,12 +127,14 @@ jobs:
             const MARKER = '<!-- deploy-result -->';
 
             // Sticky-comment helper. Upserts a single MARKER-tagged comment per
-            // PR and cleans up duplicates. Used by both pre-deploy gate
-            // rejections (here) and the deploy ladder's report steps.
+            // PR and cleans up duplicates. Uses github.paginate so PRs with
+            // >100 comments (auto-reconcile PRs that accumulate daily-cron
+            // stale notices, or long-lived discussion threads) still find
+            // and update the existing sticky instead of posting a duplicate.
             const upsertSticky = async (prNumber, body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -222,8 +224,15 @@ jobs:
               // PR with stale or red validate. The workflow_run path skips
               // this step because the trigger itself proves validate was just
               // green on the trusted SHA.
+              //
+              // event: 'pull_request' is belt-and-braces. validate.yml is
+              // pull_request-only today, but if it ever grows a push: or
+              // workflow_dispatch: trigger, a run from one of those events on
+              // the same SHA would otherwise pass as "proof of Validate green"
+              // for a comment-deploy. They run with different intent and
+              // potentially different env, so they should not satisfy this gate.
               const { data: runs } = await github.rest.actions.listWorkflowRuns({
-                owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, per_page: 100,
+                owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, event: 'pull_request', per_page: 100,
               });
               const validateRuns = runs.workflow_runs || [];
               if (validateRuns.length === 0) {
@@ -304,9 +313,11 @@ jobs:
               return;
             }
 
-            // Find the open PR.
+            // Find the open PR. GitHub guarantees uniqueness of (state, head)
+            // for open PRs, so per_page: 1 is sufficient and makes the
+            // uniqueness assumption explicit.
             const { data: pulls } = await github.rest.pulls.list({
-              owner, repo, state: 'open', head: `${owner}:${headRefForLookup}`, per_page: 5,
+              owner, repo, state: 'open', head: `${owner}:${headRefForLookup}`, per_page: 1,
             });
             if (pulls.length === 0) {
               core.info(`No open PR from ${headRefForLookup}; nothing to deploy.`);
@@ -327,11 +338,16 @@ jobs:
               await postSkip(prNumber, `HEAD drifted (validated \`${trustedSha.substring(0,7)}\`, current \`${pr.head.sha.substring(0,7)}\`). The next Validate cycle will retrigger.`);
               return;
             }
-            // Tree-equivalence: compareCommits.status === 'identical' catches
-            // force-pushes to the same tree (legit) vs different trees
-            // (suspicious). pr.head.sha === trustedSha alone is not enough
-            // because a same-tree amend can change the SHA without changing
-            // the tree (force-push of an amended commit, etc.).
+            // Defence in depth on top of the pr.head.sha === trustedSha
+            // equality above. compareCommits returns 'identical' only when
+            // the two refs resolve to the SAME commit object (not when trees
+            // are the same but SHAs differ, despite the term's connotation);
+            // a same-tree amend or cherry-pick produces a different SHA and
+            // returns 'diverged'. So this assertion is functionally redundant
+            // with the SHA equality above and exists to catch any path where
+            // SHAs end up non-identical (force-push to a different tree,
+            // same-tree amend, cherry-pick), including paths a future
+            // refactor might accidentally introduce.
             try {
               const { data: cmp } = await github.rest.repos.compareCommits({
                 owner, repo, base: trustedSha, head: pr.head.sha,
@@ -369,8 +385,8 @@ jobs:
 
             const upsertSticky = async (body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -478,12 +494,35 @@ jobs:
               return;
             }
 
+      - name: Fetch Dependabot metadata
+        # Parses dependabot[bot]'s structured commit trailers to determine the
+        # highest update-type across all deps in the PR. Authoritative source
+        # for grouped-update PRs whose titles are non-parseable prose (e.g.
+        # "bump the github-actions group with 3 updates") and whose body lines
+        # depend on a free-form template Dependabot owns. The downstream gate
+        # also keeps a "Bump|Updates X from A to B" regex pass as belt-and-
+        # braces and fails closed when BOTH signals come up empty.
+        #
+        # Only runs for the Dependabot trigger path. The action reads the PR
+        # context from the workflow_run event payload and short-circuits on
+        # non-Dependabot PRs anyway, but the explicit `if:` keeps the gate's
+        # responsibility readable.
+        id: dependabot-metadata
+        if: steps.resolve.outputs.trigger_path == 'dependabot'
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
       - name: Auto-deploy gates - dependabot
         if: steps.resolve.outputs.trigger_path == 'dependabot'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
+          # update-type is the highest-severity SemVer update across the deps
+          # in this PR ('version-update:semver-major' if any dep is a major
+          # bump). Empty string when fetch-metadata cannot resolve the PR or
+          # when the PR is not a Dependabot PR (defensive; the bot-identity
+          # gate already enforces the latter).
+          FETCH_METADATA_UPDATE_TYPE: ${{ steps.dependabot-metadata.outputs.update-type }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -495,8 +534,8 @@ jobs:
 
             const upsertSticky = async (body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -588,17 +627,37 @@ jobs:
 
             // Major-version detection. Major bumps default-skip auto-deploy
             // (no label opt-in available); operator comments `deploy` on the
-            // PR to ship a major bump after review. Handles both:
-            //   - Non-grouped title form:  "Bump <dep> from A.B.C to D.E.F"
-            //   - Grouped body form:       "Updates `<dep>` from A.B.C to D.E.F"
-            //     (Dependabot's grouped-update PR title is non-parseable;
-            //      the body contains one "Updates X from..." line per dep
-            //      in the group.)
-            // The version pattern is permissive enough to match two-segment
-            // versions, leading-v versions, and prerelease / build-metadata
-            // suffixes. If ANY line in title+body is a major bump (first
-            // numeric component differs), default-skip auto-deploy. A
-            // non-major or unparseable line falls through harmlessly.
+            // PR after review to ship a major bump.
+            //
+            // Two independent signals are consulted and the gate fails closed
+            // when both come up empty:
+            //   1. PRIMARY: dependabot/fetch-metadata parses structured commit
+            //      trailers and exposes the highest update-type across all
+            //      deps via outputs.update-type ('version-update:semver-major'
+            //      when any dep in the PR is a major bump). Authoritative for
+            //      grouped-update PRs whose title and body are non-parseable
+            //      free-form prose ("bump the github-actions group with N
+            //      updates").
+            //   2. SECONDARY: parse "Bump|Updates <dep> from A to B" lines
+            //      from the PR title and body. Catches:
+            //        - Timing / payload edge cases where fetch-metadata
+            //          returns an empty update-type (e.g. workflow_run
+            //          payload missing the PR; rare but documented).
+            //        - Future format changes in Dependabot's trailers that
+            //          would silently break the action's output.
+            //      The version pattern is permissive (two-segment versions,
+            //      leading-v, prerelease / build-metadata suffixes); a major
+            //      bump is "first numeric component differs."
+            //   3. FAIL-CLOSED: if BOTH signals are empty on a PR whose
+            //      identity already matched dependabot[bot] above, the gate
+            //      cannot determine bump severity and must postSkip. Without
+            //      this, an unparseable PR would auto-deploy on the implicit
+            //      assumption that the absence of "major" signals means
+            //      "non-major" - exactly the failure mode we're guarding
+            //      against if Dependabot ever changes its output format.
+            const fetchMetadataUpdateType = process.env.FETCH_METADATA_UPDATE_TYPE || '';
+            const isMajorByMetadata = fetchMetadataUpdateType === 'version-update:semver-major';
+
             const text = `${pr.title}\n${pr.body || ''}`;
             const lineRegex = /\b(?:Bump|Updates)\s+[`']?[\S]+?[`']?\s+from\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)\s+to\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)/gi;
             const extractMajor = (v) => {
@@ -609,10 +668,17 @@ jobs:
             const majorBumps = matches
               .map(mm => ({ raw: mm[0].trim(), from: extractMajor(mm[1]), to: extractMajor(mm[2]) }))
               .filter(x => x.from != null && x.to != null && x.from !== x.to);
-            if (majorBumps.length > 0) {
-              const detail = majorBumps.map(x => x.raw).slice(0, 3).join('; ');
-              const more = majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '';
-              await postSkip(`Major-version bump(s) detected: ${detail}${more}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+
+            if (isMajorByMetadata || majorBumps.length > 0) {
+              const detail = isMajorByMetadata
+                ? `fetch-metadata reports update-type=\`${fetchMetadataUpdateType}\``
+                : majorBumps.map(x => x.raw).slice(0, 3).join('; ') + (majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '');
+              await postSkip(`Major-version bump(s) detected: ${detail}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+              return;
+            }
+
+            if (!fetchMetadataUpdateType && matches.length === 0) {
+              await postSkip('Could not determine bump severity: `dependabot/fetch-metadata` returned no `update-type` and the PR title/body contained no parseable `Bump|Updates X from A to B` lines. Manual review required: comment `deploy` to ship after verifying the bump severity.');
               return;
             }
 
@@ -629,6 +695,11 @@ jobs:
       contents: write          # git push to shopify-sync
       pull-requests: write     # pulls.merge + sticky comment
       issues: write            # createForIssueComment reactions (rocket / -1)
+      actions: read            # forward-compat: any future step that reads
+                               # workflow runs (e.g. to surface the Validate
+                               # run id in the deploy report) needs this; the
+                               # gate already has it for listWorkflowRuns and
+                               # the grant is harmless when unused
     concurrency:
       # Serialises live-theme writes across all three trigger paths. With the
       # unified workflow the comment-driven and auto-deploy paths now contend
@@ -665,7 +736,279 @@ jobs:
           # silently constructing the malformed URL `https://`.
           smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
 
+      - name: Delete preview theme
+        id: cleanup
+        # Gated on live push success (not merge success): the preview becomes
+        # obsolete the moment live serves the new code, regardless of whether
+        # the squash-merge has happened yet. Running cleanup BEFORE merge means
+        # the operator sees the preview-deletion sticky and the deploy report
+        # update on an open PR, with the merge as the final user-visible event.
+        #
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # already conditionally skipped for Dependabot PRs (no Shopify token in
+        # the Dependabot secrets scope), so there is never a `pr-N-preview`
+        # theme to delete on this path. Running the cleanup anyway would
+        # produce a misleading ":broom: Preview cleanup: no preview theme
+        # found." line in every Dependabot deploy report.
+        #
+        # Trade-off: a runner crash between cleanup and merge leaves the system
+        # in `live deployed + PR open + preview gone`. Live is already serving
+        # the new code, so the preview's verification value is moot at this
+        # point; the operator merges the PR manually and the system reconverges.
+        if: success() && needs.gate.outputs.trigger_path != 'dependabot'
+        continue-on-error: true
+        uses: ./.github/actions/shopify-theme-push
+        with:
+          mode: delete-preview
+          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
+          pr-number: ${{ needs.gate.outputs.pr_number }}
+
+      - name: Update preview comment
+        # Updates the `<!-- preview -->` sticky comment originally posted by
+        # preview.yml::deploy-preview (saying "Preview theme deployed") to
+        # reflect that the preview theme has been deleted by the step above.
+        #
+        # Runs BEFORE the squash-merge so the operator sees this update on
+        # the still-open PR; the merge is the final user-visible event in
+        # the chain. preview.yml::cleanup, which would normally update this
+        # sticky on `pull_request: closed`, never fires for deploy-chain
+        # merges because GitHub suppresses downstream events from
+        # GITHUB_TOKEN-driven actions, so the inline update here is the
+        # only path that closes the UX gap.
+        #
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # skipped for those PRs so there is no preview sticky to update,
+        # and the cleanup step above is also skipped (no theme to delete).
+        if: success() && needs.gate.outputs.trigger_path != 'dependabot'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+        with:
+          script: |
+            const marker = '<!-- preview -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            if (existing.length === 0) {
+              // No prior preview sticky (e.g. Dependabot PR). Do not create
+              // one just to mark it deleted; that would surprise the operator.
+              return;
+            }
+
+            const body = cleanupOutcome === 'success'
+              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted.** Live theme is now serving this commit; squash-merge to follow.'].join('\n')
+              : [
+                  marker,
+                  '# Preview Deployment',
+                  '',
+                  `⚠️ **Preview theme cleanup warning.** Live theme is serving this commit but preview deletion may have failed (${cleanupStatus || 'see deploy report'}). Delete manually if the theme persists: \`npx shopify theme delete --theme <id> --force\`.`,
+                ].join('\n');
+
+            const [keep, ...dupes] = existing;
+            await github.rest.issues.updateComment({
+              owner, repo, comment_id: keep.id, body,
+            });
+            for (const dup of dupes) {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner, repo, comment_id: dup.id,
+                });
+              } catch (_) { /* swallowed */ }
+            }
+
+      - name: React with rocket
+        # Reacts on the comment-deploy `deploy` comment now that live push +
+        # cleanup + preview-sticky update have all succeeded. Runs BEFORE the
+        # squash-merge so the operator gets the rocket on the still-open PR,
+        # matching the "deploy report and other actions happen before merge"
+        # ordering this chain now follows.
+        if: success() && github.event_name == 'issue_comment'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Post deploy report
+        # Posted BEFORE the squash-merge. The deploy report covers push, smoke
+        # test, and preview cleanup; merge and shopify-sync status are
+        # deliberately NOT in the body because neither has run yet (the merge
+        # step follows; sync follows the merge). The PR's GitHub-rendered
+        # "Merged" badge becomes the merge confirmation once the merge step
+        # closes the PR; sync status is observable only via the workflow log
+        # (sync.yml's daily cron + admin-push retrigger are the self-heal).
+        #
+        # On merge failure, the merge step calls core.setFailed; the Report
+        # failure step then overwrites this sticky with a merge-specific error
+        # message.
+        if: success()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
+          PR_REF: ${{ needs.gate.outputs.ref }}
+          PR_BASE_REF: ${{ needs.gate.outputs.base_ref }}
+          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
+          DEPLOYER: ${{ needs.gate.outputs.deployer }}
+          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
+          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          THEME_ID: ${{ steps.push.outputs.theme-id }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        with:
+          script: |
+            const RETRYABLE = new Set([500, 502, 503, 504]);
+            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
+            const isTransient = (err) => {
+              if (NON_RETRYABLE.has(err.status)) return false;
+              if (RETRYABLE.has(err.status)) return true;
+              const m = err.message || '';
+              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
+            };
+            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
+              for (let i = 1; i <= attempts; i++) {
+                try { return await fn(); }
+                catch (err) {
+                  if (i < attempts && isTransient(err)) {
+                    const wait = delayMs * Math.pow(2, i - 1);
+                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
+                    await new Promise(r => setTimeout(r, wait));
+                  } else { throw err; }
+                }
+              }
+            };
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const MARKER = '<!-- deploy-result -->';
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const shortSha = process.env.PR_SHORT_SHA;
+            const ref = process.env.PR_REF;
+            const baseRef = process.env.PR_BASE_REF;
+            const triggerPath = process.env.TRIGGER_PATH;
+            const deployer = process.env.DEPLOYER;
+            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
+            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
+            const themeId = process.env.THEME_ID || '';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const titleByPath = {
+              'comment': 'Deployment Report',
+              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
+              'dependabot': 'Auto-deploy Report (dependabot)',
+            };
+            const title = titleByPath[triggerPath] || 'Deployment Report';
+
+            // cleanupOutcome reflects the Delete preview theme step. Empty
+            // when the step was skipped (Dependabot path). The skipped case
+            // is rendered with a neutral info line since there is no preview
+            // theme to delete on that path by design.
+            let cleanupLine;
+            if (cleanupOutcome === 'success') {
+              cleanupLine = `:broom: Preview cleanup: ${cleanupStatus || 'no preview theme found'}.`;
+            } else if (cleanupOutcome === 'skipped' || cleanupOutcome === '') {
+              cleanupLine = ':information_source: Preview cleanup skipped (no preview for this trigger path).';
+            } else {
+              cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
+            }
+
+            const body = [
+              MARKER,
+              `# ${title}`,
+              '',
+              ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit; squash-merge is the next step in this run.',
+              '',
+              '| | |',
+              '|:--|:--|',
+              `| **Commit** | \`${shortSha}\` |`,
+              `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
+              `| **Theme ID** | \`${themeId}\` |`,
+              `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
+              `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
+              '',
+              '---',
+              '',
+              '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
+              '',
+              '```',
+              pushOutput,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Smoke test</strong></summary>',
+              '',
+              '```',
+              smokeOutput,
+              '```',
+              '',
+              '</details>',
+              '',
+              '---',
+              '',
+              cleanupLine,
+              '',
+              ':twisted_rightwards_arrows: Squash-merge follows; shopify-sync syncs immediately after. Both are post-comment steps in this run.',
+            ].join('\n');
+
+            // Upsert sticky comment. github.paginate handles PRs with >100
+            // comments (auto-reconcile PRs that accumulate daily-cron stale
+            // notices), avoiding the duplicate-posting bug a bare listComments
+            // call would produce when the existing sticky lives past page 1.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(MARKER))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await withRetry(
+                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
+                { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
+              );
+            } else {
+              await withRetry(
+                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
+                { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
+              );
+            }
+            for (const d of dupes) {
+              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+              catch (_) { /* swallowed */ }
+            }
+
       - name: Squash merge
+        # Runs AFTER the deploy report, preview cleanup, sticky update, and
+        # rocket reaction. The merge closes the PR; from the operator's
+        # perspective the PR-close moment is the final user-visible event of
+        # the deploy chain.
+        #
+        # On merge failure, calls core.setFailed so the job enters failure
+        # mode and the Report failure step (below) overwrites the deploy
+        # report sticky with a merge-specific error message. Without
+        # setFailed, the success-path deploy-report sticky would persist
+        # next to an unmerged PR, which is the surprising state to debug.
         id: merge
         if: success()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -730,6 +1073,15 @@ jobs:
                   { attempts: 3, delayMs: 2000, label: 'Squash merge' }
                 );
                 deployedSha = mergeResult.sha;
+                // Defensive: the squash-merge API response is documented to
+                // return the new merge-commit SHA in the `sha` field. Asserting
+                // non-empty here means a future response-shape change can't
+                // silently produce an empty refspec for the Sync step
+                // (`git push origin :shopify-sync` would DELETE the branch).
+                if (!deployedSha) {
+                  merged = false;
+                  mergeError = 'merge API returned no SHA in response; refusing to push an empty refspec to shopify-sync.';
+                }
               } catch (e) {
                 merged = false;
                 mergeError = e.message;
@@ -760,20 +1112,14 @@ jobs:
             core.setOutput('branch_retained', branchRetained ? 'true' : 'false');
             core.setOutput('deployed_sha', deployedSha);
 
-      - name: Delete preview theme
-        id: cleanup
-        if: success() && steps.merge.outputs.merged == 'true'
-        # Cleanup runs AFTER successful merge so a runner crash or non-transient
-        # cleanup failure cannot leave the system in `live deployed + PR open +
-        # preview gone`. continue-on-error keeps a leaked preview from blocking
-        # the post-deploy report; the cleanup-status output surfaces failures.
-        continue-on-error: true
-        uses: ./.github/actions/shopify-theme-push
-        with:
-          mode: delete-preview
-          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
-          pr-number: ${{ needs.gate.outputs.pr_number }}
+            // Fail the step on merge failure so the failure path (React
+            // with -1 + Report failure) fires and overwrites the pre-merge
+            // deploy-report sticky with a merge-specific error message.
+            // Without this, the pre-merge sticky would persist next to an
+            // unmerged PR with no indication that the merge step failed.
+            if (!merged) {
+              core.setFailed(mergeError);
+            }
 
       - name: Sync main -> shopify-sync
         id: sync
@@ -782,7 +1128,14 @@ jobs:
         # Anchored on the deployed SHA returned by the squash-merge, NOT on
         # origin/main re-resolved later, so this push is tied to what just
         # went live.
-        if: success() && steps.merge.outputs.merged == 'true' && steps.merge.outputs.deployed_sha != ''
+        #
+        # Runs after the squash-merge (which already closed the PR) and is
+        # therefore not user-facing in the PR timeline. Failures surface as
+        # `::warning::` annotations on the workflow run and self-heal via
+        # sync.yml on the next admin push or the 13:00 UTC daily cron. The
+        # deploy report comment, posted BEFORE merge, does NOT include sync
+        # status.
+        if: success() && steps.merge.outputs.deployed_sha != ''
         continue-on-error: true
         env:
           # Passing via env: instead of inline ${{ }} interpolation prevents
@@ -792,31 +1145,67 @@ jobs:
         run: |
           set -euo pipefail
 
+          # GitHub's git-over-HTTPS endpoint expects HTTP Basic auth with
+          # `x-access-token` as the username and the GITHUB_TOKEN as the
+          # password (the same scheme actions/checkout's persisted creds use).
+          # `AUTHORIZATION: bearer <token>` is silently ignored by the smart
+          # HTTP server; git then falls back to credential prompting and
+          # fails with:
+          #   fatal: could not read Username for 'https://github.com':
+          #         No such device or address
+          # Build the header once so both pushes below share the encoded form.
+          AUTH_B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          # GitHub Actions auto-masks literal occurrences of secret values
+          # (including github.token) in logs. The base64-wrapped form is a
+          # different literal that Actions has not been told about; register
+          # it explicitly so a future debug echo / set -x / git error message
+          # containing the assembled http.extraheader can't leak the token in
+          # base64-plaintext-equivalent form.
+          echo "::add-mask::$AUTH_B64"
+          AUTH_HEADER="http.extraheader=AUTHORIZATION: basic $AUTH_B64"
+
           # Fetch ONCE. Do NOT git fetch between the lease-SHA computation and
           # the push; that would break --force-with-lease's race-detection
           # invariant. The checkout above used persist-credentials: false so
           # there are no leftover credentials; we inject the token via
-          # http.extraheader per-command.
+          # http.extraheader per-command above.
           #
           # $DEPLOYED_SHA is the squash-merge commit returned by pulls.merge.
           # It is brand-new on the remote and is NOT yet in the local clone
           # (the checkout fetched the PR head SHA, not the merged SHA).
           # Explicitly fetch it so `git rev-list` / `git diff` can resolve it
           # as a commit object below.
-          git fetch --prune --no-tags origin "$DEPLOYED_SHA" shopify-sync
+          #
+          # Auth and explicit-destination refspec both matter:
+          #   * Auth: the repo is public today, so an anonymous fetch works,
+          #     but if the repo is ever flipped to private (sensitive-data
+          #     scrub, compliance lockdown, etc.) the unauthed fetch fails
+          #     with the same `could not read Username` error the Bearer push
+          #     used to produce. Cost-free immunisation by reusing AUTH_HEADER.
+          #   * Explicit dst (`+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync`):
+          #     guarantees the local `origin/shopify-sync` ref is overwritten
+          #     with the remote tip even on a non-fast-forward update, so the
+          #     `EXPECTED=$(git rev-parse origin/shopify-sync)` lease-SHA used
+          #     by --force-with-lease below reflects the true current tip.
+          git -c "$AUTH_HEADER" fetch --prune --no-tags origin \
+              "$DEPLOYED_SHA" \
+              '+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync'
 
           AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
           BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
 
           if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
             # Normal: shopify-sync reachable from deployed SHA; fast-forward.
-            if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+            if PUSH_ERR=$(git -c "$AUTH_HEADER" \
                 push origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
               echo "::notice::Fast-forwarded shopify-sync $BEHIND commit(s) to deployed SHA"
               echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
             else
-              echo "::warning::Fast-forward push failed (likely raced an admin commit): $PUSH_ERR"
-              echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+              # Surface the underlying git error verbatim; do not pre-classify
+              # the cause (admin-commit race, auth failure, network blip, etc.
+              # all surface the same way here and need the raw error to triage).
+              echo "::warning::Fast-forward push failed: $PUSH_ERR"
+              echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
             fi
           elif [ "$AHEAD" -gt 0 ]; then
             DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
@@ -828,19 +1217,19 @@ jobs:
               # deployed SHA; --force-with-lease catches an admin commit
               # racing this push.
               EXPECTED=$(git rev-parse origin/shopify-sync)
-              if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+              if PUSH_ERR=$(git -c "$AUTH_HEADER" \
                   push --force-with-lease="shopify-sync:$EXPECTED" \
                   origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
                 echo "::notice::Cleared $AHEAD orphan commit(s); trees identical to deployed SHA"
                 echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
               else
-                echo "::warning::Phantom cleanup push failed (likely raced an admin commit): $PUSH_ERR"
-                echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+                echo "::warning::Phantom cleanup push failed: $PUSH_ERR"
+                echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
               fi
             else
               # Real divergence: an admin commit landed during this deploy.
               # sync.yml on the admin push will open the next reconcile PR.
-              echo "::notice::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
+              echo "::warning::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
               echo "sync-status=deferred (admin commit landed mid-deploy)" >> "$GITHUB_OUTPUT"
             fi
           else
@@ -848,81 +1237,10 @@ jobs:
             echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update preview comment after merge
-        # Updates the `<!-- preview -->` sticky comment originally posted by
-        # preview.yml::deploy-preview (saying "Preview theme deployed") to
-        # reflect that the preview theme has been deleted as part of this
-        # merge. preview.yml::cleanup, which would normally do this on
-        # `pull_request: closed`, never fires for deploy-chain merges because
-        # GitHub suppresses downstream events from GITHUB_TOKEN-driven
-        # actions. The deploy chain's Delete preview theme step (above)
-        # handles the actual theme deletion; this step closes the UX gap
-        # by updating the sticky so the merged PR doesn't appear to still
-        # have a live preview. No-op for PRs that never had a preview
-        # sticky (e.g. Dependabot PRs where preview.yml is skipped).
-        if: success() && steps.merge.outputs.merged == 'true'
-        continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
-          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
-        with:
-          script: |
-            const marker = '<!-- preview -->';
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = parseInt(process.env.PR_NUMBER, 10);
-            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
-            const cleanupStatus = process.env.CLEANUP_STATUS || '';
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
-            });
-            const existing = comments
-              .filter(c => c.body && c.body.includes(marker))
-              .sort((a, b) => a.id - b.id);
-            if (existing.length === 0) {
-              // No prior preview sticky (e.g. Dependabot PR). Do not create
-              // one just to mark it deleted; that would surprise the operator.
-              return;
-            }
-
-            const body = cleanupOutcome === 'success'
-              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted** — PR merged.'].join('\n')
-              : [
-                  marker,
-                  '# Preview Deployment',
-                  '',
-                  `⚠️ **Preview theme cleanup warning** — PR merged but preview deletion may have failed (${cleanupStatus || 'see deploy report'}). Delete manually if the theme persists: \`npx shopify theme delete --theme <id> --force\`.`,
-                ].join('\n');
-
-            const [keep, ...dupes] = existing;
-            await github.rest.issues.updateComment({
-              owner, repo, comment_id: keep.id, body,
-            });
-            for (const dup of dupes) {
-              try {
-                await github.rest.issues.deleteComment({
-                  owner, repo, comment_id: dup.id,
-                });
-              } catch (_) { /* swallowed */ }
-            }
-
-      - name: React with rocket
-        if: success() && github.event_name == 'issue_comment'
-        continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        with:
-          script: |
-            await github.rest.reactions.createForIssueComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: context.payload.comment.id,
-              content: 'rocket',
-            });
-
       - name: React with -1
+        # Fires for any failure in the deploy job, including the merge step's
+        # core.setFailed on merge failure (the merge step is between Post
+        # deploy report and Sync above). For comment-deploy triggers only.
         if: failure() && github.event_name == 'issue_comment'
         continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -934,175 +1252,6 @@ jobs:
               comment_id: context.payload.comment.id,
               content: '-1',
             });
-
-      - name: Post deploy report
-        # `if: success()` is correct, NOT `always()`. The cleanup and sync
-        # steps' `continue-on-error: true` masks their non-zero exits so the
-        # job stays green; success() therefore still passes here. Switching
-        # to always() would double-report alongside the Report failure step.
-        if: success()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
-          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
-          PR_REF: ${{ needs.gate.outputs.ref }}
-          PR_BASE_REF: ${{ needs.gate.outputs.base_ref }}
-          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
-          DEPLOYER: ${{ needs.gate.outputs.deployer }}
-          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
-          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
-          THEME_ID: ${{ steps.push.outputs.theme-id }}
-          MERGED: ${{ steps.merge.outputs.merged }}
-          MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
-          BRANCH_DELETED: ${{ steps.merge.outputs.branch_deleted }}
-          BRANCH_RETAINED: ${{ steps.merge.outputs.branch_retained }}
-          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
-          SYNC_STATUS: ${{ steps.sync.outputs.sync-status }}
-          SYNC_OUTCOME: ${{ steps.sync.outcome }}
-        with:
-          script: |
-            const RETRYABLE = new Set([500, 502, 503, 504]);
-            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
-            const isTransient = (err) => {
-              if (NON_RETRYABLE.has(err.status)) return false;
-              if (RETRYABLE.has(err.status)) return true;
-              const m = err.message || '';
-              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
-            };
-            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
-              for (let i = 1; i <= attempts; i++) {
-                try { return await fn(); }
-                catch (err) {
-                  if (i < attempts && isTransient(err)) {
-                    const wait = delayMs * Math.pow(2, i - 1);
-                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
-                    await new Promise(r => setTimeout(r, wait));
-                  } else { throw err; }
-                }
-              }
-            };
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const MARKER = '<!-- deploy-result -->';
-            const prNumber = parseInt(process.env.PR_NUMBER, 10);
-            const shortSha = process.env.PR_SHORT_SHA;
-            const ref = process.env.PR_REF;
-            const baseRef = process.env.PR_BASE_REF;
-            const triggerPath = process.env.TRIGGER_PATH;
-            const deployer = process.env.DEPLOYER;
-            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
-            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
-            const themeId = process.env.THEME_ID || '';
-            const merged = process.env.MERGED === 'true';
-            const mergeError = process.env.MERGE_ERROR || '';
-            const branchDeleted = process.env.BRANCH_DELETED === 'true';
-            const branchRetained = process.env.BRANCH_RETAINED === 'true';
-            const cleanupStatus = process.env.CLEANUP_STATUS || '';
-            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
-            const syncStatus = process.env.SYNC_STATUS || '';
-            const syncOutcome = process.env.SYNC_OUTCOME || '';
-            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-
-            const titleByPath = {
-              'comment': 'Deployment Report',
-              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
-              'dependabot': 'Auto-deploy Report (dependabot)',
-            };
-            const title = titleByPath[triggerPath] || 'Deployment Report';
-
-            const branchSuffix = branchDeleted
-              ? ' and deleted the branch.'
-              : branchRetained
-                ? ' (branch retained: long-lived integration target).'
-                : '.';
-            const mergeStatus = merged
-              ? `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchSuffix}`
-              : `:warning: **Merge skipped:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
-
-            let cleanupLine;
-            if (!merged) {
-              cleanupLine = ':information_source: Preview cleanup skipped (merge did not succeed).';
-            } else if (cleanupOutcome === 'success') {
-              cleanupLine = `:broom: Preview cleanup: ${cleanupStatus || 'no preview theme found'}.`;
-            } else {
-              cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
-            }
-
-            let syncLine;
-            if (!merged) {
-              syncLine = ':information_source: shopify-sync sync skipped (merge did not succeed).';
-            } else if (syncOutcome === 'success') {
-              syncLine = `:arrows_clockwise: shopify-sync: ${syncStatus || 'unknown'}.`;
-            } else {
-              syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. \`sync.yml\` will retry on the next admin push, or at the 13:00 UTC daily cron (whichever comes first).`;
-            }
-
-            const body = [
-              MARKER,
-              `# ${title}`,
-              '',
-              ':white_check_mark: **Deployed successfully** to live theme. Storefront is now serving this commit.',
-              '',
-              '| | |',
-              '|:--|:--|',
-              `| **Commit** | \`${shortSha}\` |`,
-              `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
-              `| **Theme ID** | \`${themeId}\` |`,
-              `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
-              `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
-              '',
-              '---',
-              '',
-              '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
-              '',
-              '```',
-              pushOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Smoke test</strong></summary>',
-              '',
-              '```',
-              smokeOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '---',
-              '',
-              mergeStatus,
-              '',
-              cleanupLine,
-              '',
-              syncLine,
-            ].join('\n');
-
-            // Upsert sticky comment.
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number: prNumber, per_page: 100,
-            });
-            const existing = comments
-              .filter(c => c.body && c.body.includes(MARKER))
-              .sort((a, b) => a.id - b.id);
-            const [keep, ...dupes] = existing;
-            if (keep) {
-              await withRetry(
-                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
-                { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
-              );
-            } else {
-              await withRetry(
-                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
-                { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
-              );
-            }
-            for (const d of dupes) {
-              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
-              catch (_) { /* swallowed */ }
-            }
 
       - name: Report failure
         if: failure() && needs.gate.outputs.pr_number != ''
@@ -1116,6 +1265,12 @@ jobs:
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
           SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          # New in the reorder: surface the merge step's structured error so
+          # Report failure can render merge-specific failure copy (live is
+          # deployed; PR is open; do NOT click Merge in the UI without
+          # reviewing the new head if HEAD drifted).
+          MERGED: ${{ steps.merge.outputs.merged }}
+          MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
         with:
           script: |
             const RETRYABLE = new Set([500, 502, 503, 504]);
@@ -1150,6 +1305,8 @@ jobs:
             const pushOutput = process.env.PUSH_OUTPUT || '';
             const smokeExit = process.env.SMOKE_EXIT_CODE || '';
             const smokeOutput = process.env.SMOKE_OUTPUT || '';
+            const merged = process.env.MERGED === 'true';
+            const mergeError = process.env.MERGE_ERROR || '';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
             const titleByPath = {
@@ -1158,6 +1315,12 @@ jobs:
               'dependabot': 'Auto-deploy Report (dependabot)',
             };
             const title = titleByPath[triggerPath] || 'Deployment Report';
+
+            // Detect HEAD-drifted-post-deploy specifically so the operator
+            // sees the loudest possible warning against reflex-clicking Merge
+            // in the GitHub UI (live is on the deployed SHA; the PR head has
+            // moved past it; a manual merge would land different commits).
+            const headDrifted = mergeError && /HEAD drifted post-deploy/i.test(mergeError);
 
             let failStage, errorDetail;
             if (pushExit === '') {
@@ -1172,9 +1335,19 @@ jobs:
             } else if (smokeExit !== '0') {
               failStage = 'Smoke test (live theme is currently serving this SHA)';
               errorDetail = `${smokeOutput || 'A storefront path returned non-200.'}\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Either fix and re-deploy, or roll back per the procedure in README.md (revert PR or break-glass \`shopify theme push --live\`).`;
+            } else if (mergeError && headDrifted) {
+              // mergeError-present guard: distinguishes "merge step ran and
+              // failed" from "merge step never ran" (e.g. a future reorder
+              // that puts merge branches above push/smoke branches would
+              // otherwise misattribute an unrelated failure as a merge failure).
+              failStage = 'Squash merge (HEAD drifted post-deploy)';
+              errorDetail = `${mergeError}\n\n**Live theme is on the SHA Validate ran against. The PR head has moved past it since deploy.**\n\nDo NOT click Merge in the GitHub UI without first reviewing the diff between the deployed SHA and the current PR head. Two recovery paths:\n  1. Re-deploy the new head: push a no-op commit to retrigger Validate, then comment \`deploy\` after Validate passes.\n  2. Merge manually only after reviewing the new commits with full awareness that the merge will land different code than what is currently live.`;
+            } else if (mergeError) {
+              failStage = 'Squash merge';
+              errorDetail = `${mergeError}\n\nLive theme is on \`${shortSha}\`. The PR remains open; review the workflow log and merge manually if appropriate.`;
             } else {
-              failStage = 'Post-push';
-              errorDetail = 'Merge or comment posting failed. See the workflow run.';
+              failStage = 'Post-merge';
+              errorDetail = 'Sync or comment posting failed after a successful merge. See the workflow run; sync.yml will retry the shopify-sync push on the next admin push or 13:00 UTC cron.';
             }
 
             const retryHint = triggerPath === 'comment'
@@ -1209,8 +1382,11 @@ jobs:
               retryHint,
             ].join('\n');
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number: prNumber, per_page: 100,
+            // Paginate so a failure on a high-comment-count PR still finds
+            // the existing sticky instead of posting a duplicate. Same
+            // rationale as the deploy-report upsert above.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
             });
             const existing = comments
               .filter(c => c.body && c.body.includes(MARKER))
