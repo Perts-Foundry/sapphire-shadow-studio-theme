@@ -809,7 +809,7 @@ jobs:
             }
 
             const body = cleanupOutcome === 'success'
-              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted.** Live theme is now serving this commit; squash-merge to follow.'].join('\n')
+              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted.** Live theme is now serving this commit.'].join('\n')
               : [
                   marker,
                   '# Preview Deployment',
@@ -936,7 +936,7 @@ jobs:
               MARKER,
               `# ${title}`,
               '',
-              ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit; squash-merge is the next step in this run.',
+              ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit.',
               '',
               '| | |',
               '|:--|:--|',
@@ -967,8 +967,6 @@ jobs:
               '---',
               '',
               cleanupLine,
-              '',
-              ':twisted_rightwards_arrows: Squash-merge follows; shopify-sync syncs immediately after. Both are post-comment steps in this run.',
             ].join('\n');
 
             // Upsert sticky comment. github.paginate handles PRs with >100
