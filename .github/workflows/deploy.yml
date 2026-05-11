@@ -100,7 +100,7 @@ jobs:
       - name: React with eyes
         if: github.event_name == 'issue_comment'
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -112,7 +112,7 @@ jobs:
 
       - name: Resolve trigger context
         id: resolve
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const owner = context.repo.owner;
@@ -371,7 +371,7 @@ jobs:
 
       - name: Auto-deploy gates - shopify-sync
         if: steps.resolve.outputs.trigger_path == 'shopify-sync'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
@@ -514,7 +514,7 @@ jobs:
 
       - name: Auto-deploy gates - dependabot
         if: steps.resolve.outputs.trigger_path == 'dependabot'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
@@ -822,7 +822,7 @@ jobs:
         # and the cleanup step above is also skipped (no theme to delete).
         if: success() && needs.gate.outputs.trigger_path != 'dependabot'
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
@@ -877,7 +877,7 @@ jobs:
         # ordering this chain now follows.
         if: success() && github.event_name == 'issue_comment'
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -900,7 +900,7 @@ jobs:
         # failure step then overwrites this sticky with a merge-specific error
         # message.
         if: success()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
@@ -1049,7 +1049,7 @@ jobs:
         # next to an unmerged PR, which is the surprising state to debug.
         id: merge
         if: success()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           PR_SHA: ${{ needs.gate.outputs.head_sha }}
@@ -1281,7 +1281,7 @@ jobs:
         # deploy report and Sync above). For comment-deploy triggers only.
         if: failure() && github.event_name == 'issue_comment'
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -1293,7 +1293,7 @@ jobs:
 
       - name: Report failure
         if: failure() && needs.gate.outputs.pr_number != ''
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
