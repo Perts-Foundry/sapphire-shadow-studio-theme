@@ -101,10 +101,17 @@ jobs:
       - name: Stale reconcile PR notice
         # Always-run; never fails the workflow. The prior `exit 1` here made
         # every cron firing of `sync` red whenever a stale PR existed, training
-        # operators to ignore the workflow. A workflow notice + per-PR comment
+        # operators to ignore the workflow. A workflow notice + per-PR sticky
         # is louder where it matters (the stale PR itself) without polluting
         # the Actions tab with red runs.
+        #
+        # Uses the `<!-- stale-reconcile -->` marker to upsert a single sticky
+        # comment per stale PR rather than appending a fresh comment every
+        # daily cron firing. Without the upsert a PR that stays open for a
+        # week accumulates seven identical "stale" notices.
         if: always()
+        env:
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # 259200 seconds = 3 days. There is at most one open shopify-sync
@@ -114,9 +121,23 @@ jobs:
             --json number,createdAt \
             --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
           if [ -n "$STALE" ]; then
+            MARKER='<!-- stale-reconcile -->'
             for n in $STALE; do
-              printf "PR #%s has been open more than 3 days. Auto-deploy may be failing or rejected by a gate. Investigate the validate run, the deploy run, or any merge conflict.\n" "$n" > /tmp/stale-body.md
-              gh pr comment "$n" --body-file /tmp/stale-body.md || true
+              {
+                printf '%s\n' "$MARKER"
+                printf 'PR #%s has been open more than 3 days. Auto-deploy may be failing or rejected by a gate. Investigate the validate run, the deploy run, or any merge conflict.\n' "$n"
+              } > /tmp/stale-body.md
+
+              # Find the existing sticky (if any) via the issues comments API.
+              # gh api paginates with --paginate; jq filters by marker.
+              EXISTING_ID=$(gh api --paginate "/repos/${GH_REPO}/issues/${n}/comments" \
+                --jq "[.[] | select(.body | contains(\"$MARKER\"))] | .[0].id // empty")
+              if [ -n "$EXISTING_ID" ]; then
+                gh api -X PATCH "/repos/${GH_REPO}/issues/comments/${EXISTING_ID}" \
+                  -f body="$(cat /tmp/stale-body.md)" > /dev/null || true
+              else
+                gh pr comment "$n" --body-file /tmp/stale-body.md || true
+              fi
             done
-            echo "::warning::Stale reconcile PR open >3 days; comment posted on PR(s) $STALE"
+            echo "::warning::Stale reconcile PR open >3 days; sticky upserted on PR(s) $STALE"
           fi
