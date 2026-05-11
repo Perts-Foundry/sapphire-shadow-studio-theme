@@ -31,9 +31,31 @@ PR #11's test deploy was the first to actually exercise the consolidated `deploy
 
 None. `shopify-sync` is currently 6 commits behind `main` (PRs #6, #7, #8, #9, #10, #11, #12 all merged after the last successful sync). The next admin commit on the unpublished sync theme will reopen the auto-reconcile PR; Validate will pass on its branch; and the auto-deploy arm will now successfully fast-forward `shopify-sync` to the deployed SHA in its post-merge step. Manual recovery remains available but is not necessary: a local `git push --force-with-lease=shopify-sync:<expected-sha> origin main:shopify-sync` from a workstation with push access would close the drift immediately.
 
+### Deploy chain reorder: merge is the final user-visible action
+
+PR #11's deploy report demonstrated that the prior step order ran the squash-merge BEFORE the deploy-report sticky, preview-deletion sticky update, and rocket reaction. The PR closed first; comments and emojis landed afterward on a closed PR. This entry inverts that order so the squash-merge is the last user-visible event of the chain.
+
+New step order in the `deploy` job:
+
+1. Live theme push
+2. Delete preview theme (gated on push success, not merge success)
+3. Update preview comment ("Preview theme deleted; live theme is serving this commit; squash-merge to follow")
+4. React with rocket
+5. Post deploy report (push + smoke + cleanup status; no merge or sync status, since neither has run yet)
+6. **Squash merge** (the final user-visible event; PR closes here)
+7. Sync main -> shopify-sync (post-merge; not surfaced in PR timeline; warnings via `::warning::` workflow annotations only)
+8. React with -1 (failure)
+9. Report failure (failure; overwrites pre-merge sticky with merge-specific error copy, including a `:rotating_light:` warning for the HEAD-drifted-post-deploy case)
+
+Key behaviour changes:
+
+- **Deploy report posts once, before merge, without merge or sync status.** The PR's GitHub-rendered "Merged" badge becomes the merge confirmation when the merge step closes the PR. Sync status is observable only via the workflow log; `sync.yml`'s daily cron + admin-push retrigger are the self-heal.
+- **Merge failure now calls `core.setFailed`.** Previously the merge step swallowed errors and the job stayed green even on a failed merge, leaving the deploy-report sticky claiming "Deployed successfully" next to an unmerged PR. Now a merge failure trips the job's failure mode, the `Report failure` step fires, and it overwrites the pre-merge sticky with merge-specific error copy.
+- **Preview cleanup gated on live push success, not merge success.** Live serving the new code makes the preview obsolete regardless of whether the merge has happened yet. Accepted trade-off: a runner crash between cleanup and merge leaves "live deployed + PR open + preview gone"; live is already serving the new code so the preview's verification value is moot at that point.
+
 ### Audit findings deferred or accepted as-is
 
-- **S3** (`deferred` sync status renders as warning rather than info): kept as warning per the original-instruction routing. `deferred` means `shopify-sync` was NOT advanced by this deploy because an admin commit landed mid-flight; the operator should see a visible signal even though `sync.yml` will reconcile on the next admin push.
+- **S3** (`deferred` sync status routing): kept routed to the warning path per the original-instruction routing. `deferred` means `shopify-sync` was NOT advanced by this deploy because an admin commit landed mid-flight; the operator should see a visible signal even though `sync.yml` will reconcile on the next admin push. Now surfaces as a `::warning::` workflow annotation rather than a deploy-report comment line (the report is posted before sync runs in the new order, so it no longer carries sync status).
 - **N1** (`core.warning` + silent skip in the unexpected-head_branch branch of `gate.resolve`): kept as-is per CLAUDE.md's documented "workflow filter is the real gate; this is belt-and-braces" intent.
 - **N5** (release-notes content review for sensitive content per CLAUDE.md "Sensitive Content" rules): self-reviewed; no personal email, machine paths, sub-state location detail, or tokens.
 

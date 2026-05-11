@@ -736,7 +736,279 @@ jobs:
           # silently constructing the malformed URL `https://`.
           smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
 
+      - name: Delete preview theme
+        id: cleanup
+        # Gated on live push success (not merge success): the preview becomes
+        # obsolete the moment live serves the new code, regardless of whether
+        # the squash-merge has happened yet. Running cleanup BEFORE merge means
+        # the operator sees the preview-deletion sticky and the deploy report
+        # update on an open PR, with the merge as the final user-visible event.
+        #
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # already conditionally skipped for Dependabot PRs (no Shopify token in
+        # the Dependabot secrets scope), so there is never a `pr-N-preview`
+        # theme to delete on this path. Running the cleanup anyway would
+        # produce a misleading ":broom: Preview cleanup: no preview theme
+        # found." line in every Dependabot deploy report.
+        #
+        # Trade-off: a runner crash between cleanup and merge leaves the system
+        # in `live deployed + PR open + preview gone`. Live is already serving
+        # the new code, so the preview's verification value is moot at this
+        # point; the operator merges the PR manually and the system reconverges.
+        if: success() && needs.gate.outputs.trigger_path != 'dependabot'
+        continue-on-error: true
+        uses: ./.github/actions/shopify-theme-push
+        with:
+          mode: delete-preview
+          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
+          pr-number: ${{ needs.gate.outputs.pr_number }}
+
+      - name: Update preview comment
+        # Updates the `<!-- preview -->` sticky comment originally posted by
+        # preview.yml::deploy-preview (saying "Preview theme deployed") to
+        # reflect that the preview theme has been deleted by the step above.
+        #
+        # Runs BEFORE the squash-merge so the operator sees this update on
+        # the still-open PR; the merge is the final user-visible event in
+        # the chain. preview.yml::cleanup, which would normally update this
+        # sticky on `pull_request: closed`, never fires for deploy-chain
+        # merges because GitHub suppresses downstream events from
+        # GITHUB_TOKEN-driven actions, so the inline update here is the
+        # only path that closes the UX gap.
+        #
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # skipped for those PRs so there is no preview sticky to update,
+        # and the cleanup step above is also skipped (no theme to delete).
+        if: success() && needs.gate.outputs.trigger_path != 'dependabot'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+        with:
+          script: |
+            const marker = '<!-- preview -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            if (existing.length === 0) {
+              // No prior preview sticky (e.g. Dependabot PR). Do not create
+              // one just to mark it deleted; that would surprise the operator.
+              return;
+            }
+
+            const body = cleanupOutcome === 'success'
+              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted.** Live theme is now serving this commit; squash-merge to follow.'].join('\n')
+              : [
+                  marker,
+                  '# Preview Deployment',
+                  '',
+                  `⚠️ **Preview theme cleanup warning.** Live theme is serving this commit but preview deletion may have failed (${cleanupStatus || 'see deploy report'}). Delete manually if the theme persists: \`npx shopify theme delete --theme <id> --force\`.`,
+                ].join('\n');
+
+            const [keep, ...dupes] = existing;
+            await github.rest.issues.updateComment({
+              owner, repo, comment_id: keep.id, body,
+            });
+            for (const dup of dupes) {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner, repo, comment_id: dup.id,
+                });
+              } catch (_) { /* swallowed */ }
+            }
+
+      - name: React with rocket
+        # Reacts on the comment-deploy `deploy` comment now that live push +
+        # cleanup + preview-sticky update have all succeeded. Runs BEFORE the
+        # squash-merge so the operator gets the rocket on the still-open PR,
+        # matching the "deploy report and other actions happen before merge"
+        # ordering this chain now follows.
+        if: success() && github.event_name == 'issue_comment'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Post deploy report
+        # Posted BEFORE the squash-merge. The deploy report covers push, smoke
+        # test, and preview cleanup; merge and shopify-sync status are
+        # deliberately NOT in the body because neither has run yet (the merge
+        # step follows; sync follows the merge). The PR's GitHub-rendered
+        # "Merged" badge becomes the merge confirmation once the merge step
+        # closes the PR; sync status is observable only via the workflow log
+        # (sync.yml's daily cron + admin-push retrigger are the self-heal).
+        #
+        # On merge failure, the merge step calls core.setFailed; the Report
+        # failure step then overwrites this sticky with a merge-specific error
+        # message.
+        if: success()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
+          PR_REF: ${{ needs.gate.outputs.ref }}
+          PR_BASE_REF: ${{ needs.gate.outputs.base_ref }}
+          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
+          DEPLOYER: ${{ needs.gate.outputs.deployer }}
+          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
+          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          THEME_ID: ${{ steps.push.outputs.theme-id }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        with:
+          script: |
+            const RETRYABLE = new Set([500, 502, 503, 504]);
+            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
+            const isTransient = (err) => {
+              if (NON_RETRYABLE.has(err.status)) return false;
+              if (RETRYABLE.has(err.status)) return true;
+              const m = err.message || '';
+              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
+            };
+            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
+              for (let i = 1; i <= attempts; i++) {
+                try { return await fn(); }
+                catch (err) {
+                  if (i < attempts && isTransient(err)) {
+                    const wait = delayMs * Math.pow(2, i - 1);
+                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
+                    await new Promise(r => setTimeout(r, wait));
+                  } else { throw err; }
+                }
+              }
+            };
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const MARKER = '<!-- deploy-result -->';
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const shortSha = process.env.PR_SHORT_SHA;
+            const ref = process.env.PR_REF;
+            const baseRef = process.env.PR_BASE_REF;
+            const triggerPath = process.env.TRIGGER_PATH;
+            const deployer = process.env.DEPLOYER;
+            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
+            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
+            const themeId = process.env.THEME_ID || '';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const titleByPath = {
+              'comment': 'Deployment Report',
+              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
+              'dependabot': 'Auto-deploy Report (dependabot)',
+            };
+            const title = titleByPath[triggerPath] || 'Deployment Report';
+
+            // cleanupOutcome reflects the Delete preview theme step. Empty
+            // when the step was skipped (Dependabot path). The skipped case
+            // is rendered with a neutral info line since there is no preview
+            // theme to delete on that path by design.
+            let cleanupLine;
+            if (cleanupOutcome === 'success') {
+              cleanupLine = `:broom: Preview cleanup: ${cleanupStatus || 'no preview theme found'}.`;
+            } else if (cleanupOutcome === 'skipped' || cleanupOutcome === '') {
+              cleanupLine = ':information_source: Preview cleanup skipped (no preview for this trigger path).';
+            } else {
+              cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
+            }
+
+            const body = [
+              MARKER,
+              `# ${title}`,
+              '',
+              ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit; squash-merge is the next step in this run.',
+              '',
+              '| | |',
+              '|:--|:--|',
+              `| **Commit** | \`${shortSha}\` |`,
+              `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
+              `| **Theme ID** | \`${themeId}\` |`,
+              `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
+              `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
+              '',
+              '---',
+              '',
+              '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
+              '',
+              '```',
+              pushOutput,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Smoke test</strong></summary>',
+              '',
+              '```',
+              smokeOutput,
+              '```',
+              '',
+              '</details>',
+              '',
+              '---',
+              '',
+              cleanupLine,
+              '',
+              ':twisted_rightwards_arrows: Squash-merge follows; shopify-sync syncs immediately after. Both are post-comment steps in this run.',
+            ].join('\n');
+
+            // Upsert sticky comment. github.paginate handles PRs with >100
+            // comments (auto-reconcile PRs that accumulate daily-cron stale
+            // notices), avoiding the duplicate-posting bug a bare listComments
+            // call would produce when the existing sticky lives past page 1.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(MARKER))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await withRetry(
+                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
+                { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
+              );
+            } else {
+              await withRetry(
+                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
+                { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
+              );
+            }
+            for (const d of dupes) {
+              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+              catch (_) { /* swallowed */ }
+            }
+
       - name: Squash merge
+        # Runs AFTER the deploy report, preview cleanup, sticky update, and
+        # rocket reaction. The merge closes the PR; from the operator's
+        # perspective the PR-close moment is the final user-visible event of
+        # the deploy chain.
+        #
+        # On merge failure, calls core.setFailed so the job enters failure
+        # mode and the Report failure step (below) overwrites the deploy
+        # report sticky with a merge-specific error message. Without
+        # setFailed, the success-path deploy-report sticky would persist
+        # next to an unmerged PR, which is the surprising state to debug.
         id: merge
         if: success()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -840,26 +1112,14 @@ jobs:
             core.setOutput('branch_retained', branchRetained ? 'true' : 'false');
             core.setOutput('deployed_sha', deployedSha);
 
-      - name: Delete preview theme
-        id: cleanup
-        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
-        # already conditionally skipped for Dependabot PRs (no Shopify token in
-        # the Dependabot secrets scope), so there is never a `pr-N-preview`
-        # theme to delete on this path. Running the cleanup anyway would
-        # produce a misleading ":broom: Preview cleanup: no preview theme
-        # found." line in every Dependabot deploy report.
-        if: success() && steps.merge.outputs.merged == 'true' && needs.gate.outputs.trigger_path != 'dependabot'
-        # Cleanup runs AFTER successful merge so a runner crash or non-transient
-        # cleanup failure cannot leave the system in `live deployed + PR open +
-        # preview gone`. continue-on-error keeps a leaked preview from blocking
-        # the post-deploy report; the cleanup-status output surfaces failures.
-        continue-on-error: true
-        uses: ./.github/actions/shopify-theme-push
-        with:
-          mode: delete-preview
-          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
-          pr-number: ${{ needs.gate.outputs.pr_number }}
+            // Fail the step on merge failure so the failure path (React
+            // with -1 + Report failure) fires and overwrites the pre-merge
+            // deploy-report sticky with a merge-specific error message.
+            // Without this, the pre-merge sticky would persist next to an
+            // unmerged PR with no indication that the merge step failed.
+            if (!merged) {
+              core.setFailed(mergeError);
+            }
 
       - name: Sync main -> shopify-sync
         id: sync
@@ -868,7 +1128,14 @@ jobs:
         # Anchored on the deployed SHA returned by the squash-merge, NOT on
         # origin/main re-resolved later, so this push is tied to what just
         # went live.
-        if: success() && steps.merge.outputs.merged == 'true' && steps.merge.outputs.deployed_sha != ''
+        #
+        # Runs after the squash-merge (which already closed the PR) and is
+        # therefore not user-facing in the PR timeline. Failures surface as
+        # `::warning::` annotations on the workflow run and self-heal via
+        # sync.yml on the next admin push or the 13:00 UTC daily cron. The
+        # deploy report comment, posted BEFORE merge, does NOT include sync
+        # status.
+        if: success() && steps.merge.outputs.deployed_sha != ''
         continue-on-error: true
         env:
           # Passing via env: instead of inline ${{ }} interpolation prevents
@@ -962,7 +1229,7 @@ jobs:
             else
               # Real divergence: an admin commit landed during this deploy.
               # sync.yml on the admin push will open the next reconcile PR.
-              echo "::notice::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
+              echo "::warning::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
               echo "sync-status=deferred (admin commit landed mid-deploy)" >> "$GITHUB_OUTPUT"
             fi
           else
@@ -970,84 +1237,10 @@ jobs:
             echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update preview comment after merge
-        # Updates the `<!-- preview -->` sticky comment originally posted by
-        # preview.yml::deploy-preview (saying "Preview theme deployed") to
-        # reflect that the preview theme has been deleted as part of this
-        # merge. preview.yml::cleanup, which would normally do this on
-        # `pull_request: closed`, never fires for deploy-chain merges because
-        # GitHub suppresses downstream events from GITHUB_TOKEN-driven
-        # actions. The deploy chain's Delete preview theme step (above)
-        # handles the actual theme deletion; this step closes the UX gap
-        # by updating the sticky so the merged PR doesn't appear to still
-        # have a live preview.
-        #
-        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
-        # skipped for those PRs so there is no preview sticky to update,
-        # and the cleanup step above is also skipped (no theme to delete).
-        if: success() && steps.merge.outputs.merged == 'true' && needs.gate.outputs.trigger_path != 'dependabot'
-        continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
-          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
-        with:
-          script: |
-            const marker = '<!-- preview -->';
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = parseInt(process.env.PR_NUMBER, 10);
-            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
-            const cleanupStatus = process.env.CLEANUP_STATUS || '';
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
-            });
-            const existing = comments
-              .filter(c => c.body && c.body.includes(marker))
-              .sort((a, b) => a.id - b.id);
-            if (existing.length === 0) {
-              // No prior preview sticky (e.g. Dependabot PR). Do not create
-              // one just to mark it deleted; that would surprise the operator.
-              return;
-            }
-
-            const body = cleanupOutcome === 'success'
-              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted** — PR merged.'].join('\n')
-              : [
-                  marker,
-                  '# Preview Deployment',
-                  '',
-                  `⚠️ **Preview theme cleanup warning** — PR merged but preview deletion may have failed (${cleanupStatus || 'see deploy report'}). Delete manually if the theme persists: \`npx shopify theme delete --theme <id> --force\`.`,
-                ].join('\n');
-
-            const [keep, ...dupes] = existing;
-            await github.rest.issues.updateComment({
-              owner, repo, comment_id: keep.id, body,
-            });
-            for (const dup of dupes) {
-              try {
-                await github.rest.issues.deleteComment({
-                  owner, repo, comment_id: dup.id,
-                });
-              } catch (_) { /* swallowed */ }
-            }
-
-      - name: React with rocket
-        if: success() && github.event_name == 'issue_comment'
-        continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        with:
-          script: |
-            await github.rest.reactions.createForIssueComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: context.payload.comment.id,
-              content: 'rocket',
-            });
-
       - name: React with -1
+        # Fires for any failure in the deploy job, including the merge step's
+        # core.setFailed on merge failure (the merge step is between Post
+        # deploy report and Sync above). For comment-deploy triggers only.
         if: failure() && github.event_name == 'issue_comment'
         continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -1059,205 +1252,6 @@ jobs:
               comment_id: context.payload.comment.id,
               content: '-1',
             });
-
-      - name: Post deploy report
-        # `if: success()` is correct, NOT `always()`. The cleanup and sync
-        # steps' `continue-on-error: true` masks their non-zero exits so the
-        # job stays green; success() therefore still passes here. Switching
-        # to always() would double-report alongside the Report failure step.
-        if: success()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
-          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
-          PR_REF: ${{ needs.gate.outputs.ref }}
-          PR_BASE_REF: ${{ needs.gate.outputs.base_ref }}
-          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
-          DEPLOYER: ${{ needs.gate.outputs.deployer }}
-          PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
-          SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
-          THEME_ID: ${{ steps.push.outputs.theme-id }}
-          MERGED: ${{ steps.merge.outputs.merged }}
-          MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
-          BRANCH_DELETED: ${{ steps.merge.outputs.branch_deleted }}
-          BRANCH_RETAINED: ${{ steps.merge.outputs.branch_retained }}
-          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
-          SYNC_STATUS: ${{ steps.sync.outputs.sync-status }}
-          SYNC_OUTCOME: ${{ steps.sync.outcome }}
-        with:
-          script: |
-            const RETRYABLE = new Set([500, 502, 503, 504]);
-            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
-            const isTransient = (err) => {
-              if (NON_RETRYABLE.has(err.status)) return false;
-              if (RETRYABLE.has(err.status)) return true;
-              const m = err.message || '';
-              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
-            };
-            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
-              for (let i = 1; i <= attempts; i++) {
-                try { return await fn(); }
-                catch (err) {
-                  if (i < attempts && isTransient(err)) {
-                    const wait = delayMs * Math.pow(2, i - 1);
-                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
-                    await new Promise(r => setTimeout(r, wait));
-                  } else { throw err; }
-                }
-              }
-            };
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const MARKER = '<!-- deploy-result -->';
-            const prNumber = parseInt(process.env.PR_NUMBER, 10);
-            const shortSha = process.env.PR_SHORT_SHA;
-            const ref = process.env.PR_REF;
-            const baseRef = process.env.PR_BASE_REF;
-            const triggerPath = process.env.TRIGGER_PATH;
-            const deployer = process.env.DEPLOYER;
-            const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
-            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
-            const themeId = process.env.THEME_ID || '';
-            const merged = process.env.MERGED === 'true';
-            const mergeError = process.env.MERGE_ERROR || '';
-            const branchDeleted = process.env.BRANCH_DELETED === 'true';
-            const branchRetained = process.env.BRANCH_RETAINED === 'true';
-            const cleanupStatus = process.env.CLEANUP_STATUS || '';
-            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
-            const syncStatus = process.env.SYNC_STATUS || '';
-            const syncOutcome = process.env.SYNC_OUTCOME || '';
-            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-
-            const titleByPath = {
-              'comment': 'Deployment Report',
-              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
-              'dependabot': 'Auto-deploy Report (dependabot)',
-            };
-            const title = titleByPath[triggerPath] || 'Deployment Report';
-
-            const branchSuffix = branchDeleted
-              ? ' and deleted the branch.'
-              : branchRetained
-                ? ' (branch retained: long-lived integration target).'
-                : '.';
-            // Special-case the HEAD-drifted-post-deploy failure mode: live
-            // has the trusted SHA, but the PR head has moved since deploy,
-            // so a manual merge would land different commits than what's
-            // on the storefront. Make this discrepancy loud so the operator
-            // doesn't reflexively click Merge in the GitHub UI.
-            const headDrifted = !merged && /HEAD drifted post-deploy/i.test(mergeError);
-            let mergeStatus;
-            if (merged) {
-              mergeStatus = `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchSuffix}`;
-            } else if (headDrifted) {
-              mergeStatus = `:rotating_light: **Merge skipped (HEAD drifted post-deploy):** ${mergeError}\n\n**Do NOT click Merge in the UI without reviewing the new commits first.** The live theme is serving the SHA Validate ran against, but the PR head has moved past it. Review the diff between the deployed SHA and the current PR head, then either re-deploy the new head (push validates fresh and comment \`deploy\`) or merge manually with full awareness of the divergence.`;
-            } else {
-              mergeStatus = `:warning: **Merge skipped:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
-            }
-
-            let cleanupLine;
-            if (!merged) {
-              cleanupLine = ':information_source: Preview cleanup skipped (merge did not succeed).';
-            } else if (cleanupOutcome === 'success') {
-              cleanupLine = `:broom: Preview cleanup: ${cleanupStatus || 'no preview theme found'}.`;
-            } else {
-              cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
-            }
-
-            // steps.sync.outcome reports 'success' even when the Sync step's
-            // bash detected a push failure, because the bash explicitly
-            // handles errors with `if PUSH_ERR=...; then ... else ... fi` and
-            // exits 0 either way. Inspect the sync-status content as the
-            // primary signal: `push failed` and `deferred` prefixes indicate
-            // the operator needs to be aware (push error or real admin-commit
-            // divergence that sync.yml will pick up). syncOutcome is still
-            // consulted so that a hard bash failure before any status is
-            // written (e.g. `git fetch` errors and `set -e` fires) also lands
-            // on the warning path instead of falling through to the success
-            // branch with an empty status.
-            const syncStatusLower = syncStatus.toLowerCase();
-            const syncHadIssue =
-              syncOutcome !== 'success'
-              || syncStatusLower.startsWith('push failed')
-              || syncStatusLower.startsWith('deferred');
-            let syncLine;
-            if (!merged) {
-              syncLine = ':information_source: shopify-sync sync skipped (merge did not succeed).';
-            } else if (!syncHadIssue) {
-              syncLine = `:white_check_mark: shopify-sync: ${syncStatus || 'unknown'}.`;
-            } else {
-              syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. \`sync.yml\` will retry on the next admin push, or at the 13:00 UTC daily cron (whichever comes first).`;
-            }
-
-            const body = [
-              MARKER,
-              `# ${title}`,
-              '',
-              ':white_check_mark: **Deployed successfully** to live theme. Storefront is now serving this commit.',
-              '',
-              '| | |',
-              '|:--|:--|',
-              `| **Commit** | \`${shortSha}\` |`,
-              `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
-              `| **Theme ID** | \`${themeId}\` |`,
-              `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
-              `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
-              '',
-              '---',
-              '',
-              '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
-              '',
-              '```',
-              pushOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Smoke test</strong></summary>',
-              '',
-              '```',
-              smokeOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '---',
-              '',
-              mergeStatus,
-              '',
-              cleanupLine,
-              '',
-              syncLine,
-            ].join('\n');
-
-            // Upsert sticky comment. github.paginate handles PRs with >100
-            // comments (auto-reconcile PRs that accumulate daily-cron stale
-            // notices), avoiding the duplicate-posting bug a bare listComments
-            // call would produce when the existing sticky lives past page 1.
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
-            });
-            const existing = comments
-              .filter(c => c.body && c.body.includes(MARKER))
-              .sort((a, b) => a.id - b.id);
-            const [keep, ...dupes] = existing;
-            if (keep) {
-              await withRetry(
-                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
-                { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
-              );
-            } else {
-              await withRetry(
-                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
-                { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
-              );
-            }
-            for (const d of dupes) {
-              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
-              catch (_) { /* swallowed */ }
-            }
 
       - name: Report failure
         if: failure() && needs.gate.outputs.pr_number != ''
@@ -1271,6 +1265,12 @@ jobs:
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
           SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          # New in the reorder: surface the merge step's structured error so
+          # Report failure can render merge-specific failure copy (live is
+          # deployed; PR is open; do NOT click Merge in the UI without
+          # reviewing the new head if HEAD drifted).
+          MERGED: ${{ steps.merge.outputs.merged }}
+          MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
         with:
           script: |
             const RETRYABLE = new Set([500, 502, 503, 504]);
@@ -1305,6 +1305,8 @@ jobs:
             const pushOutput = process.env.PUSH_OUTPUT || '';
             const smokeExit = process.env.SMOKE_EXIT_CODE || '';
             const smokeOutput = process.env.SMOKE_OUTPUT || '';
+            const merged = process.env.MERGED === 'true';
+            const mergeError = process.env.MERGE_ERROR || '';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
             const titleByPath = {
@@ -1313,6 +1315,12 @@ jobs:
               'dependabot': 'Auto-deploy Report (dependabot)',
             };
             const title = titleByPath[triggerPath] || 'Deployment Report';
+
+            // Detect HEAD-drifted-post-deploy specifically so the operator
+            // sees the loudest possible warning against reflex-clicking Merge
+            // in the GitHub UI (live is on the deployed SHA; the PR head has
+            // moved past it; a manual merge would land different commits).
+            const headDrifted = mergeError && /HEAD drifted post-deploy/i.test(mergeError);
 
             let failStage, errorDetail;
             if (pushExit === '') {
@@ -1327,9 +1335,19 @@ jobs:
             } else if (smokeExit !== '0') {
               failStage = 'Smoke test (live theme is currently serving this SHA)';
               errorDetail = `${smokeOutput || 'A storefront path returned non-200.'}\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Either fix and re-deploy, or roll back per the procedure in README.md (revert PR or break-glass \`shopify theme push --live\`).`;
+            } else if (mergeError && headDrifted) {
+              // mergeError-present guard: distinguishes "merge step ran and
+              // failed" from "merge step never ran" (e.g. a future reorder
+              // that puts merge branches above push/smoke branches would
+              // otherwise misattribute an unrelated failure as a merge failure).
+              failStage = 'Squash merge (HEAD drifted post-deploy)';
+              errorDetail = `${mergeError}\n\n**Live theme is on the SHA Validate ran against. The PR head has moved past it since deploy.**\n\nDo NOT click Merge in the GitHub UI without first reviewing the diff between the deployed SHA and the current PR head. Two recovery paths:\n  1. Re-deploy the new head: push a no-op commit to retrigger Validate, then comment \`deploy\` after Validate passes.\n  2. Merge manually only after reviewing the new commits with full awareness that the merge will land different code than what is currently live.`;
+            } else if (mergeError) {
+              failStage = 'Squash merge';
+              errorDetail = `${mergeError}\n\nLive theme is on \`${shortSha}\`. The PR remains open; review the workflow log and merge manually if appropriate.`;
             } else {
-              failStage = 'Post-push';
-              errorDetail = 'Merge or comment posting failed. See the workflow run.';
+              failStage = 'Post-merge';
+              errorDetail = 'Sync or comment posting failed after a successful merge. See the workflow run; sync.yml will retry the shopify-sync push on the next admin push or 13:00 UTC cron.';
             }
 
             const retryHint = triggerPath === 'comment'
