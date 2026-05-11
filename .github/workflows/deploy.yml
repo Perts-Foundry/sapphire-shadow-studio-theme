@@ -127,12 +127,14 @@ jobs:
             const MARKER = '<!-- deploy-result -->';
 
             // Sticky-comment helper. Upserts a single MARKER-tagged comment per
-            // PR and cleans up duplicates. Used by both pre-deploy gate
-            // rejections (here) and the deploy ladder's report steps.
+            // PR and cleans up duplicates. Uses github.paginate so PRs with
+            // >100 comments (auto-reconcile PRs that accumulate daily-cron
+            // stale notices, or long-lived discussion threads) still find
+            // and update the existing sticky instead of posting a duplicate.
             const upsertSticky = async (prNumber, body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -222,8 +224,15 @@ jobs:
               // PR with stale or red validate. The workflow_run path skips
               // this step because the trigger itself proves validate was just
               // green on the trusted SHA.
+              //
+              // event: 'pull_request' is belt-and-braces. validate.yml is
+              // pull_request-only today, but if it ever grows a push: or
+              // workflow_dispatch: trigger, a run from one of those events on
+              // the same SHA would otherwise pass as "proof of Validate green"
+              // for a comment-deploy. They run with different intent and
+              // potentially different env, so they should not satisfy this gate.
               const { data: runs } = await github.rest.actions.listWorkflowRuns({
-                owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, per_page: 100,
+                owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, event: 'pull_request', per_page: 100,
               });
               const validateRuns = runs.workflow_runs || [];
               if (validateRuns.length === 0) {
@@ -304,9 +313,11 @@ jobs:
               return;
             }
 
-            // Find the open PR.
+            // Find the open PR. GitHub guarantees uniqueness of (state, head)
+            // for open PRs, so per_page: 1 is sufficient and makes the
+            // uniqueness assumption explicit.
             const { data: pulls } = await github.rest.pulls.list({
-              owner, repo, state: 'open', head: `${owner}:${headRefForLookup}`, per_page: 5,
+              owner, repo, state: 'open', head: `${owner}:${headRefForLookup}`, per_page: 1,
             });
             if (pulls.length === 0) {
               core.info(`No open PR from ${headRefForLookup}; nothing to deploy.`);
@@ -327,11 +338,16 @@ jobs:
               await postSkip(prNumber, `HEAD drifted (validated \`${trustedSha.substring(0,7)}\`, current \`${pr.head.sha.substring(0,7)}\`). The next Validate cycle will retrigger.`);
               return;
             }
-            // Tree-equivalence: compareCommits.status === 'identical' catches
-            // force-pushes to the same tree (legit) vs different trees
-            // (suspicious). pr.head.sha === trustedSha alone is not enough
-            // because a same-tree amend can change the SHA without changing
-            // the tree (force-push of an amended commit, etc.).
+            // Defence in depth on top of the pr.head.sha === trustedSha
+            // equality above. compareCommits returns 'identical' only when
+            // the two refs resolve to the SAME commit object (not when trees
+            // are the same but SHAs differ, despite the term's connotation);
+            // a same-tree amend or cherry-pick produces a different SHA and
+            // returns 'diverged'. So this assertion is functionally redundant
+            // with the SHA equality above and exists to catch any path where
+            // SHAs end up non-identical (force-push to a different tree,
+            // same-tree amend, cherry-pick), including paths a future
+            // refactor might accidentally introduce.
             try {
               const { data: cmp } = await github.rest.repos.compareCommits({
                 owner, repo, base: trustedSha, head: pr.head.sha,
@@ -369,8 +385,8 @@ jobs:
 
             const upsertSticky = async (body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -478,12 +494,35 @@ jobs:
               return;
             }
 
+      - name: Fetch Dependabot metadata
+        # Parses dependabot[bot]'s structured commit trailers to determine the
+        # highest update-type across all deps in the PR. Authoritative source
+        # for grouped-update PRs whose titles are non-parseable prose (e.g.
+        # "bump the github-actions group with 3 updates") and whose body lines
+        # depend on a free-form template Dependabot owns. The downstream gate
+        # also keeps a "Bump|Updates X from A to B" regex pass as belt-and-
+        # braces and fails closed when BOTH signals come up empty.
+        #
+        # Only runs for the Dependabot trigger path. The action reads the PR
+        # context from the workflow_run event payload and short-circuits on
+        # non-Dependabot PRs anyway, but the explicit `if:` keeps the gate's
+        # responsibility readable.
+        id: dependabot-metadata
+        if: steps.resolve.outputs.trigger_path == 'dependabot'
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
       - name: Auto-deploy gates - dependabot
         if: steps.resolve.outputs.trigger_path == 'dependabot'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
+          # update-type is the highest-severity SemVer update across the deps
+          # in this PR ('version-update:semver-major' if any dep is a major
+          # bump). Empty string when fetch-metadata cannot resolve the PR or
+          # when the PR is not a Dependabot PR (defensive; the bot-identity
+          # gate already enforces the latter).
+          FETCH_METADATA_UPDATE_TYPE: ${{ steps.dependabot-metadata.outputs.update-type }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -495,8 +534,8 @@ jobs:
 
             const upsertSticky = async (body) => {
               try {
-                const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: prNumber, per_page: 100,
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: prNumber,
                 });
                 const existing = comments
                   .filter(c => c.body && c.body.includes(MARKER))
@@ -588,17 +627,37 @@ jobs:
 
             // Major-version detection. Major bumps default-skip auto-deploy
             // (no label opt-in available); operator comments `deploy` on the
-            // PR to ship a major bump after review. Handles both:
-            //   - Non-grouped title form:  "Bump <dep> from A.B.C to D.E.F"
-            //   - Grouped body form:       "Updates `<dep>` from A.B.C to D.E.F"
-            //     (Dependabot's grouped-update PR title is non-parseable;
-            //      the body contains one "Updates X from..." line per dep
-            //      in the group.)
-            // The version pattern is permissive enough to match two-segment
-            // versions, leading-v versions, and prerelease / build-metadata
-            // suffixes. If ANY line in title+body is a major bump (first
-            // numeric component differs), default-skip auto-deploy. A
-            // non-major or unparseable line falls through harmlessly.
+            // PR after review to ship a major bump.
+            //
+            // Two independent signals are consulted and the gate fails closed
+            // when both come up empty:
+            //   1. PRIMARY: dependabot/fetch-metadata parses structured commit
+            //      trailers and exposes the highest update-type across all
+            //      deps via outputs.update-type ('version-update:semver-major'
+            //      when any dep in the PR is a major bump). Authoritative for
+            //      grouped-update PRs whose title and body are non-parseable
+            //      free-form prose ("bump the github-actions group with N
+            //      updates").
+            //   2. SECONDARY: parse "Bump|Updates <dep> from A to B" lines
+            //      from the PR title and body. Catches:
+            //        - Timing / payload edge cases where fetch-metadata
+            //          returns an empty update-type (e.g. workflow_run
+            //          payload missing the PR; rare but documented).
+            //        - Future format changes in Dependabot's trailers that
+            //          would silently break the action's output.
+            //      The version pattern is permissive (two-segment versions,
+            //      leading-v, prerelease / build-metadata suffixes); a major
+            //      bump is "first numeric component differs."
+            //   3. FAIL-CLOSED: if BOTH signals are empty on a PR whose
+            //      identity already matched dependabot[bot] above, the gate
+            //      cannot determine bump severity and must postSkip. Without
+            //      this, an unparseable PR would auto-deploy on the implicit
+            //      assumption that the absence of "major" signals means
+            //      "non-major" - exactly the failure mode we're guarding
+            //      against if Dependabot ever changes its output format.
+            const fetchMetadataUpdateType = process.env.FETCH_METADATA_UPDATE_TYPE || '';
+            const isMajorByMetadata = fetchMetadataUpdateType === 'version-update:semver-major';
+
             const text = `${pr.title}\n${pr.body || ''}`;
             const lineRegex = /\b(?:Bump|Updates)\s+[`']?[\S]+?[`']?\s+from\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)\s+to\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)/gi;
             const extractMajor = (v) => {
@@ -609,10 +668,17 @@ jobs:
             const majorBumps = matches
               .map(mm => ({ raw: mm[0].trim(), from: extractMajor(mm[1]), to: extractMajor(mm[2]) }))
               .filter(x => x.from != null && x.to != null && x.from !== x.to);
-            if (majorBumps.length > 0) {
-              const detail = majorBumps.map(x => x.raw).slice(0, 3).join('; ');
-              const more = majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '';
-              await postSkip(`Major-version bump(s) detected: ${detail}${more}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+
+            if (isMajorByMetadata || majorBumps.length > 0) {
+              const detail = isMajorByMetadata
+                ? `fetch-metadata reports update-type=\`${fetchMetadataUpdateType}\``
+                : majorBumps.map(x => x.raw).slice(0, 3).join('; ') + (majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '');
+              await postSkip(`Major-version bump(s) detected: ${detail}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+              return;
+            }
+
+            if (!fetchMetadataUpdateType && matches.length === 0) {
+              await postSkip('Could not determine bump severity: `dependabot/fetch-metadata` returned no `update-type` and the PR title/body contained no parseable `Bump|Updates X from A to B` lines. Manual review required: comment `deploy` to ship after verifying the bump severity.');
               return;
             }
 
@@ -629,6 +695,11 @@ jobs:
       contents: write          # git push to shopify-sync
       pull-requests: write     # pulls.merge + sticky comment
       issues: write            # createForIssueComment reactions (rocket / -1)
+      actions: read            # forward-compat: any future step that reads
+                               # workflow runs (e.g. to surface the Validate
+                               # run id in the deploy report) needs this; the
+                               # gate already has it for listWorkflowRuns and
+                               # the grant is harmless when unused
     concurrency:
       # Serialises live-theme writes across all three trigger paths. With the
       # unified workflow the comment-driven and auto-deploy paths now contend
@@ -730,6 +801,15 @@ jobs:
                   { attempts: 3, delayMs: 2000, label: 'Squash merge' }
                 );
                 deployedSha = mergeResult.sha;
+                // Defensive: the squash-merge API response is documented to
+                // return the new merge-commit SHA in the `sha` field. Asserting
+                // non-empty here means a future response-shape change can't
+                // silently produce an empty refspec for the Sync step
+                // (`git push origin :shopify-sync` would DELETE the branch).
+                if (!deployedSha) {
+                  merged = false;
+                  mergeError = 'merge API returned no SHA in response; refusing to push an empty refspec to shopify-sync.';
+                }
               } catch (e) {
                 merged = false;
                 mergeError = e.message;
@@ -762,7 +842,13 @@ jobs:
 
       - name: Delete preview theme
         id: cleanup
-        if: success() && steps.merge.outputs.merged == 'true'
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # already conditionally skipped for Dependabot PRs (no Shopify token in
+        # the Dependabot secrets scope), so there is never a `pr-N-preview`
+        # theme to delete on this path. Running the cleanup anyway would
+        # produce a misleading ":broom: Preview cleanup: no preview theme
+        # found." line in every Dependabot deploy report.
+        if: success() && steps.merge.outputs.merged == 'true' && needs.gate.outputs.trigger_path != 'dependabot'
         # Cleanup runs AFTER successful merge so a runner crash or non-transient
         # cleanup failure cannot leave the system in `live deployed + PR open +
         # preview gone`. continue-on-error keeps a leaked preview from blocking
@@ -792,31 +878,67 @@ jobs:
         run: |
           set -euo pipefail
 
+          # GitHub's git-over-HTTPS endpoint expects HTTP Basic auth with
+          # `x-access-token` as the username and the GITHUB_TOKEN as the
+          # password (the same scheme actions/checkout's persisted creds use).
+          # `AUTHORIZATION: bearer <token>` is silently ignored by the smart
+          # HTTP server; git then falls back to credential prompting and
+          # fails with:
+          #   fatal: could not read Username for 'https://github.com':
+          #         No such device or address
+          # Build the header once so both pushes below share the encoded form.
+          AUTH_B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          # GitHub Actions auto-masks literal occurrences of secret values
+          # (including github.token) in logs. The base64-wrapped form is a
+          # different literal that Actions has not been told about; register
+          # it explicitly so a future debug echo / set -x / git error message
+          # containing the assembled http.extraheader can't leak the token in
+          # base64-plaintext-equivalent form.
+          echo "::add-mask::$AUTH_B64"
+          AUTH_HEADER="http.extraheader=AUTHORIZATION: basic $AUTH_B64"
+
           # Fetch ONCE. Do NOT git fetch between the lease-SHA computation and
           # the push; that would break --force-with-lease's race-detection
           # invariant. The checkout above used persist-credentials: false so
           # there are no leftover credentials; we inject the token via
-          # http.extraheader per-command.
+          # http.extraheader per-command above.
           #
           # $DEPLOYED_SHA is the squash-merge commit returned by pulls.merge.
           # It is brand-new on the remote and is NOT yet in the local clone
           # (the checkout fetched the PR head SHA, not the merged SHA).
           # Explicitly fetch it so `git rev-list` / `git diff` can resolve it
           # as a commit object below.
-          git fetch --prune --no-tags origin "$DEPLOYED_SHA" shopify-sync
+          #
+          # Auth and explicit-destination refspec both matter:
+          #   * Auth: the repo is public today, so an anonymous fetch works,
+          #     but if the repo is ever flipped to private (sensitive-data
+          #     scrub, compliance lockdown, etc.) the unauthed fetch fails
+          #     with the same `could not read Username` error the Bearer push
+          #     used to produce. Cost-free immunisation by reusing AUTH_HEADER.
+          #   * Explicit dst (`+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync`):
+          #     guarantees the local `origin/shopify-sync` ref is overwritten
+          #     with the remote tip even on a non-fast-forward update, so the
+          #     `EXPECTED=$(git rev-parse origin/shopify-sync)` lease-SHA used
+          #     by --force-with-lease below reflects the true current tip.
+          git -c "$AUTH_HEADER" fetch --prune --no-tags origin \
+              "$DEPLOYED_SHA" \
+              '+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync'
 
           AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
           BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
 
           if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
             # Normal: shopify-sync reachable from deployed SHA; fast-forward.
-            if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+            if PUSH_ERR=$(git -c "$AUTH_HEADER" \
                 push origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
               echo "::notice::Fast-forwarded shopify-sync $BEHIND commit(s) to deployed SHA"
               echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
             else
-              echo "::warning::Fast-forward push failed (likely raced an admin commit): $PUSH_ERR"
-              echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+              # Surface the underlying git error verbatim; do not pre-classify
+              # the cause (admin-commit race, auth failure, network blip, etc.
+              # all surface the same way here and need the raw error to triage).
+              echo "::warning::Fast-forward push failed: $PUSH_ERR"
+              echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
             fi
           elif [ "$AHEAD" -gt 0 ]; then
             DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
@@ -828,14 +950,14 @@ jobs:
               # deployed SHA; --force-with-lease catches an admin commit
               # racing this push.
               EXPECTED=$(git rev-parse origin/shopify-sync)
-              if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+              if PUSH_ERR=$(git -c "$AUTH_HEADER" \
                   push --force-with-lease="shopify-sync:$EXPECTED" \
                   origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
                 echo "::notice::Cleared $AHEAD orphan commit(s); trees identical to deployed SHA"
                 echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
               else
-                echo "::warning::Phantom cleanup push failed (likely raced an admin commit): $PUSH_ERR"
-                echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+                echo "::warning::Phantom cleanup push failed: $PUSH_ERR"
+                echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
               fi
             else
               # Real divergence: an admin commit landed during this deploy.
@@ -858,9 +980,12 @@ jobs:
         # actions. The deploy chain's Delete preview theme step (above)
         # handles the actual theme deletion; this step closes the UX gap
         # by updating the sticky so the merged PR doesn't appear to still
-        # have a live preview. No-op for PRs that never had a preview
-        # sticky (e.g. Dependabot PRs where preview.yml is skipped).
-        if: success() && steps.merge.outputs.merged == 'true'
+        # have a live preview.
+        #
+        # Skipped for Dependabot auto-deploys: preview.yml::deploy-preview is
+        # skipped for those PRs so there is no preview sticky to update,
+        # and the cleanup step above is also skipped (no theme to delete).
+        if: success() && steps.merge.outputs.merged == 'true' && needs.gate.outputs.trigger_path != 'dependabot'
         continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
@@ -1017,9 +1142,20 @@ jobs:
               : branchRetained
                 ? ' (branch retained: long-lived integration target).'
                 : '.';
-            const mergeStatus = merged
-              ? `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchSuffix}`
-              : `:warning: **Merge skipped:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
+            // Special-case the HEAD-drifted-post-deploy failure mode: live
+            // has the trusted SHA, but the PR head has moved since deploy,
+            // so a manual merge would land different commits than what's
+            // on the storefront. Make this discrepancy loud so the operator
+            // doesn't reflexively click Merge in the GitHub UI.
+            const headDrifted = !merged && /HEAD drifted post-deploy/i.test(mergeError);
+            let mergeStatus;
+            if (merged) {
+              mergeStatus = `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchSuffix}`;
+            } else if (headDrifted) {
+              mergeStatus = `:rotating_light: **Merge skipped (HEAD drifted post-deploy):** ${mergeError}\n\n**Do NOT click Merge in the UI without reviewing the new commits first.** The live theme is serving the SHA Validate ran against, but the PR head has moved past it. Review the diff between the deployed SHA and the current PR head, then either re-deploy the new head (push validates fresh and comment \`deploy\`) or merge manually with full awareness of the divergence.`;
+            } else {
+              mergeStatus = `:warning: **Merge skipped:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
+            }
 
             let cleanupLine;
             if (!merged) {
@@ -1030,11 +1166,27 @@ jobs:
               cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
             }
 
+            // steps.sync.outcome reports 'success' even when the Sync step's
+            // bash detected a push failure, because the bash explicitly
+            // handles errors with `if PUSH_ERR=...; then ... else ... fi` and
+            // exits 0 either way. Inspect the sync-status content as the
+            // primary signal: `push failed` and `deferred` prefixes indicate
+            // the operator needs to be aware (push error or real admin-commit
+            // divergence that sync.yml will pick up). syncOutcome is still
+            // consulted so that a hard bash failure before any status is
+            // written (e.g. `git fetch` errors and `set -e` fires) also lands
+            // on the warning path instead of falling through to the success
+            // branch with an empty status.
+            const syncStatusLower = syncStatus.toLowerCase();
+            const syncHadIssue =
+              syncOutcome !== 'success'
+              || syncStatusLower.startsWith('push failed')
+              || syncStatusLower.startsWith('deferred');
             let syncLine;
             if (!merged) {
               syncLine = ':information_source: shopify-sync sync skipped (merge did not succeed).';
-            } else if (syncOutcome === 'success') {
-              syncLine = `:arrows_clockwise: shopify-sync: ${syncStatus || 'unknown'}.`;
+            } else if (!syncHadIssue) {
+              syncLine = `:white_check_mark: shopify-sync: ${syncStatus || 'unknown'}.`;
             } else {
               syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. \`sync.yml\` will retry on the next admin push, or at the 13:00 UTC daily cron (whichever comes first).`;
             }
@@ -1080,9 +1232,12 @@ jobs:
               syncLine,
             ].join('\n');
 
-            // Upsert sticky comment.
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number: prNumber, per_page: 100,
+            // Upsert sticky comment. github.paginate handles PRs with >100
+            // comments (auto-reconcile PRs that accumulate daily-cron stale
+            // notices), avoiding the duplicate-posting bug a bare listComments
+            // call would produce when the existing sticky lives past page 1.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
             });
             const existing = comments
               .filter(c => c.body && c.body.includes(MARKER))
@@ -1209,8 +1364,11 @@ jobs:
               retryHint,
             ].join('\n');
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number: prNumber, per_page: 100,
+            // Paginate so a failure on a high-comment-count PR still finds
+            // the existing sticky instead of posting a duplicate. Same
+            // rationale as the deploy-report upsert above.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
             });
             const existing = comments
               .filter(c => c.body && c.body.includes(MARKER))
