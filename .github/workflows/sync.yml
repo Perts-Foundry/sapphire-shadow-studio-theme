@@ -14,6 +14,14 @@
 # Phantom-orphan handling: when shopify-sync has commits ahead of main but
 # the diff is zero LOC (the post-auto-deploy state), this workflow does
 # nothing; the next deploy will clean up via --force-with-lease.
+#
+# "Main has advanced" handling: when shopify-sync has commits ahead of main
+# AND a non-zero diff AND main has advanced past shopify-sync's merge-base
+# (typically because an unrelated PR landed on main between deploys), the
+# "Open or refresh reconcile PR" step's merge-base guard fails red. A
+# reconcile PR opened in that state would propose to revert the missing
+# main commits. Recovery is a manual force-push of main onto shopify-sync;
+# the guard's error message includes the snippet.
 name: sync
 
 on:
@@ -83,19 +91,64 @@ jobs:
         if: steps.status.outputs.ahead != '0' && steps.status.outputs.loc != '0'
         env:
           AHEAD: ${{ steps.status.outputs.ahead }}
+          SYNC_RECONCILE_TOKEN: ${{ secrets.SYNC_RECONCILE_TOKEN }}
         run: |
           set -euo pipefail
+          # Defence against the "main has advanced" latent bug: if shopify-sync's
+          # history doesn't contain main's tip, opening a reconcile PR would
+          # propose to revert the missing commits. Fail loud; the operator must
+          # consciously recover by force-pushing main onto shopify-sync (snippet
+          # in the error message). deploy.yml's auto-deploy gate has an
+          # independent compareCommits assertion as defence in depth, so a
+          # hand-opened PR that bypasses this guard still cannot ship.
+          # Use origin/shopify-sync rather than HEAD so the assertion is
+          # robust against any future workflow step that mutates the local
+          # checkout (e.g. an inspection step that does git checkout main).
+          MERGE_BASE=$(git merge-base origin/main origin/shopify-sync)
+          MAIN_TIP=$(git rev-parse origin/main)
+          if [ "$MERGE_BASE" != "$MAIN_TIP" ]; then
+            echo "::error::shopify-sync is missing main commits (merge-base $MERGE_BASE != main tip $MAIN_TIP). A reconcile PR opened in this state would propose to revert the missing commits. Recover with: MAIN_SHA=\$(git rev-parse origin/main); LEASE_SHA=\$(git rev-parse origin/shopify-sync); git push --force-with-lease=shopify-sync:\$LEASE_SHA origin \$MAIN_SHA:shopify-sync"
+            exit 1
+          fi
           DATE=$(date -u +%Y-%m-%d)
           TITLE="chore: reconcile shopify-sync -> main (${AHEAD} commits, ${DATE})"
-          printf 'Auto-generated reconcile of admin-side commits on `shopify-sync`.\n\nValidate runs automatically; on success, `deploy.yml` ships it to live and merges this PR via the shopify-sync auto-deploy path.\n\nCommits:\n```\n%s\n```\n' \
+          # The "Opened on behalf of sync.yml via fine-grained PAT" line is a
+          # forensics aid: after the PAT switch, the PR's GitHub-UI attribution
+          # changes from a bot icon to a human avatar, so the body explicitly
+          # tags the workflow-driven origin.
+          printf 'Auto-generated reconcile of admin-side commits on `shopify-sync`.\n\nOpened on behalf of `sync.yml` via fine-grained PAT (see CLAUDE.md "Token rotation call-site catalog"). Validate runs automatically; on success, `deploy.yml` ships it to live and merges this PR via the shopify-sync auto-deploy path.\n\nCommits:\n```\n%s\n```\n' \
             "$(cat /tmp/commits.txt)" > /tmp/pr-body.md
           EXISTING=$(gh pr list --head shopify-sync --base main --state open \
             --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
+            # Edit stays on GITHUB_TOKEN (job-level GH_TOKEN). Three reasons:
+            #   1. pr edit fires pull_request:edited, which validate.yml does
+            #      not subscribe to, so suppression is harmless here.
+            #   2. Minimises PAT-attributed audit-log volume.
+            #   3. Audit-trail hygiene: routine bot edits stay attributed to
+            #      github-actions[bot]; any human-attributed action on the PR
+            #      is then a genuine investigate-worthy signal.
             gh pr edit "$EXISTING" --title "$TITLE" --body-file /tmp/pr-body.md
           else
-            gh pr create --base main --head shopify-sync \
-              --title "$TITLE" --body-file /tmp/pr-body.md
+            # GITHUB_TOKEN-driven `gh pr create` cannot fire downstream workflow
+            # events (https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication),
+            # so validate.yml would never run on the new PR. Use the fine-grained
+            # PAT (pull_requests:write + contents:read on this repo only) for
+            # create. PAT call-site discipline: this is the ONLY place the PAT
+            # is consumed; rotating or revoking the PAT only affects this line.
+            if [ -z "${SYNC_RECONCILE_TOKEN:-}" ]; then
+              echo "::error::SYNC_RECONCILE_TOKEN is unset; cannot fire validate.yml on the new PR. See CLAUDE.md 'Token rotation call-site catalog'."
+              exit 1
+            fi
+            if ! GH_TOKEN="$SYNC_RECONCILE_TOKEN" gh pr create \
+                 --base main --head shopify-sync \
+                 --title "$TITLE" --body-file /tmp/pr-body.md 2> /tmp/gh-err.txt; then
+              if grep -qE 'HTTP 40[134]|Bad credentials|Resource not accessible' /tmp/gh-err.txt; then
+                echo "::error::SYNC_RECONCILE_TOKEN appears invalid (revoked/expired/scope-mismatch). See CLAUDE.md 'Token rotation call-site catalog'."
+              fi
+              cat /tmp/gh-err.txt
+              exit 1
+            fi
           fi
 
       - name: Stale reconcile PR notice

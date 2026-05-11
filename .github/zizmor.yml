@@ -24,14 +24,26 @@ rules:
       #     repos.compareCommits(base: trustedSha, head: pr.head.sha) with
       #     status === 'identical'. Catches same-tree force-pushes as legit
       #     and divergent trees as suspicious.
-      #   - Bot identity gate: verification.verified === true AND four
-      #     login fields (commit.author.login, commit.committer.login,
-      #     pull.user.login, plus the expected bot constant) all match.
-      #     Git commit header fields are forgeable and not consulted.
-      #   - For shopify-sync: auto-reconcile label present, manual-review
-      #     label absent, no .github/ or layout/theme.liquid in diff,
-      #     <1000 LOC, base-staleness check (main hasn't advanced).
-      #   - For dependabot/**: manual-review label absent, no
+      #   - Commit-identity gate: verification.verified === true AND
+      #     commit.author.login === expected bot constant. committer.login
+      #     accepts {expected bot, web-flow} (web-flow is the GitHub-system
+      #     identity for rebased commits and is informational, not a
+      #     security signal). Git commit header fields are forgeable and
+      #     not consulted.
+      #   - PR-opener identity gate: pr.user.login matches the expected
+      #     opener. For shopify-sync the expected opener is sourced from
+      #     vars.EXPECTED_SYNC_PR_OPENER (the SYNC_RECONCILE_TOKEN PAT
+      #     owner); for dependabot/** it is the dependabot[bot] constant.
+      #     Empty-variable case fails closed.
+      #   - For shopify-sync: draft-PR escape hatch (operator marks the
+      #     auto-reconcile PR as draft to halt auto-deploy), no .github/
+      #     or layout/theme.liquid in diff, <1000 LOC, base-staleness
+      #     check (main hasn't advanced since PR creation), AND a
+      #     defence-in-depth merge-base assertion via compareCommits
+      #     (behind_by===0) that catches "PR head is missing main commits"
+      #     even when sync.yml's prevention guard is bypassed (e.g.
+      #     hand-opened PR via PAT exfil).
+      #   - For dependabot/**: draft-PR escape hatch, no
       #     .github/{workflows,actions,scripts} in diff, major-version
       #     bumps require auto-deploy-major label, base-staleness check.
       #   - Defensive head_branch routing from the trusted source (not the

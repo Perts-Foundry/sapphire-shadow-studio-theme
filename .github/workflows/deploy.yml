@@ -375,6 +375,7 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
+          EXPECTED_SYNC_PR_OPENER: ${{ vars.EXPECTED_SYNC_PR_OPENER }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -433,21 +434,27 @@ jobs:
               return;
             }
 
-            // Bot identity gate on the underlying commits (not the PR opener).
-            // sync.yml opens the auto-reconcile PR using GITHUB_TOKEN, so
-            // pr.user.login is `github-actions[bot]`, not `shopify[bot]`. The
-            // PR opener identity is verified separately below to be
-            // GitHub-Actions (proves sync.yml opened it; a hand-opened
-            // shopify-sync PR would fail that).
+            // Bot-identity gate on the underlying commits (NOT the PR opener).
+            // After the SYNC_RECONCILE_TOKEN PAT switch, sync.yml's `gh pr
+            // create` runs under a fine-grained PAT, so the auto-reconcile
+            // PR's `pr.user.login` is the PAT owner's GitHub account (sourced
+            // from the `EXPECTED_SYNC_PR_OPENER` repo variable), not
+            // `github-actions[bot]` and not `shopify[bot]`. `pr.user.login`
+            // is set once at create time; sync.yml's later `gh pr edit`
+            // refreshes (which stay on GITHUB_TOKEN by design) do NOT change
+            // it. The PR-opener identity is verified separately below to
+            // match that variable; this proves "sync.yml or someone with the
+            // PAT opened this PR" (a hand-opened shopify-sync PR by any
+            // other identity fails that check).
             //
             // The integrity boundary on commit content is `author.login ===
             // shopify[bot]` AND `verification.verified === true`. The GPG /
-            // SSH signature on a Dependabot- or Shopify-bot commit is bound
-            // to that bot's key; rewriting commit content invalidates the
-            // signature, so a forged-content commit cannot pass both checks
-            // simultaneously. Git-commit-header fields are NOT consulted
-            // (those are forgeable); only API-resolved login fields and the
-            // API-asserted signature-verification flag.
+            // SSH signature on a Shopify-bot commit is bound to that bot's
+            // key; rewriting commit content invalidates the signature, so a
+            // forged-content commit cannot pass both checks simultaneously.
+            // Git-commit-header fields are NOT consulted (those are forgeable);
+            // only API-resolved login fields and the API-asserted
+            // signature-verification flag.
             //
             // `committer.login` is informational, not load-bearing. It can
             // legitimately be `shopify[bot]` (initial push, never rebased) OR
@@ -459,31 +466,65 @@ jobs:
             // treated as a security signal. Both committer values are
             // accepted to avoid false positives on rebased shopify[bot]
             // commits; the security property is preserved by author + signature.
+            //
+            // PR-opener trust delta vs the previous github-actions[bot] form:
+            // the new expected value (PAT owner) is human-tied and
+            // PAT-exfiltrable. Anyone who steals the SYNC_RECONCILE_TOKEN
+            // secret could hand-open a stale-base shopify[bot] PR via that
+            // identity. The defence-in-depth merge-base assertion below
+            // (compareCommits behind_by===0) catches that attack: a stale
+            // shopify-sync HEAD is missing main commits and the gate skips.
+            // Residual surface is "current-base shopify[bot] commit replay,"
+            // which can only ship content shopify[bot] genuinely authored.
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
             const verified = commit.commit?.verification?.verified === true;
             const authorLogin = commit.author?.login;
             const committerLogin = commit.committer?.login;
+            // pr.user.login may be `null`/`undefined` for deleted accounts;
+            // the empty-string fallback feeds the strict !== comparison below
+            // and fails closed (do NOT "fix" the optional chaining).
             const prUserLogin = pr.user?.login;
             const expectedCommitBot = 'shopify[bot]';
-            const expectedPrBot = 'github-actions[bot]';
+            const expectedPrOpener = process.env.EXPECTED_SYNC_PR_OPENER || '';
             const acceptableCommitters = [expectedCommitBot, 'web-flow'];
+            if (!expectedPrOpener) {
+              await postSkip('EXPECTED_SYNC_PR_OPENER repo variable is unset; refusing to deploy without a verified PR-opener identity. Set it to the SYNC_RECONCILE_TOKEN PAT owner.');
+              return;
+            }
             if (!verified || authorLogin !== expectedCommitBot || !acceptableCommitters.includes(committerLogin)) {
               await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected author=${expectedCommitBot}, committer in {${expectedCommitBot}, web-flow}).`);
               return;
             }
-            if (prUserLogin !== expectedPrBot) {
-              await postSkip(`PR-opener-identity gate failed (pr.user=${prUserLogin}; expected ${expectedPrBot}, which means the PR was opened by sync.yml). A hand-opened shopify-sync PR cannot auto-deploy; comment \`deploy\` manually to ship it.`);
+            if (prUserLogin !== expectedPrOpener) {
+              await postSkip(`PR-opener-identity gate failed (pr.user=${prUserLogin}; expected ${expectedPrOpener}, the SYNC_RECONCILE_TOKEN PAT owner). A hand-opened shopify-sync PR cannot auto-deploy; comment \`deploy\` manually to ship it.`);
               return;
             }
 
-            // Base-staleness.
+            // Base-staleness: catches "main advanced AFTER the PR was created."
             const { data: main } = await github.rest.repos.getBranch({
               owner, repo, branch: 'main',
             });
             if (main.commit.sha !== pr.base.sha) {
               await postSkip(`\`main\` advanced (base \`${pr.base.sha.substring(0,7)}\`, current \`${main.commit.sha.substring(0,7)}\`). sync.yml will refresh the PR and retrigger.`);
+              return;
+            }
+
+            // Defence-in-depth merge-base assertion: catches "shopify-sync's
+            // PR head was missing main commits AT PR-creation time," which
+            // the base-staleness check above does NOT detect (it only
+            // compares pr.base to current main, not pr.head's history).
+            // This is the deploy-side mirror of sync.yml's prevention guard;
+            // it catches misleading-revert PRs even when sync.yml's guard
+            // is bypassed (hand-opened PR via PAT exfil). compareCommits
+            // with base=main, head=pr.head reports `behind_by` = commits in
+            // main that are NOT in pr.head's history.
+            const { data: cmp } = await github.rest.repos.compareCommits({
+              owner, repo, base: main.commit.sha, head: trustedSha,
+            });
+            if (cmp.behind_by > 0) {
+              await postSkip(`PR head is missing ${cmp.behind_by} commit(s) from main (likely a stale shopify-sync state). A reconcile PR in this state would propose to revert those commits. Recover by force-pushing main onto shopify-sync; see CLAUDE.md "Token rotation call-site catalog" for the snippet.`);
               return;
             }
 
@@ -617,6 +658,23 @@ jobs:
             });
             if (main.commit.sha !== pr.base.sha) {
               await postSkip(`\`main\` advanced (base \`${pr.base.sha.substring(0,7)}\`, current \`${main.commit.sha.substring(0,7)}\`); waiting for Dependabot to rebase.`);
+              return;
+            }
+
+            // Defence-in-depth merge-base assertion (mirrors the shopify-sync
+            // arm). The base-staleness check above asserts that pr.base equals
+            // main's current tip; in Dependabot's normal flow this is also
+            // sufficient because Dependabot rebases its own PRs on every push
+            // and updates `pr.base.sha`. The merge-base assertion adds belt
+            // and braces against a hypothetical future Dependabot behaviour
+            // change where a PR could carry a current pr.base but a head SHA
+            // missing main commits (e.g. a partial-rebase race). Same shape
+            // as the shopify-sync gate's assertion.
+            const { data: cmp } = await github.rest.repos.compareCommits({
+              owner, repo, base: main.commit.sha, head: trustedSha,
+            });
+            if (cmp.behind_by > 0) {
+              await postSkip(`PR head is missing ${cmp.behind_by} commit(s) from main (PR base passed staleness check but PR head's history is not on top of main). \`@dependabot rebase\` to refresh.`);
               return;
             }
 
