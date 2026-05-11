@@ -1,5 +1,77 @@
 # Release Notes
 
+## CI/CD deploy chain: sync.yml PAT switch and latent main-has-advanced hardening (unreleased)
+
+PR #17 was the first end-to-end exercise of the consolidated `deploy.yml`'s shopify-sync auto-deploy path. It surfaced a real and previously unobserved bug: `sync.yml`'s `gh pr create` runs under `GITHUB_TOKEN`, and GitHub's documented automatic-token rule (https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication) suppresses downstream workflow_run events from GITHUB_TOKEN-driven actions. validate.yml never fired on the auto-reconcile PR. The fix is a fine-grained PAT scoped narrowly; this PR also folds in a latent-bug discovery and matching two-layer hardening.
+
+### Bug A: validate.yml never fires on auto-reconcile PRs
+
+`sync.yml`'s "Open or refresh reconcile PR" step calls `gh pr create` under the job-level `GH_TOKEN: ${{ github.token }}`. Per GitHub's documented automatic-token rule, events triggered by GITHUB_TOKEN do not cascade into downstream workflow runs. The PR opens silently, no `pull_request:opened` event reaches the events bus, validate.yml is not triggered, and the shopify-sync auto-deploy chain stalls. Empirically confirmed on PR #17: the PR was opened by sync.yml at 2026-05-11 20:41:50Z; the only Validate run on shopify-sync (databaseId 25697345816) was created at 2026-05-11 21:06:18Z, ~25 minutes later, as a result of a manual close+reopen via personal gh credentials.
+
+**FIXED**: introduced a new fine-grained PAT (`SYNC_RECONCILE_TOKEN`, resource owner `Perts-Foundry` org, scoped to `pull_requests: write` + `contents: read` + `metadata: read` on this single repo). sync.yml's `gh pr create` runs under the PAT via an inline `GH_TOKEN="$SYNC_RECONCILE_TOKEN"` override; every other call site stays on GITHUB_TOKEN. `gh pr edit` deliberately keeps GITHUB_TOKEN because `pull_request:edited` is not in validate.yml's trigger set (suppression is harmless there), to minimise PAT-attributed audit-log volume, and to preserve a clean `github-actions[bot]` timeline so any human-attributed action on the PR is a genuine investigation signal. deploy.yml's `pulls.merge` and the post-merge Sync step's git push also stay on GITHUB_TOKEN: the suppression of the merge-commit push to main is intentional (re-running validate against main on every deploy would loop), and the shopify-sync fast-forward push uses HTTP Basic with GITHUB_TOKEN by design.
+
+The PAT call site is wrapped in two fail-closed guards: an empty-PAT check that fires a clear `::error::` if the secret is unset, and a stderr-capture wrapper around `gh pr create` that re-emits a "PAT appears invalid" hint when the gh CLI returns 401/403/404 (revoked, expired, or scope-mismatched). Both surface explicit pointers to CLAUDE.md's "Token rotation call-site catalog."
+
+### Bug A.1: downstream PR-opener gate now expects the PAT-owner identity
+
+After the PAT switch, `pr.user.login` on the auto-reconcile PR is the PAT owner's GitHub account, not `github-actions[bot]`. deploy.yml's shopify-sync gate previously hardcoded `expectedPrBot = 'github-actions[bot]'`. Without a corresponding update, every PAT-opened reconcile PR would pass Validate, then fail the PR-opener-identity gate and post a sticky "Auto-deploy skipped" with a misleading reason.
+
+**FIXED**: renamed `expectedPrBot` to `expectedPrOpener`, source value from a new `vars.EXPECTED_SYNC_PR_OPENER` repository variable (plaintext is fine: the login is already public surface). Added EXPECTED_SYNC_PR_OPENER to the step's env block. Added a JS-side empty guard that fails closed via postSkip if the variable is unset. Preserved the `pr.user?.login` optional chaining and added a comment so a future maintainer doesn't "fix" it to non-optional access (deleted-account responses can produce undefined; the comparison fails closed against that).
+
+### Trust-model regression with mitigation chain
+
+The PR-opener gate's expected value moves from a GitHub-Actions runtime identity (`github-actions[bot]`, essentially unimpersonable from outside a workflow execution context) to a human GitHub login (PAT-exfiltrable). The new attack surface and the mitigations:
+
+1. **Attack:** PAT exfiltration enables hand-opening a `shopify-sync → main` PR with a stale-but-signed `shopify[bot]` HEAD (replay an old `shopify[bot]` commit as a fresh deploy).
+2. **Block 1, commit-identity gate (unchanged):** the HEAD commit must be `author=shopify[bot]` AND `verification.verified`. An attacker can only PR commits `shopify[bot]` genuinely authored at some point in history; no novel content injection is possible.
+3. **Block 2, defence-in-depth merge-base assertion (NEW, this PR):** `repos.compareCommits(base: main, head: pr.head.sha).behind_by === 0`. A stale `shopify[bot]` commit that predates a subsequent main-tip advance is missing main commits, and the gate skips. Catches the replay attack.
+4. **Residual surface:** "hand-open a PR with a current-base `shopify[bot]` commit." Damage is bounded to "auto-deploy ships content `shopify[bot]` genuinely authored, in the same tree-state `shopify[bot]` would naturally produce." Much smaller than "ship arbitrary content."
+
+The all-bets-are-off threshold around `contents: write` collaborator-bypass is unchanged from the existing trust model: a collaborator who can land any PR could already exfiltrate any secret via a malicious workflow change, so the new PAT does not extend that surface.
+
+### Bug B: latent main-has-advanced bug (discovered during this work, hardened in same PR)
+
+After PR #17 squash-merged at 2026-05-11 21:08:42Z, shopify-sync entered phantom-orphan state (1 commit ahead, DIFF_LOC=0). PR #18 (CLAUDE.md consolidation) then landed on main on 2026-05-11. shopify-sync became 1 ahead, 2 behind, DIFF_LOC=375, no longer pure phantom-orphan. sync.yml's existing "Determine sync status" step only short-circuits on the DIFF_LOC=0 case, so the next sync run (cron, admin push, or manual dispatch) would create a reconcile PR whose diff proposes to **revert PR #18's docs changes** (CLAUDE.md and `docs/accessibility-patterns.md`). With the GITHUB_TOKEN status quo, validate.yml wouldn't fire on that PR (harm contained, humans review). With the PAT fix landing, validate.yml DOES fire, the PR could flow through the workflow_run auto-deploy arm, and both the PR-opener gate (PAT-opened) and the commit-identity gate (HEAD commit is real `shopify[bot]`) would pass. The auto-deploy could ship the reverse-application to live.
+
+The PAT fix unmasked this latent bug. Two layers of defence land in this same PR:
+
+**FIXED** (sync.yml prevention guard): added a merge-base check at the top of the "Open or refresh reconcile PR" step's `run:` block, before the PR-create or PR-edit action. The check asserts `git merge-base origin/main HEAD == origin/main`. If not, the workflow fails red with an `::error::` annotation that includes the manual-recovery snippet (force-push main onto shopify-sync). Placement is inside the step, NOT before the LOC fork in "Determine sync status" — this avoids false-firing on the legitimate phantom-orphan post-deploy state (where `AHEAD > 0` AND `DIFF_LOC == 0` AND main has advanced past shopify-sync's merge-base via the squash). The step's existing `if:` condition (`loc != '0'`) already excludes that state from this step.
+
+**FIXED** (deploy.yml defence-in-depth): added a `repos.compareCommits(base: main.commit.sha, head: trustedSha)` call to the shopify-sync gate, after the existing base-staleness check. Asserts `behind_by === 0`. The existing base-staleness check (`main.commit.sha !== pr.base.sha`) only catches "main advanced after the PR was created"; it does NOT catch "PR head was missing main commits at PR creation time." The new assertion catches that case AND the PAT-exfil hand-opened-stale-PR attack from the trust-delta chain above. Defence in depth: even if sync.yml's prevention guard is bypassed (hand-opened PR via PAT exfil), the deploy-side gate still skips.
+
+### Doc-drift fix folded in (zizmor.yml mitigation comment)
+
+`.github/zizmor.yml`'s `dangerous-triggers` ignore-list comment listed "auto-reconcile label present, manual-review label absent" as shopify-sync mitigations. Both labels were replaced by the draft-PR escape hatch in an earlier PR; the comment had drifted. Refreshed the shopify-sync mitigation bullet list to reflect the actual current gates (draft-PR check, no-protected-paths-in-diff, <1000 LOC, base-staleness, new merge-base assertion) and the renamed PR-opener gate sourcing from `vars.EXPECTED_SYNC_PR_OPENER`.
+
+### Operator action (post-merge)
+
+Run a one-time force-push to bring shopify-sync to byte-for-byte parity with main, absorbing PR #18 and discarding the orphan `9b003ae`:
+
+```bash
+git fetch origin
+MAIN_SHA=$(git rev-parse origin/main)
+LEASE_SHA=$(git rev-parse origin/shopify-sync)
+if [ "$LEASE_SHA" = "$MAIN_SHA" ]; then
+  echo "Already in sync; nothing to do."
+  exit 0
+fi
+git push --force-with-lease=shopify-sync:"$LEASE_SHA" origin "$MAIN_SHA":shopify-sync
+git fetch origin shopify-sync
+[ "$(git rev-parse origin/shopify-sync)" = "$MAIN_SHA" ] || { echo "MISMATCH"; exit 1; }
+```
+
+If `--force-with-lease` aborts (a `shopify[bot]` commit landed between fetch and push), re-run from `git fetch`. After the push, `gh api /repos/Perts-Foundry/sapphire-shadow-studio-theme/compare/shopify-sync...main` returns `identical / 0 / 0` and GitHub's branch view shows shopify-sync at parity with main. The new sync.yml and deploy.yml guards protect the recovered state.
+
+### Comment-deploy escape hatch unaffected
+
+The `Auto-deploy gates - shopify-sync` step that hosts the renamed PR-opener gate only runs on the `workflow_run` trigger path. The `issue_comment` (manual `deploy` comment) trigger uses a separate collaborator-permission check on `comment.user.login` and never asserts `pr.user.login`. A `deploy` comment on an auto-reconcile PR (now opened by the PAT-owner identity instead of `github-actions[bot]`) ships normally.
+
+### Dependabot path: PR-opener identity unchanged, parallel merge-base assertion added
+
+The dependabot/** arm of deploy.yml's gate continues to expect `pr.user.login === dependabot[bot]`. Dependabot opens PRs under its own bot identity via GitHub's native Dependabot service, not via a PAT, so the GITHUB_TOKEN-suppression rule does not apply (Dependabot's pushes already fire workflow events). No PAT is needed for that path; no PR-opener identity change.
+
+The defence-in-depth `repos.compareCommits(base: main, head: trustedSha).behind_by === 0` assertion is also added to the dependabot gate, mirroring the shopify-sync addition. In Dependabot's normal flow this is a no-op: Dependabot rebases its own PRs on every push and updates `pr.base.sha`, so the existing base-staleness check is sufficient and the new assertion always passes. The assertion lands as belt-and-braces against a hypothetical future Dependabot behaviour change where a PR could carry a current `pr.base` but a head SHA missing main commits (e.g. partial-rebase race). Symmetric trust model across both auto-deploy arms.
+
 ## CI/CD deploy chain: Dependabot auto-deploy gate fixes (unreleased)
 
 PR #2 (Dependabot `actions/github-script` v8 → v9, open since 2026-05-03) was the first auto-deploy attempt against the post-PR-13 chain. It exposed two bugs in the Dependabot auto-deploy path that the earlier audit missed, plus one latent issue that was masked by the first bug.
