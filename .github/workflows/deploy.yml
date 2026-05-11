@@ -436,12 +436,29 @@ jobs:
             // Bot identity gate on the underlying commits (not the PR opener).
             // sync.yml opens the auto-reconcile PR using GITHUB_TOKEN, so
             // pr.user.login is `github-actions[bot]`, not `shopify[bot]`. The
-            // integrity assertion is that the COMMITS on shopify-sync were
-            // authored and committed by shopify[bot] with a verified signature.
-            // Uses only GitHub-API-resolved login fields; Git commit headers
-            // are forgeable. The PR opener identity is also verified to be
+            // PR opener identity is verified separately below to be
             // GitHub-Actions (proves sync.yml opened it; a hand-opened
-            // shopify-sync PR would fail this).
+            // shopify-sync PR would fail that).
+            //
+            // The integrity boundary on commit content is `author.login ===
+            // shopify[bot]` AND `verification.verified === true`. The GPG /
+            // SSH signature on a Dependabot- or Shopify-bot commit is bound
+            // to that bot's key; rewriting commit content invalidates the
+            // signature, so a forged-content commit cannot pass both checks
+            // simultaneously. Git-commit-header fields are NOT consulted
+            // (those are forgeable); only API-resolved login fields and the
+            // API-asserted signature-verification flag.
+            //
+            // `committer.login` is informational, not load-bearing. It can
+            // legitimately be `shopify[bot]` (initial push, never rebased) OR
+            // `web-flow` (GitHub's commit identity for any path that applies
+            // a commit on a user's behalf: web-UI edits, Update-branch / Rebase
+            // buttons, `PUT /contents/{path}` REST calls, etc.). web-flow is
+            // not an unimpersonable identity - anyone with `contents: write`
+            // can produce a web-flow-committed commit - so it must not be
+            // treated as a security signal. Both committer values are
+            // accepted to avoid false positives on rebased shopify[bot]
+            // commits; the security property is preserved by author + signature.
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
@@ -451,8 +468,9 @@ jobs:
             const prUserLogin = pr.user?.login;
             const expectedCommitBot = 'shopify[bot]';
             const expectedPrBot = 'github-actions[bot]';
-            if (!verified || authorLogin !== expectedCommitBot || committerLogin !== expectedCommitBot) {
-              await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected ${expectedCommitBot}).`);
+            const acceptableCommitters = [expectedCommitBot, 'web-flow'];
+            if (!verified || authorLogin !== expectedCommitBot || !acceptableCommitters.includes(committerLogin)) {
+              await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected author=${expectedCommitBot}, committer in {${expectedCommitBot}, web-flow}).`);
               return;
             }
             if (prUserLogin !== expectedPrBot) {
@@ -494,35 +512,12 @@ jobs:
               return;
             }
 
-      - name: Fetch Dependabot metadata
-        # Parses dependabot[bot]'s structured commit trailers to determine the
-        # highest update-type across all deps in the PR. Authoritative source
-        # for grouped-update PRs whose titles are non-parseable prose (e.g.
-        # "bump the github-actions group with 3 updates") and whose body lines
-        # depend on a free-form template Dependabot owns. The downstream gate
-        # also keeps a "Bump|Updates X from A to B" regex pass as belt-and-
-        # braces and fails closed when BOTH signals come up empty.
-        #
-        # Only runs for the Dependabot trigger path. The action reads the PR
-        # context from the workflow_run event payload and short-circuits on
-        # non-Dependabot PRs anyway, but the explicit `if:` keeps the gate's
-        # responsibility readable.
-        id: dependabot-metadata
-        if: steps.resolve.outputs.trigger_path == 'dependabot'
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-
       - name: Auto-deploy gates - dependabot
         if: steps.resolve.outputs.trigger_path == 'dependabot'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
-          # update-type is the highest-severity SemVer update across the deps
-          # in this PR ('version-update:semver-major' if any dep is a major
-          # bump). Empty string when fetch-metadata cannot resolve the PR or
-          # when the PR is not a Dependabot PR (defensive; the bot-identity
-          # gate already enforces the latter).
-          FETCH_METADATA_UPDATE_TYPE: ${{ steps.dependabot-metadata.outputs.update-type }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -582,7 +577,27 @@ jobs:
               return;
             }
 
-            // Bot identity.
+            // Bot identity. The integrity boundary on commit content is
+            // `author.login === dependabot[bot]` AND `verification.verified
+            // === true`. Dependabot's commits are signed with its own key;
+            // rewriting commit content invalidates the signature, so a
+            // forged-content commit cannot pass both checks simultaneously.
+            // `pr.user.login === dependabot[bot]` further requires the PR
+            // itself to have been opened by Dependabot (a hand-crafted PR
+            // mimicking Dependabot's commit shape would fail this).
+            //
+            // `committer.login` is informational, not load-bearing. It can
+            // legitimately be `dependabot[bot]` (initial push, never rebased)
+            // OR `web-flow` (GitHub's commit identity for any path that
+            // applies a commit on a user's behalf: web-UI edits, Update-branch
+            // / Rebase buttons, `PUT /contents/{path}` REST calls,
+            // `@dependabot rebase`, `@dependabot recreate`, etc.). web-flow
+            // is NOT an unimpersonable identity - anyone with `contents:
+            // write` can produce a web-flow-committed commit - so it must
+            // not be treated as a security signal. Both committer values are
+            // accepted to avoid false positives on rebased dependabot[bot]
+            // commits; the security property is preserved by author +
+            // signature + PR-opener identity.
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
@@ -590,8 +605,9 @@ jobs:
             const authorLogin = commit.author?.login;
             const committerLogin = commit.committer?.login;
             const prUserLogin = pr.user?.login;
-            if (!verified || authorLogin !== expectedBot || committerLogin !== expectedBot || prUserLogin !== expectedBot) {
-              await postSkip(`Bot-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}, pr.user=${prUserLogin}; expected ${expectedBot}).`);
+            const acceptableCommitters = [expectedBot, 'web-flow'];
+            if (!verified || authorLogin !== expectedBot || !acceptableCommitters.includes(committerLogin) || prUserLogin !== expectedBot) {
+              await postSkip(`Bot-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}, pr.user=${prUserLogin}; expected author=${expectedBot}, committer in {${expectedBot}, web-flow}, pr.user=${expectedBot}).`);
               return;
             }
 
@@ -631,32 +647,56 @@ jobs:
             //
             // Two independent signals are consulted and the gate fails closed
             // when both come up empty:
-            //   1. PRIMARY: dependabot/fetch-metadata parses structured commit
-            //      trailers and exposes the highest update-type across all
-            //      deps via outputs.update-type ('version-update:semver-major'
-            //      when any dep in the PR is a major bump). Authoritative for
-            //      grouped-update PRs whose title and body are non-parseable
-            //      free-form prose ("bump the github-actions group with N
-            //      updates").
+            //   1. PRIMARY: parse Dependabot's structured commit trailers via
+            //      pulls.listCommits. Every Dependabot commit includes a block
+            //      like:
+            //        updated-dependencies:
+            //        - dependency-name: actions/github-script
+            //          dependency-version: 9.0.0
+            //          dependency-type: direct:production
+            //          update-type: version-update:semver-major
+            //      Grouped-update PRs include one such block per dep in the
+            //      same commit. We read every `update-type:` trailer across
+            //      every commit on the PR; any `semver-major` value triggers
+            //      the postSkip. Authoritative for grouped-update PRs whose
+            //      title and body are non-parseable free-form prose.
+            //
+            //      Prior implementation used dependabot/fetch-metadata@v3.1.0
+            //      as a separate step. The action only supports `pull_request`
+            //      and `pull_request_target` events; in our `workflow_run`-
+            //      triggered gate it hard-failed with "Event payload missing
+            //      `pull_request` key", blocking every Dependabot auto-deploy.
+            //      The inline trailer parse is the action's own underlying
+            //      data source (Dependabot's documented commit-trailer
+            //      contract); no dependency, no payload requirement.
             //   2. SECONDARY: parse "Bump|Updates <dep> from A to B" lines
             //      from the PR title and body. Catches:
-            //        - Timing / payload edge cases where fetch-metadata
-            //          returns an empty update-type (e.g. workflow_run
-            //          payload missing the PR; rare but documented).
-            //        - Future format changes in Dependabot's trailers that
-            //          would silently break the action's output.
+            //        - A future Dependabot version dropping the structured
+            //          commit trailer.
+            //        - The trailer parse failing silently (e.g. permissions
+            //          issue on listCommits).
             //      The version pattern is permissive (two-segment versions,
             //      leading-v, prerelease / build-metadata suffixes); a major
             //      bump is "first numeric component differs."
-            //   3. FAIL-CLOSED: if BOTH signals are empty on a PR whose
+            //   3. FAIL-CLOSED: if BOTH signals come up empty on a PR whose
             //      identity already matched dependabot[bot] above, the gate
             //      cannot determine bump severity and must postSkip. Without
             //      this, an unparseable PR would auto-deploy on the implicit
             //      assumption that the absence of "major" signals means
             //      "non-major" - exactly the failure mode we're guarding
             //      against if Dependabot ever changes its output format.
-            const fetchMetadataUpdateType = process.env.FETCH_METADATA_UPDATE_TYPE || '';
-            const isMajorByMetadata = fetchMetadataUpdateType === 'version-update:semver-major';
+            const prCommits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: prNumber,
+            });
+            const trailerRegex = /update-type:\s*version-update:semver-(major|minor|patch|prerelease)/gi;
+            const updateTypes = [];
+            for (const c of prCommits) {
+              const msg = c.commit?.message || '';
+              for (const m of msg.matchAll(trailerRegex)) {
+                updateTypes.push(m[1].toLowerCase());
+              }
+            }
+            const isMajorByTrailer = updateTypes.includes('major');
 
             const text = `${pr.title}\n${pr.body || ''}`;
             const lineRegex = /\b(?:Bump|Updates)\s+[`']?[\S]+?[`']?\s+from\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)\s+to\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)/gi;
@@ -669,16 +709,16 @@ jobs:
               .map(mm => ({ raw: mm[0].trim(), from: extractMajor(mm[1]), to: extractMajor(mm[2]) }))
               .filter(x => x.from != null && x.to != null && x.from !== x.to);
 
-            if (isMajorByMetadata || majorBumps.length > 0) {
-              const detail = isMajorByMetadata
-                ? `fetch-metadata reports update-type=\`${fetchMetadataUpdateType}\``
+            if (isMajorByTrailer || majorBumps.length > 0) {
+              const detail = isMajorByTrailer
+                ? `commit trailer reports semver-major across ${updateTypes.filter(t => t === 'major').length} dep(s)`
                 : majorBumps.map(x => x.raw).slice(0, 3).join('; ') + (majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '');
               await postSkip(`Major-version bump(s) detected: ${detail}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
               return;
             }
 
-            if (!fetchMetadataUpdateType && matches.length === 0) {
-              await postSkip('Could not determine bump severity: `dependabot/fetch-metadata` returned no `update-type` and the PR title/body contained no parseable `Bump|Updates X from A to B` lines. Manual review required: comment `deploy` to ship after verifying the bump severity.');
+            if (updateTypes.length === 0 && matches.length === 0) {
+              await postSkip('Could not determine bump severity: no `update-type` commit trailer found and the PR title/body contained no parseable `Bump|Updates X from A to B` lines. Manual review required: comment `deploy` to ship after verifying the bump severity.');
               return;
             }
 
