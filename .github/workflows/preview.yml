@@ -8,10 +8,20 @@ permissions: {}
 
 jobs:
   deploy-preview:
+    # Skip Dependabot PRs: Dependabot-triggered workflows run with a separate
+    # secrets/variables scope (`Settings -> Secrets and variables ->
+    # Dependabot`) that does NOT inherit the regular Actions secrets, so
+    # `SHOPIFY_CLI_THEME_TOKEN` is empty here and `npx shopify theme list`
+    # fails authentication. Preview themes are for human visual review of
+    # code changes; dependency bumps (action SHAs, npm tooling) do not change
+    # the rendered storefront, so a preview adds no signal. The auto-deploy
+    # chain still works because `deploy.yml`'s `workflow_run` arm uses the
+    # default-branch secrets scope (not Dependabot's).
     if: |
       github.event.action != 'closed'
       && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     name: deploy-preview
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -126,12 +136,16 @@ jobs:
             }
 
   cleanup:
-    # Match deploy-preview's fork-PR exclusion. Fork PRs never had a
-    # pr-N-preview theme created (deploy-preview rejects them), so cleanup
-    # has nothing to do; running it just hydrates the Shopify token in vain.
+    # Match deploy-preview's fork-PR and Dependabot exclusions. PRs that
+    # never had a pr-N-preview theme created (deploy-preview rejected them
+    # at creation) have nothing to clean up; running cleanup just hydrates
+    # the Shopify token in vain (or fails for Dependabot since the
+    # `pull_request: closed` event from a merged Dependabot PR may run in
+    # Dependabot's secrets scope with an empty token).
     if: |
       github.event.action == 'closed'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     name: cleanup
     runs-on: ubuntu-24.04
     timeout-minutes: 5
