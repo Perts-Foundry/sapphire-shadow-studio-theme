@@ -797,7 +797,13 @@ jobs:
           # invariant. The checkout above used persist-credentials: false so
           # there are no leftover credentials; we inject the token via
           # http.extraheader per-command.
-          git fetch --prune --no-tags origin shopify-sync
+          #
+          # $DEPLOYED_SHA is the squash-merge commit returned by pulls.merge.
+          # It is brand-new on the remote and is NOT yet in the local clone
+          # (the checkout fetched the PR head SHA, not the merged SHA).
+          # Explicitly fetch it so `git rev-list` / `git diff` can resolve it
+          # as a commit object below.
+          git fetch --prune --no-tags origin "$DEPLOYED_SHA" shopify-sync
 
           AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
           BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
