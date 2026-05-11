@@ -1,5 +1,40 @@
 # Release Notes
 
+## CI/CD deploy chain: Dependabot auto-deploy gate fixes (unreleased)
+
+PR #2 (Dependabot `actions/github-script` v8 → v9, open since 2026-05-03) was the first auto-deploy attempt against the post-PR-13 chain. It exposed two bugs in the Dependabot auto-deploy path that the earlier audit missed, plus one latent issue that was masked by the first bug.
+
+### Bug A: `dependabot/fetch-metadata@v3.1.0` does not support `workflow_run` triggers
+
+PR #13 integrated `dependabot/fetch-metadata@v3.1.0` as a new gate step to read the per-dep `update-type` from Dependabot's structured commit trailers. The action's README mentioned `workflow_run` as a viable parent trigger; in practice the action requires the `pull_request` event payload to live in its own job's context, which a `workflow_run`-triggered job does not have. Every Dependabot auto-deploy attempt now hard-failed with:
+
+```
+::warning::Event payload missing `pull_request` key. Make sure you're triggering this action on the `pull_request` or `pull_request_target` events.
+::error::PR is not from Dependabot, nothing to do.
+```
+
+The whole Dependabot auto-deploy path was blocked before reaching the bot-identity gate, the major-version gate, or any deploy step.
+
+**FIXED**: removed the `Fetch Dependabot metadata` step entirely. Replaced with inline commit-trailer parsing inside the existing `Auto-deploy gates - dependabot` github-script step: iterate `pulls.listCommits`, parse each commit message for `update-type: version-update:semver-{major,minor,patch,prerelease}` trailers (Dependabot's documented structured-commit format), classify the bump severity from the parsed values. Same logical behaviour as `fetch-metadata`, no action dependency, no event-payload requirement. The prose-regex secondary parse and the fail-closed "no parseable signal" branch are preserved.
+
+### Bug B: bot-identity gate rejected legitimate `web-flow` committer
+
+Both auto-deploy bot-identity gates (shopify-sync and dependabot arms) asserted `commit.committer.login === expectedBot` with strict equality. When a bot-authored commit is rebased through GitHub's web-flow (which happens on every `@dependabot rebase`, `@dependabot recreate`, and GitHub's automatic "update branch" rebase), the resulting commit has `author.login === bot` but `committer.login === 'web-flow'`. PR #2's head commit was exactly this state: `author=dependabot[bot]`, `committer=web-flow`, `verified=true`.
+
+Pre-PR-13 stickies on PR #2 (2026-05-10 22:39 and 2026-05-11 00:18) had already reported the false positive: "Bot-identity gate failed (verified=true, author=dependabot[bot], committer=web-flow, pr.user=dependabot[bot]; expected dependabot[bot])." After PR #13, the failure was masked by Bug A (the fetch-metadata step crashed first); without this fix it would resurface on the next deploy attempt.
+
+**FIXED**: both gates now allow `committer.login` to be either the expected bot OR `web-flow`. `web-flow` is a GitHub-system identity controlled by GitHub itself; no external actor can impersonate it. The author and PR-opener integrity assertions are unchanged.
+
+### Trust-model impact
+
+The signed-commit gate's integrity property is unchanged: the assertion is still that a verified bot AUTHORED every commit. The committer field was already documented as defence-in-depth (the README explicitly stated "Git commit headers are not consulted; those are forgeable"). Relaxing the committer to {expectedBot, web-flow} accepts a GitHub-controlled identity in addition to the bot, preserving the no-external-impersonation property.
+
+CLAUDE.md "Deploy gate trust delta" section and "Admin-side edits" section both updated to reflect the relaxed committer-identity rule.
+
+### Operator action
+
+None. PR #2 can now be re-auto-deployed by triggering a new Validate cycle on its HEAD (any commit push, or `@dependabot recreate`); the chain will now run the bot-identity gate (passes with `committer=web-flow`), then the major-version gate (detects the major bump via the inline trailer parse and postSkips with "Major-version bump(s) detected"). After review, comment `deploy` to ship.
+
 ## CI/CD deploy chain: sync auth + audit-driven hardening (unreleased)
 
 PR #11's test deploy was the first to actually exercise the consolidated `deploy.yml`'s `Sync main -> shopify-sync` post-merge step under realistic conditions. It surfaced three immediate bugs (sync push could never have worked; failure annotation misattributed the cause; deploy report rendered the success icon next to failure text) and prompted a full-chain audit that turned up another fourteen findings ranging from latent gate-bypass risks to documentation drift. All seventeen are folded into this one PR.
