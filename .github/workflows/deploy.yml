@@ -848,6 +848,67 @@ jobs:
             echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Update preview comment after merge
+        # Updates the `<!-- preview -->` sticky comment originally posted by
+        # preview.yml::deploy-preview (saying "Preview theme deployed") to
+        # reflect that the preview theme has been deleted as part of this
+        # merge. preview.yml::cleanup, which would normally do this on
+        # `pull_request: closed`, never fires for deploy-chain merges because
+        # GitHub suppresses downstream events from GITHUB_TOKEN-driven
+        # actions. The deploy chain's Delete preview theme step (above)
+        # handles the actual theme deletion; this step closes the UX gap
+        # by updating the sticky so the merged PR doesn't appear to still
+        # have a live preview. No-op for PRs that never had a preview
+        # sticky (e.g. Dependabot PRs where preview.yml is skipped).
+        if: success() && steps.merge.outputs.merged == 'true'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
+        with:
+          script: |
+            const marker = '<!-- preview -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
+            const cleanupStatus = process.env.CLEANUP_STATUS || '';
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            if (existing.length === 0) {
+              // No prior preview sticky (e.g. Dependabot PR). Do not create
+              // one just to mark it deleted; that would surprise the operator.
+              return;
+            }
+
+            const body = cleanupOutcome === 'success'
+              ? [marker, '# Preview Deployment', '', '🗑️ **Preview theme deleted** — PR merged.'].join('\n')
+              : [
+                  marker,
+                  '# Preview Deployment',
+                  '',
+                  `⚠️ **Preview theme cleanup warning** — PR merged but preview deletion may have failed (${cleanupStatus || 'see deploy report'}). Delete manually if the theme persists: \`npx shopify theme delete --theme <id> --force\`.`,
+                ].join('\n');
+
+            const [keep, ...dupes] = existing;
+            await github.rest.issues.updateComment({
+              owner, repo, comment_id: keep.id, body,
+            });
+            for (const dup of dupes) {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner, repo, comment_id: dup.id,
+                });
+              } catch (_) { /* swallowed */ }
+            }
+
       - name: React with rocket
         if: success() && github.event_name == 'issue_comment'
         continue-on-error: true
