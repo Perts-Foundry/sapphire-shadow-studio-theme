@@ -436,21 +436,29 @@ jobs:
             // Bot identity gate on the underlying commits (not the PR opener).
             // sync.yml opens the auto-reconcile PR using GITHUB_TOKEN, so
             // pr.user.login is `github-actions[bot]`, not `shopify[bot]`. The
-            // integrity assertion is that the COMMITS on shopify-sync were
-            // authored by shopify[bot] with a verified signature.
-            // Uses only GitHub-API-resolved login fields; Git commit headers
-            // are forgeable. The PR opener identity is also verified to be
+            // PR opener identity is verified separately below to be
             // GitHub-Actions (proves sync.yml opened it; a hand-opened
-            // shopify-sync PR would fail this).
+            // shopify-sync PR would fail that).
             //
-            // Committer can be either `shopify[bot]` (the normal case) OR
-            // `web-flow` (GitHub's own commit identity for rebases applied
-            // via the web UI or via in-flight Shopify-Integration updates
-            // that route through GitHub's rebase path). web-flow is a
-            // GitHub-system identity that no external actor can impersonate;
-            // it is set by GitHub itself when GitHub-controlled flows commit
-            // on a user's behalf. Restricting committer strictly to
-            // shopify[bot] produced false positives on every rebased PR.
+            // The integrity boundary on commit content is `author.login ===
+            // shopify[bot]` AND `verification.verified === true`. The GPG /
+            // SSH signature on a Dependabot- or Shopify-bot commit is bound
+            // to that bot's key; rewriting commit content invalidates the
+            // signature, so a forged-content commit cannot pass both checks
+            // simultaneously. Git-commit-header fields are NOT consulted
+            // (those are forgeable); only API-resolved login fields and the
+            // API-asserted signature-verification flag.
+            //
+            // `committer.login` is informational, not load-bearing. It can
+            // legitimately be `shopify[bot]` (initial push, never rebased) OR
+            // `web-flow` (GitHub's commit identity for any path that applies
+            // a commit on a user's behalf: web-UI edits, Update-branch / Rebase
+            // buttons, `PUT /contents/{path}` REST calls, etc.). web-flow is
+            // not an unimpersonable identity - anyone with `contents: write`
+            // can produce a web-flow-committed commit - so it must not be
+            // treated as a security signal. Both committer values are
+            // accepted to avoid false positives on rebased shopify[bot]
+            // commits; the security property is preserved by author + signature.
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
@@ -460,8 +468,8 @@ jobs:
             const prUserLogin = pr.user?.login;
             const expectedCommitBot = 'shopify[bot]';
             const expectedPrBot = 'github-actions[bot]';
-            const acceptableCommitters = new Set([expectedCommitBot, 'web-flow']);
-            if (!verified || authorLogin !== expectedCommitBot || !acceptableCommitters.has(committerLogin)) {
+            const acceptableCommitters = [expectedCommitBot, 'web-flow'];
+            if (!verified || authorLogin !== expectedCommitBot || !acceptableCommitters.includes(committerLogin)) {
               await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected author=${expectedCommitBot}, committer in {${expectedCommitBot}, web-flow}).`);
               return;
             }
@@ -569,14 +577,27 @@ jobs:
               return;
             }
 
-            // Bot identity. Committer can be either `dependabot[bot]` (initial
-            // push, never rebased) OR `web-flow` (GitHub's commit identity
-            // for any rebase, including `@dependabot rebase`, `@dependabot
-            // recreate`, and GitHub's auto-rebase against main). web-flow is
-            // a GitHub-system identity that no external actor can impersonate;
-            // it is set by GitHub itself when GitHub-controlled flows commit
-            // on a user's behalf. Restricting committer strictly to
-            // dependabot[bot] produced false positives on every rebased PR.
+            // Bot identity. The integrity boundary on commit content is
+            // `author.login === dependabot[bot]` AND `verification.verified
+            // === true`. Dependabot's commits are signed with its own key;
+            // rewriting commit content invalidates the signature, so a
+            // forged-content commit cannot pass both checks simultaneously.
+            // `pr.user.login === dependabot[bot]` further requires the PR
+            // itself to have been opened by Dependabot (a hand-crafted PR
+            // mimicking Dependabot's commit shape would fail this).
+            //
+            // `committer.login` is informational, not load-bearing. It can
+            // legitimately be `dependabot[bot]` (initial push, never rebased)
+            // OR `web-flow` (GitHub's commit identity for any path that
+            // applies a commit on a user's behalf: web-UI edits, Update-branch
+            // / Rebase buttons, `PUT /contents/{path}` REST calls,
+            // `@dependabot rebase`, `@dependabot recreate`, etc.). web-flow
+            // is NOT an unimpersonable identity - anyone with `contents:
+            // write` can produce a web-flow-committed commit - so it must
+            // not be treated as a security signal. Both committer values are
+            // accepted to avoid false positives on rebased dependabot[bot]
+            // commits; the security property is preserved by author +
+            // signature + PR-opener identity.
             const { data: commit } = await github.rest.repos.getCommit({
               owner, repo, ref: trustedSha,
             });
@@ -584,8 +605,8 @@ jobs:
             const authorLogin = commit.author?.login;
             const committerLogin = commit.committer?.login;
             const prUserLogin = pr.user?.login;
-            const acceptableCommitters = new Set([expectedBot, 'web-flow']);
-            if (!verified || authorLogin !== expectedBot || !acceptableCommitters.has(committerLogin) || prUserLogin !== expectedBot) {
+            const acceptableCommitters = [expectedBot, 'web-flow'];
+            if (!verified || authorLogin !== expectedBot || !acceptableCommitters.includes(committerLogin) || prUserLogin !== expectedBot) {
               await postSkip(`Bot-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}, pr.user=${prUserLogin}; expected author=${expectedBot}, committer in {${expectedBot}, web-flow}, pr.user=${expectedBot}).`);
               return;
             }
