@@ -588,19 +588,31 @@ jobs:
 
             // Major-version detection. Major bumps default-skip auto-deploy
             // (no label opt-in available); operator comments `deploy` on the
-            // PR to ship a major bump after review. The regex matches
-            // Dependabot's standard "bump X from A.B.C to D.E.F" title form;
-            // non-standard formats (calver, prerelease, two-segment) fall
-            // through as "not a major bump" and auto-deploy, which is the
-            // safer default for ambiguous cases (Dependabot's own
-            // dependency-type metadata could be consulted as a future
-            // hardening, but is not part of the PR object directly).
-            const text = `${pr.title}\n\n${pr.body || ''}`;
-            const majorRegex = /\bbump\s+\S+\s+from\s+(\d+)\.\d+\.\d+\s+to\s+(\d+)\.\d+\.\d+/i;
-            const m = text.match(majorRegex);
-            const isMajor = m && m[1] !== m[2];
-            if (isMajor) {
-              await postSkip(`Major-version bump detected (${m[0]}); auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+            // PR to ship a major bump after review. Handles both:
+            //   - Non-grouped title form:  "Bump <dep> from A.B.C to D.E.F"
+            //   - Grouped body form:       "Updates `<dep>` from A.B.C to D.E.F"
+            //     (Dependabot's grouped-update PR title is non-parseable;
+            //      the body contains one "Updates X from..." line per dep
+            //      in the group.)
+            // The version pattern is permissive enough to match two-segment
+            // versions, leading-v versions, and prerelease / build-metadata
+            // suffixes. If ANY line in title+body is a major bump (first
+            // numeric component differs), default-skip auto-deploy. A
+            // non-major or unparseable line falls through harmlessly.
+            const text = `${pr.title}\n${pr.body || ''}`;
+            const lineRegex = /\b(?:Bump|Updates)\s+[`']?[\S]+?[`']?\s+from\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)\s+to\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)/gi;
+            const extractMajor = (v) => {
+              const mm = String(v).match(/^v?(\d+)/);
+              return mm ? parseInt(mm[1], 10) : null;
+            };
+            const matches = Array.from(text.matchAll(lineRegex));
+            const majorBumps = matches
+              .map(mm => ({ raw: mm[0].trim(), from: extractMajor(mm[1]), to: extractMajor(mm[2]) }))
+              .filter(x => x.from != null && x.to != null && x.from !== x.to);
+            if (majorBumps.length > 0) {
+              const detail = majorBumps.map(x => x.raw).slice(0, 3).join('; ');
+              const more = majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '';
+              await postSkip(`Major-version bump(s) detected: ${detail}${more}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
               return;
             }
 
