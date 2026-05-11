@@ -1,6 +1,6 @@
-# WARNING: dependabot-auto-deploy.yml and shopify-sync-auto-deploy.yml trigger
-# on this exact workflow name (`workflow_run.workflows: ["validate"]`).
-# Renaming will silently break auto-deploy.
+# WARNING: deploy.yml's workflow_run arm triggers on this exact workflow name
+# (`workflow_run.workflows: ["validate"]`). Renaming will silently break both
+# auto-deploy paths (shopify-sync and dependabot/**).
 #
 # Single `validate` job that runs every PR-time check sequentially, captures
 # stdout + exit code per step, and posts a single sticky CI Report comment
@@ -112,7 +112,7 @@ jobs:
         env:
           # SC2016 = "Expressions don't expand in single quotes" - false-
           # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
-          # in sync-reconcile.yml.
+          # in sync.yml.
           # SC2317 = "Command appears to be unreachable" - false-positive on
           # the `set +e; OUTPUT=$(...); EXIT_CODE=$?; echo $OUTPUT` capture
           # pattern used by every check step in this workflow. shellcheck

@@ -1,0 +1,122 @@
+# Opens or refreshes the auto-reconcile PR for admin commits on shopify-sync.
+#
+# Single direction only: shopify-sync -> main (reconcile PR).
+# The reverse direction (main -> shopify-sync fast-forward) is handled
+# synchronously by deploy.yml's "Sync main -> shopify-sync" post-merge step.
+#
+# Triggers:
+#   - push: shopify-sync   - admin commits via the Shopify GitHub Integration
+#                            (shopify[bot] HTTPS push, NOT GITHUB_TOKEN, so
+#                            this trigger fires correctly).
+#   - schedule (daily)     - cold-start safety net.
+#   - workflow_dispatch    - operator manual trigger.
+#
+# Phantom-orphan handling: when shopify-sync has commits ahead of main but
+# the diff is zero LOC (the post-auto-deploy state), this workflow does
+# nothing; the next deploy will clean up via --force-with-lease.
+name: sync
+
+on:
+  push:
+    branches: [shopify-sync]
+  schedule:
+    # 13:00 UTC daily safety net. The push: shopify-sync trigger is the
+    # primary path; cron catches cases where the push event is missed
+    # (rare, but possible during GitHub Actions outages).
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: reconcile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout shopify-sync
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: shopify-sync
+          persist-credentials: false
+
+      - name: Determine sync status
+        id: status
+        run: |
+          set -euo pipefail
+          # Default outputs upfront so downstream `if:` checks against
+          # steps.status.outputs.loc are unambiguous even when AHEAD=0.
+          echo "ahead=0" >> "$GITHUB_OUTPUT"
+          echo "loc=0" >> "$GITHUB_OUTPUT"
+          git fetch --prune --no-tags origin main
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "::notice::shopify-sync in sync with main."
+            exit 0
+          fi
+          DIFF_LOC=$(git diff --numstat origin/main..HEAD \
+            | awk '{ sum += $1 + $2 } END { print sum + 0 }')
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          echo "loc=$DIFF_LOC" >> "$GITHUB_OUTPUT"
+          if [ "$DIFF_LOC" -eq 0 ]; then
+            # Phantom orphan: shopify-sync has commits ahead but trees are
+            # identical to main. The just-merged auto-reconcile PR squashed
+            # the bot commits into main. deploy.yml's Sync step will clean
+            # this up on the next deploy via --force-with-lease. Skip the
+            # reconcile PR creation here to avoid an empty-diff PR.
+            echo "::notice::shopify-sync ahead by $AHEAD but tree is identical to main (phantom orphan); next deploy will clean up."
+          else
+            git log --oneline origin/main..HEAD > /tmp/commits.txt
+          fi
+
+      - name: Open or refresh reconcile PR
+        if: steps.status.outputs.ahead != '0' && steps.status.outputs.loc != '0'
+        env:
+          AHEAD: ${{ steps.status.outputs.ahead }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          TITLE="chore: reconcile shopify-sync -> main (${AHEAD} commits, ${DATE})"
+          printf 'Auto-generated reconcile of admin-side commits on `shopify-sync`.\n\nValidate runs automatically; on success, `deploy.yml` ships it to live and merges this PR via the shopify-sync auto-deploy path.\n\nCommits:\n```\n%s\n```\n' \
+            "$(cat /tmp/commits.txt)" > /tmp/pr-body.md
+          EXISTING=$(gh pr list --head shopify-sync --base main --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "$TITLE" --body-file /tmp/pr-body.md
+          else
+            gh pr create --base main --head shopify-sync \
+              --title "$TITLE" --body-file /tmp/pr-body.md
+          fi
+
+      - name: Stale reconcile PR notice
+        # Always-run; never fails the workflow. The prior `exit 1` here made
+        # every cron firing of `sync` red whenever a stale PR existed, training
+        # operators to ignore the workflow. A workflow notice + per-PR comment
+        # is louder where it matters (the stale PR itself) without polluting
+        # the Actions tab with red runs.
+        if: always()
+        run: |
+          set -euo pipefail
+          # 259200 seconds = 3 days. There is at most one open shopify-sync
+          # -> main PR at a time (sync.yml upserts), so this loop runs zero
+          # or one times in practice.
+          STALE=$(gh pr list --head shopify-sync --base main --state open \
+            --json number,createdAt \
+            --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) > 259200)] | .[].number')
+          if [ -n "$STALE" ]; then
+            for n in $STALE; do
+              printf "PR #%s has been open more than 3 days. Auto-deploy may be failing or rejected by a gate. Investigate the validate run, the deploy run, or any merge conflict.\n" "$n" > /tmp/stale-body.md
+              gh pr comment "$n" --body-file /tmp/stale-body.md || true
+            done
+            echo "::warning::Stale reconcile PR open >3 days; comment posted on PR(s) $STALE"
+          fi

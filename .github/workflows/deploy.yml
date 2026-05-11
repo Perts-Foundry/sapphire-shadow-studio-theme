@@ -1,51 +1,104 @@
-# Comment-triggered deploy. A write+ collaborator comments `deploy` on an open
-# PR; this workflow validates that the latest validate run on the PR HEAD SHA
-# was green, pushes the theme to live, smoke-tests the storefront, and on
-# success squash-merges the PR and deletes the branch.
+# Unified deploy chain. One workflow handles three trigger paths:
 #
-# Two-job structure:
-#   permission-check - no Shopify token, no concurrency group. Catches
-#                      non-collaborators and stale validation before any token
-#                      is in scope and before the live-deploy mutex is held.
-#   deploy           - contents+pulls write, concurrency: deploy-production.
-#                      Reads the Shopify token from a repo-level secret and
-#                      the store handle / canonical domain from repo-level
-#                      variables; no GitHub Environment binding. Inherits the
-#                      trusted head SHA from permission-check via job outputs.
+#   1. issue_comment  - Dev PRs. A write+ collaborator comments `deploy`;
+#                       the gate job runs the collaborator-permission check
+#                       and the validate-on-HEAD-SHA re-verification.
+#   2. workflow_run   - Auto-deploy for shopify-sync admin commits. Validate
+#       (shopify-sync)  succeeds on the auto-reconcile PR; this workflow
+#                       fires; the gate runs the shopify-sync gates (signed-
+#                       commit, label, diff-sanity, base-staleness).
+#   3. workflow_run   - Auto-deploy for Dependabot PRs. Same shape as (2),
+#       (dependabot/**) with dependabot-specific gates (no CI-file changes,
+#                       major-version label requirement, manual-review
+#                       escape hatch).
 #
-# Author-association pre-filter at the workflow level keeps non-collaborator
-# comments from dispatching a runner at all.
+# Two jobs in this workflow:
+#   gate   - no Shopify token, no concurrency on deploy-production. Catches
+#            non-collaborators and stale validate before any token is in scope
+#            and before the live-deploy mutex is held. Resolves the trusted
+#            SHA via getWorkflowRun().head_sha (workflow_run paths) or via
+#            pulls.get().head.sha after the collaborator-permission check
+#            (comment path).
+#   deploy - contents+pulls write, concurrency: deploy-production. Reads the
+#            Shopify token from a repo-level secret and the store handle /
+#            canonical domain from repo-level variables. Inherits the trusted
+#            head SHA from gate via needs.gate.outputs.head_sha. Includes a
+#            synchronous `Sync main -> shopify-sync` post-merge step that
+#            keeps shopify-sync caught up with main (replaces the prior
+#            sync-reconcile.yml push: main fast-forward arm, which was dead
+#            because GITHUB_TOKEN-driven pushes do not retrigger workflows).
+#
+# WARNING: workflow_run.workflows hardcodes the literal name "validate";
+# renaming validate.yml silently breaks the auto-deploy paths. The
+# workflow_run.branches filter (shopify-sync, dependabot/**) also depends on
+# Dependabot's branch-naming convention.
 name: deploy
 
 on:
   issue_comment:
     types: [created]
+  workflow_run:
+    workflows: ["validate"]
+    types: [completed]
+    branches: ["shopify-sync", "dependabot/**"]
+
+# Dynamic run-name keeps the three trigger paths visually distinct in the
+# Actions tab. Without it, every run is named "deploy" and the operator must
+# open the run to see which path fired.
+run-name: >-
+  deploy (${{
+    github.event_name == 'issue_comment'
+      && format('comment #{0} by @{1}', github.event.issue.number, github.event.comment.user.login)
+      || format('{0} @ {1}', github.event.workflow_run.head_branch, github.event.workflow_run.display_title)
+  }})
 
 permissions: {}
 
 jobs:
-  permission-check:
-    name: permission-check
+  gate:
+    name: gate
+    # Workflow-level pre-filter. Rejects two failure classes before any runner
+    # spins up:
+    #   (a) issue_comment events that are NOT on a PR (github.event.issue.pull_request
+    #       is null for plain issue comments) or whose body is not `deploy`
+    #       or whose author_association is below COLLABORATOR.
+    #   (b) workflow_run events whose triggering Validate ran from a push
+    #       (push: main or push: shopify-sync) rather than a PR. validate.yml
+    #       fires on both pull_request and push; only the pull_request flavor
+    #       corresponds to an auto-deploy candidate.
     if: |
-      github.event.issue.pull_request
-      && github.event.comment.body == 'deploy'
-      && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association)
+      (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.comment.body == 'deploy'
+        && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association))
+      || (github.event_name == 'workflow_run'
+        && github.event.workflow_run.event == 'pull_request'
+        && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 5
     permissions:
       contents: read
-      # Need write to upsert the sticky <!-- deploy-result --> comment when a
-      # gate rejects the deploy attempt; without this, rejected attempts
-      # surface only as a `-1` reaction with no in-PR explanation.
+      # write on pull-requests so the rejection sticky comment can post when
+      # a gate fails; without it the rejection surfaces only as a workflow
+      # failure with no in-PR explanation. issues: write is needed for
+      # createForIssueComment reactions (eyes/-1/confused on the comment
+      # path) because reaction endpoints are routed through the issues API
+      # even for PR comments.
       pull-requests: write
+      issues: write
+      actions: read
+      checks: read
     outputs:
-      sha: ${{ steps.pr.outputs.sha }}
-      short_sha: ${{ steps.pr.outputs.short_sha }}
-      ref: ${{ steps.pr.outputs.ref }}
-      base_ref: ${{ steps.pr.outputs.base_ref }}
-      pr_number: ${{ steps.pr.outputs.pr_number }}
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      base_ref: ${{ steps.resolve.outputs.base_ref }}
+      trigger_path: ${{ steps.resolve.outputs.trigger_path }}
+      deployer: ${{ steps.resolve.outputs.deployer }}
     steps:
       - name: React with eyes
+        if: github.event_name == 'issue_comment'
         continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
@@ -57,31 +110,59 @@ jobs:
               content: 'eyes',
             });
 
-      - name: Validate permissions, fork, and validate-on-HEAD-SHA
-        id: pr
+      - name: Resolve trigger context
+        id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const issueNumber = context.issue.number;
+            const sameRepoFull = `${owner}/${repo}`;
+            const eventName = context.eventName;
 
-            // Helper: upsert sticky <!-- deploy-result --> comment with
-            // the rejection reason, react -1 (or `confused` for transient API
-            // failures), and setFailed. Pre-deploy rejections need this
-            // because the deploy job's Report failure step is gated on
-            // `needs.permission-check.outputs.pr_number != ''` and won't run
-            // when permission-check fails.
-            const reactAndPost = async (reason, { reaction = '-1' } = {}) => {
+            // Single sticky-comment marker for all three trigger paths.
+            // Replaces the prior per-workflow markers
+            // (<!-- shopify-sync-auto-deploy --> and <!-- dependabot-auto-deploy -->)
+            // since one deploy.yml now owns every report.
+            const MARKER = '<!-- deploy-result -->';
+
+            // Sticky-comment helper. Upserts a single MARKER-tagged comment per
+            // PR and cleans up duplicates. Used by both pre-deploy gate
+            // rejections (here) and the deploy ladder's report steps.
+            const upsertSticky = async (prNumber, body) => {
               try {
-                await github.rest.reactions.createForIssueComment({
-                  owner, repo, comment_id: context.payload.comment.id, content: reaction,
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner, repo, issue_number: prNumber, per_page: 100,
                 });
-              } catch (_) { /* non-critical */ }
-              const marker = '<!-- deploy-result -->';
+                const existing = comments
+                  .filter(c => c.body && c.body.includes(MARKER))
+                  .sort((a, b) => a.id - b.id);
+                const [keep, ...dupes] = existing;
+                if (keep) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+                }
+                for (const d of dupes) {
+                  try {
+                    await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id });
+                  } catch (_) { /* swallowed */ }
+                }
+              } catch (_) { /* non-critical; setFailed remains authoritative */ }
+            };
+
+            const postSkip = async (prNumber, reason, opts = {}) => {
+              const { reaction } = opts;
+              if (reaction && eventName === 'issue_comment') {
+                try {
+                  await github.rest.reactions.createForIssueComment({
+                    owner, repo, comment_id: context.payload.comment.id, content: reaction,
+                  });
+                } catch (_) { /* swallowed */ }
+              }
               const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
               const body = [
-                marker,
+                MARKER,
                 '# Deployment Report',
                 '',
                 `:x: **Deployment refused** at **Pre-deploy Checks**. The PR remains open.`,
@@ -93,116 +174,482 @@ jobs:
                 '',
                 '---',
                 '',
-                ':warning: Address the issue and re-comment `deploy` to retry.',
+                ':warning: Address the issue and re-trigger (push a new commit for auto-deploys, or comment `deploy` for manual).',
               ].join('\n');
+              if (prNumber) {
+                await upsertSticky(prNumber, body);
+              }
+              core.setFailed(reason);
+            };
+
+            // ──────────────────────────────────────────────────────────
+            // Branch on trigger.
+            // ──────────────────────────────────────────────────────────
+            if (eventName === 'issue_comment') {
+              const prNumber = context.issue.number;
+              const username = context.payload.comment.user.login;
+
+              // Collaborator-permission check via the API (defence in depth
+              // above the author_association pre-filter in the workflow-level
+              // if:; author_association can lag for borderline accounts).
+              try {
+                const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username,
+                });
+                if (!['admin', 'write'].includes(perm.permission)) {
+                  await postSkip(prNumber, `@${username} does not have write access; deploy refused.`, { reaction: '-1' });
+                  return;
+                }
+              } catch (err) {
+                await postSkip(prNumber, `Permission lookup failed (${err.message}); please retry.`, { reaction: 'confused' });
+                return;
+              }
+
+              const { data: pr } = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber,
+              });
+              if (pr.state !== 'open') {
+                await postSkip(prNumber, 'This PR is not open; deploy refused.', { reaction: '-1' });
+                return;
+              }
+              if (!pr.head.repo || pr.head.repo.full_name !== sameRepoFull) {
+                await postSkip(prNumber, 'Deploy from forks is not supported.', { reaction: '-1' });
+                return;
+              }
+
+              // Validate-on-HEAD-SHA gate. For the comment path this is the
+              // primary integrity check: the user could comment `deploy` on a
+              // PR with stale or red validate. The workflow_run path skips
+              // this step because the trigger itself proves validate was just
+              // green on the trusted SHA.
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, per_page: 100,
+              });
+              const validateRuns = runs.workflow_runs || [];
+              if (validateRuns.length === 0) {
+                await postSkip(prNumber, `No validate run found for \`${pr.head.sha.substring(0,7)}\`. Push to trigger validation first.`, { reaction: '-1' });
+                return;
+              }
+              const pending = validateRuns.find(r => r.status !== 'completed');
+              if (pending) {
+                await postSkip(prNumber, `Validate is still ${pending.status}; wait for it to finish, then re-comment.`, { reaction: '-1' });
+                return;
+              }
+              const completed = validateRuns
+                .filter(r => r.status === 'completed')
+                .sort((a, b) => new Date(b.run_started_at || b.created_at) - new Date(a.run_started_at || a.created_at));
+              const latest = completed[0];
+              if (!latest || latest.conclusion !== 'success') {
+                await postSkip(prNumber, `Latest validate run is \`${latest?.conclusion ?? 'unknown'}\`; deploy refused.`, { reaction: '-1' });
+                return;
+              }
+
+              core.setOutput('pr_number', String(prNumber));
+              core.setOutput('head_sha', pr.head.sha);
+              core.setOutput('short_sha', pr.head.sha.substring(0, 7));
+              core.setOutput('ref', pr.head.ref);
+              core.setOutput('base_ref', pr.base.ref);
+              core.setOutput('trigger_path', 'comment');
+              core.setOutput('deployer', username);
+              return;
+            }
+
+            // ──────────────────────────────────────────────────────────
+            // workflow_run path (shopify-sync or dependabot/**).
+            // ──────────────────────────────────────────────────────────
+            // Defensive: workflow-level if: should have rejected anything
+            // other than issue_comment or workflow_run, but make the
+            // unreachable case loud rather than silently mis-routing.
+            if (eventName !== 'workflow_run') {
+              core.setFailed(`Unexpected event_name \`${eventName}\`; expected issue_comment or workflow_run.`);
+              return;
+            }
+            // Re-fetch the triggering run by id. This is the TRUSTED source
+            // for head_sha (the event payload can be replayed; getWorkflowRun
+            // returns the live record). Re-assert conclusion=success in case
+            // the run was retried or its status mutated between dispatch and
+            // execution.
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: context.payload.workflow_run.id,
+            });
+            if (run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed(`Triggering validate run not green (${run.status}/${run.conclusion}).`);
+              return;
+            }
+            if (!run.head_sha) {
+              core.setFailed('workflow_run has no head_sha; cannot pin trusted SHA.');
+              return;
+            }
+            const trustedSha = run.head_sha;
+            const headBranch = run.head_branch || '';
+
+            // Defensive head_branch routing. The on.workflow_run.branches
+            // filter already narrows to shopify-sync and dependabot/**, but
+            // re-assert here on the trusted-source value (not the event
+            // payload's head_branch).
+            let triggerPath, expectedBot, headRefForLookup;
+            if (headBranch === 'shopify-sync') {
+              triggerPath = 'shopify-sync';
+              expectedBot = 'shopify[bot]';
+              headRefForLookup = 'shopify-sync';
+            } else if (headBranch.startsWith('dependabot/')) {
+              triggerPath = 'dependabot';
+              expectedBot = 'dependabot[bot]';
+              headRefForLookup = headBranch;
+            } else {
+              // workflow_run.branches filter should have prevented this, so
+              // a warning is louder than info but not a hard failure (the
+              // workflow filter is the real gate; this is belt-and-braces).
+              core.warning(`Unexpected head_branch \`${headBranch}\`; nothing to do.`);
+              return;
+            }
+
+            // Find the open PR.
+            const { data: pulls } = await github.rest.pulls.list({
+              owner, repo, state: 'open', head: `${owner}:${headRefForLookup}`, per_page: 5,
+            });
+            if (pulls.length === 0) {
+              core.info(`No open PR from ${headRefForLookup}; nothing to deploy.`);
+              return;
+            }
+            const pr = pulls[0];
+            const prNumber = pr.number;
+
+            if (!pr.head.repo || pr.head.repo.full_name !== sameRepoFull) {
+              await postSkip(prNumber, `PR head is not in the origin repo (${pr.head.repo?.full_name}).`);
+              return;
+            }
+
+            // HEAD drift: the trusted SHA from getWorkflowRun is what we will
+            // deploy; if the PR has moved past it, abort. The next Validate
+            // cycle on the new head fires a fresh workflow_run.
+            if (pr.head.sha !== trustedSha) {
+              await postSkip(prNumber, `HEAD drifted (validated \`${trustedSha.substring(0,7)}\`, current \`${pr.head.sha.substring(0,7)}\`). The next Validate cycle will retrigger.`);
+              return;
+            }
+            // Tree-equivalence: compareCommits.status === 'identical' catches
+            // force-pushes to the same tree (legit) vs different trees
+            // (suspicious). pr.head.sha === trustedSha alone is not enough
+            // because a same-tree amend can change the SHA without changing
+            // the tree (force-push of an amended commit, etc.).
+            try {
+              const { data: cmp } = await github.rest.repos.compareCommits({
+                owner, repo, base: trustedSha, head: pr.head.sha,
+              });
+              if (cmp.status !== 'identical') {
+                await postSkip(prNumber, `compareCommits status is \`${cmp.status}\` (expected \`identical\`). Aborting.`);
+                return;
+              }
+            } catch (e) {
+              await postSkip(prNumber, `compareCommits failed: ${e.message}.`);
+              return;
+            }
+
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('head_sha', trustedSha);
+            core.setOutput('short_sha', trustedSha.substring(0, 7));
+            core.setOutput('ref', pr.head.ref);
+            core.setOutput('base_ref', pr.base.ref);
+            core.setOutput('trigger_path', triggerPath);
+            core.setOutput('deployer', expectedBot);
+
+      - name: Auto-deploy gates - shopify-sync
+        if: steps.resolve.outputs.trigger_path == 'shopify-sync'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const trustedSha = process.env.TRUSTED_SHA;
+            const MARKER = '<!-- deploy-result -->';
+
+            const upsertSticky = async (body) => {
               try {
                 const { data: comments } = await github.rest.issues.listComments({
-                  owner, repo, issue_number: issueNumber, per_page: 100,
+                  owner, repo, issue_number: prNumber, per_page: 100,
                 });
                 const existing = comments
-                  .filter(c => c.body && c.body.includes(marker))
+                  .filter(c => c.body && c.body.includes(MARKER))
                   .sort((a, b) => a.id - b.id);
                 const [keep, ...dupes] = existing;
                 if (keep) {
                   await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body });
                 } else {
-                  await github.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body });
+                  await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
                 }
                 for (const d of dupes) {
-                  await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id });
+                  try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+                  catch (_) { /* swallowed */ }
                 }
-              } catch (_) { /* non-critical; reaction + setFailed remain authoritative */ }
+              } catch (_) { /* non-critical */ }
+            };
+
+            const postSkip = async (reason) => {
+              const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+              const body = [
+                MARKER,
+                '# Deployment Report',
+                '',
+                `:x: **Auto-deploy skipped** at **shopify-sync gates**. The PR remains open.`,
+                '',
+                '| | |',
+                '|:--|:--|',
+                `| **Reason** | ${reason} |`,
+                `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
+              ].join('\n');
+              await upsertSticky(body);
               core.setFailed(reason);
             };
 
-            // 1. Permission check.
-            const username = context.payload.comment.user.login;
-            try {
-              const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner, repo, username,
-              });
-              if (!['admin', 'write'].includes(perm.permission)) {
-                await reactAndPost(`@${username} does not have write access; deploy refused.`);
-                return;
-              }
-            } catch (err) {
-              await reactAndPost(`Permission lookup failed (${err.message}); please retry.`, { reaction: 'confused' });
-              return;
-            }
-
-            // 2. Fetch PR.
             const { data: pr } = await github.rest.pulls.get({
-              owner, repo, pull_number: issueNumber,
+              owner, repo, pull_number: prNumber,
             });
-            if (pr.state !== 'open') {
-              await reactAndPost('This PR is not open; deploy refused.');
-              return;
-            }
-            // 3. Fork-PR exclusion.
-            const sameRepoFull = `${owner}/${repo}`;
-            if (!pr.head.repo || pr.head.repo.full_name !== sameRepoFull) {
-              await reactAndPost('Deploy from forks is not supported.');
+
+            // Draft-PR escape hatch: operator marks the auto-reconcile PR
+            // as a draft to halt auto-deploy; convert to ready to resume.
+            // Replaces the prior `manual-review` label mechanism.
+            if (pr.draft) {
+              await postSkip('PR is in draft state; auto-deploy skipped. Mark ready-for-review to resume.');
               return;
             }
 
-            // 4. Validate-on-HEAD-SHA gate. listWorkflowRuns filters by the
-            // validate workflow file directly; this is more reliable than
-            // filtering check_runs by `check_name: 'validate'` (which would
-            // miss because validate.yml's check_runs are named per-job, not
-            // after the workflow).
-            const { data: runs } = await github.rest.actions.listWorkflowRuns({
-              owner, repo, workflow_id: 'validate.yml', head_sha: pr.head.sha, per_page: 100,
+            // Bot identity gate on the underlying commits (not the PR opener).
+            // sync.yml opens the auto-reconcile PR using GITHUB_TOKEN, so
+            // pr.user.login is `github-actions[bot]`, not `shopify[bot]`. The
+            // integrity assertion is that the COMMITS on shopify-sync were
+            // authored and committed by shopify[bot] with a verified signature.
+            // Uses only GitHub-API-resolved login fields; Git commit headers
+            // are forgeable. The PR opener identity is also verified to be
+            // GitHub-Actions (proves sync.yml opened it; a hand-opened
+            // shopify-sync PR would fail this).
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner, repo, ref: trustedSha,
             });
-            const validateRuns = runs.workflow_runs || [];
-            if (validateRuns.length === 0) {
-              await reactAndPost(`No validate run found for \`${pr.head.sha.substring(0,7)}\`. Push to trigger validation first.`);
+            const verified = commit.commit?.verification?.verified === true;
+            const authorLogin = commit.author?.login;
+            const committerLogin = commit.committer?.login;
+            const prUserLogin = pr.user?.login;
+            const expectedCommitBot = 'shopify[bot]';
+            const expectedPrBot = 'github-actions[bot]';
+            if (!verified || authorLogin !== expectedCommitBot || committerLogin !== expectedCommitBot) {
+              await postSkip(`Commit-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}; expected ${expectedCommitBot}).`);
               return;
             }
-            const pending = validateRuns.find(r => r.status !== 'completed');
-            if (pending) {
-              await reactAndPost(`Validate is still ${pending.status}; wait for it to finish, then re-comment.`);
-              return;
-            }
-            const completed = validateRuns
-              .filter(r => r.status === 'completed')
-              .sort((a, b) => new Date(b.run_started_at || b.created_at) - new Date(a.run_started_at || a.created_at));
-            const latest = completed[0];
-            if (!latest || latest.conclusion !== 'success') {
-              await reactAndPost(`Latest validate run is \`${latest?.conclusion ?? 'unknown'}\`; deploy refused.`);
+            if (prUserLogin !== expectedPrBot) {
+              await postSkip(`PR-opener-identity gate failed (pr.user=${prUserLogin}; expected ${expectedPrBot}, which means the PR was opened by sync.yml). A hand-opened shopify-sync PR cannot auto-deploy; comment \`deploy\` manually to ship it.`);
               return;
             }
 
-            core.setOutput('sha', pr.head.sha);
-            core.setOutput('short_sha', pr.head.sha.substring(0, 7));
-            core.setOutput('ref', pr.head.ref);
-            core.setOutput('base_ref', pr.base.ref);
-            core.setOutput('pr_number', pr.number.toString());
+            // Base-staleness.
+            const { data: main } = await github.rest.repos.getBranch({
+              owner, repo, branch: 'main',
+            });
+            if (main.commit.sha !== pr.base.sha) {
+              await postSkip(`\`main\` advanced (base \`${pr.base.sha.substring(0,7)}\`, current \`${main.commit.sha.substring(0,7)}\`). sync.yml will refresh the PR and retrigger.`);
+              return;
+            }
+
+            // Diff sanity.
+            let files = [];
+            const perPage = 100;
+            for (let page = 1; ; page++) {
+              const { data: pageFiles } = await github.rest.pulls.listFiles({
+                owner, repo, pull_number: prNumber, per_page: perPage, page,
+              });
+              files = files.concat(pageFiles);
+              if (pageFiles.length < perPage) break;
+              if (page > 50) break;
+            }
+            const protectedHits = files.filter(f =>
+              f.filename.startsWith('.github/') ||
+              f.filename === 'layout/theme.liquid'
+            );
+            if (protectedHits.length > 0) {
+              await postSkip(`Diff touches protected paths: ${protectedHits.map(f => f.filename).slice(0, 5).join(', ')}.`);
+              return;
+            }
+            const totalLoc = files.reduce((sum, f) => sum + (f.additions ?? 0) + (f.deletions ?? 0), 0);
+            if (totalLoc > 1000) {
+              await postSkip(`Diff exceeds 1000 LOC (${totalLoc}); admin edits should not be that large.`);
+              return;
+            }
+
+      - name: Auto-deploy gates - dependabot
+        if: steps.resolve.outputs.trigger_path == 'dependabot'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          TRUSTED_SHA: ${{ steps.resolve.outputs.head_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const trustedSha = process.env.TRUSTED_SHA;
+            const expectedBot = 'dependabot[bot]';
+            const MARKER = '<!-- deploy-result -->';
+
+            const upsertSticky = async (body) => {
+              try {
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner, repo, issue_number: prNumber, per_page: 100,
+                });
+                const existing = comments
+                  .filter(c => c.body && c.body.includes(MARKER))
+                  .sort((a, b) => a.id - b.id);
+                const [keep, ...dupes] = existing;
+                if (keep) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+                }
+                for (const d of dupes) {
+                  try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+                  catch (_) { /* swallowed */ }
+                }
+              } catch (_) { /* non-critical */ }
+            };
+
+            const postSkip = async (reason) => {
+              const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+              const body = [
+                MARKER,
+                '# Deployment Report',
+                '',
+                `:x: **Auto-deploy skipped** at **dependabot gates**. The PR remains open.`,
+                '',
+                '| | |',
+                '|:--|:--|',
+                `| **Reason** | ${reason} |`,
+                `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
+              ].join('\n');
+              await upsertSticky(body);
+              core.setFailed(reason);
+            };
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
+            });
+
+            // Draft-PR escape hatch: operator converts the Dependabot PR to
+            // a draft to halt auto-deploy; convert to ready to resume.
+            // Replaces the prior `manual-review` label mechanism.
+            if (pr.draft) {
+              await postSkip('PR is in draft state; auto-deploy skipped. Mark ready-for-review to resume.');
+              return;
+            }
+
+            // Bot identity.
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner, repo, ref: trustedSha,
+            });
+            const verified = commit.commit?.verification?.verified === true;
+            const authorLogin = commit.author?.login;
+            const committerLogin = commit.committer?.login;
+            const prUserLogin = pr.user?.login;
+            if (!verified || authorLogin !== expectedBot || committerLogin !== expectedBot || prUserLogin !== expectedBot) {
+              await postSkip(`Bot-identity gate failed (verified=${verified}, author=${authorLogin}, committer=${committerLogin}, pr.user=${prUserLogin}; expected ${expectedBot}).`);
+              return;
+            }
+
+            // Base-staleness.
+            const { data: main } = await github.rest.repos.getBranch({
+              owner, repo, branch: 'main',
+            });
+            if (main.commit.sha !== pr.base.sha) {
+              await postSkip(`\`main\` advanced (base \`${pr.base.sha.substring(0,7)}\`, current \`${main.commit.sha.substring(0,7)}\`); waiting for Dependabot to rebase.`);
+              return;
+            }
+
+            // CI-self-modification guard.
+            let files = [];
+            const perPage = 100;
+            for (let page = 1; ; page++) {
+              const { data: pageFiles } = await github.rest.pulls.listFiles({
+                owner, repo, pull_number: prNumber, per_page: perPage, page,
+              });
+              files = files.concat(pageFiles);
+              if (pageFiles.length < perPage) break;
+              if (page > 50) break;
+            }
+            const ciHits = files.filter(f =>
+              f.filename.startsWith('.github/workflows/') ||
+              f.filename.startsWith('.github/actions/') ||
+              f.filename.startsWith('.github/scripts/')
+            );
+            if (ciHits.length > 0) {
+              await postSkip(`Dependabot PR modifies CI files (\`${ciHits[0].filename}\`); auto-deploy refused. Apply manually with \`deploy\` comment.`);
+              return;
+            }
+
+            // Major-version detection. Major bumps default-skip auto-deploy
+            // (no label opt-in available); operator comments `deploy` on the
+            // PR to ship a major bump after review. Handles both:
+            //   - Non-grouped title form:  "Bump <dep> from A.B.C to D.E.F"
+            //   - Grouped body form:       "Updates `<dep>` from A.B.C to D.E.F"
+            //     (Dependabot's grouped-update PR title is non-parseable;
+            //      the body contains one "Updates X from..." line per dep
+            //      in the group.)
+            // The version pattern is permissive enough to match two-segment
+            // versions, leading-v versions, and prerelease / build-metadata
+            // suffixes. If ANY line in title+body is a major bump (first
+            // numeric component differs), default-skip auto-deploy. A
+            // non-major or unparseable line falls through harmlessly.
+            const text = `${pr.title}\n${pr.body || ''}`;
+            const lineRegex = /\b(?:Bump|Updates)\s+[`']?[\S]+?[`']?\s+from\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)\s+to\s+(v?\d+(?:\.\d+){0,3}(?:[-+][\w.]+)?)/gi;
+            const extractMajor = (v) => {
+              const mm = String(v).match(/^v?(\d+)/);
+              return mm ? parseInt(mm[1], 10) : null;
+            };
+            const matches = Array.from(text.matchAll(lineRegex));
+            const majorBumps = matches
+              .map(mm => ({ raw: mm[0].trim(), from: extractMajor(mm[1]), to: extractMajor(mm[2]) }))
+              .filter(x => x.from != null && x.to != null && x.from !== x.to);
+            if (majorBumps.length > 0) {
+              const detail = majorBumps.map(x => x.raw).slice(0, 3).join('; ');
+              const more = majorBumps.length > 3 ? ` (+${majorBumps.length - 3} more)` : '';
+              await postSkip(`Major-version bump(s) detected: ${detail}${more}. Auto-deploy refused for safety. Review the PR and comment \`deploy\` to ship.`);
+              return;
+            }
 
   deploy:
     name: deploy
-    needs: permission-check
+    needs: gate
+    # Only run if gate produced a pr_number. The gate's resolve step exits
+    # early without setting outputs for "no open PR" cases (e.g. a stray
+    # workflow_run firing with no associated PR).
+    if: needs.gate.outputs.pr_number != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write          # git push to shopify-sync
+      pull-requests: write     # pulls.merge + sticky comment
+      issues: write            # createForIssueComment reactions (rocket / -1)
     concurrency:
-      # Shared with shopify-sync-auto-deploy.yml + dependabot-auto-deploy.yml;
-      # serialises live-theme writes across the three deploy paths. Renaming
-      # this group fragments the live-write mutex.
+      # Serialises live-theme writes across all three trigger paths. With the
+      # unified workflow the comment-driven and auto-deploy paths now contend
+      # for the same lock, which can fire base-staleness rejections on the
+      # auto-deploy paths if a comment-deploy lands first; auto-deploy self-
+      # heals via Dependabot rebase / sync-PR refresh.
       group: deploy-production
       cancel-in-progress: false
     env:
       LIVE_THEME_ID: "181702754604"
+      GH_TOKEN: ${{ github.token }}      # for the Sync step's git push
+    outputs:
+      deployed_sha: ${{ steps.merge.outputs.deployed_sha }}
     steps:
-      - name: Checkout PR head SHA
+      - name: Checkout trusted SHA
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          # Use the SHA, not the branch name. A force-push between
-          # permission-check and checkout would otherwise replace the validated
-          # tree silently.
-          ref: ${{ needs.permission-check.outputs.sha }}
+          # fetch-depth: 0 is REQUIRED for the Sync step. --force-with-lease
+          # lease-SHA computation and AHEAD/BEHIND counts need full history.
           fetch-depth: 0
+          ref: ${{ needs.gate.outputs.head_sha }}
           persist-credentials: false
 
       - name: Live theme push
@@ -223,15 +670,12 @@ jobs:
         if: success()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          PR_NUMBER: ${{ needs.permission-check.outputs.pr_number }}
-          PR_SHA: ${{ needs.permission-check.outputs.sha }}
-          PR_REF: ${{ needs.permission-check.outputs.ref }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          PR_SHA: ${{ needs.gate.outputs.head_sha }}
+          PR_REF: ${{ needs.gate.outputs.ref }}
+          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
         with:
           script: |
-            // Inlined withRetry: keeps deploy.yml self-contained so PR branches
-            // that predate the refactor can run without backfilling a script
-            // file. Identical block in shopify-sync-auto-deploy.yml and
-            // dependabot-auto-deploy.yml.
             const RETRYABLE = new Set([500, 502, 503, 504]);
             const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
             const isTransient = (err) => {
@@ -253,58 +697,68 @@ jobs:
               }
             };
 
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const sha = process.env.PR_SHA;
             const ref = process.env.PR_REF;
+            const triggerPath = process.env.TRIGGER_PATH;
 
-            try {
-              await github.rest.reactions.createForIssueComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: context.payload.comment.id,
-                content: 'rocket',
-              });
-            } catch (_) { /* non-critical */ }
-
+            // Pre-merge HEAD drift recheck for auto-deploy paths. Between the
+            // gate's compareCommits and now, the PR tip could have moved. The
+            // live deploy already shipped the trusted SHA; we cannot squash-
+            // merge a different tree.
             let merged = true;
             let mergeError = '';
-            try {
-              await withRetry(
-                () => github.rest.pulls.merge({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                  merge_method: 'squash',
-                  // sha: parameter is a TOCTOU guard. If the branch tip moved
-                  // between checkout and merge, GitHub returns 409 and we
-                  // surface "merge failed" rather than merging the wrong tree.
-                  sha,
-                }),
-                { attempts: 3, delayMs: 2000, label: 'Squash merge' }
-              );
-            } catch (e) {
+            let deployedSha = '';
+            const { data: prNow } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
+            });
+            if (prNow.head.sha !== sha) {
               merged = false;
-              mergeError = e.message;
+              mergeError = `HEAD drifted post-deploy (validated \`${sha.substring(0,7)}\`, current \`${prNow.head.sha.substring(0,7)}\`). Live theme is on the deployed SHA; PR left open.`;
+            } else {
+              try {
+                const { data: mergeResult } = await withRetry(
+                  () => github.rest.pulls.merge({
+                    owner, repo, pull_number: prNumber, merge_method: 'squash',
+                    // sha: TOCTOU guard. If the branch tip moved between
+                    // checkout and merge, GitHub returns 409 and we surface
+                    // "merge failed" rather than merging the wrong tree.
+                    sha,
+                  }),
+                  { attempts: 3, delayMs: 2000, label: 'Squash merge' }
+                );
+                deployedSha = mergeResult.sha;
+              } catch (e) {
+                merged = false;
+                mergeError = e.message;
+              }
             }
 
+            // Long-lived branches must never be deleted. shopify-sync is the
+            // Shopify-GitHub-Integration target; deleting it breaks the
+            // admin-edit pipeline.
+            const longLived = new Set(['main', 'shopify-sync']);
+            const branchRetained = longLived.has(ref);
             let branchDeleted = false;
-            if (merged) {
+            if (merged && !branchRetained) {
               try {
                 await withRetry(
                   () => github.rest.git.deleteRef({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    ref: `heads/${ref}`,
+                    owner, repo, ref: `heads/${ref}`,
                   }),
                   { attempts: 2, delayMs: 1000, label: 'Delete branch' }
                 );
                 branchDeleted = true;
-              } catch (_) { /* swallowed; branch may already be deleted */ }
+              } catch (_) { /* swallowed */ }
             }
 
             core.setOutput('merged', merged ? 'true' : 'false');
             core.setOutput('merge_error', mergeError);
             core.setOutput('branch_deleted', branchDeleted ? 'true' : 'false');
+            core.setOutput('branch_retained', branchRetained ? 'true' : 'false');
+            core.setOutput('deployed_sha', deployedSha);
 
       - name: Delete preview theme
         id: cleanup
@@ -312,36 +766,133 @@ jobs:
         # Cleanup runs AFTER successful merge so a runner crash or non-transient
         # cleanup failure cannot leave the system in `live deployed + PR open +
         # preview gone`. continue-on-error keeps a leaked preview from blocking
-        # the post-deploy report; the cleanup_status line surfaces failures.
+        # the post-deploy report; the cleanup-status output surfaces failures.
         continue-on-error: true
         uses: ./.github/actions/shopify-theme-push
         with:
           mode: delete-preview
           shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
           shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
-          pr-number: ${{ needs.permission-check.outputs.pr_number }}
+          pr-number: ${{ needs.gate.outputs.pr_number }}
+
+      - name: Sync main -> shopify-sync
+        id: sync
+        # Replaces the prior sync-reconcile.yml `push: main` fast-forward arm,
+        # which was dead (GITHUB_TOKEN-driven pushes do not retrigger workflows).
+        # Anchored on the deployed SHA returned by the squash-merge, NOT on
+        # origin/main re-resolved later, so this push is tied to what just
+        # went live.
+        if: success() && steps.merge.outputs.merged == 'true' && steps.merge.outputs.deployed_sha != ''
+        continue-on-error: true
+        env:
+          # Passing via env: instead of inline ${{ }} interpolation prevents
+          # any future change to the merge response from injecting shell syntax;
+          # the value is a GitHub-API-returned SHA-1, but defence in depth.
+          DEPLOYED_SHA: ${{ steps.merge.outputs.deployed_sha }}
+        run: |
+          set -euo pipefail
+
+          # Fetch ONCE. Do NOT git fetch between the lease-SHA computation and
+          # the push; that would break --force-with-lease's race-detection
+          # invariant. The checkout above used persist-credentials: false so
+          # there are no leftover credentials; we inject the token via
+          # http.extraheader per-command.
+          git fetch --prune --no-tags origin shopify-sync
+
+          AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
+          BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
+
+          if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
+            # Normal: shopify-sync reachable from deployed SHA; fast-forward.
+            if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+                push origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
+              echo "::notice::Fast-forwarded shopify-sync $BEHIND commit(s) to deployed SHA"
+              echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Fast-forward push failed (likely raced an admin commit): $PUSH_ERR"
+              echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$AHEAD" -gt 0 ]; then
+            DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
+              | awk '{ sum += $1 + $2 } END { print sum + 0 }')
+            if [ "$DIFF_LOC" -eq 0 ]; then
+              # Phantom orphan: shopify-sync has commits ahead, but trees are
+              # identical (the just-merged auto-reconcile PR squashed those
+              # orphan commits into main). Force-reset shopify-sync to the
+              # deployed SHA; --force-with-lease catches an admin commit
+              # racing this push.
+              EXPECTED=$(git rev-parse origin/shopify-sync)
+              if PUSH_ERR=$(git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+                  push --force-with-lease="shopify-sync:$EXPECTED" \
+                  origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
+                echo "::notice::Cleared $AHEAD orphan commit(s); trees identical to deployed SHA"
+                echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::Phantom cleanup push failed (likely raced an admin commit): $PUSH_ERR"
+                echo "sync-status=race; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              # Real divergence: an admin commit landed during this deploy.
+              # sync.yml on the admin push will open the next reconcile PR.
+              echo "::notice::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
+              echo "sync-status=deferred (admin commit landed mid-deploy)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::notice::shopify-sync already at deployed SHA"
+            echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: React with rocket
+        if: success() && github.event_name == 'issue_comment'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: React with -1
+        if: failure() && github.event_name == 'issue_comment'
+        continue-on-error: true
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: '-1',
+            });
 
       - name: Post deploy report
-        # `if: success()` is correct, NOT `always()`. The cleanup step's
-        # `continue-on-error: true` masks its non-zero exit so the job stays
-        # green; success() therefore still passes here. Switching to
-        # always() would also fire the report after Live theme push failures,
-        # double-reporting alongside the dedicated Report failure step below.
+        # `if: success()` is correct, NOT `always()`. The cleanup and sync
+        # steps' `continue-on-error: true` masks their non-zero exits so the
+        # job stays green; success() therefore still passes here. Switching
+        # to always() would double-report alongside the Report failure step.
         if: success()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          PR_NUMBER: ${{ needs.permission-check.outputs.pr_number }}
-          PR_SHORT_SHA: ${{ needs.permission-check.outputs.short_sha }}
-          PR_REF: ${{ needs.permission-check.outputs.ref }}
-          PR_BASE_REF: ${{ needs.permission-check.outputs.base_ref }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
+          PR_REF: ${{ needs.gate.outputs.ref }}
+          PR_BASE_REF: ${{ needs.gate.outputs.base_ref }}
+          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
+          DEPLOYER: ${{ needs.gate.outputs.deployer }}
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
           THEME_ID: ${{ steps.push.outputs.theme-id }}
           MERGED: ${{ steps.merge.outputs.merged }}
           MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
           BRANCH_DELETED: ${{ steps.merge.outputs.branch_deleted }}
+          BRANCH_RETAINED: ${{ steps.merge.outputs.branch_retained }}
           CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          SYNC_STATUS: ${{ steps.sync.outputs.sync-status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
         with:
           script: |
             const RETRYABLE = new Set([500, 502, 503, 504]);
@@ -365,29 +916,44 @@ jobs:
               }
             };
 
-            const marker = '<!-- deploy-result -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const MARKER = '<!-- deploy-result -->';
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const shortSha = process.env.PR_SHORT_SHA;
             const ref = process.env.PR_REF;
             const baseRef = process.env.PR_BASE_REF;
+            const triggerPath = process.env.TRIGGER_PATH;
+            const deployer = process.env.DEPLOYER;
             const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
             const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
             const themeId = process.env.THEME_ID || '';
             const merged = process.env.MERGED === 'true';
             const mergeError = process.env.MERGE_ERROR || '';
             const branchDeleted = process.env.BRANCH_DELETED === 'true';
+            const branchRetained = process.env.BRANCH_RETAINED === 'true';
             const cleanupStatus = process.env.CLEANUP_STATUS || '';
             const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
-            const deployer = context.payload.comment.user.login;
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const syncStatus = process.env.SYNC_STATUS || '';
+            const syncOutcome = process.env.SYNC_OUTCOME || '';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
+            const titleByPath = {
+              'comment': 'Deployment Report',
+              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
+              'dependabot': 'Auto-deploy Report (dependabot)',
+            };
+            const title = titleByPath[triggerPath] || 'Deployment Report';
+
+            const branchSuffix = branchDeleted
+              ? ' and deleted the branch.'
+              : branchRetained
+                ? ' (branch retained: long-lived integration target).'
+                : '.';
             const mergeStatus = merged
-              ? `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchDeleted ? ' and deleted the branch.' : '.'}`
-              : `:warning: **Merge failed:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
+              ? `:twisted_rightwards_arrows: Merged \`${ref}\` -> \`${baseRef}\`${branchSuffix}`
+              : `:warning: **Merge skipped:** ${mergeError}\n\nThe deployment is live, but the PR must be merged manually.`;
 
-            // Cleanup status line: distinguish skipped (merge failed),
-            // success (deleted / no-match), and warning (composite action
-            // exited non-zero). cleanup-on-fail does not block the report.
             let cleanupLine;
             if (!merged) {
               cleanupLine = ':information_source: Preview cleanup skipped (merge did not succeed).';
@@ -397,9 +963,18 @@ jobs:
               cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
             }
 
+            let syncLine;
+            if (!merged) {
+              syncLine = ':information_source: shopify-sync sync skipped (merge did not succeed).';
+            } else if (syncOutcome === 'success') {
+              syncLine = `:arrows_clockwise: shopify-sync: ${syncStatus || 'unknown'}.`;
+            } else {
+              syncLine = `:warning: **shopify-sync sync warning:** ${syncStatus || 'see workflow run for details'}. \`sync.yml\` will retry on the next admin push, or at the 13:00 UTC daily cron (whichever comes first).`;
+            }
+
             const body = [
-              marker,
-              '# Deployment Report',
+              MARKER,
+              `# ${title}`,
               '',
               ':white_check_mark: **Deployed successfully** to live theme. Storefront is now serving this commit.',
               '',
@@ -408,7 +983,7 @@ jobs:
               `| **Commit** | \`${shortSha}\` |`,
               `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
               `| **Theme ID** | \`${themeId}\` |`,
-              `| **Deployed by** | @${deployer} |`,
+              `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
               `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
               '',
               '---',
@@ -434,25 +1009,42 @@ jobs:
               mergeStatus,
               '',
               cleanupLine,
+              '',
+              syncLine,
             ].join('\n');
 
-            await withRetry(
-              () => github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body,
-              }),
-              { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
-            );
+            // Upsert sticky comment.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber, per_page: 100,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(MARKER))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await withRetry(
+                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
+                { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
+              );
+            } else {
+              await withRetry(
+                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
+                { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
+              );
+            }
+            for (const d of dupes) {
+              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+              catch (_) { /* swallowed */ }
+            }
 
       - name: Report failure
-        if: failure() && needs.permission-check.outputs.pr_number != ''
+        if: failure() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          PR_NUMBER: ${{ needs.permission-check.outputs.pr_number }}
-          PR_SHORT_SHA: ${{ needs.permission-check.outputs.short_sha }}
-          PR_REF: ${{ needs.permission-check.outputs.ref }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          PR_SHORT_SHA: ${{ needs.gate.outputs.short_sha }}
+          PR_REF: ${{ needs.gate.outputs.ref }}
+          TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
           PUSH_EXIT_CODE: ${{ steps.push.outputs.push-exit-code }}
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
           SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
@@ -480,29 +1072,30 @@ jobs:
               }
             };
 
-            try {
-              await github.rest.reactions.createForIssueComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: context.payload.comment.id,
-                content: '-1',
-              });
-            } catch (_) { /* non-critical */ }
-
-            const marker = '<!-- deploy-result -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const MARKER = '<!-- deploy-result -->';
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const shortSha = process.env.PR_SHORT_SHA;
             const ref = process.env.PR_REF;
+            const triggerPath = process.env.TRIGGER_PATH;
             const pushExit = process.env.PUSH_EXIT_CODE || '';
             const pushOutput = process.env.PUSH_OUTPUT || '';
             const smokeExit = process.env.SMOKE_EXIT_CODE || '';
             const smokeOutput = process.env.SMOKE_OUTPUT || '';
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const titleByPath = {
+              'comment': 'Deployment Report',
+              'shopify-sync': 'Auto-deploy Report (shopify-sync)',
+              'dependabot': 'Auto-deploy Report (dependabot)',
+            };
+            const title = titleByPath[triggerPath] || 'Deployment Report';
 
             let failStage, errorDetail;
             if (pushExit === '') {
               failStage = 'Pre-deploy Checks';
-              errorDetail = 'Validation, permission, fork, or checkout failed before the push started. See the workflow run.';
+              errorDetail = 'Gate checks or checkout failed before push. See the workflow run.';
             } else if (pushExit === '99') {
               failStage = 'Live theme ID assertion';
               errorDetail = pushOutput || 'Live theme ID did not match the expected value.';
@@ -517,9 +1110,13 @@ jobs:
               errorDetail = 'Merge or comment posting failed. See the workflow run.';
             }
 
+            const retryHint = triggerPath === 'comment'
+              ? ':warning: Fix the issue, push a new commit, wait for validation to pass, then comment `deploy` to retry.'
+              : ':warning: Investigate the failure. Auto-deploy will retry on the next Validate cycle once the underlying issue is resolved; manual `deploy` comment remains available as an escape hatch.';
+
             const body = [
-              marker,
-              '# Deployment Report',
+              MARKER,
+              `# ${title}`,
               '',
               `:x: **Deployment failed** at **${failStage}**. The PR remains open.`,
               '',
@@ -542,15 +1139,38 @@ jobs:
               '',
               '---',
               '',
-              ':warning: Fix the issue, push a new commit, wait for validation to pass, then comment `deploy` to retry.',
+              retryHint,
             ].join('\n');
 
-            await withRetry(
-              () => github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body,
-              }),
-              { attempts: 3, delayMs: 2000, label: 'Post failure comment' }
-            );
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber, per_page: 100,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(MARKER))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await withRetry(
+                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
+                { attempts: 3, delayMs: 2000, label: 'Update failure comment' }
+              );
+            } else {
+              await withRetry(
+                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
+                { attempts: 3, delayMs: 2000, label: 'Post failure comment' }
+              );
+            }
+            for (const d of dupes) {
+              try { await github.rest.issues.deleteComment({ owner, repo, comment_id: d.id }); }
+              catch (_) { /* swallowed */ }
+            }
+
+      - name: Report pre-identification failure
+        if: failure() && needs.gate.outputs.pr_number == ''
+        run: |
+          {
+            echo "## deploy: pre-identification failure"
+            echo ""
+            echo "Failed before a candidate PR was identified, so no PR comment was posted."
+            echo "See the workflow run output for details."
+          } >> "$GITHUB_STEP_SUMMARY"
