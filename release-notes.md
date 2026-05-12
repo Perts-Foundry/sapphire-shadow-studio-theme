@@ -1,5 +1,68 @@
 # Release Notes
 
+## CI/CD deploy chain: shopify-sync phantom-orphan force-push via SSH deploy key (unreleased)
+
+PR #21 was the first post-PR-#19 exercise of the auto-deploy chain. It surfaced that the post-merge `Sync main -> shopify-sync` step's phantom-orphan force-with-lease push silently fails on every shopify-sync auto-deploy. The fix swaps that single push from HTTPS+GITHUB_TOKEN to SSH+deploy-key, and folds the step into a new `sync` job to isolate the deploy key from `SHOPIFY_CLI_THEME_TOKEN`. The fast-forward push and the read-only fetch in the same step both stay on HTTPS+GITHUB_TOKEN, since a strict fast-forward to a tip-descendant is not a force push and the `shopify-sync-protection` ruleset's "Block force pushes" rule does not apply.
+
+### Bug and evidence
+
+The `shopify-sync` branch is protected by ruleset `shopify-sync-protection` (ID 16111276) with **Block force pushes** active. The phantom-orphan cleanup arm of the post-merge Sync step force-pushes `shopify-sync` to the deployed SHA (rewriting history to abandon the orphan commits that the just-merged auto-reconcile PR squashed into main). Under HTTPS+GITHUB_TOKEN this push fails with:
+
+```
+remote: error: GH013: Repository rule violations found for refs/heads/shopify-sync.
+remote: - Cannot force-push to this branch because: Cannot force-push to this branch
+```
+
+Empirically confirmed on workflow run 25704994159 (PR #21). The rejection is not transient and not racy; it is structural. The reason it cannot be fixed by adding `Repository role: Admin` to the ruleset's bypass-actors list is that `GITHUB_TOKEN`'s identity `github-actions[bot]` is a synthetic per-workflow identity with no role membership; the GitHub ruleset evaluator's role-based bypass entries (Repository roles, Organization admin) only match identities that hold those roles. Only explicit-actor bypass entries (Deploy keys, Apps, Users) match identities directly.
+
+### Fix
+
+Deploy keys are addable as bypass actors via the ruleset bypass-add modal ("Deploy keys - Role"). A repo-scoped Ed25519 deploy key (`SHOPIFY_SYNC_DEPLOY_KEY` repo secret + matching public key on the deploy-keys page with "Allow write access") is placed on the `shopify-sync-protection` ruleset's bypass list, and the phantom-orphan push switches to SSH using that key.
+
+Workflow structure changes in `deploy.yml`:
+
+- **Sync step extracted into a new `sync` job.** The post-merge Sync moved from being the last step of the `deploy` job to a top-level `sync` job that `needs: deploy`. Rationale: the existing `gate`/`deploy` split establishes "a bug in any step's bash cannot leak a secret because the secret structurally does not exist in this job's scope." Adding `SHOPIFY_SYNC_DEPLOY_KEY` to the `deploy` job would create a defence-in-depth weakness (two secrets in one bash block, exfilable together by a future `set -x` regression). The new `sync` job has `permissions: contents: write` only and zero `SHOPIFY_CLI_THEME_TOKEN` references. The `GH_TOKEN: ${{ github.token }}` binding moves out of the `deploy:` job's env block (no remaining consumer there) and into the new `sync:` job's env (used for the read-only fetch and the fast-forward push, both of which stay on HTTPS).
+- **`Validate sync preconditions` step** is a dedicated empty-secret guard in the `sync` job, with no `continue-on-error`. A missing `SHOPIFY_SYNC_DEPLOY_KEY` halts the job visibly red instead of being swallowed by the next step's `continue-on-error: true`. Mirrors `sync.yml`'s `SYNC_RECONCILE_TOKEN` empty-PAT guard in both text and step-failure semantics.
+- **SSH setup in the Sync step.** `umask 077` closes the `mktemp` 0600-mode race window across runner profiles; `mktemp -t` produces a templated tempfile path; per-line `::add-mask::` registration of each line of the secret value as defence in depth against a future `set -x` regression (multi-line PEM bodies may not be reliably auto-masked); `tr -d '\r'` line-ending normalisation before writing the key, so a secret pasted with Windows CRLF endings still loads; `unset` of the secret env var after the on-disk write shrinks the shell-env exposure window; `ssh-keyscan -t ed25519,ecdsa github.com` populates known_hosts (RSA omitted because OpenSSH 8+ prefers Ed25519/ECDSA and including RSA only couples the workflow to a future GitHub RSA-key rotation event); `GIT_SSH_COMMAND` is exported with `IdentitiesOnly=yes` + `PreferredAuthentications=publickey` + `BatchMode=yes` + `StrictHostKeyChecking=yes` + `LogLevel=ERROR`; tempfile cleanup `trap` is registered BEFORE `mktemp` runs (with empty-string fallback variables) so a partial-write or ssh-keyscan failure still cleans up.
+- **Push call-site changes.** Only the phantom-orphan force-with-lease push switches to SSH. The fast-forward push and the read-only fetch stay on HTTPS+GITHUB_TOKEN. The SSH push URL is derived from `${{ github.repository }}` so an org/repo rename does not silently leave a stale hardcoded URL behind.
+- **Multi-pattern stderr classifier.** Push-failure stderr is now run through two grep patterns. `Permission denied (publickey)` / `Load key .*: invalid format` / `Load key .*: bad permissions` / `Host key verification failed` re-emits a "SHOPIFY_SYNC_DEPLOY_KEY appears invalid" hint. `GH013` / `Cannot force-push to this branch` (the bypass-row-removed case) re-emits a "Push rejected by branch ruleset" hint. The raw stderr line still prints either way.
+
+### Alternatives considered
+
+- **Expand bypass to a PAT.** Rejected. Couples bypass authority to the operator's admin status; trust regression spreads to the PAT-create surface.
+- **`actions/create-github-app-token` with a minimal install-only app.** Rejected. The short-lived-token and granular-permission properties are real, but the PEM rotation has the same operator-account-coupling problem as a PAT, and setup cost is still strictly larger than a deploy key for a solo-dev repo.
+- **Switch to a long-lived custom GitHub App.** Rejected. Over-engineered for a single solo-dev bypass use case.
+- **Disable the "Block force pushes" rule.** Rejected. The rule also blocks accidental admin-side rewrites of `shopify-sync`; the operator wants to keep the protection on.
+- **Replace force-push with a `--strategy=ours` merge-commit reconcile (no bypass needed).** Rejected. Produces a tangled `shopify-sync` history of merge commits; merge-commit author is `github-actions[bot]` not `shopify[bot]`, complicating any future identity-based assertion downstream.
+- **Accept silent failure; rely on `sync.yml`'s reconcile flow and daily cron to clean up.** Rejected. Partially defensible (the post-PR-#18 hardening blocks the latent-bug incident class), but a chain that silently fails on every deploy is hard to monitor and accumulates drift between admin-edit cycles.
+
+### Trust delta
+
+The deploy-key credential has full repo push capability across all refs (deploy keys are repo-scoped by GitHub design). Its **bypass effect** on the `shopify-sync-protection` ruleset is scoped to that one ruleset's "Deploy keys" bypass-actor row; the row must NOT be added to any ruleset protecting `main` or any other branch. Bypass authority is decoupled from any human role membership. The four computed auto-deploy gates (collaborator-permission, validate-on-HEAD-SHA, signed-commit, defence-in-depth merge-base assertion) remain the actual integrity boundary on what content auto-deploys; the SSH push only changes *transport* for an already-validated payload. A compromised collaborator with `contents: write` could exfiltrate the deploy key via a workflow change and force-push `shopify-sync` content, but this is bounded by the same all-bets-are-off threshold the existing trust model already accepts. The new `sync` job has no `SHOPIFY_CLI_THEME_TOKEN` in scope, so the deploy-key surface and the Shopify-token surface are isolated by job boundary.
+
+### Operator action (post-merge)
+
+None for the chain itself. The next admin commit on the unpublished sync theme will auto-exercise the new path. Three one-time tasks accompany this change (operator handles in parallel with the PR):
+
+1. Generate the keypair locally, add the public key to `/settings/keys` with "Allow write access", store the private key in repo secret `SHOPIFY_SYNC_DEPLOY_KEY`, add a `Deploy keys` bypass-actor row to ruleset `shopify-sync-protection` (ID 16111276), securely delete the local key files. (See CLAUDE.md "Token rotation call-site catalog" entry for the full procedure.)
+2. Bring `shopify-sync` to byte-for-byte parity with `main`, since PR #21's failed Sync left it in a 1-ahead/1-behind state. The recovery snippet uses operator admin bypass (independent of the new deploy-key bypass):
+
+   ```bash
+   git fetch origin
+   MAIN_SHA=$(git rev-parse origin/main)
+   LEASE_SHA=$(git rev-parse origin/shopify-sync)
+   if [ "$LEASE_SHA" = "$MAIN_SHA" ]; then
+     echo "Already in sync; nothing to do."
+     exit 0
+   fi
+   git push --force-with-lease=shopify-sync:"$LEASE_SHA" origin "$MAIN_SHA":shopify-sync
+   git fetch origin shopify-sync
+   [ "$(git rev-parse origin/shopify-sync)" = "$MAIN_SHA" ] || { echo "MISMATCH"; exit 1; }
+   ```
+3. After the chain is exercised once successfully, `gh api /repos/Perts-Foundry/sapphire-shadow-studio-theme/compare/shopify-sync...main --jq '{status, ahead_by, behind_by}'` returns `{"status":"identical","ahead_by":0,"behind_by":0}`.
+
+If this change is ever reverted: also remove the public key from `/settings/keys` and remove the bypass-actor row from `shopify-sync-protection` to avoid orphaned authority.
+
 ## CI/CD deploy chain: sync.yml PAT switch and latent main-has-advanced hardening (unreleased)
 
 PR #17 was the first end-to-end exercise of the consolidated `deploy.yml`'s shopify-sync auto-deploy path. It surfaced a real and previously unobserved bug: `sync.yml`'s `gh pr create` runs under `GITHUB_TOKEN`, and GitHub's documented automatic-token rule (https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication) suppresses downstream workflow_run events from GITHUB_TOKEN-driven actions. validate.yml never fired on the auto-reconcile PR. The fix is a fine-grained PAT scoped narrowly; this PR also folds in a latent-bug discovery and matching two-layer hardening.

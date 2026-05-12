@@ -12,7 +12,7 @@
 #                       major-version label requirement, manual-review
 #                       escape hatch).
 #
-# Two jobs in this workflow:
+# Three jobs in this workflow:
 #   gate   - no Shopify token, no concurrency on deploy-production. Catches
 #            non-collaborators and stale validate before any token is in scope
 #            and before the live-deploy mutex is held. Resolves the trusted
@@ -22,16 +22,25 @@
 #   deploy - contents+pulls write, concurrency: deploy-production. Reads the
 #            Shopify token from a repo-level secret and the store handle /
 #            canonical domain from repo-level variables. Inherits the trusted
-#            head SHA from gate via needs.gate.outputs.head_sha. Includes a
-#            synchronous `Sync main -> shopify-sync` post-merge step that
-#            keeps shopify-sync caught up with main (replaces the prior
-#            sync-reconcile.yml push: main fast-forward arm, which was dead
-#            because GITHUB_TOKEN-driven pushes do not retrigger workflows).
+#            head SHA from gate via needs.gate.outputs.head_sha. Pushes the
+#            theme to live, smoke-tests, posts the deploy report, then squash-
+#            merges. SHOPIFY_SYNC_DEPLOY_KEY is NOT in this job's scope.
+#   sync   - contents: write, needs: deploy. Reconciles shopify-sync to the
+#            deployed SHA (replaces the prior sync-reconcile.yml push: main
+#            fast-forward arm, which was dead because GITHUB_TOKEN-driven
+#            pushes do not retrigger workflows). Holds SHOPIFY_SYNC_DEPLOY_KEY
+#            in isolation from SHOPIFY_CLI_THEME_TOKEN: a bug in this job's
+#            bash cannot leak the Shopify token because the Shopify token
+#            structurally does not exist in this job's scope.
 #
 # WARNING: workflow_run.workflows hardcodes the literal name "validate";
 # renaming validate.yml silently breaks the auto-deploy paths. The
 # workflow_run.branches filter (shopify-sync, dependabot/**) also depends on
-# Dependabot's branch-naming convention.
+# Dependabot's branch-naming convention. The sync job's phantom-orphan SSH
+# push additionally depends on (a) the ruleset name "shopify-sync-protection",
+# (b) a "Deploy keys" bypass-actor row on that ruleset pointing at the
+# matching public key, and (c) the public key being on /settings/keys with
+# "Allow write access". See release-notes.md "Operator action" entry.
 name: deploy
 
 on:
@@ -808,16 +817,16 @@ jobs:
       cancel-in-progress: false
     env:
       LIVE_THEME_ID: "181702754604"
-      GH_TOKEN: ${{ github.token }}      # for the Sync step's git push
     outputs:
       deployed_sha: ${{ steps.merge.outputs.deployed_sha }}
     steps:
       - name: Checkout trusted SHA
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          # fetch-depth: 0 is REQUIRED for the Sync step. --force-with-lease
-          # lease-SHA computation and AHEAD/BEHIND counts need full history.
-          fetch-depth: 0
+          # Default fetch-depth (1) is sufficient: the deploy job uses only
+          # API calls (pulls.merge, theme push, github-script reports) after
+          # this point; nothing reads git history locally. The sync job has
+          # its own checkout with fetch-depth: 0 for --force-with-lease.
           ref: ${{ needs.gate.outputs.head_sha }}
           persist-credentials: false
 
@@ -1172,8 +1181,10 @@ jobs:
                 // Defensive: the squash-merge API response is documented to
                 // return the new merge-commit SHA in the `sha` field. Asserting
                 // non-empty here means a future response-shape change can't
-                // silently produce an empty refspec for the Sync step
-                // (`git push origin :shopify-sync` would DELETE the branch).
+                // silently produce an empty refspec for the downstream sync
+                // job (`git push origin :shopify-sync` would DELETE the
+                // branch). The sync job is `needs: deploy` and reads this
+                // value via `needs.deploy.outputs.deployed_sha`.
                 if (!deployedSha) {
                   merged = false;
                   mergeError = 'merge API returned no SHA in response; refusing to push an empty refspec to shopify-sync.';
@@ -1217,126 +1228,12 @@ jobs:
               core.setFailed(mergeError);
             }
 
-      - name: Sync main -> shopify-sync
-        id: sync
-        # Replaces the prior sync-reconcile.yml `push: main` fast-forward arm,
-        # which was dead (GITHUB_TOKEN-driven pushes do not retrigger workflows).
-        # Anchored on the deployed SHA returned by the squash-merge, NOT on
-        # origin/main re-resolved later, so this push is tied to what just
-        # went live.
-        #
-        # Runs after the squash-merge (which already closed the PR) and is
-        # therefore not user-facing in the PR timeline. Failures surface as
-        # `::warning::` annotations on the workflow run and self-heal via
-        # sync.yml on the next admin push or the 13:00 UTC daily cron. The
-        # deploy report comment, posted BEFORE merge, does NOT include sync
-        # status.
-        if: success() && steps.merge.outputs.deployed_sha != ''
-        continue-on-error: true
-        env:
-          # Passing via env: instead of inline ${{ }} interpolation prevents
-          # any future change to the merge response from injecting shell syntax;
-          # the value is a GitHub-API-returned SHA-1, but defence in depth.
-          DEPLOYED_SHA: ${{ steps.merge.outputs.deployed_sha }}
-        run: |
-          set -euo pipefail
-
-          # GitHub's git-over-HTTPS endpoint expects HTTP Basic auth with
-          # `x-access-token` as the username and the GITHUB_TOKEN as the
-          # password (the same scheme actions/checkout's persisted creds use).
-          # `AUTHORIZATION: bearer <token>` is silently ignored by the smart
-          # HTTP server; git then falls back to credential prompting and
-          # fails with:
-          #   fatal: could not read Username for 'https://github.com':
-          #         No such device or address
-          # Build the header once so both pushes below share the encoded form.
-          AUTH_B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
-          # GitHub Actions auto-masks literal occurrences of secret values
-          # (including github.token) in logs. The base64-wrapped form is a
-          # different literal that Actions has not been told about; register
-          # it explicitly so a future debug echo / set -x / git error message
-          # containing the assembled http.extraheader can't leak the token in
-          # base64-plaintext-equivalent form.
-          echo "::add-mask::$AUTH_B64"
-          AUTH_HEADER="http.extraheader=AUTHORIZATION: basic $AUTH_B64"
-
-          # Fetch ONCE. Do NOT git fetch between the lease-SHA computation and
-          # the push; that would break --force-with-lease's race-detection
-          # invariant. The checkout above used persist-credentials: false so
-          # there are no leftover credentials; we inject the token via
-          # http.extraheader per-command above.
-          #
-          # $DEPLOYED_SHA is the squash-merge commit returned by pulls.merge.
-          # It is brand-new on the remote and is NOT yet in the local clone
-          # (the checkout fetched the PR head SHA, not the merged SHA).
-          # Explicitly fetch it so `git rev-list` / `git diff` can resolve it
-          # as a commit object below.
-          #
-          # Auth and explicit-destination refspec both matter:
-          #   * Auth: the repo is public today, so an anonymous fetch works,
-          #     but if the repo is ever flipped to private (sensitive-data
-          #     scrub, compliance lockdown, etc.) the unauthed fetch fails
-          #     with the same `could not read Username` error the Bearer push
-          #     used to produce. Cost-free immunisation by reusing AUTH_HEADER.
-          #   * Explicit dst (`+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync`):
-          #     guarantees the local `origin/shopify-sync` ref is overwritten
-          #     with the remote tip even on a non-fast-forward update, so the
-          #     `EXPECTED=$(git rev-parse origin/shopify-sync)` lease-SHA used
-          #     by --force-with-lease below reflects the true current tip.
-          git -c "$AUTH_HEADER" fetch --prune --no-tags origin \
-              "$DEPLOYED_SHA" \
-              '+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync'
-
-          AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
-          BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
-
-          if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
-            # Normal: shopify-sync reachable from deployed SHA; fast-forward.
-            if PUSH_ERR=$(git -c "$AUTH_HEADER" \
-                push origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
-              echo "::notice::Fast-forwarded shopify-sync $BEHIND commit(s) to deployed SHA"
-              echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
-            else
-              # Surface the underlying git error verbatim; do not pre-classify
-              # the cause (admin-commit race, auth failure, network blip, etc.
-              # all surface the same way here and need the raw error to triage).
-              echo "::warning::Fast-forward push failed: $PUSH_ERR"
-              echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
-            fi
-          elif [ "$AHEAD" -gt 0 ]; then
-            DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
-              | awk '{ sum += $1 + $2 } END { print sum + 0 }')
-            if [ "$DIFF_LOC" -eq 0 ]; then
-              # Phantom orphan: shopify-sync has commits ahead, but trees are
-              # identical (the just-merged auto-reconcile PR squashed those
-              # orphan commits into main). Force-reset shopify-sync to the
-              # deployed SHA; --force-with-lease catches an admin commit
-              # racing this push.
-              EXPECTED=$(git rev-parse origin/shopify-sync)
-              if PUSH_ERR=$(git -c "$AUTH_HEADER" \
-                  push --force-with-lease="shopify-sync:$EXPECTED" \
-                  origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
-                echo "::notice::Cleared $AHEAD orphan commit(s); trees identical to deployed SHA"
-                echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
-              else
-                echo "::warning::Phantom cleanup push failed: $PUSH_ERR"
-                echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              # Real divergence: an admin commit landed during this deploy.
-              # sync.yml on the admin push will open the next reconcile PR.
-              echo "::warning::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
-              echo "sync-status=deferred (admin commit landed mid-deploy)" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "::notice::shopify-sync already at deployed SHA"
-            echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: React with -1
         # Fires for any failure in the deploy job, including the merge step's
-        # core.setFailed on merge failure (the merge step is between Post
-        # deploy report and Sync above). For comment-deploy triggers only.
+        # core.setFailed on merge failure. The sync job is `needs: deploy`,
+        # so its failures do not propagate to this reaction (sync failures
+        # surface as workflow-run annotations and self-heal via sync.yml).
+        # For comment-deploy triggers only.
         if: failure() && github.event_name == 'issue_comment'
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -1443,7 +1340,11 @@ jobs:
               errorDetail = `${mergeError}\n\nLive theme is on \`${shortSha}\`. The PR remains open; review the workflow log and merge manually if appropriate.`;
             } else {
               failStage = 'Post-merge';
-              errorDetail = 'Sync or comment posting failed after a successful merge. See the workflow run; sync.yml will retry the shopify-sync push on the next admin push or 13:00 UTC cron.';
+              // After the sync-job extraction this arm is effectively dead
+              // code (no remaining deploy-job step can fail between merge
+              // and the failure handlers), but kept as defensive catch-all
+              // for any future reorder that adds a post-merge step.
+              errorDetail = 'A post-merge step failed after a successful merge. See the workflow run for details.';
             }
 
             const retryHint = triggerPath === 'comment'
@@ -1513,3 +1414,258 @@ jobs:
             echo "Failed before a candidate PR was identified, so no PR comment was posted."
             echo "See the workflow run output for details."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  sync:
+    # Post-merge reconcile of shopify-sync with the deployed SHA. Extracted
+    # from the deploy job so SHOPIFY_SYNC_DEPLOY_KEY is isolated by job
+    # boundary from SHOPIFY_CLI_THEME_TOKEN: a bug in this job's bash cannot
+    # leak the Shopify token because the Shopify token structurally does not
+    # exist in this job's scope. Mirrors the gate/deploy split's no-shared-
+    # secrets property.
+    name: sync
+    needs: deploy
+    if: needs.deploy.result == 'success' && needs.deploy.outputs.deployed_sha != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      # Serialise shopify-sync pushes across overlapping runs. The deploy
+      # job's `deploy-production` mutex releases when the deploy job exits,
+      # which is BEFORE this sync job starts (sync is `needs: deploy`). Two
+      # back-to-back deploys could therefore start their sync jobs in close
+      # succession and race on the shopify-sync ref. `--force-with-lease`
+      # catches the race correctly (the later sync sees a stale lease and
+      # falls into the warning + sync.yml-self-heal path), so this is
+      # defence in depth, not a correctness fix. Separate group from
+      # `deploy-production` so a manual `deploy` comment landing during an
+      # in-flight sync does not block the next deploy's live-push.
+      group: shopify-sync-reconcile
+      cancel-in-progress: false
+    permissions:
+      # contents: write is for the fast-forward arm's HTTPS+GITHUB_TOKEN push
+      # (which is NOT a force push and does not need the deploy-key bypass).
+      # The phantom-orphan force-with-lease arm authenticates via SSH+deploy-
+      # key, not GITHUB_TOKEN, so it does not rely on this grant.
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}                              # HTTPS fetch + HTTPS fast-forward push
+      DEPLOYED_SHA: ${{ needs.deploy.outputs.deployed_sha }}     # squash-merge SHA from the deploy job
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # fetch-depth: 0 so the in-step `git rev-list` AHEAD/BEHIND counts
+          # and `--force-with-lease` lease-SHA computation have full history.
+          fetch-depth: 0
+          ref: main
+          persist-credentials: false
+
+      - name: Validate sync preconditions
+        # Empty-secret guard in its own step (no continue-on-error) so a missing
+        # SHOPIFY_SYNC_DEPLOY_KEY halts the job visibly (red X) instead of being
+        # swallowed by the next step's continue-on-error. Mirrors sync.yml's
+        # SYNC_RECONCILE_TOKEN guard in both text and step-failure semantics.
+        env:
+          SHOPIFY_SYNC_DEPLOY_KEY: ${{ secrets.SHOPIFY_SYNC_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SHOPIFY_SYNC_DEPLOY_KEY:-}" ]; then
+            echo "::error::SHOPIFY_SYNC_DEPLOY_KEY is unset; cannot force-push shopify-sync past the 'Block force pushes' rule. See CLAUDE.md 'Token rotation call-site catalog'."
+            exit 1
+          fi
+
+      - name: Sync main -> shopify-sync
+        id: reconcile
+        # Replaces the prior sync-reconcile.yml `push: main` fast-forward arm,
+        # which was dead (GITHUB_TOKEN-driven pushes do not retrigger workflows).
+        # Anchored on the deployed SHA returned by the squash-merge in the
+        # deploy job, NOT on origin/main re-resolved later, so this push is
+        # tied to what just went live.
+        #
+        # Two push call-sites with DIFFERENT auth schemes:
+        #
+        #   fetch: HTTPS+GITHUB_TOKEN (read-only, no bypass needed; reuses
+        #          AUTH_HEADER for forward-compat if the repo is ever flipped
+        #          to private).
+        #
+        #   fast-forward push: HTTPS+GITHUB_TOKEN. A strict fast-forward to a
+        #          tip-descendant of shopify-sync is NOT a force push; the
+        #          shopify-sync-protection ruleset's "Block force pushes" rule
+        #          does not apply. The empirical evidence in workflow run
+        #          25704994159 (PR #21) was that ONLY the phantom-orphan
+        #          force-with-lease arm hit GH013.
+        #
+        #   phantom-orphan force-with-lease push: SSH+deploy-key. The push
+        #          rewrites shopify-sync's history (abandons orphan commits,
+        #          resets tip to the deployed SHA). "Block force pushes"
+        #          applies. GITHUB_TOKEN identity github-actions[bot] is a
+        #          synthetic per-workflow identity with no role membership, so
+        #          the ruleset's role-based bypass entries do not match it
+        #          (empirically confirmed on workflow run 25704994159).
+        #          SHOPIFY_SYNC_DEPLOY_KEY is on the ruleset's bypass-actor
+        #          list as a "Deploy keys" row.
+        #
+        # Failures surface as `::warning::` annotations on the workflow run
+        # and self-heal via sync.yml on the next admin push or the 13:00 UTC
+        # daily cron. The empty-secret case is handled by the prior Validate
+        # step and fails red.
+        continue-on-error: true
+        env:
+          SHOPIFY_SYNC_DEPLOY_KEY: ${{ secrets.SHOPIFY_SYNC_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Tempfile cleanup BEFORE resource creation: a failure during secret
+          # write, ssh-keyscan, or any later command still triggers cleanup
+          # because the trap is already installed. Empty-string fallbacks make
+          # the rm -f harmless if either variable is never assigned. INT/TERM/
+          # HUP coverage is defence in depth; on GitHub-hosted runners the VM
+          # is destroyed with the job so the tmpfs is gone either way.
+          SSH_KEY_FILE=""
+          SSH_KNOWN_HOSTS=""
+          SSH_KEYSCAN_ERR=""
+          # shellcheck disable=SC2064
+          trap 'rm -f -- "$SSH_KEY_FILE" "$SSH_KNOWN_HOSTS" "$SSH_KEYSCAN_ERR"' EXIT INT TERM HUP
+
+          # Defence-in-depth secret masking: GitHub auto-masks literal secret
+          # values line-by-line, but multi-line PEM bodies may not be masked
+          # reliably under a future `set -x` insertion. Register each line
+          # explicitly so each base64 body line is independently a registered
+          # mask token. Mirrors the AUTH_B64 explicit-mask precedent below.
+          while IFS= read -r mask_line; do
+            [ -n "$mask_line" ] && echo "::add-mask::$mask_line"
+          done <<< "$SHOPIFY_SYNC_DEPLOY_KEY"
+
+          # umask 077 closes the mktemp 0600-mode race window across all
+          # runner profiles (ubuntu-24.04 mktemp defaults to 0600, but
+          # ubuntu-latest-4-cores and future profiles do not necessarily).
+          # The explicit chmod 600 below is then documentary, not load-bearing.
+          umask 077
+          SSH_KEY_FILE=$(mktemp -t shopify-sync-key-XXXXXX)
+          SSH_KNOWN_HOSTS=$(mktemp -t shopify-sync-hosts-XXXXXX)
+          SSH_KEYSCAN_ERR=$(mktemp -t shopify-sync-keyscan-err-XXXXXX)
+          chmod 600 "$SSH_KEY_FILE"
+
+          # Normalise line endings: if the secret was pasted into the GitHub
+          # secret UI from a Windows clipboard, internal CRLFs may remain.
+          # OpenSSH on Linux can be strict about PEM line endings; enforce LF
+          # here rather than debug "Load key: invalid format" later.
+          printf '%s' "$SHOPIFY_SYNC_DEPLOY_KEY" | tr -d '\r' > "$SSH_KEY_FILE"
+          printf '\n' >> "$SSH_KEY_FILE"
+          # Shrink the shell-env exposure window. After unset, a later
+          # accidental `echo "$SHOPIFY_SYNC_DEPLOY_KEY"` produces empty.
+          unset SHOPIFY_SYNC_DEPLOY_KEY
+
+          # Populate known_hosts. OpenSSH 8+ prefers ed25519 then ecdsa during
+          # host-key selection; including rsa is unnecessary noise and would
+          # couple this workflow to any future GitHub RSA-key rotation event.
+          # Capture stderr to a tempfile so an empty-result diagnostic is
+          # available in the warning path.
+          ssh-keyscan -t ed25519,ecdsa github.com > "$SSH_KNOWN_HOSTS" 2> "$SSH_KEYSCAN_ERR"
+          if [ ! -s "$SSH_KNOWN_HOSTS" ]; then
+            echo "::warning::ssh-keyscan github.com returned empty; cannot force-push to shopify-sync. sync.yml will retry on next admin push or 13:00 UTC cron."
+            echo "ssh-keyscan stderr:"
+            cat "$SSH_KEYSCAN_ERR"
+            echo "sync-status=ssh-keyscan empty; deferred to sync.yml" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # SSH command options:
+          #   IdentitiesOnly=yes               - only the explicit -i key is offered (no agent fallthrough).
+          #   PreferredAuthentications=publickey - rules out password / keyboard-interactive / gssapi.
+          #   BatchMode=yes                    - never prompt (would hang the runner).
+          #   StrictHostKeyChecking=yes        - reject unknown host keys (known_hosts above is the source of truth).
+          #   LogLevel=ERROR                   - suppress informational ssh noise.
+          export GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o BatchMode=yes -o UserKnownHostsFile=$SSH_KNOWN_HOSTS -o StrictHostKeyChecking=yes -o LogLevel=ERROR"
+
+          # Derive the SSH push URL from github.repository so an org/repo
+          # rename does not silently leave a stale hardcoded URL behind.
+          SSH_PUSH_URL="git@github.com:${{ github.repository }}.git"
+
+          # HTTPS auth for the read-only fetch and the fast-forward push.
+          # GitHub's git-over-HTTPS endpoint expects HTTP Basic auth with
+          # `x-access-token` as the username and GITHUB_TOKEN as the password;
+          # `AUTHORIZATION: bearer <token>` is silently ignored by the smart
+          # HTTP server and git falls back to credential prompting.
+          AUTH_B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          # The base64-wrapped form is a different literal than the bare
+          # GITHUB_TOKEN that Actions auto-masks; register it explicitly so a
+          # future debug echo or git error message containing the assembled
+          # http.extraheader cannot leak the token in base64-plaintext-
+          # equivalent form.
+          echo "::add-mask::$AUTH_B64"
+          AUTH_HEADER="http.extraheader=AUTHORIZATION: basic $AUTH_B64"
+
+          # Fetch ONCE. Do NOT git fetch between the lease-SHA computation
+          # and the push; that would break --force-with-lease's race-detection
+          # invariant. The explicit dst ref overwrite guarantees the local
+          # origin/shopify-sync matches the remote tip even on a non-fast-
+          # forward update so the lease-SHA below reflects the true current
+          # tip. The auth is forward-compat: the repo is public today and an
+          # anonymous fetch works, but flipping to private would otherwise
+          # break with the same `could not read Username` error a Bearer-auth
+          # push would produce.
+          git -c "$AUTH_HEADER" fetch --prune --no-tags origin \
+              "$DEPLOYED_SHA" \
+              '+refs/heads/shopify-sync:refs/remotes/origin/shopify-sync'
+
+          AHEAD=$(git rev-list --count "$DEPLOYED_SHA..origin/shopify-sync")
+          BEHIND=$(git rev-list --count "origin/shopify-sync..$DEPLOYED_SHA")
+
+          if [ "$AHEAD" -eq 0 ] && [ "$BEHIND" -gt 0 ]; then
+            # Normal: shopify-sync reachable from deployed SHA; fast-forward
+            # via HTTPS+GITHUB_TOKEN. Not a force push, no bypass needed.
+            # Do NOT introduce a pipe inside the $() here; the if-then tests
+            # the captured exit code.
+            if PUSH_ERR=$(git -c "$AUTH_HEADER" \
+                push origin "$DEPLOYED_SHA:shopify-sync" 2>&1); then
+              echo "::notice::Fast-forwarded shopify-sync $BEHIND commit(s) to deployed SHA"
+              echo "sync-status=fast-forwarded $BEHIND commit(s)" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Fast-forward push failed: $PUSH_ERR"
+              echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$AHEAD" -gt 0 ]; then
+            DIFF_LOC=$(git diff --numstat "$DEPLOYED_SHA..origin/shopify-sync" \
+              | awk '{ sum += $1 + $2 } END { print sum + 0 }')
+            if [ "$DIFF_LOC" -eq 0 ]; then
+              # Phantom orphan: trees identical (the just-merged auto-reconcile
+              # PR squashed those orphan commits into main). Force-reset
+              # shopify-sync to the deployed SHA via SSH+deploy-key (bypasses
+              # "Block force pushes"). --force-with-lease catches an admin
+              # commit racing this push.
+              EXPECTED=$(git rev-parse origin/shopify-sync)
+              # Do NOT introduce a pipe inside the $() here; the if-then tests
+              # the captured exit code.
+              if PUSH_ERR=$(git push --force-with-lease="shopify-sync:$EXPECTED" \
+                  "$SSH_PUSH_URL" \
+                  "$DEPLOYED_SHA:shopify-sync" 2>&1); then
+                echo "::notice::Cleared $AHEAD orphan commit(s); trees identical to deployed SHA"
+                echo "sync-status=cleared $AHEAD orphan(s)" >> "$GITHUB_OUTPUT"
+              else
+                # Multi-pattern stderr classifier covering the three failure
+                # modes documented in CLAUDE.md "Token rotation call-site
+                # catalog" for SHOPIFY_SYNC_DEPLOY_KEY:
+                #   - Permission denied / Load key / Host key verification  --> key invalid
+                #   - GH013 / Cannot force-push                             --> bypass row removed
+                #   - empty $PUSH_ERR                                       --> network-layer abort, transient
+                #   - anything else                                         --> raw stderr only
+                if grep -qE 'Permission denied \(publickey[^)]*\)|Load key .*: (invalid format|bad permissions|error in libcrypto)|Host key verification failed' <<< "$PUSH_ERR"; then
+                  echo "::warning::SHOPIFY_SYNC_DEPLOY_KEY appears invalid (revoked/regenerated/malformed/host-key-mismatch). See CLAUDE.md 'Token rotation call-site catalog'."
+                elif grep -qE 'GH013|Cannot force-push to this branch' <<< "$PUSH_ERR"; then
+                  echo "::warning::Push rejected by branch ruleset (likely the Deploy keys bypass-actor row was removed from shopify-sync-protection). See CLAUDE.md 'Token rotation call-site catalog'."
+                elif [ -z "$PUSH_ERR" ]; then
+                  echo "::warning::Phantom cleanup push failed with no captured stderr; likely a network-layer abort. sync.yml will retry."
+                fi
+                echo "::warning::Phantom cleanup push failed: $PUSH_ERR"
+                echo "sync-status=push failed; sync.yml will retry on next admin push or 13:00 UTC cron" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              # Real divergence: an admin commit landed during this deploy.
+              # sync.yml on the admin push will open the next reconcile PR.
+              echo "::warning::shopify-sync has $AHEAD commit(s) ahead with real diff; deferring to sync.yml"
+              echo "sync-status=deferred (admin commit landed mid-deploy)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::notice::shopify-sync already at deployed SHA"
+            echo "sync-status=already in sync" >> "$GITHUB_OUTPUT"
+          fi
