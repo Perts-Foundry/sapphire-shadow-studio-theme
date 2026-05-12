@@ -64,7 +64,7 @@
       ],
       "name": "t:names.announcement_bar",
       "settings": {
-        "speed": 4,
+        "speed": 6,
         "section_width": "page-width",
         "color_scheme": "sss-dark-scheme",
         "divider_width": 0,
