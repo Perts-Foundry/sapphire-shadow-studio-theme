@@ -67,8 +67,8 @@
         "hero_cta": {
           "type": "button",
           "settings": {
-            "label": "Start your project",
-            "link": "/pages/contact",
+            "label": "Start your custom order",
+            "link": "/pages/contact?subject=custom-order",
             "open_in_new_tab": false,
             "style_class": "button",
             "width": "fit-content",
@@ -570,7 +570,7 @@
             "tap_body": {
               "type": "text",
               "settings": {
-                "text": "<p>Custom projects vary, but here is what's typical:</p><ul><li><strong>Quote turnaround:</strong> 1 to 2 business days.</li><li><strong>Production time:</strong> 2 to 3 weeks from approval, depending on complexity and our current queue.</li><li><strong>Pricing:</strong> depends on design complexity, garment cost, and embroidery time. We'll always give a firm quote before any work starts.</li><li><strong>Rush requests:</strong> possible but not guaranteed. Rush fees apply and depend on workload. See our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for the full picture.</li></ul>",
+                "text": "<p>Custom projects vary, but here is what's typical:</p><ul><li><strong>Quote turnaround:</strong> 1 to 2 business days.</li><li><strong>Production time:</strong> 2 to 3 weeks from approval, depending on complexity and our current queue.</li><li><strong>Pricing:</strong> depends on design complexity, garment cost, and embroidery time. We'll always give a firm quote before any work starts.</li><li><strong>Final sale:</strong> custom pieces are made specifically for you and can't be returned or refunded. We send mockups for approval so you know exactly what you're getting before we start.</li><li><strong>Rush requests:</strong> possible but not guaranteed. Rush fees apply and depend on workload. See our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for the full picture.</li></ul>",
                 "width": "100%",
                 "max_width": "normal",
                 "alignment": "left",
@@ -729,7 +729,7 @@
           "type": "button",
           "settings": {
             "label": "Start your custom order",
-            "link": "/pages/contact",
+            "link": "/pages/contact?subject=custom-order",
             "open_in_new_tab": false,
             "style_class": "button",
             "width": "fit-content",
