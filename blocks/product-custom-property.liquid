@@ -63,6 +63,20 @@
     </p>
   {% endif %}
 
+  {%- comment -%}
+    Source of the translated validation message for required text/textarea
+    instances. Read by assets/product-custom-property.js#connectedCallback
+    and passed to setCustomValidity on invalid. Permanently hidden visually.
+    Rendered only when this instance is required so we don't add noise to
+    non-required blocks.
+  {%- endcomment -%}
+  {% if block_settings.required and actual_input_type != 'checkbox' %}
+    <span
+      hidden
+      ref="invalidMessage"
+    >{{- 'products.product.custom_text_invalid' | t | escape -}}</span>
+  {% endif %}
+
   <div class="__field">
     {% if actual_input_type == 'textarea' %}
       <div class="__input-wrapper">

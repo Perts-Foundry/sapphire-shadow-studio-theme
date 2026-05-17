@@ -56,6 +56,15 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
   connectedCallback() {
     super.connectedCallback();
 
+    // Re-initialise the abort controller in case this element is being
+    // re-connected after a previous disconnect aborted the prior one
+    // (theme editor section reload, framework re-mount, etc.). Without
+    // this, a stale aborted signal would silently make the new sticky-bar
+    // interceptor a no-op.
+    if (this.#abortController.signal.aborted) {
+      this.#abortController = new AbortController();
+    }
+
     this.#checkbox = this.refs.checkbox;
     this.#invalidMessage = this.refs.invalidMessage.textContent?.trim() ?? '';
     this.#boundHandleInvalid = (event) => this.#handleInvalid(event);
@@ -159,9 +168,13 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
   }
 
   /**
-   * Locate the product-form-component within the same section, for diagnostic
-   * use only. The gate itself is enforced by a `:has()` CSS rule scoped to the
-   * containing `.shopify-section`, so the JS doesn't need to walk to the form.
+   * Locate the product-form-component within the same section. Two consumers:
+   *   1. Diagnostic warning in connectedCallback if the block was placed
+   *      outside a product context.
+   *   2. The sticky-bar interceptor (#handleAnyClick), which needs the form
+   *      element to call form.checkValidity() / form.reportValidity().
+   * The accelerated-checkout CSS gate itself does not depend on this lookup
+   * (it's enforced by a `:has()` rule on the containing `.shopify-section`).
    *
    * @returns {HTMLElement | null}
    */

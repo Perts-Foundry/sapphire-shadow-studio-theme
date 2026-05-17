@@ -5,6 +5,9 @@ import { Component } from '@theme/component';
  * @typedef {object} ProductCustomPropertyRefs
  * @property {HTMLInputElement | HTMLTextAreaElement} textInput - The text input.
  * @property {HTMLElement} characterCount - The character count element.
+ * @property {HTMLElement} [invalidMessage] - Hidden span carrying the translated
+ *   validation message; only rendered when this instance is required (see
+ *   blocks/product-custom-property.liquid).
  */
 
 /**
@@ -12,6 +15,9 @@ import { Component } from '@theme/component';
  * @extends Component<ProductCustomPropertyRefs>
  */
 class ProductCustomProperty extends Component {
+  /** @type {string} */
+  #invalidMessage = '';
+
   connectedCallback() {
     super.connectedCallback();
 
@@ -21,16 +27,21 @@ class ProductCustomProperty extends Component {
     // which is fine since they're only used for short opt-in labels.)
     const input = this.refs.textInput;
     if (input?.hasAttribute('required')) {
+      this.#invalidMessage = this.refs.invalidMessage?.textContent?.trim() ?? '';
       input.addEventListener('invalid', this.#handleInvalid);
     }
   }
 
   handleInput() {
     this.#updateCharacterCount();
-    // Clear any custom validity message as soon as the user starts typing,
-    // so the field can be re-validated against required + maxlength on the
-    // next submit attempt.
-    this.refs.textInput?.setCustomValidity('');
+    // Clear only OUR custom validity message so the field can be re-validated
+    // against required on the next submit attempt. Comparing against the
+    // current validationMessage avoids nuking a future custom validity that
+    // a different code path (e.g. a pattern-mismatch handler) might set.
+    const input = this.refs.textInput;
+    if (input && input.validationMessage === this.#invalidMessage) {
+      input.setCustomValidity('');
+    }
   }
 
   /**
@@ -40,7 +51,7 @@ class ProductCustomProperty extends Component {
    * The bubble anchors to the field, so we don't need to name it in the copy.
    */
   #handleInvalid = () => {
-    this.refs.textInput?.setCustomValidity('Please fill out this field before adding to cart.');
+    this.refs.textInput?.setCustomValidity(this.#invalidMessage);
   };
 
   #updateCharacterCount() {

@@ -15,8 +15,10 @@
   `product_form_id` is derived from the section id (`BuyButtons-ProductForm-{section.id}`)
   and the `<product-form-component>` element is queried within the section root by JS.
 
-  Add the block to any product template via the theme editor; it's enabled on
-  the `product` template only.
+  Add the block to any product template via the theme editor. The block has no
+  template restriction in its schema (theme-check rejects `enabled_on` on
+  blocks); when added outside a product context the JS no-ops and logs a
+  diagnostic warning to the console.
 {%- enddoc -%}
 
 {%- liquid
@@ -107,7 +109,7 @@
    * its `ref` attribute (see blocks/accelerated-checkout.liquid). Renaming
    * the ref will silently disable the gate.
    *
-   * The sticky add-to-cart bar is NOT hidden here — instead the JS
+   * The sticky add-to-cart bar is NOT hidden here. Instead the JS
    * intercepts its click in capture phase, scrolls the checkbox into view,
    * and calls reportValidity() to force the native bubble. See
    * assets/return-policy-acknowledgment.js#handleStickyClick.

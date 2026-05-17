@@ -40,6 +40,20 @@
 >
   {%- if product != blank -%}
     {%- assign product_form_id = 'BuyButtons-ProductForm-' | append: section.id -%}
+    {%- comment -%}
+      The `product_form_id` string here is a cross-block contract used by
+      sibling blocks (applique-pattern-select, product-custom-property,
+      return-policy-acknowledgment) that wire required inputs into this form
+      via the `form="..."` attribute. Renaming this id pattern silently
+      detaches those validators.
+
+      Additionally, the sticky add-to-cart bar's invalid-submit feedback
+      (scroll-into-view + reportValidity on any required field in this form)
+      currently lives in assets/return-policy-acknowledgment.js#wireStickyBarInterceptor.
+      If a product template uses required fields but does NOT include the
+      return-policy-acknowledgment block, the sticky bar's puppet click will
+      animate "added" even when the cart-add was blocked.
+    {%- endcomment -%}
     <product-form-component
       data-section-id="{{ section.id }}"
       data-product-id="{{ product.id }}"
