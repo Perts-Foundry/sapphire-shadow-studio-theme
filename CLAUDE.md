@@ -158,7 +158,7 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 ### Directory structure
 
 - **layout/** — Base templates (`theme.liquid`, `password.liquid`).
-- **templates/** — JSON templates; root must include `order` array + `sections` map. Alternates use dot-suffix (`product.alternate.json`).
+- **templates/** — JSON templates; root must include `order` array + `sections` map. Alternates use dot-suffix (`product.alternate.json`). Page alternates use one of three patterns: keep `main` enabled and append sections (Contact pattern), disable `main` and use a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit.
 - **sections/** — Page sections with `{% schema %}`.
 - **blocks/** — Reusable theme blocks; nestable.
 - **snippets/** — Liquid partials rendered with `{% render %}`.
