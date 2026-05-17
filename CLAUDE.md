@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repo. The repo is a custom Shopify them
 
 This repository is **public**. Real personal contact metadata, internal strategy / legal advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy that already appears on the storefront (founder narrative, About / FAQ pages, photography filenames that don't expose personal identifiers) is intentional and fine to commit. The repo was deleted-and-recreated once already to scrub embedded metadata; do not reintroduce it.
 
-The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch personal emails, addresses, or merchant-keyed prose — the author's responsibility per the checklist below.
+The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch personal emails, addresses, or merchant-keyed prose; the author's responsibility per the checklist below.
 
 ### What is sensitive (do not commit)
 
@@ -23,8 +23,8 @@ The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch
 
 - Founder narrative and brand voice: anything already on the storefront's About / FAQ page (first names, husband-and-wife framing, prior-career mentions, pet references). Image filenames encoding pet names (`Kitkat-Rory.jpg`) are fine when the same names appear in visible copy.
 - The brand name "Sapphire Shadow Studio" and the public store handle `sapphire-shadow-studio`.
-- The live theme numeric ID and `*.myshopify.com` / custom storefront domain — public on every storefront page render.
-- App-embed install UUIDs (Shopify Inbox, Judge.me, etc.) — observable in any browser DOM inspection.
+- The live theme numeric ID and `*.myshopify.com` / custom storefront domain; public on every storefront page render.
+- App-embed install UUIDs (Shopify Inbox, Judge.me, etc.); observable in any browser DOM inspection.
 - Public Shopify policies content under `/policies/...`.
 - State-level location framing in storefront copy (not in legal / strategy context).
 - Synthetic test fixtures.
@@ -38,15 +38,19 @@ Before every `git push`, every `gh pr create`, every `gh pr comment`, and every 
 1. **Scan the full branch diff** (`git diff origin/main..HEAD`) and **every commit message** (`git log origin/main..HEAD --format=%B`) for: personal emails, personal phone, machine paths, tokens, merchant-keyed strategy framing, sub-state location detail.
 2. **Scan the rendered PR / issue / comment body** for the same categories. Content typed into `gh pr create --body` does not pass through the diff scan and is not covered by Gitleaks.
 3. **Verify the `secret-scan` CI check is green** on the latest PR run. Red means stop and triage, not "rebase past it."
-4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form — Gmail in author metadata is the "no diff will ever show" leak from the bullet list above and slips through every other check.
+4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form. Gmail in author metadata is the "no diff will ever show" leak from the bullet list above and slips through every other check.
 5. If anything sensitive is found:
    - **Pre-push (history not yet on remote)**: rewrite locally with `git rebase -i` or `git commit --amend`. Replace with neutral descriptors. Re-run all checks before pushing.
-   - **Already on remote**: stop. Surface to the user before any further action — force-pushing rewritten history to a public repo is a visible event that warrants explicit consent. For a confirmed token, treat as compromised and rotate in addition to (not instead of) history rewrite.
+   - **Already on remote**: stop. Surface to the user before any further action. Force-pushing rewritten history to a public repo is a visible event that warrants explicit consent. For a confirmed token, treat as compromised and rotate in addition to (not instead of) history rewrite.
 6. Default to redacted-by-default in commit messages and doc entries: describe the *change* (what was edited in the template / block / workflow), not the *real-world entity* that prompted it.
 
 ### Memory notes
 
 Memory files under `~/.claude/projects/.../memory/` may contain real operator and merchant context **for the assistant's use only**. Never paste memory content into the repo, PR bodies, or commit messages.
+
+## Formatting
+
+**No em dashes (Unicode `U+2014`) anywhere in this repo.** Applies to code, comments, content files, docs, locale strings, workflow files, and CLAUDE.md itself; the global-rules carve-out for Claude config files does not apply here. Restructure with commas, semicolons, parens, colons, or periods. Do not substitute ` - ` (spaced ASCII dash). Quickest replacements: a sentence break (`. Capital...`), a semicolon, or a colon when introducing an explanation. Sweep before commit with `git grep -l $'\xe2\x80\x94'` (which should return nothing).
 
 ## Screenshots
 
@@ -54,7 +58,7 @@ When the user references a screenshot, or when troubleshooting any issue, proact
 
 ## Project overview
 
-Custom Shopify theme based on **Horizon** (Shopify's flagship); server-rendered Liquid + theme blocks + progressive enhancement. Private, single-merchant theme — not a Shopify Theme Store submission. The repo is **standalone, not a GitHub fork** of `Shopify/horizon`; attribution and upstream-merge mechanics in `LICENSE.md` and `README.md`.
+Custom Shopify theme based on **Horizon** (Shopify's flagship); server-rendered Liquid + theme blocks + progressive enhancement. Private, single-merchant theme, not a Shopify Theme Store submission. The repo is **standalone, not a GitHub fork** of `Shopify/horizon`; attribution and upstream-merge mechanics in `LICENSE.md` and `README.md`.
 
 ## Workflow
 
@@ -81,7 +85,7 @@ To inspect what is currently live without altering the working tree: `npx shopif
 
 ### Live theme
 
-Live theme is `#181702754604`. **Disconnected** from GitHub; only `deploy.yml` writes to it. Do not click "Customize" or "Edit code" on the live theme card in admin — use the sync theme. There is no automated drift detection; "live = main" is operator discipline.
+Live theme is `#181702754604`. **Disconnected** from GitHub; only `deploy.yml` writes to it. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme. There is no automated drift detection; "live = main" is operator discipline.
 
 ### Preview-theme cleanup
 
@@ -109,14 +113,14 @@ Four computed gates govern auto-deploy. Full attack/mitigation chains, alternati
 1. **Collaborator permission** (comment path). `gate` calls `getCollaboratorPermissionLevel` on the comment author and proceeds only for `admin` / `write`. Workflow-level `if` pre-filters by `author_association` and asserts `github.event.issue.pull_request`.
 
 2. **Validate-on-HEAD-SHA** (all paths). Comment path: `listWorkflowRuns` filtered by `validate.yml`, `head_sha`, **and** `event: 'pull_request'` (the event filter blocks a future `push` / `workflow_dispatch` trigger on validate.yml from masquerading as proof). Workflow_run paths: re-fetch the triggering Validate run via `getWorkflowRun`, assert `conclusion: success`, thread the returned `head_sha` as `trustedSha` through every downstream API call. HEAD-drift is first asserted via `pr.head.sha === trustedSha`; `compareCommits.status === 'identical'` is **defence in depth** on top of that.
-   - **Do not "simplify" the `compareCommits` check away** as redundant with the SHA equality. The comparison is commit-object equality, **not** tree equality — same-tree amends, cherry-picks, and different-tree force-pushes all return `diverged`, not `identical`. The check was added explicitly so a future refactor wouldn't remove a load-bearing guardrail on a wrong premise; `release-notes.md` documents this.
+   - **Do not "simplify" the `compareCommits` check away** as redundant with the SHA equality. The comparison is commit-object equality, **not** tree equality; same-tree amends, cherry-picks, and different-tree force-pushes all return `diverged`, not `identical`. The check was added explicitly so a future refactor wouldn't remove a load-bearing guardrail on a wrong premise; `release-notes.md` documents this.
    - For workflow_run paths, Validate is **advisory** (a malicious PR head could rewrite `validate.yml` to pass falsely). The actual integrity boundary for auto-deploys is the signed-commit gate below.
 
 3. **Signed-commit gate** (workflow_run paths). Assert `verification.verified === true`, `commit.author.login === expectedBot` (`shopify[bot]` for shopify-sync; `dependabot[bot]` for dependabot), and `pull_request.user.login === expectedPrOpener` (shopify-sync: `vars.EXPECTED_SYNC_PR_OPENER` at runtime, the PAT owner; dependabot: the `dependabot[bot]` constant).
    - **`commit.committer.login` may be `expectedBot` OR `web-flow` and is informational, not a security signal.** Anyone with `contents: write` can produce a `web-flow` committer via web-UI edits, the Update-branch / Rebase buttons, `PUT /contents/{path}`, or `@dependabot rebase` / `@dependabot recreate`. Strict equality on committer was the source of a prior false-positive regression (see `release-notes.md`); do not re-introduce it.
    - Integrity boundary: author identity + signature verification + PR-opener identity. Git-commit-header fields are forgeable and not consulted. Trust delta for the post-PAT PR-opener (now a PAT-exfiltrable login): bounded by signed-commit-identity above and by gate 4 below; full chain in `release-notes.md`.
 
-4. **Defence-in-depth merge-base assertion** (workflow_run paths). `repos.compareCommits(base: main_tip, head: trustedSha).behind_by === 0`. Catches "PR head was missing main commits at PR creation time" — independent of the base-staleness check in gate 2. For shopify-sync, blocks the misleading-revert PR scenario and the PAT-exfil stale-PR replay (independently of `sync.yml`'s own merge-base prevention guard at the create-PR call site). For dependabot, no-op in the normal flow; belt-and-braces.
+4. **Defence-in-depth merge-base assertion** (workflow_run paths). `repos.compareCommits(base: main_tip, head: trustedSha).behind_by === 0`. Catches "PR head was missing main commits at PR creation time"; independent of the base-staleness check in gate 2. For shopify-sync, blocks the misleading-revert PR scenario and the PAT-exfil stale-PR replay (independently of `sync.yml`'s own merge-base prevention guard at the create-PR call site). For dependabot, no-op in the normal flow; belt-and-braces.
 
 All four gates assume workflow files are correct. A compromised `contents: write` collaborator who can land any PR bypasses all of them and could already exfiltrate any secret via a malicious workflow change; the PAT and deploy key do not enlarge this surface.
 
@@ -136,7 +140,7 @@ Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`
 - **test-engineer**: skip (no JS test framework configured).
 - **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
 
-Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first — the project may have triaged the finding as a known false positive.
+Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
 ## Development commands
 
@@ -157,14 +161,14 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 ### Directory structure
 
-- **layout/** — Base templates (`theme.liquid`, `password.liquid`).
-- **templates/** — JSON templates; root must include `order` array + `sections` map. Alternates use dot-suffix (`product.alternate.json`). Page alternates use one of three patterns: keep `main` enabled and append sections (Contact pattern), disable `main` and use a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit.
-- **sections/** — Page sections with `{% schema %}`.
-- **blocks/** — Reusable theme blocks; nestable.
-- **snippets/** — Liquid partials rendered with `{% render %}`.
-- **assets/** — CSS, JS, static files. **Flat directory** (no subdirs). **No build step**: files ship as-is. Reference via `{{ 'filename' | asset_url }}`; inline icons via `{{ 'icon.svg' | inline_asset_content }}`.
-- **locales/** — `en.default.json` is canonical.
-- **config/** — `settings_schema.json`, `settings_data.json`.
+- **layout/**: base templates (`theme.liquid`, `password.liquid`).
+- **templates/**: JSON templates; root must include `order` array + `sections` map. Alternates use dot-suffix (`product.alternate.json`). Page alternates use one of three patterns: keep `main` enabled and append sections (Contact pattern), disable `main` and use a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit.
+- **sections/**: page sections with `{% schema %}`.
+- **blocks/**: reusable theme blocks; nestable.
+- **snippets/**: Liquid partials rendered with `{% render %}`.
+- **assets/**: CSS, JS, static files. **Flat directory** (no subdirs). **No build step**: files ship as-is. Reference via `{{ 'filename' | asset_url }}`; inline icons via `{{ 'icon.svg' | inline_asset_content }}`.
+- **locales/**: `en.default.json` is canonical.
+- **config/**: `settings_schema.json`, `settings_data.json`.
 
 ### Component framework
 
@@ -234,7 +238,7 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 
 - Restrict nesting via `"blocks": [...]`. Use `{ "type": "@theme" }` for any theme block, `{ "type": "@app" }` for app blocks, or specific names.
 - `"tag": null` removes the auto-wrapping element; emit `{{ block.shopify_attributes }}` on your own root.
-- **NEVER edit `{% schema %}` directly** when schemas are generated from source — modify the source and regenerate.
+- **NEVER edit `{% schema %}` directly** when schemas are generated from source; modify the source and regenerate.
 
 ## Coding standards
 
@@ -257,7 +261,7 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 
 ### HTML
 
-- IDs: CamelCase + section/block ID suffix — `id="ProductModal-{{ section.id }}"`.
+- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`.
 - Typed inputs (`type="search|tel|url|date|time|datetime-local|month|week|color"`) for native validation and mobile keyboards. `pattern=` for regex validation; `formnovalidate` / `formaction` on submit buttons that bypass validation or post elsewhere.
 - View transitions: declare `@view-transition` and per-element `view-transition-name` for smooth navigation.
 - Avoid `position: fixed` near the bottom of the viewport on mobile (the on-screen keyboard overlaps it).
@@ -279,12 +283,12 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 
 ### Component-specific accessibility patterns
 
-Load `docs/accessibility-patterns.md` before implementing or modifying any of these widgets: **accordion, breadcrumb, cart drawer, chat window, color swatch, combobox, carousel, disclosure, dropdown navigation, flip card, form, modal, product card, slider, switch, tab, tooltip**. Anything that maps to one of these primitives (`<dialog>` ≈ modal; toasts ≈ `aria-live` region; bare "dropdown" ≈ combobox / disclosure / dropdown navigation depending on behaviour) — load the same file and use the nearest match. Anything else: global rules above + WCAG.
+Load `docs/accessibility-patterns.md` before implementing or modifying any of these widgets: **accordion, breadcrumb, cart drawer, chat window, color swatch, combobox, carousel, disclosure, dropdown navigation, flip card, form, modal, product card, slider, switch, tab, tooltip**. Anything that maps to one of these primitives (`<dialog>` ≈ modal; toasts ≈ `aria-live` region; bare "dropdown" ≈ combobox / disclosure / dropdown navigation depending on behaviour); load the same file and use the nearest match. Anything else: global rules above + WCAG.
 
 ## Translations
 
 - Keys live in `locales/en.default.json` (storefront) and `locales/en.default.schema.json` (schema).
-- **Add the key to the locale file before referencing it** — theme-check fails red on dangling keys.
+- **Add the key to the locale file before referencing it**; theme-check fails red on dangling keys.
 - When adding storefront-visible strings, mirror into non-English locale files (`locales/it.json`, `locales/ro.json`, etc.) with `TODO` placeholders if real translations aren't available.
 
 ## Theme settings
