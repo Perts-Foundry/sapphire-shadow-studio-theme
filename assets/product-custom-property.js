@@ -34,17 +34,13 @@ class ProductCustomProperty extends Component {
   }
 
   /**
-   * Constructs a contextual validation message from the block's heading so
-   * the native bubble reads "Please fill out 'Add Custom Text' before adding
-   * to cart." instead of the generic browser default. Matches the style
-   * used by blocks/applique-pattern-select.liquid.
+   * Sets a short contextual validation message on the native bubble so it
+   * matches the style of blocks/applique-pattern-select.liquid and the
+   * return-policy acknowledgement, instead of the generic browser default.
+   * The bubble anchors to the field, so we don't need to name it in the copy.
    */
   #handleInvalid = () => {
-    const input = this.refs.textInput;
-    if (!input) return;
-    const heading = this.querySelector('.__heading')?.textContent?.trim();
-    const fieldName = heading ? `"${heading}"` : 'this field';
-    input.setCustomValidity(`Please fill out ${fieldName} before adding to cart.`);
+    this.refs.textInput?.setCustomValidity('Please fill out this field before adding to cart.');
   };
 
   #updateCharacterCount() {
