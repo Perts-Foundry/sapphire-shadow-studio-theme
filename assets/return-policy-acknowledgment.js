@@ -98,35 +98,45 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
   }
 
   /**
-   * Wires a capture-phase click listener on the sticky bar's add-to-cart
-   * button. When any field in the main form is invalid, the listener
-   * prevents the puppet click, scrolls the first invalid field into view,
-   * and explicitly reports validity on the form so the user gets the same
-   * native bubble they'd get from the main form's submit.
+   * Wires a window-level capture-phase click listener that intercepts the
+   * sticky bar's add-to-cart button. Window is above document in the
+   * capture chain, so this listener runs BEFORE the framework's
+   * document-level delegation listener for `on:click="/handleAddToCartClick"`
+   * (assets/component.js#registerEventListeners). When the form is invalid,
+   * stopImmediatePropagation prevents handleAddToCartClick from ever
+   * running, which avoids the spurious "added" burst animation and the
+   * fly-to-cart element that handleAddToCartClick would otherwise append
+   * unconditionally on click (assets/sticky-add-to-cart.js#handleAddToCartClick).
+   * Without that ordering, the animation runs even when the cart-add was
+   * blocked, leading users to believe the item was added when it wasn't.
    */
   #wireStickyBarInterceptor() {
-    const section = this.closest('.shopify-section');
-    if (!section) return;
-    const stickyButton = /** @type {HTMLButtonElement | null} */ (
-      section.querySelector('sticky-add-to-cart [ref="addToCartButton"]')
-    );
-    if (!stickyButton) return;
-
-    stickyButton.addEventListener('click', this.#handleStickyClick, {
+    window.addEventListener('click', this.#handleAnyClick, {
       capture: true,
       signal: this.#abortController.signal,
     });
   }
 
   /** @param {MouseEvent} event */
-  #handleStickyClick = (event) => {
+  #handleAnyClick = (event) => {
+    const eventTarget = /** @type {Element | null} */ (event.composedPath()[0] ?? null);
+    if (!(eventTarget instanceof Element)) return;
+
+    // Match the sticky bar's add-to-cart button. Walk up to ensure the click
+    // originated inside it (the button has child SVGs / spans that catch the
+    // click target).
+    const stickyAtcButton = eventTarget.closest('sticky-add-to-cart [ref="addToCartButton"]');
+    if (!stickyAtcButton) return;
+
+    // Only act on the sticky bar within MY section; ignore other product
+    // forms (recommendations, quick-add modal, etc.).
+    if (stickyAtcButton.closest('.shopify-section') !== this.closest('.shopify-section')) return;
+
     const form = this.#findProductForm()?.querySelector('form');
     // checkValidity fires `invalid` on each invalid field, which lets each
     // field's own handler set its custom validity message before we report.
     if (!form || form.checkValidity()) return;
 
-    // Stop the sticky bar's handleAddToCartClick from puppet-clicking the
-    // main form's submit button; that path can't show the validation bubble.
     event.preventDefault();
     event.stopImmediatePropagation();
 
