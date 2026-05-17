@@ -395,6 +395,7 @@
     "quantity": "Quantity",
     "quick_order_list": "Quick order list",
     "read_only": "Read only",
+    "return_policy_acknowledgment": "Final sale checkbox",
     "row": "Row",
     "search": "Search",
     "search_input": "Search input",
@@ -1060,6 +1061,11 @@
     "review_count": "Review count",
     "right": "Right",
     "right_padding": "Right padding",
+    "return_policy_acknowledgment": {
+      "label": "Checkbox label",
+      "default_label": "I understand this item is personalized and final sale. No returns or exchanges.",
+      "label_info": "Shown next to the required checkbox on the product page."
+    },
     "row": "Row",
     "scroll_speed": "Time to next announcement",
     "search": "Search",
