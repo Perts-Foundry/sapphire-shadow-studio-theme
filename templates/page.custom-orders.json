@@ -119,7 +119,7 @@
           "static": true,
           "settings": {
             "media_type": "image",
-            "image": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg"
+            "image": "shopify://shop_images/studio.jpg"
           },
           "blocks": {}
         },
@@ -542,7 +542,7 @@
           "static": true,
           "settings": {
             "media_type": "image",
-            "image": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg"
+            "image": "shopify://shop_images/Kitkat-Rory.jpg"
           },
           "blocks": {}
         },
