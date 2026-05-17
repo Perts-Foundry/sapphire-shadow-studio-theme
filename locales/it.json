@@ -333,7 +333,10 @@
       "quantity_maximum": "Massimo di {{ maximum }}",
       "in_cart": "nel carrello",
       "default_title": "Titolo predefinito",
-      "sticky_add_to_cart": "Barra per l'aggiunta rapida al carrello"
+      "sticky_add_to_cart": "Barra per l'aggiunta rapida al carrello",
+      "return_policy_acknowledgment_invalid": "TODO: Please acknowledge the return policy before adding to cart.",
+      "return_policy_link_label": "TODO: See the Return Policy",
+      "custom_text_invalid": "TODO: Please fill out this field before adding to cart."
     }
   }
 }

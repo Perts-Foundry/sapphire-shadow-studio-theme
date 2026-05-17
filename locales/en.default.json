@@ -356,7 +356,10 @@
       "quantity_maximum": "Maximum of {{ maximum }}",
       "in_cart": "in cart",
       "default_title": "Default Title",
-      "sticky_add_to_cart": "Quick add to cart bar"
+      "sticky_add_to_cart": "Quick add to cart bar",
+      "return_policy_acknowledgment_invalid": "Please acknowledge the return policy before adding to cart.",
+      "return_policy_link_label": "See the Return Policy",
+      "custom_text_invalid": "Please fill out this field before adding to cart."
     }
   }
 }

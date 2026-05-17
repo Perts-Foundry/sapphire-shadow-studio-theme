@@ -239,7 +239,19 @@ class StickyAddToCartComponent extends Component {
 
   // Public action handlers
   /**
-   * Handles the add to cart button click in the sticky bar
+   * Handles the add to cart button click in the sticky bar.
+   *
+   * This method puppet-clicks the main form's submit button and
+   * unconditionally sets dataset.added='true' on its own button + appends a
+   * fly-to-cart element before any cart logic runs. That makes the
+   * "added" animation appear even when the cart-add was blocked by an
+   * invalid form. Sticky-bar invalid-submit feedback (intercept the click
+   * before this handler runs, scroll the first invalid field into view,
+   * and call form.reportValidity()) is currently provided by
+   * assets/return-policy-acknowledgment.js#wireStickyBarInterceptor.
+   * If a product template uses required fields but does NOT include the
+   * return-policy-acknowledgment block, the feedback path silently
+   * disappears for that product.
    */
   handleAddToCartClick = async () => {
     if (!this.#targetAddToCartButton) return;

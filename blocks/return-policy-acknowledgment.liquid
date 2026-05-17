@@ -1,0 +1,152 @@
+{%- doc -%}
+  Required acknowledgement checkbox for products that are final-sale (made-to-order,
+  embroidered, personalized). The block:
+
+  - Renders a required checkbox bound to the product form via `form="..."`, so the
+    native HTML5 submit-time validation blocks Add to Cart until ticked.
+  - Records the acknowledgement as a `properties[Return policy acknowledged]`
+    line-item property for support-ticket triage. Not a click-wrap contract.
+  - Hides the accelerated-checkout container (Shop Pay / Apple Pay / Google Pay)
+    while the box is unchecked via a `data-return-policy-pending` attribute set
+    on the sibling `<product-form-component>`. The cross-block CSS hook is
+    documented inline in `blocks/accelerated-checkout.liquid`.
+
+  This block depends on a sibling `buy-buttons` block in the same section: the
+  `product_form_id` is derived from the section id (`BuyButtons-ProductForm-{section.id}`)
+  and the `<product-form-component>` element is queried within the section root by JS.
+
+  Add the block to any product template via the theme editor. The block has no
+  template restriction in its schema (theme-check rejects `enabled_on` on
+  blocks); when added outside a product context the JS no-ops and logs a
+  diagnostic warning to the console.
+{%- enddoc -%}
+
+{%- liquid
+  assign block_settings = block.settings
+  assign product_form_id = 'BuyButtons-ProductForm-' | append: section.id
+  assign element_id = 'ReturnPolicyAck-' | append: block.id
+  assign label_text = block_settings.checkbox_label
+-%}
+
+<div
+  class="spacing-style"
+  style="{% render 'spacing-style', settings: block_settings %}"
+  {{ block.shopify_attributes }}
+>
+  {% render 'checkbox',
+    name: 'properties[Return policy acknowledged]',
+    value: 'yes',
+    label: label_text,
+    id: element_id,
+    checked: false,
+    events: 'on:change="/handleChange"',
+    disabled: false,
+    required: true,
+    formId: product_form_id,
+    inputRef: 'checkbox'
+  %}
+
+  <p class="return-policy-acknowledgment__policy-link">
+    <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
+  </p>
+
+  {%- comment -%}
+    Source of the translated validation message; passed to setCustomValidity so
+    the browser shows its native HTML5 bubble on submit (matches the UX of
+    blocks/applique-pattern-select.liquid). Permanently hidden visually.
+  {%- endcomment -%}
+  <span
+    hidden
+    ref="invalidMessage"
+  >{{- 'products.product.return_policy_acknowledgment_invalid' | t | escape -}}</span>
+
+  <noscript>
+    <style>
+      product-form-component [ref="acceleratedCheckoutButtonContainer"] { display: none; }
+    </style>
+  </noscript>
+</div>
+
+{% stylesheet %}
+  return-policy-acknowledgment-component {
+    display: block;
+    width: 100%;
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
+    margin-block: var(--padding-xs) 0;
+    font-size: var(--font-size--xs);
+  }
+
+  /*
+   * The shared checkbox snippet (snippets/checkbox.liquid) ships with
+   * white-space: nowrap + text-overflow: ellipsis on .checkbox__label-text
+   * (assets/base.css:2634-2639) because it was designed for short labels
+   * (e.g. "Include gift wrap"). Our acknowledgement copy is a full sentence
+   * and gets truncated mid-word on narrow product columns. Allow wrapping
+   * here only; line-height + flex-start keep the icon aligned with the first
+   * line when the label wraps.
+   */
+  return-policy-acknowledgment-component .checkbox__label {
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+
+  return-policy-acknowledgment-component .checkbox__label-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /*
+   * Cross-block gate. Fail-closed: the selector matches whenever the ack
+   * component does NOT have data-return-policy-pending='false', which covers
+   * (a) the initial state before JS sets the attribute on connectedCallback
+   * and (b) the unchecked state once JS is running. The :has() scope also
+   * keeps the gate local to the section that contains the ack block.
+   *
+   * Cross-block dependency: targets the accelerated-checkout container by
+   * its `ref` attribute (see blocks/accelerated-checkout.liquid). Renaming
+   * the ref will silently disable the gate.
+   *
+   * The sticky add-to-cart bar is NOT hidden here. Instead the JS
+   * intercepts its click in capture phase, scrolls the checkbox into view,
+   * and calls reportValidity() to force the native bubble. See
+   * assets/return-policy-acknowledgment.js#handleStickyClick.
+   */
+  .shopify-section:has(
+    return-policy-acknowledgment-component:not([data-return-policy-pending='false'])
+  ) [ref='acceleratedCheckoutButtonContainer'] {
+    display: none;
+  }
+{% endstylesheet %}
+
+<script
+  src="{{ 'return-policy-acknowledgment.js' | asset_url }}"
+  type="module"
+  fetchpriority="low"
+></script>
+
+{% schema %}
+{
+  "name": "t:names.return_policy_acknowledgment",
+  "tag": "return-policy-acknowledgment-component",
+  "settings": [
+    {
+      "type": "text",
+      "id": "checkbox_label",
+      "label": "t:settings.return_policy_acknowledgment.label",
+      "default": "t:settings.return_policy_acknowledgment.default_label",
+      "info": "t:settings.return_policy_acknowledgment.label_info"
+    },
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-start", "label": "t:settings.left", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-end", "label": "t:settings.right", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 }
+  ],
+  "presets": [
+    { "name": "t:names.return_policy_acknowledgment", "category": "t:categories.product" }
+  ]
+}
+{% endschema %}

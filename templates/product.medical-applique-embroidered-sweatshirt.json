@@ -233,6 +233,16 @@
               },
               "blocks": {}
             },
+            "return_policy_ack_001": {
+              "type": "return-policy-acknowledgment",
+              "settings": {
+                "padding-block-start": 8,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
             "buy_buttons_eYQEYi": {
               "type": "buy-buttons",
               "settings": {
@@ -604,6 +614,7 @@
             "divider_VJhene",
             "variant_picker_R3rGDr",
             "applique_pattern_001",
+            "return_policy_ack_001",
             "buy_buttons_eYQEYi",
             "accordion_HrL6gj"
           ]
