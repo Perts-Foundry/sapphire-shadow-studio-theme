@@ -171,6 +171,15 @@
               },
               "blocks": {}
             },
+            "link_custom_orders": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/pages/custom-orders",
+                "link_label": "Custom Orders"
+              },
+              "blocks": {}
+            },
             "link_products": {
               "type": "footer-link",
               "settings": {
@@ -247,6 +256,7 @@
           },
           "block_order": [
             "link_about",
+            "link_custom_orders",
             "link_products",
             "footer_link_B6zd8p",
             "link_faq",
