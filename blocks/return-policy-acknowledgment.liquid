@@ -77,6 +77,26 @@
   }
 
   /*
+   * The shared checkbox snippet (snippets/checkbox.liquid) ships with
+   * white-space: nowrap + text-overflow: ellipsis on .checkbox__label-text
+   * (assets/base.css:2634-2639) because it was designed for short labels
+   * (e.g. "Include gift wrap"). Our acknowledgement copy is a full sentence
+   * and gets truncated mid-word on narrow product columns. Allow wrapping
+   * here only; line-height + flex-start keep the icon aligned with the first
+   * line when the label wraps.
+   */
+  return-policy-acknowledgment-component .checkbox__label {
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+
+  return-policy-acknowledgment-component .checkbox__label-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /*
    * Cross-block gate. Fail-closed: the selector matches whenever the ack
    * component does NOT have data-return-policy-pending='false', which covers
    * (a) the initial state before JS sets the attribute on connectedCallback
