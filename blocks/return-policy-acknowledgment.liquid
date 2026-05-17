@@ -23,7 +23,6 @@
   assign block_settings = block.settings
   assign product_form_id = 'BuyButtons-ProductForm-' | append: section.id
   assign element_id = 'ReturnPolicyAck-' | append: block.id
-  assign error_id = element_id | append: '-error'
   assign label_text = block_settings.checkbox_label
 -%}
 
@@ -49,11 +48,14 @@
     <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
   </p>
 
+  {%- comment -%}
+    Source of the translated validation message; passed to setCustomValidity so
+    the browser shows its native HTML5 bubble on submit (matches the UX of
+    blocks/applique-pattern-select.liquid). Permanently hidden visually.
+  {%- endcomment -%}
   <span
-    class="return-policy-acknowledgment__error"
-    id="{{ error_id }}"
-    ref="error"
     hidden
+    ref="invalidMessage"
   >{{- 'products.product.return_policy_acknowledgment_invalid' | t | escape -}}</span>
 
   <noscript>
@@ -72,13 +74,6 @@
   return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
     margin-block: var(--padding-xs) 0;
     font-size: var(--font-size--xs);
-  }
-
-  return-policy-acknowledgment-component .return-policy-acknowledgment__error {
-    display: block;
-    margin-block-start: var(--padding-xs);
-    color: var(--color-foreground);
-    font-size: var(--font-size--sm);
   }
 
   /*

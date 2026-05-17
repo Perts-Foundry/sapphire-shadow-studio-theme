@@ -3,21 +3,24 @@ import { Component } from '@theme/component';
 /**
  * @typedef {object} ReturnPolicyAcknowledgmentRefs
  * @property {HTMLInputElement} checkbox
- * @property {HTMLElement} error
+ * @property {HTMLElement} invalidMessage
  */
 
 /**
  * Gates the product form on a required "final sale" acknowledgement checkbox.
  *
  * The standard Add to Cart submit is gated by the checkbox's HTML5 `required`
- * attribute (wired via the snippet). This component layers on top by:
- *   1. Setting `data-return-policy-pending` on its own custom-element root.
- *      A `:has()` CSS rule in the block stylesheet uses that attribute to
- *      hide the sibling accelerated-checkout container (Shop Pay / Apple Pay
- *      / Google Pay) within the same section. The CSS rule is fail-closed:
- *      anything other than `'false'` (including absent) keeps the gate up.
- *   2. Surfacing the validation message inline via the `error` ref instead of
- *      relying solely on the browser's invalid bubble.
+ * attribute (wired via the snippet). On submit attempts with the box unticked
+ * the browser fires `invalid` on the checkbox; we set `setCustomValidity` to
+ * the translated message and let the browser render its native bubble (same
+ * UX as blocks/applique-pattern-select.liquid).
+ *
+ * Separately, this component sets `data-return-policy-pending` on its own
+ * custom-element root. A `:has()` CSS rule in the block stylesheet uses that
+ * attribute to hide the sibling accelerated-checkout container (Shop Pay /
+ * Apple Pay / Google Pay) within the same section. The CSS rule is
+ * fail-closed: anything other than `'false'` (including absent) keeps the
+ * gate up.
  *
  * The `invalid` event does not bubble, so the framework's auto event delegation
  * cannot catch it; we attach the listener manually in connectedCallback.
@@ -25,7 +28,7 @@ import { Component } from '@theme/component';
  * @extends Component<ReturnPolicyAcknowledgmentRefs>
  */
 class ReturnPolicyAcknowledgmentComponent extends Component {
-  requiredRefs = ['checkbox', 'error'];
+  requiredRefs = ['checkbox', 'invalidMessage'];
 
   /** @type {string} */
   #invalidMessage = '';
@@ -40,12 +43,11 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     super.connectedCallback();
 
     this.#checkbox = this.refs.checkbox;
-    this.#invalidMessage = this.refs.error.textContent?.trim() ?? '';
+    this.#invalidMessage = this.refs.invalidMessage.textContent?.trim() ?? '';
     this.#boundHandleInvalid = (event) => this.#handleInvalid(event);
     this.#checkbox.addEventListener('invalid', this.#boundHandleInvalid);
 
     this.#checkbox.setCustomValidity('');
-    this.refs.error.hidden = true;
     this.#syncGate();
 
     if (!this.#findProductForm()) {
@@ -69,15 +71,14 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
 
   handleChange() {
     this.refs.checkbox.setCustomValidity('');
-    this.refs.error.hidden = true;
     this.#syncGate();
   }
 
-  /** @param {Event} event */
-  #handleInvalid(event) {
-    event.preventDefault();
+  /** @param {Event} _event */
+  #handleInvalid(_event) {
+    // Do not preventDefault: the browser renders the native validation bubble
+    // with the message we set via setCustomValidity. Matches applique-pattern-select.
     this.refs.checkbox.setCustomValidity(this.#invalidMessage);
-    this.refs.error.hidden = false;
   }
 
   #syncGate() {
