@@ -117,7 +117,10 @@
         "media": {
           "type": "_media-without-appearance",
           "static": true,
-          "settings": {},
+          "settings": {
+            "media_type": "image",
+            "image": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg"
+          },
           "blocks": {}
         },
         "content": {
@@ -537,7 +540,10 @@
         "media": {
           "type": "_media-without-appearance",
           "static": true,
-          "settings": {},
+          "settings": {
+            "media_type": "image",
+            "image": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg"
+          },
           "blocks": {}
         },
         "content": {
