@@ -12,9 +12,40 @@ import { Component } from '@theme/component';
  * @extends Component<ProductCustomPropertyRefs>
  */
 class ProductCustomProperty extends Component {
+  connectedCallback() {
+    super.connectedCallback();
+
+    // Wire a contextual validation message on required text/textarea inputs.
+    // (Checkbox input type renders via snippets/checkbox.liquid and has no
+    // textInput ref; required checkboxes rely on the browser default message,
+    // which is fine since they're only used for short opt-in labels.)
+    const input = this.refs.textInput;
+    if (input?.hasAttribute('required')) {
+      input.addEventListener('invalid', this.#handleInvalid);
+    }
+  }
+
   handleInput() {
     this.#updateCharacterCount();
+    // Clear any custom validity message as soon as the user starts typing,
+    // so the field can be re-validated against required + maxlength on the
+    // next submit attempt.
+    this.refs.textInput?.setCustomValidity('');
   }
+
+  /**
+   * Constructs a contextual validation message from the block's heading so
+   * the native bubble reads "Please fill out 'Add Custom Text' before adding
+   * to cart." instead of the generic browser default. Matches the style
+   * used by blocks/applique-pattern-select.liquid.
+   */
+  #handleInvalid = () => {
+    const input = this.refs.textInput;
+    if (!input) return;
+    const heading = this.querySelector('.__heading')?.textContent?.trim();
+    const fieldName = heading ? `"${heading}"` : 'this field';
+    input.setCustomValidity(`Please fill out ${fieldName} before adding to cart.`);
+  };
 
   #updateCharacterCount() {
     const { characterCount, textInput } = this.refs;
