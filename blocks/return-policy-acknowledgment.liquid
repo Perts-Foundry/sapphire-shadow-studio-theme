@@ -60,8 +60,7 @@
 
   <noscript>
     <style>
-      product-form-component [ref="acceleratedCheckoutButtonContainer"],
-      sticky-add-to-cart { display: none; }
+      product-form-component [ref="acceleratedCheckoutButtonContainer"] { display: none; }
     </style>
   </noscript>
 </div>
@@ -81,26 +80,21 @@
    * Cross-block gate. Fail-closed: the selector matches whenever the ack
    * component does NOT have data-return-policy-pending='false', which covers
    * (a) the initial state before JS sets the attribute on connectedCallback
-   * and (b) the unchecked state once JS is running. The :has() scope keeps
-   * the gate local to the section that contains the ack block.
+   * and (b) the unchecked state once JS is running. The :has() scope also
+   * keeps the gate local to the section that contains the ack block.
    *
-   * Hides two controls that would otherwise bypass the gate:
-   *   1. The accelerated-checkout container in <product-form-component>
-   *      (Shop Pay / Apple Pay / Google Pay).
-   *   2. <sticky-add-to-cart>, whose button puppet-clicks the main form's
-   *      submit button via assets/sticky-add-to-cart.js#handleAddToCartClick.
-   *      The puppet click goes through form.checkValidity() which fires the
-   *      silent `invalid` event but does not interactively show the native
-   *      bubble, so the click would otherwise appear to silently fail.
-   *
-   * Cross-block dependencies: targets accelerated-checkout's container by
+   * Cross-block dependency: targets the accelerated-checkout container by
    * its `ref` attribute (see blocks/accelerated-checkout.liquid). Renaming
-   * either the ref or the <sticky-add-to-cart> element will silently
-   * disable the corresponding side of the gate.
+   * the ref will silently disable the gate.
+   *
+   * The sticky add-to-cart bar is NOT hidden here — instead the JS
+   * intercepts its click in capture phase, scrolls the checkbox into view,
+   * and calls reportValidity() to force the native bubble. See
+   * assets/return-policy-acknowledgment.js#handleStickyClick.
    */
   .shopify-section:has(
     return-policy-acknowledgment-component:not([data-return-policy-pending='false'])
-  ) :is([ref='acceleratedCheckoutButtonContainer'], sticky-add-to-cart) {
+  ) [ref='acceleratedCheckoutButtonContainer'] {
     display: none;
   }
 {% endstylesheet %}

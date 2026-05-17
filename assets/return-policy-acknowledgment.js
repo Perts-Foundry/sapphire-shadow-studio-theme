@@ -22,6 +22,14 @@ import { Component } from '@theme/component';
  * fail-closed: anything other than `'false'` (including absent) keeps the
  * gate up.
  *
+ * The sticky add-to-cart bar (assets/sticky-add-to-cart.js) puppet-clicks the
+ * main form's submit button via .click() on a non-submit button. That path
+ * fires the silent `invalid` event but the browser does not interactively
+ * show the native bubble (it treats the bubble as a user-gesture-gated UI).
+ * We intercept the sticky bar's click in capture phase: when the checkbox is
+ * unchecked, cancel the puppet, scroll the checkbox into view, and call
+ * reportValidity() to force the bubble.
+ *
  * The `invalid` event does not bubble, so the framework's auto event delegation
  * cannot catch it; we attach the listener manually in connectedCallback.
  *
@@ -39,6 +47,9 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
   /** @type {((event: Event) => void) | null} */
   #boundHandleInvalid = null;
 
+  /** @type {AbortController} */
+  #abortController = new AbortController();
+
   connectedCallback() {
     super.connectedCallback();
 
@@ -49,6 +60,7 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
 
     this.#checkbox.setCustomValidity('');
     this.#syncGate();
+    this.#wireStickyBarInterceptor();
 
     if (!this.#findProductForm()) {
       // The gate has no effect on non-product contexts (cart, custom pages,
@@ -67,6 +79,7 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     }
     this.#boundHandleInvalid = null;
     this.#checkbox = null;
+    this.#abortController.abort();
   }
 
   handleChange() {
@@ -79,18 +92,52 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     // Do not preventDefault: the browser renders the native validation bubble
     // with the message we set via setCustomValidity. Matches applique-pattern-select.
     this.refs.checkbox.setCustomValidity(this.#invalidMessage);
+  }
 
-    // When submit was triggered by a control outside the viewport (e.g. the
-    // sticky add-to-cart bar puppet-clicking the main form's button via
-    // assets/sticky-add-to-cart.js#handleAddToCartClick), the native bubble
-    // lands off-screen and the click appears to silently fail. Scroll the
-    // checkbox into view so the bubble is anchored somewhere the user can see.
+  /**
+   * Wires a capture-phase click listener on the sticky bar's add-to-cart
+   * button. When the gate is up, the listener prevents the puppet click,
+   * scrolls the checkbox into view, and explicitly reports validity so the
+   * user gets the same native bubble they'd get from the main form's submit.
+   */
+  #wireStickyBarInterceptor() {
+    const section = this.closest('.shopify-section');
+    if (!section) return;
+    const stickyButton = /** @type {HTMLButtonElement | null} */ (
+      section.querySelector('sticky-add-to-cart [ref="addToCartButton"]')
+    );
+    if (!stickyButton) return;
+
+    stickyButton.addEventListener('click', this.#handleStickyClick, {
+      capture: true,
+      signal: this.#abortController.signal,
+    });
+  }
+
+  /** @param {MouseEvent} event */
+  #handleStickyClick = (event) => {
+    if (this.refs.checkbox.checked) return;
+
+    // Stop the sticky bar's handleAddToCartClick from puppet-clicking the
+    // main form's submit button; that path can't show the validation bubble.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    // Set the custom validity message before reportValidity so the bubble
+    // shows our translated string instead of the browser default.
+    this.refs.checkbox.setCustomValidity(this.#invalidMessage);
+
     const rect = this.refs.checkbox.getBoundingClientRect();
     const offscreen = rect.bottom < 0 || rect.top > window.innerHeight;
     if (offscreen) {
       this.refs.checkbox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Defer reportValidity until the smooth scroll settles so the bubble
+      // anchors to the input at its final viewport position.
+      setTimeout(() => this.refs.checkbox.reportValidity(), 400);
+    } else {
+      this.refs.checkbox.reportValidity();
     }
-  }
+  };
 
   #syncGate() {
     this.dataset.returnPolicyPending = this.refs.checkbox.checked ? 'false' : 'true';
