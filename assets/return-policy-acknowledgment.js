@@ -79,6 +79,17 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     // Do not preventDefault: the browser renders the native validation bubble
     // with the message we set via setCustomValidity. Matches applique-pattern-select.
     this.refs.checkbox.setCustomValidity(this.#invalidMessage);
+
+    // When submit was triggered by a control outside the viewport (e.g. the
+    // sticky add-to-cart bar puppet-clicking the main form's button via
+    // assets/sticky-add-to-cart.js#handleAddToCartClick), the native bubble
+    // lands off-screen and the click appears to silently fail. Scroll the
+    // checkbox into view so the bubble is anchored somewhere the user can see.
+    const rect = this.refs.checkbox.getBoundingClientRect();
+    const offscreen = rect.bottom < 0 || rect.top > window.innerHeight;
+    if (offscreen) {
+      this.refs.checkbox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
   #syncGate() {
