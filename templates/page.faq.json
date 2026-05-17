@@ -83,7 +83,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I do a completely custom order/design?",
-            "answer": "<p>Absolutely! We love working on custom projects.</p><p><a href=\"/policies/contact-information\" target=\"_blank\" rel=\"noopener noreferrer\">Get in touch</a> with your idea and we'll chat about making it happen. Fair warning: our cats may need to approve the design first.</p>",
+            "answer": "<p>Absolutely! We love working on custom projects.</p><p>See our <a href=\"/pages/custom-orders\" target=\"_blank\" rel=\"noopener noreferrer\">Custom Orders page</a> for what we can customize, how the process works, and lead-time expectations. Ready to start? <a href=\"/pages/contact\" target=\"_blank\" rel=\"noopener noreferrer\">Get in touch</a>.</p>",
             "custom_anchor": ""
           }
         },
