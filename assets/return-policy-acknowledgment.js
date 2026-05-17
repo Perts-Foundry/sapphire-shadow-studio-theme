@@ -26,9 +26,12 @@ import { Component } from '@theme/component';
  * main form's submit button via .click() on a non-submit button. That path
  * fires the silent `invalid` event but the browser does not interactively
  * show the native bubble (it treats the bubble as a user-gesture-gated UI).
- * We intercept the sticky bar's click in capture phase: when the checkbox is
- * unchecked, cancel the puppet, scroll the checkbox into view, and call
- * reportValidity() to force the bubble.
+ * We intercept the sticky bar's click in capture phase: if any field in the
+ * main form is invalid (the ack checkbox, the applique pattern selector, or
+ * any future required field), cancel the puppet, scroll the first invalid
+ * field into view, and call form.reportValidity() to force the bubble. The
+ * scope deliberately reaches across blocks: any product page that uses the
+ * sticky bar should give the same feedback for any required field.
  *
  * The `invalid` event does not bubble, so the framework's auto event delegation
  * cannot catch it; we attach the listener manually in connectedCallback.
@@ -96,9 +99,10 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
 
   /**
    * Wires a capture-phase click listener on the sticky bar's add-to-cart
-   * button. When the gate is up, the listener prevents the puppet click,
-   * scrolls the checkbox into view, and explicitly reports validity so the
-   * user gets the same native bubble they'd get from the main form's submit.
+   * button. When any field in the main form is invalid, the listener
+   * prevents the puppet click, scrolls the first invalid field into view,
+   * and explicitly reports validity on the form so the user gets the same
+   * native bubble they'd get from the main form's submit.
    */
   #wireStickyBarInterceptor() {
     const section = this.closest('.shopify-section');
@@ -116,26 +120,27 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
 
   /** @param {MouseEvent} event */
   #handleStickyClick = (event) => {
-    if (this.refs.checkbox.checked) return;
+    const form = this.#findProductForm()?.querySelector('form');
+    // checkValidity fires `invalid` on each invalid field, which lets each
+    // field's own handler set its custom validity message before we report.
+    if (!form || form.checkValidity()) return;
 
     // Stop the sticky bar's handleAddToCartClick from puppet-clicking the
     // main form's submit button; that path can't show the validation bubble.
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    // Set the custom validity message before reportValidity so the bubble
-    // shows our translated string instead of the browser default.
-    this.refs.checkbox.setCustomValidity(this.#invalidMessage);
-
-    const rect = this.refs.checkbox.getBoundingClientRect();
+    const firstInvalid = /** @type {HTMLElement | null} */ (form.querySelector(':invalid'));
+    const target = firstInvalid ?? this.refs.checkbox;
+    const rect = target.getBoundingClientRect();
     const offscreen = rect.bottom < 0 || rect.top > window.innerHeight;
     if (offscreen) {
-      this.refs.checkbox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       // Defer reportValidity until the smooth scroll settles so the bubble
-      // anchors to the input at its final viewport position.
-      setTimeout(() => this.refs.checkbox.reportValidity(), 400);
+      // anchors to the field at its final viewport position.
+      setTimeout(() => form.reportValidity(), 400);
     } else {
-      this.refs.checkbox.reportValidity();
+      form.reportValidity();
     }
   };
 
