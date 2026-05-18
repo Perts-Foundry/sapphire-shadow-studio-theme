@@ -222,10 +222,10 @@ jobs:
             const fail = process.env.FAIL_COUNT;
             const skip = process.env.SKIP_COUNT;
             const banner = (fail === '0' && skip === '0')
-              ? '✅ **All checks passed** — comment `deploy` to deploy and merge.'
+              ? '✅ **All checks passed.** Comment `deploy` to deploy and merge.'
               : (fail === '0')
-                ? `⚠️ **${skip} skipped** — every check should run; investigate why.`
-                : `❌ **${fail} Failure(s)** — please review the details below.`;
+                ? `⚠️ **${skip} skipped.** Every check should run; investigate why.`
+                : `❌ **${fail} Failure(s).** Please review the details below.`;
 
             const status = (code) => {
               if (!code || code === '') return '⏭️';

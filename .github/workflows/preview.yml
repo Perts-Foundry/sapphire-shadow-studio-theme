@@ -75,7 +75,7 @@ jobs:
               marker,
               '# Preview Deployment',
               '',
-              '✅ **Preview theme deployed** — open the URL below to inspect.',
+              '✅ **Preview theme deployed.** Open the URL below to inspect.',
               '',
               `**Commit:** \`${sha}\` | **Run:** [#${context.runNumber}](${runUrl})`,
               '',
@@ -162,7 +162,7 @@ jobs:
         # only used to locate `./.github/actions/...` definitions; the delete
         # operation itself uses no files from this tree (the Shopify CLI
         # is materialised by setup-shopify-cli's npm ci, which reads main's
-        # package.json/package-lock.json — that is the deliberate canonical
+        # package.json/package-lock.json; that is the deliberate canonical
         # CLI version source).
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -189,7 +189,7 @@ jobs:
               marker,
               '# Preview Deployment',
               '',
-              '🗑️ **Preview theme deleted** — PR closed.',
+              '🗑️ **Preview theme deleted.** PR closed.',
             ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
