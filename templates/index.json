@@ -79,7 +79,7 @@
         "vertical_alignment_flex_direction_column": "flex-end",
         "gap": 28,
         "section_width": "page-width",
-        "section_height": "large",
+        "section_height": "full-screen",
         "section_height_custom": 50,
         "color_scheme": "sss-dark-scheme",
         "toggle_overlay": false,
