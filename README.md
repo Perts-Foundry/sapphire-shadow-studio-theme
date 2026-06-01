@@ -1,96 +1,188 @@
 # Sapphire Shadow Studio theme
 
-Custom Shopify theme based on Shopify's [Horizon](https://github.com/Shopify/horizon) flagship theme.
+A custom Shopify storefront theme for Sapphire Shadow Studio, built on Shopify's [Horizon](https://github.com/Shopify/horizon) flagship theme and shipped through a PR-comment-driven CI/CD pipeline.
 
-[Local development](#local-development) | [CI/CD](#cicd) | [Branches and themes](#branches-and-themes) | [Secrets and rotation](#secrets-and-rotation) | [Rollback](#rollback) | [Staying current with Horizon](#staying-current-with-horizon) | [License](#license)
+The interesting part of this repo is not the theme; it is the deploy model. `main` is the source of truth. The live customer-facing theme is **disconnected from GitHub** and is written to only by the deploy workflow. You ship a change by commenting `deploy` on a green pull request. Admin edits made in the Shopify Customize/Code editor are captured separately on a `shopify-sync` branch and reconciled back into `main`, never pushed straight to live.
 
-## Local development
+**Status:** single-merchant private storefront theme in active use. It is standalone (conceptually based on Horizon, but not a GitHub fork), and it is not a Shopify Theme Store submission. See the [license](#deeper-docs-and-license) for the use restriction this inherits from Horizon.
+
+[Quick start](#quick-start) | [Repo layout](#repo-layout) | [How shipping works](#how-shipping-works) | [Workflows](#workflows) | [Branches and themes](#branches-and-themes) | [Secrets and variables](#secrets-and-variables) | [Rollback](#rollback) | [Troubleshooting](#troubleshooting) | [Staying current with Horizon](#staying-current-with-horizon) | [Development](#development-and-contributing) | [Deeper docs](#deeper-docs-and-license)
+
+## At a glance
+
+| | |
+|---|---|
+| Stack | Liquid + theme blocks. No build step; files in `assets/` ship as-is. |
+| Tooling | Shopify CLI pinned at `@shopify/cli` `3.94.3` (devDependency) |
+| Runtime | Node `>=20`, npm |
+| Deploy model | Comment `deploy` on a green PR (plus auto-deploy for `shopify-sync` reconcile and Dependabot PRs) |
+| Live theme | `#181702754604` (disconnected from GitHub; only the deploy workflow writes to it) |
+| Workflows | `validate`, `preview`, `sync`, `deploy` (in `.github/workflows/`) |
+| License | Shopify Horizon license (MIT-style with a theme-interop restriction) |
+
+## Prerequisites
+
+- **Node `>=20`** and npm. The Shopify CLI is pinned in `package.json` / `package-lock.json`; run it through `npm`/`npx`, never a globally installed CLI, so local and CI match.
+- **A Shopify store with a Custom App token.** Local pushes and CI both authenticate with an Admin API access token (`shpat_...`) that has `read_themes` and `write_themes` scopes. See [Secrets and variables](#secrets-and-variables) for setup.
+- **Repo write access (or higher)** and the `gh` CLI (or the GitHub UI) to comment `deploy` on a PR, the only path code takes to the live theme.
+
+## Quick start
 
 ```bash
-npm ci                       # install pinned Shopify CLI
+npm ci                       # install the pinned Shopify CLI
 npx shopify theme dev        # local dev server (hot reload)
-npx shopify theme check      # lint
+npx shopify theme check      # lint with theme-check
 ```
 
-The Shopify CLI version is pinned in `package.json` and `package-lock.json`. Always use `npx shopify` (not a globally installed CLI) to ensure CI and local match.
+`npx shopify theme dev` is the safe first win: it serves the theme from an **ephemeral, unpublished** dev theme that is torn down when you stop the process. It touches neither the live theme nor `shopify-sync`, so there is zero production blast radius. When `theme dev` is running and the storefront renders your local edits with hot reload, you know your environment works.
 
-Branch from `main` for any code change. PRs run validate (theme-check, secret scan, etc.) and deploy a per-PR preview theme; see CI/CD below. To deploy a feature branch, open a PR, wait for Validate to pass, then comment `deploy` on the PR. Direct push to `main` is not part of the workflow.
+`npx shopify theme check` runs the same linter CI runs. Its configuration lives in [`.theme-check.yml`](.theme-check.yml) (extends `theme-check:recommended`; see [Development](#development-and-contributing) for the two intentionally disabled checks).
 
-## CI/CD
+> **Do not** run `npx shopify theme push` or `theme pull` against your working tree. Live pushes happen exclusively through the deploy workflow; pulling live into the working tree can clobber local work. To inspect what is live read-only: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`.
 
-Four workflows in `.github/workflows/`. Deploy is unified in one workflow with three trigger paths: a write+ collaborator can comment `deploy` on any PR (manual), or `workflow_run` after Validate succeeds on a `shopify-sync` reconcile PR or a `dependabot/**` PR (auto). All three paths share the same live-push + squash-merge ladder, gated by trigger-specific checks. The PR squash-merges only after the deploy succeeds. Failures post a sticky comment and the PR stays open.
+## Repo layout
+
+Standard Shopify theme structure. There is no bundler or transpiler; the directories below are the shipped surface.
+
+| Path | Contents |
+|---|---|
+| `layout/` | Theme layout files (`theme.liquid`, `password.liquid`) |
+| `templates/` | JSON/Liquid templates per page type |
+| `sections/` | Section files with `{% schema %}` |
+| `blocks/` | Reusable, nestable theme blocks |
+| `snippets/` | Reusable Liquid partials rendered with `{% render %}` |
+| `assets/` | Flat directory of CSS, JS, images, fonts (shipped as-is, no build) |
+| `locales/` | Translation files; `en.default.json` is canonical |
+| `config/` | `settings_schema.json` and `settings_data.json` |
+
+Theme conventions (component framework, BEM/CSS rules, block development, accessibility) live in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md).
+
+## How shipping works
+
+The normal path for a code change:
+
+1. Branch from `main` and open a pull request. (Direct push to `main` is not part of the workflow; `main` is protected.)
+2. **Validate** runs theme-check and the security/lint suite, and posts a sticky CI report.
+3. **Preview** spins up a per-PR unpublished theme `pr-<n>-preview` and comments the link.
+4. When Validate is green, comment `deploy` on the PR (you must be a write+ collaborator).
+5. The deploy workflow pushes to the live theme, smoke-tests it, squash-merges the PR, and deletes the preview theme. If anything fails, the PR stays open and a sticky failure comment is posted.
+
+Two paths **auto-deploy** after Validate passes, with no comment needed: the single `shopify-sync` reconcile PR (capturing admin edits) and Dependabot PRs (minor/patch bumps). Major-version bumps and any change touching `.github/{workflows,actions,scripts}/` are held for a manual `deploy` comment after review.
+
+> **Cost and side effects.** Commenting `deploy` mutates the live, customer-facing storefront and (on success) squash-merges the PR into `main`. There is no staging gate between `deploy` and customers seeing the change; the preview theme and Validate are the review surface.
+
+The deploy gate is deliberately layered: a collaborator check on the comment author, a re-verification that Validate is green on the exact HEAD SHA, a signed-commit / PR-opener-identity check on the auto-deploy paths, and a draft-PR escape hatch that halts auto-deploy. The Shopify token is scoped only to the job that pushes to live, never to the gate job. The full rationale (attack surface and mitigations) lives in [`release-notes.md`](release-notes.md); the trust delta and known compensations live in [`CLAUDE.md`](CLAUDE.md).
+
+## Workflows
+
+Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-party actions to commit SHAs, and set `permissions: {}` at the workflow root with per-job grants.
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate.yml` | PR open/sync/reopen | One sequential job with five steps (`theme-check`, `reconcile`, `actionlint`, `zizmor`, `gitleaks`) plus an aggregator that posts a sticky CI Report. Single required check on `main`: `validate / validate`. |
-| `preview.yml` | PR open/sync/close | Creates a per-PR unpublished theme `pr-<n>-preview`, comments link on the PR, deletes on close. |
-| `deploy.yml` | (1) Comment `deploy` on a PR (dev); (2) `workflow_run` after Validate on `shopify-sync` (auto); (3) `workflow_run` after Validate on `dependabot/**` (auto) | Three-job structure: `gate` (no Shopify token; runs trigger-conditional checks: collaborator-permission for comments, signed-commit + PR-opener-identity + diff-sanity + base-staleness for auto-deploys, plus Validate-on-HEAD-SHA re-verification with `compareCommits.status === 'identical'` for HEAD-drift; **draft-PR escape hatch** halts auto-deploy on any draft PR); `deploy` (Shopify-token-bearing; pushes to live, smoke-tests, squash-merges, deletes preview theme); and `sync` (deploy-key-bearing, no Shopify token; `needs: deploy`; reconciles `shopify-sync` to the deployed SHA via HTTPS fast-forward, or via SSH+deploy-key force-with-lease for phantom-orphan cleanup that bypasses `shopify-sync-protection`'s "Block force pushes" rule). Sticky deploy / failure report under the unified `<!-- deploy-result -->` marker. |
-| `sync.yml` | Push to `shopify-sync`; daily 13:00 UTC; manual | On admin commits to `shopify-sync`, opens or refreshes the single reconcile PR (`head: shopify-sync, base: main`). Phantom-orphan PRs (same-tree as main) are skipped; `deploy.yml`'s post-merge sync step cleans them up next deploy. **Does not auto-merge**; `deploy.yml`'s `workflow_run` arm takes over after Validate. |
+| `validate` | PR opened / synchronize / reopened (same-repo heads) | One sequential job (`validate`) running `theme-check`, `reconcile`, `actionlint`, `zizmor`, and `gitleaks`, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
+| `preview` | PR opened / synchronize / closed | Creates a per-PR unpublished theme `pr-<n>-preview`, comments the link, deletes it on close. |
+| `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
+| `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**` | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
 
-All workflows run on `ubuntu-24.04`, pin third-party actions to commit SHAs, and set `permissions: {}` at workflow root with per-job grants. Jobs that handle the Shopify token read it from a repo-level secret directly; there is no GitHub Environment binding. Dependabot keeps action and npm dependencies current (`.github/dependabot.yml`); minor/patch bumps auto-deploy via `deploy.yml`'s dependabot arm after Validate passes, but major-version bumps default-skip auto-deploy and require manual `deploy` comment after review. **There is no opt-in mechanism to pre-authorize a major bump for auto-deploy** (the prior `auto-deploy-major` label gate was removed with the label-free consolidation); every major bump goes through human review. Action-SHA changes to any file under `.github/{workflows,actions,scripts}/` are refused by the auto-deploy guard (CI-self-modification protection) and also require manual review and a `deploy` comment.
+Dependabot keeps GitHub Actions and npm dependencies current weekly (Monday 13:00 UTC), grouped into one PR per ecosystem ([`.github/dependabot.yml`](.github/dependabot.yml)).
 
-**Deploy gate.** No GitHub Environment is involved at all. Three computed gates govern access, all in `deploy.yml`'s `gate` job: collaborator-permission check on the comment author (comment path), validate-on-HEAD-SHA verification (all three paths), signed-commit gate using GitHub-resolved logins (`workflow_run` paths). The `gate` job runs without `SHOPIFY_CLI_THEME_TOKEN` in scope; the secret only enters the `deploy` job (`needs: gate`). See `CLAUDE.md` for the trust delta and known compensations.
+For the internals of the gate (HEAD-SHA re-verification, signed-commit logic, phantom-orphan cleanup, CI-self-modification guard), read [`release-notes.md`](release-notes.md) and [`CLAUDE.md`](CLAUDE.md) rather than re-deriving them from the YAML.
 
 ## Branches and themes
 
 | Ref | Role |
 |---|---|
-| `main` | Source of truth. Protected: PR + required checks + branch up-to-date. |
-| `shopify-sync` | Captures admin edits via the Shopify GitHub Integration on the unpublished `EDIT HERE - Admin Sync` theme. Protected against force-push; `shopify[bot]` writes here. |
-| Feature branches | Cut from `main`, PR'd back. Per-PR preview theme `pr-<n>-preview`. |
-| Live theme `#181702754604` | Customer-facing. **Disconnected** from GitHub. Only `deploy.yml` writes to it (via three trigger paths: `issue_comment`, `workflow_run` on `shopify-sync`, `workflow_run` on `dependabot/**`); all three paths require Validate green on the PR HEAD SHA before they push. Never edit via admin Customize/Code editor. |
+| `main` | Source of truth. Protected: PR + required check (`validate / validate`) + branch up-to-date. |
+| `shopify-sync` | Captures admin Customize/Code edits via the Shopify GitHub Integration on the unpublished `EDIT HERE - Admin Sync` theme. Protected against force-push; `shopify[bot]` writes here. Reconciled into `main` through one auto-deploying PR. |
+| Feature branches | Cut from `main`, PR'd back. Each gets a `pr-<n>-preview` unpublished theme. |
+| Live theme `#181702754604` | Customer-facing. **Disconnected** from GitHub. Only the `deploy` workflow writes to it, and only after Validate is green on the PR HEAD SHA. |
 
-## Secrets and rotation
+Make admin edits on the `EDIT HERE - Admin Sync` theme (they flow to `shopify-sync`), never on the live theme directly. There is no automated drift detection; "live = main" is operator discipline.
 
-| Name | Type | Source |
+## Secrets and variables
+
+| Name | Type | Purpose |
 |---|---|---|
-| `SHOPIFY_CLI_THEME_TOKEN` | Repository **secret** | Admin API access token from a Custom App on the store with `read_themes` and `write_themes` scopes (token starts with `shpat_`). |
-| `SHOPIFY_DOMAIN` | Repository **variable** | Canonical storefront origin host (e.g. `sapphireshadowstudio.com`), no scheme, no trailing slash. The deploy chain prefixes `https://` and uses this as the smoke-test base URL; the smoke test follows the myshopify handle's 301 to this host and asserts a final 200. |
-| `SHOPIFY_FLAG_STORE` | Repository **variable** | The store's **internal myshopify handle** (e.g. `yr5ye0-ua.myshopify.com`), not the friendly admin alias. Shopify rejects auth against the alias with a 401. The internal handle is shown on the Theme Access password email and on `admin/.../themes` URL parameters; you can also recover it via `gql { shop { myshopifyDomain } }` against the Admin API. The handle is observable from any storefront response and is correctly classified as a variable, not a secret. |
+| `SHOPIFY_CLI_THEME_TOKEN` | Repository **secret** | Admin API access token from a Custom App with `read_themes` + `write_themes` (token starts with `shpat_`). Used by the live push. |
+| `SHOPIFY_DOMAIN` | Repository **variable** | Canonical storefront host (e.g. `sapphireshadowstudio.com`), no scheme, no trailing slash. The deploy chain prefixes `https://` and uses it as the smoke-test base URL. |
+| `SHOPIFY_FLAG_STORE` | Repository **variable** | The store's internal myshopify handle. **Use the internal handle, not the friendly admin alias** (`sapphire-shadow-studio.myshopify.com`), or Shopify rejects auth with a 401. |
+| `EXPECTED_SYNC_PR_OPENER` | Repository **variable** | Expected GitHub login of the reconcile-PR opener; checked by the auto-deploy gate on the `shopify-sync` path. |
+| `SHOPIFY_SYNC_DEPLOY_KEY` | Repository **secret** | SSH deploy key used only by the `sync` job to reconcile `shopify-sync`. Not in scope of the live-push job. |
 
-**Setup (one-time):** In the Shopify admin, Settings -> Apps and sales channels -> Develop apps -> Create an app (e.g. `sapphire-ci-deploy`). Configure Admin API scopes: `read_themes`, `write_themes`. Install the app on the store. Reveal the Admin API access token (shown once) and paste it into the GitHub repo secret (`Settings -> Secrets and variables -> Actions -> Repository secrets -> SHOPIFY_CLI_THEME_TOKEN`). Then under the Variables tab on the same page, create `SHOPIFY_DOMAIN` (canonical storefront host) and `SHOPIFY_FLAG_STORE` (internal myshopify handle). Custom App tokens do not expire on a schedule; rotate by uninstalling and recreating the app whenever a credential needs to change. Do not echo to terminal.
+The smoke test (run after the live push) follows the myshopify handle's 301 to `SHOPIFY_DOMAIN` and asserts a final 200 on the paths `/ /cart /collections/all` (the default in [`.github/actions/shopify-theme-push/action.yml`](.github/actions/shopify-theme-push/action.yml)).
 
-The Shopify CLI accepts the same env var (`SHOPIFY_CLI_THEME_TOKEN`) for either a Custom App access token or a Theme Access app password. This repo standardised on Custom App tokens because they avoid an extra third-party app install, do not auto-expire, and reuse Shopify's native admin auth surface.
+**One-time setup.** In Shopify admin: Settings -> Apps and sales channels -> Develop apps -> Create an app. Configure Admin API scopes `read_themes` and `write_themes`, install the app, and reveal the Admin API access token (shown once). Paste it into the repo secret `SHOPIFY_CLI_THEME_TOKEN` (Settings -> Secrets and variables -> Actions). Under the Variables tab, set `SHOPIFY_DOMAIN`, `SHOPIFY_FLAG_STORE`, and `EXPECTED_SYNC_PR_OPENER`. Custom App tokens do not expire on a schedule; rotate by recreating the app. Never echo a token to the terminal or write it to a file.
 
 ## Rollback
 
-If the live theme is in a bad state:
+1. **The last merged change was bad.** Open a revert PR (`git revert <sha>`, then `gh pr create --base main`). Validate runs; comment `deploy` to ship the revert. Recovery is one comment-deploy cycle.
+2. **CI cannot deploy at all (break-glass).** Pull the last known-good SHA locally and push directly:
+   ```bash
+   npx shopify theme push --live --allow-live
+   ```
+   This logs your local Shopify identity rather than the CI token, so use it only when the pipeline is unavailable.
 
-1. **Most recent merged PR was bad**: open a revert PR (`gh pr create --base main` from `git revert <sha>`). Validate runs; comment `deploy` to ship the revert. Total recovery time is one comment-deploy cycle.
-2. **CI cannot deploy at all**: pull the last known-good SHA locally and run `npx shopify theme push --live --allow-live` directly. Documented break-glass path; logs the operator's local Shopify identity rather than the CI service-account token.
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Auth fails with **401** locally or in CI | `SHOPIFY_FLAG_STORE` is set to the friendly alias. Use the internal myshopify handle (recoverable from the Theme Access email, an `admin/.../themes` URL, or `gql { shop { myshopifyDomain } }`). |
+| Validate **reconcile** step fails on a PR | The branch is behind `shopify-sync`'s admin edits. Run the snippet the check posts: `git fetch origin && git merge origin/shopify-sync && git push`. |
+| Auto-deploy did not fire on a `shopify-sync` / Dependabot PR | The PR is a draft. The draft-PR escape hatch halts auto-deploy by design; mark it ready (`gh pr ready <n>`), or comment `deploy` manually once reviewed. |
+| Orphaned `pr-<n>-preview` theme lingers | Preview cleanup runs on PR close and after deploy; if it silently fails the deploy report shows a cleanup warning. List orphans with `npx shopify theme list -s sapphire-shadow-studio --json` and delete with `npx shopify theme delete --theme <id> --force`. |
+| Dependabot **major** bump did not auto-deploy | Major bumps and changes under `.github/` require a manual `deploy` comment after review; there is no pre-authorization label. |
 
 ## Staying current with Horizon
 
-Horizon's upstream lives at https://github.com/Shopify/horizon. This repo is **standalone, not a GitHub fork**: attribution lives in [`LICENSE.md`](/LICENSE.md) (Shopify MIT, preserved verbatim), and updates are pulled via plain `git`.
+This repo is **standalone, not a GitHub fork** of [`Shopify/horizon`](https://github.com/Shopify/horizon). The root commit `71b7cc2` (`init: import Horizon baseline at upstream commit 09db732`) carries Horizon's tree at the last sync point as a separate root commit. Upstream updates are pulled with plain `git`.
 
-The **first** upstream sync after the 2026-05-03 republish needs `--allow-unrelated-histories` because the new history shares no commit ancestry with `Shopify/horizon`. The repo's root commit (`init: import Horizon baseline at upstream commit 09db732`) carries Horizon's tree at the last sync point but is a separate root commit; git's merge-base uses the commit DAG, not tree equivalence, so the flag is the one-time fix. After the first merge lands, the merge commit becomes the common ancestor and subsequent syncs work normally.
+The **first** upstream sync after the 2026-05-03 republish needs `--allow-unrelated-histories`, because git's merge-base uses the commit graph (not tree equivalence) and the new history shares no ancestry with `Shopify/horizon`. After that merge lands, it becomes the common ancestor and later syncs are ordinary merges.
 
 ```bash
-git remote add upstream https://github.com/Shopify/horizon.git  # one-time
+git remote add upstream https://github.com/Shopify/horizon.git   # one-time
 git fetch upstream
 git switch -c chore/horizon-merge-$(date +%Y-%m-%d)
 
 # First sync after the 2026-05-03 republish:
 git merge --allow-unrelated-histories upstream/main
-
-# Subsequent syncs (after the first merge has landed on main):
+# Subsequent syncs:
 # git merge upstream/main
 
-# Expect add/add conflicts on every shared file the first time. To inspect
-# what actually changed upstream since the baseline (rather than what
-# conflicts) diff against the baseline tree:
+# To see what actually changed upstream since the baseline (vs. what conflicts),
+# diff against the baseline tree:
 #   git diff 71b7cc2 upstream/main -- sections/ snippets/ blocks/ assets/
-# 71b7cc2 is the "init: import Horizon baseline..." commit at the root of
-# this repo's history.
 
-# Resolve conflicts; customisations under blocks/, snippets/, sections/,
-# assets/ usually conflict. Keep ours for diverged customisations; take
-# theirs for Horizon-internal changes you want to adopt.
 git push -u origin HEAD
 ```
 
-Open a PR; CI runs as normal.
+Expect add/add conflicts on shared files the first time. Keep ours for diverged customizations; take theirs for Horizon-internal changes worth adopting. Open a PR; CI runs as normal.
 
-## License
+## Development and contributing
 
-Copyright (c) 2025-present Shopify Inc. See [LICENSE](/LICENSE.md) for further details.
+```bash
+npm ci                       # install pinned tooling
+npx shopify theme dev        # local preview (ephemeral, no production impact)
+npx shopify theme check      # lint (same as CI)
+```
+
+To lint the workflow YAML the way CI does (same shellcheck excludes):
+
+```bash
+SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint
+```
+
+`.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
+
+Before opening a PR, run `theme dev` and `theme check` locally, and follow the conventions and accessibility patterns in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). House style is enforced as a hard rule: no em dashes anywhere in the repo.
+
+## Deeper docs and license
+
+| Doc | Covers |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Theme conventions, component framework, accessibility, and the deploy-gate trust delta and known compensations |
+| [`release-notes.md`](release-notes.md) | Full CI/CD design rationale (attack surface, mitigations) and history |
+| [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md) | Component-specific accessibility patterns used across the theme |
+| [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md) | Triaged, non-actionable theme-check findings |
+| [`LICENSE.md`](LICENSE.md) | Full license terms |
+
+**License.** Copyright (c) 2025-present Shopify Inc. This theme inherits Shopify's Horizon license: an MIT-style grant restricted to developing themes that interoperate with Shopify, and prohibiting redistribution of a Derived Theme via the Theme Store or any other channel. See [`LICENSE.md`](LICENSE.md) for the full terms.
