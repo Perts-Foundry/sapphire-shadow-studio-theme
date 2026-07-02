@@ -12,3 +12,8 @@ npm-debug.log
 # Editor
 .vscode/
 .idea/
+
+# Product image processing: raw + processed binaries + manifest never enter the repo
+# (Shopify's CDN is their home). Scoped to this dir so theme assets/ raster files are
+# unaffected; the script refuses to write outside a product-images/ path.
+product-images/
