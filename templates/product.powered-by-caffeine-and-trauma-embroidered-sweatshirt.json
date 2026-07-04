@@ -254,6 +254,16 @@
               },
               "block_order": []
             },
+            "request_combination_001": {
+              "type": "request-combination",
+              "settings": {
+                "padding-block-start": 8,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
             "accordion_HrL6gj": {
               "type": "accordion",
               "name": "t:names.accordion",
@@ -590,6 +600,7 @@
             "divider_VJhene",
             "variant_picker_R3rGDr",
             "buy_buttons_eYQEYi",
+            "request_combination_001",
             "accordion_HrL6gj"
           ]
         }

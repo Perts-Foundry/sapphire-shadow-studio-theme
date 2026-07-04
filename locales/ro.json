@@ -7,6 +7,17 @@
       "placeholder": "Adresă de e-mail",
       "success": "Mulțumim pentru că te-ai abonat!"
     },
+    "request_combination": {
+      "email_label": "TODO: Email",
+      "note_label": "TODO: Note (optional)",
+      "consent_label": "TODO: You may email me about this request and future availability.",
+      "submit_label": "TODO: Send request",
+      "status_available": "TODO: Good news: this combination is available to order now.",
+      "status_sold_out": "TODO: This combination is currently sold out.",
+      "status_not_offered": "TODO: We don't currently offer this combination.",
+      "post_success": "TODO: Thanks! We received your request and will follow up by email.",
+      "error_heading": "TODO: Please adjust the following:"
+    },
     "filter": "Filtrează",
     "contact_form": {
       "name": "Nume",

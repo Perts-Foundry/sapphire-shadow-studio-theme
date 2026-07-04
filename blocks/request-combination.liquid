@@ -1,0 +1,430 @@
+{%- doc -%}
+  "Request a combination" capture block for product pages. Renders an
+  always-visible secondary button that opens a modal dialog where customers
+  pick any option combination (including sold-out and never-created ones),
+  see a live availability status, and send the request through Shopify's
+  native contact form (full-page POST to /contact, guarded by Shopify's
+  built-in spam protection). Each submission arrives as a structured email
+  at the store's sender address. Inventory behavior is untouched.
+
+  Conventions and caveats:
+
+  - Marketing consent uses the paired-hidden-input encoding: a hidden
+    `contact[Marketing consent]=No` sits immediately before the checkbox
+    with value `Yes` and the same name; duplicate keys parse last-wins, so
+    the merchant email always shows an explicit Yes or No. Consent is
+    recorded as data only; nobody is auto-subscribed. No client-side
+    timestamp field is included on purpose: it would be spoofable and the
+    notification email's own Date header already captures when.
+  - Custom field names carry a "Requested " prefix so they can never collide
+    with Shopify's reserved contact keys (email, body, name). Option names
+    containing "[" or "]" would mangle under bracket-style param parsing;
+    none exist on this store.
+  - The hidden `contact[Availability]`, `contact[Product]`, and
+    `contact[Product URL]` values are client-asserted hints that a direct
+    POST can forge; treat them as triage aids, not facts, and do not click
+    the URL reflexively on a suspicious submission.
+  - There is no honeypot on purpose: Shopify processes /contact regardless
+    of extra fields and nothing merchant-side can drop the email before the
+    inbox, so the platform hCaptcha is the gate.
+  - Posted state (form.posted_successfully? / form.errors) is shared by
+    every contact form on the page. Auto-reopening the dialog after the
+    redirect is therefore gated on a sessionStorage snapshot written at
+    submit time (see assets/request-combination.js). If the block is added
+    twice on one template, both instances share posted state; the snapshot
+    gate keeps only the submitting product's dialogs eligible to reopen.
+  - The close button is first in the dialog DOM per
+    docs/accessibility-patterns.md (Modal); blocks/popup-link.liquid places
+    it last, which this block deliberately does not copy.
+  - Renders nothing for products with only the default variant (no
+    combinations to request) or outside a product context.
+
+  @example
+  {% content_for 'block', type: 'request-combination', id: 'request-combination' %}
+{%- enddoc -%}
+
+{%- liquid
+  assign product = closest.product
+  if request.visual_preview_mode and product == blank
+    assign product = collections.all.products.first
+  endif
+-%}
+
+{%- if product != blank and product.has_only_default_variant == false -%}
+  {%- liquid
+    assign form_id = 'RequestCombination-' | append: block.id
+    assign heading_id = 'RequestCombinationHeading-' | append: block.id
+    assign email_error_id = 'RequestCombinationEmailError-' | append: block.id
+
+    assign current_variant = product.selected_or_first_available_variant
+    if current_variant == blank
+      assign initial_status = 'not-offered'
+      assign initial_status_text = 'blocks.request_combination.status_not_offered' | t
+    elsif current_variant.available
+      assign initial_status = 'available'
+      assign initial_status_text = 'blocks.request_combination.status_available' | t
+    else
+      assign initial_status = 'sold-out'
+      assign initial_status_text = 'blocks.request_combination.status_sold_out' | t
+    endif
+  -%}
+
+  <request-combination-component
+    class="request-combination spacing-style"
+    style="{% render 'spacing-style', settings: block.settings %}"
+    data-product-id="{{ product.id }}"
+    data-status-available="{{ 'blocks.request_combination.status_available' | t | escape }}"
+    data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t | escape }}"
+    data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t | escape }}"
+    on:submit="/handleSubmit"
+    {{ block.shopify_attributes }}
+  >
+    <button
+      type="button"
+      class="button button-secondary request-combination__trigger"
+      aria-haspopup="dialog"
+      on:click="/handleOpen"
+    >
+      {{- block.settings.button_label | escape -}}
+    </button>
+
+    <dialog
+      ref="dialog"
+      class="request-combination__dialog dialog-modal color-{{ settings.popover_color_scheme }}"
+      aria-labelledby="{{ heading_id }}"
+    >
+      <button
+        ref="closeButton"
+        on:click="/closeDialog"
+        class="button button-unstyled close-button request-combination__close"
+        aria-label="{{ 'accessibility.close_dialog' | t | escape }}"
+      >
+        {{- 'icon-close.svg' | inline_asset_content -}}
+      </button>
+
+      <h2
+        id="{{ heading_id }}"
+        class="request-combination__heading"
+      >
+        {{- block.settings.heading | escape -}}
+      </h2>
+
+      {%- if block.settings.body != blank -%}
+        <p class="request-combination__body">{{ block.settings.body | escape | newline_to_br }}</p>
+      {%- endif -%}
+
+      {%- form 'contact', id: form_id, class: 'request-combination__form', return_to: product.url -%}
+        {%- if form.errors -%}
+          <div
+            id="{{ email_error_id }}"
+            class="request-combination__error"
+            ref="errorSummary"
+            role="alert"
+            tabindex="-1"
+            autofocus
+          >
+            {{- 'icon-error.svg' | inline_asset_content -}}
+            <span>
+              {{- 'blocks.request_combination.error_heading' | t | escape }}
+              {{ form.errors.translated_fields.email | capitalize | escape }}
+              {{ form.errors.messages.email | escape -}}
+            </span>
+          </div>
+        {%- endif -%}
+
+        {%- if form.posted_successfully? -%}
+          <div
+            class="request-combination__success"
+            ref="successSummary"
+            role="status"
+            tabindex="-1"
+            autofocus
+          >
+            {{- 'icon-checkmark.svg' | inline_asset_content -}}
+            <span>{{ 'blocks.request_combination.post_success' | t | escape }}</span>
+          </div>
+        {%- endif -%}
+
+        {%- for product_option in product.options_with_values -%}
+          <div class="request-combination__field">
+            <label for="RequestCombinationOption-{{ block.id }}-{{ forloop.index0 }}">
+              {{- product_option.name | escape -}}
+            </label>
+            <select
+              id="RequestCombinationOption-{{ block.id }}-{{ forloop.index0 }}"
+              class="request-combination__input"
+              name="contact[Requested {{ product_option.name | escape }}]"
+              ref="optionSelects[]"
+              on:change="/handleOptionChange"
+            >
+              {%- for product_option_value in product_option.values -%}
+                <option
+                  value="{{ product_option_value | escape }}"
+                  {% if product_option_value.selected %}
+                    selected
+                  {% endif %}
+                >
+                  {{- product_option_value | escape -}}
+                </option>
+              {%- endfor -%}
+            </select>
+          </div>
+        {%- endfor -%}
+
+        <p
+          ref="statusLine"
+          class="request-combination__status"
+          role="status"
+          data-status="{{ initial_status }}"
+        >
+          {{- initial_status_text | escape -}}
+        </p>
+
+        <div class="request-combination__field">
+          <label for="RequestCombinationEmail-{{ block.id }}">
+            {{- 'blocks.request_combination.email_label' | t | escape -}}
+            <span aria-hidden="true">*</span>
+          </label>
+          <input
+            type="email"
+            id="RequestCombinationEmail-{{ block.id }}"
+            class="request-combination__input"
+            autocomplete="email"
+            name="contact[email]"
+            spellcheck="false"
+            autocapitalize="off"
+            value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
+            required
+            aria-required="true"
+            {% if form.errors contains 'email' %}
+              aria-invalid="true"
+              aria-describedby="{{ email_error_id }}"
+            {% endif %}
+          >
+        </div>
+
+        <div class="request-combination__field">
+          <label for="RequestCombinationNote-{{ block.id }}">
+            {{- 'blocks.request_combination.note_label' | t | escape -}}
+          </label>
+          <textarea
+            rows="3"
+            id="RequestCombinationNote-{{ block.id }}"
+            class="request-combination__input request-combination__input--textarea"
+            name="contact[body]"
+          >{{- form.body | escape -}}</textarea>
+        </div>
+
+        {%- comment -%}
+          Paired-hidden-input consent encoding: the hidden No must sit
+          immediately before the same-named Yes checkbox (last-wins). See the
+          doc block above before changing either input.
+        {%- endcomment -%}
+        <input
+          type="hidden"
+          name="contact[Marketing consent]"
+          value="No"
+        >
+        {%- liquid
+          assign consent_label_text = 'blocks.request_combination.consent_label' | t
+          assign consent_id = 'RequestCombinationConsent-' | append: block.id
+        -%}
+        {% render 'checkbox',
+          name: 'contact[Marketing consent]',
+          value: 'Yes',
+          label: consent_label_text,
+          id: consent_id,
+          checked: false,
+          events: '',
+          disabled: false
+        %}
+
+        <input
+          type="hidden"
+          name="contact[Product]"
+          value="{{ product.title | escape }}"
+        >
+        <input
+          type="hidden"
+          name="contact[Product URL]"
+          value="{{ shop.url | append: product.url | escape }}"
+        >
+        <input
+          type="hidden"
+          name="contact[Availability]"
+          ref="availabilityField"
+          value="Not verified"
+        >
+
+        <button
+          type="submit"
+          class="button request-combination__submit"
+        >
+          {{- 'blocks.request_combination.submit_label' | t | escape -}}
+        </button>
+      {%- endform -%}
+
+      {%- comment -%}
+        Reduced availability map for the live status line. Fields are pinned
+        to exactly options + available: never add inventory_quantity,
+        inventory_policy, or SKU here (this JSON is public page content).
+      {%- endcomment -%}
+      <script
+        type="application/json"
+        ref="variantData"
+      >
+        [
+          {%- for variant in product.variants -%}
+            {"options": {{ variant.options | json }}, "available": {{ variant.available | json }}}
+            {%- unless forloop.last %},{% endunless -%}
+          {%- endfor -%}
+        ]
+      </script>
+    </dialog>
+  </request-combination-component>
+{%- endif -%}
+
+{% stylesheet %}
+  .request-combination {
+    display: block;
+  }
+
+  .request-combination__trigger {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .request-combination__dialog {
+    box-shadow: var(--shadow-popover);
+    border: var(--style-border-popover);
+    border-radius: var(--style-border-radius-popover);
+    background-color: var(--color-background);
+    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
+    inline-size: min(30rem, calc(100vw - var(--padding-xl) * 2));
+    max-height: var(--modal-max-height);
+
+    @media screen and (min-width: 750px) {
+      padding: var(--padding-5xl);
+    }
+  }
+
+  .request-combination__dialog[open] {
+    animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .request-combination__dialog.dialog-closing {
+    animation: modalSlideOutTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .request-combination__close {
+    top: var(--margin-2xs);
+    right: var(--margin-2xs);
+    opacity: 0.8;
+    animation: none;
+  }
+
+  .request-combination__heading {
+    margin-block: 0 var(--margin-sm);
+  }
+
+  .request-combination__body {
+    margin-block: 0 var(--margin-md);
+  }
+
+  .request-combination__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+  }
+
+  .request-combination__input {
+    width: 100%;
+    color: var(--color-input-text);
+    background-color: var(--color-input-background);
+    padding: var(--padding-lg) var(--padding-xl);
+    border-radius: var(--style-border-radius-inputs);
+    border: var(--style-border-width-inputs) solid var(--color-input-border);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .request-combination__input--textarea {
+    resize: vertical;
+  }
+
+  .request-combination__status {
+    margin-block: 0;
+    font-size: var(--font-size--sm);
+  }
+
+  .request-combination__error,
+  .request-combination__success {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+  }
+
+  /*
+   * The shared checkbox snippet (snippets/checkbox.liquid) ships with
+   * white-space: nowrap + text-overflow: ellipsis on .checkbox__label-text
+   * (assets/base.css) because it was designed for short labels. The consent
+   * copy is a full sentence; allow wrapping here only. Same override as
+   * blocks/return-policy-acknowledgment.liquid, documented there.
+   */
+  .request-combination .checkbox__label {
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+
+  .request-combination .checkbox__label-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+{% endstylesheet %}
+
+<script
+  src="{{ 'request-combination.js' | asset_url }}"
+  type="module"
+  fetchpriority="low"
+></script>
+
+{% schema %}
+{
+  "name": "t:names.request_combination",
+  "tag": null,
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "t:settings.request_combination.button_label",
+      "default": "t:settings.request_combination.button_label_default"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:settings.request_combination.heading",
+      "default": "t:settings.request_combination.heading_default"
+    },
+    {
+      "type": "textarea",
+      "id": "body",
+      "label": "t:settings.request_combination.body",
+      "default": "t:settings.request_combination.body_default"
+    },
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-start", "label": "t:settings.left", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-end", "label": "t:settings.right", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 }
+  ],
+  "presets": [
+    { "name": "t:names.request_combination", "category": "t:categories.product" }
+  ]
+}
+{% endschema %}
