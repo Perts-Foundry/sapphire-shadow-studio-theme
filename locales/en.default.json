@@ -127,7 +127,7 @@
     },
     "request_combination": {
       "email_label": "Email",
-      "note_label": "Note (optional)",
+      "note_label": "Something different in mind? Describe it (optional)",
       "consent_label": "You may email me about this request and future availability.",
       "submit_label": "Send it over",
       "status_available": "Good news: this combination is available to order now.",

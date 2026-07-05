@@ -9,7 +9,7 @@
     },
     "request_combination": {
       "email_label": "TODO: Email",
-      "note_label": "TODO: Note (optional)",
+      "note_label": "TODO: Something different in mind? Describe it (optional)",
       "consent_label": "TODO: You may email me about this request and future availability.",
       "submit_label": "TODO: Send it over",
       "status_available": "TODO: Good news: this combination is available to order now.",
