@@ -437,13 +437,20 @@
     display: none;
   }
 
-  .request-combination__dialog {
+  /* Element + class selector (specificity 0,1,1) so these beat the base
+     .dialog-modal rules (0,1,0) at every width, regardless of stylesheet
+     order. Below 750px that base treatment forces modals full-screen
+     (edge-to-edge, square corners); this popover instead stays a floating,
+     rounded card on both mobile and desktop. */
+  dialog.request-combination__dialog {
     box-shadow: var(--shadow-popover);
     border: var(--style-border-popover);
     border-radius: var(--style-border-radius-popover);
     background-color: var(--color-background);
     padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
     inline-size: min(30rem, calc(100vw - var(--padding-xl) * 2));
+    max-inline-size: calc(100vw - var(--padding-xl) * 2);
+    block-size: auto;
     max-block-size: var(--modal-max-height);
     overflow-y: auto;
 
