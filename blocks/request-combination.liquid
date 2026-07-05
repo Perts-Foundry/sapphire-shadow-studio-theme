@@ -78,11 +78,11 @@
     class="request-combination spacing-style"
     style="{% render 'spacing-style', settings: block.settings %}"
     data-product-id="{{ product.id }}"
-    data-status-available="{{ 'blocks.request_combination.status_available' | t | escape }}"
-    data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t | escape }}"
-    data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t | escape }}"
-    data-note-label="{{ 'blocks.request_combination.note_label' | t | escape }}"
-    data-description-label="{{ 'blocks.request_combination.description_label' | t | escape }}"
+    data-status-available="{{ 'blocks.request_combination.status_available' | t }}"
+    data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t }}"
+    data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t }}"
+    data-note-label="{{ 'blocks.request_combination.note_label' | t }}"
+    data-description-label="{{ 'blocks.request_combination.description_label' | t }}"
     on:submit="/handleSubmit"
     {{ block.shopify_attributes }}
   >
@@ -104,7 +104,7 @@
         ref="closeButton"
         on:click="/closeDialog"
         class="button button-unstyled close-button request-combination__close"
-        aria-label="{{ 'accessibility.close_dialog' | t | escape }}"
+        aria-label="{{ 'accessibility.close_dialog' | t }}"
       >
         {{- 'icon-close.svg' | inline_asset_content -}}
       </button>
@@ -132,7 +132,7 @@
           >
             {{- 'icon-error.svg' | inline_asset_content -}}
             <span>
-              {{- 'blocks.request_combination.error_heading' | t | escape }}
+              {{- 'blocks.request_combination.error_heading' | t }}
               {{ form.errors.translated_fields.email | capitalize | escape }}
               {{ form.errors.messages.email | escape -}}
             </span>
@@ -148,7 +148,7 @@
             autofocus
           >
             {{- 'icon-checkmark.svg' | inline_asset_content -}}
-            <span>{{ 'blocks.request_combination.post_success' | t | escape }}</span>
+            <span>{{ 'blocks.request_combination.post_success' | t }}</span>
           </div>
         {%- endif -%}
 
@@ -162,7 +162,7 @@
           textarea a required free-text description.
         {%- endcomment -%}
         <fieldset class="request-combination__paths">
-          <legend>{{ 'blocks.request_combination.request_type_legend' | t | escape }}</legend>
+          <legend>{{ 'blocks.request_combination.request_type_legend' | t }}</legend>
           <label class="request-combination__path">
             <input
               type="radio"
@@ -173,7 +173,7 @@
               on:change="/handlePathChange"
               checked
             >
-            <span>{{ 'blocks.request_combination.request_type_stock' | t | escape }}</span>
+            <span>{{ 'blocks.request_combination.request_type_stock' | t }}</span>
           </label>
           <label class="request-combination__path">
             <input
@@ -184,7 +184,7 @@
               ref="pathRadios[]"
               on:change="/handlePathChange"
             >
-            <span>{{ 'blocks.request_combination.request_type_different' | t | escape }}</span>
+            <span>{{ 'blocks.request_combination.request_type_different' | t }}</span>
           </label>
         </fieldset>
 
@@ -229,7 +229,7 @@
 
         <div class="request-combination__field">
           <label for="RequestCombinationEmail-{{ block.id }}">
-            {{- 'blocks.request_combination.email_label' | t | escape -}}
+            {{- 'blocks.request_combination.email_label' | t -}}
             <span aria-hidden="true">*</span>
           </label>
           <input
@@ -260,7 +260,7 @@
         {%- endcomment -%}
         <div class="request-combination__field">
           <label for="RequestCombinationNote-{{ block.id }}">
-            <span ref="noteLabelText">{{ 'blocks.request_combination.note_label' | t | escape }}</span>
+            <span ref="noteLabelText">{{ 'blocks.request_combination.note_label' | t }}</span>
             <span ref="noteRequiredMark" aria-hidden="true" hidden>*</span>
           </label>
           <textarea
@@ -284,9 +284,11 @@
           value="No"
         >
         {%- liquid
-          # Single-escaped at the call site because snippets/checkbox.liquid
-          # renders its label param raw (data-label attribute + span text).
-          assign consent_label_text = 'blocks.request_combination.consent_label' | t | escape
+          # The t filter HTML-escapes its output, so this single pass is
+          # already safe for snippets/checkbox.liquid, which renders its label
+          # param raw (data-label attribute + span text). Do not add | escape:
+          # it double-escapes and renders entities like &#39; literally.
+          assign consent_label_text = 'blocks.request_combination.consent_label' | t
           assign consent_id = 'RequestCombinationConsent-' | append: block.id
         -%}
         {% render 'checkbox',
@@ -320,7 +322,7 @@
           type="submit"
           class="button request-combination__submit"
         >
-          {{- 'blocks.request_combination.submit_label' | t | escape -}}
+          {{- 'blocks.request_combination.submit_label' | t -}}
         </button>
       {%- endform -%}
 
@@ -386,6 +388,7 @@
 
   .request-combination__heading {
     margin-block: 0 var(--margin-sm);
+    font-size: var(--font-size--2xl);
   }
 
   .request-combination__body {
@@ -416,16 +419,25 @@
 
   .request-combination__paths legend {
     padding: 0;
-    margin-block-end: var(--margin-2xs);
-    font-weight: var(--font-weight-bold);
+    margin-block-end: var(--gap-2xs);
+    font-size: var(--font-size--sm);
   }
 
+  /* Bordered option rows so the choices read as one group and match the
+     bordered selects / inputs below them. */
   .request-combination__path {
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
     min-block-size: var(--minimum-touch-target);
+    padding-inline: var(--padding-xl);
+    border: var(--style-border-width-inputs) solid var(--color-input-border);
+    border-radius: var(--style-border-radius-inputs);
     cursor: pointer;
+  }
+
+  .request-combination__path:has(input:checked) {
+    border-color: var(--color-input-text);
   }
 
   .request-combination__stock-fields {
