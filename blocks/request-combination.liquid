@@ -1,15 +1,17 @@
 {%- doc -%}
   "Request a combination" capture block for product pages. Renders an
-  always-visible secondary button that opens a modal dialog offering two
-  request paths, chosen with a radio group: (1) an out-of-stock combination,
-  where the customer picks any option combination and sees a live
-  availability status; or (2) something different, a free-text description
-  for anything outside the option matrix. The selected path shows only its
-  relevant fields; email is required either way. Requests send through
-  Shopify's native contact form (full-page POST to /contact, guarded by
-  Shopify's built-in spam protection). Each submission arrives as a
-  structured email at the store's sender address. Inventory behavior is
-  untouched.
+  always-visible secondary button that opens a modal dialog offering up to
+  three request paths, chosen with a radio group: (1) an out-of-stock
+  combination, where the customer picks any option combination and sees a
+  live availability status; (2) something different, a free-text description
+  for anything outside the option matrix; and (3) a custom order, which hands
+  off to the /pages/custom-orders page (the radio and its panel render only
+  when that page exists). The selected path shows only its relevant fields;
+  email is required on paths 1 and 2. Paths 1 and 2 send through Shopify's
+  native contact form (full-page POST to /contact, guarded by Shopify's
+  built-in spam protection); path 3 posts nothing, it is a link. Each form
+  submission arrives as a structured email at the store's sender address.
+  Inventory behavior is untouched.
 
   Conventions and caveats:
 
@@ -72,6 +74,10 @@
     assign form_id = 'RequestCombination-' | append: block.id
     assign heading_id = 'RequestCombinationHeading-' | append: block.id
     assign email_error_id = 'RequestCombinationEmailError-' | append: block.id
+    # The custom-order path and its radio only render when this page exists.
+    # Handle hardcoded to match the storefront's existing /pages/custom-orders
+    # links (cf. templates/page.faq.json); a missing page hides the option.
+    assign custom_order_page = pages['custom-orders']
   -%}
 
   <request-combination-component
@@ -179,19 +185,39 @@
             <input
               type="radio"
               name="contact[Request type]"
-              value="Something different"
+              value="Different product version"
               data-path="different"
               ref="pathRadios[]"
               on:change="/handlePathChange"
             >
             <span>{{ 'blocks.request_combination.request_type_different' | t }}</span>
           </label>
+          {%- if custom_order_page != blank -%}
+            <label class="request-combination__path">
+              <input
+                type="radio"
+                name="contact[Request type]"
+                value="Custom order"
+                data-path="custom"
+                ref="pathRadios[]"
+                on:change="/handlePathChange"
+              >
+              <span>{{ 'blocks.request_combination.request_type_custom' | t }}</span>
+            </label>
+          {%- endif -%}
         </fieldset>
 
         {%- comment -%}
+          The on-page request form (email + path-specific fields + submit),
+          shown for the stock and different paths. The custom path hides this
+          whole block and shows the custom-order link below instead.
+        {%- endcomment -%}
+        <div class="request-combination__request-fields" ref="requestFields">
+        {%- comment -%}
           Email sits directly under the path selector so its position is
-          identical on both paths. Required on both; the option selects and
-          description below it swap in per the selected path.
+          identical on both paths. Required on the stock and different paths;
+          disabled on the custom path, which posts nothing. The option selects
+          and description below it swap in per the selected path.
         {%- endcomment -%}
         <div class="request-combination__field">
           <label for="RequestCombinationEmail-{{ block.id }}">
@@ -204,6 +230,7 @@
             class="request-combination__input"
             autocomplete="email"
             name="contact[email]"
+            ref="emailField"
             spellcheck="false"
             autocapitalize="off"
             value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
@@ -329,6 +356,29 @@
         >
           {{- 'blocks.request_combination.submit_label' | t -}}
         </button>
+        </div>
+
+        {%- if custom_order_page != blank -%}
+          {%- comment -%}
+            Custom path hands off to the dedicated custom-orders page. This is
+            a link, not a form submission: nothing posts from this path.
+          {%- endcomment -%}
+          <div
+            class="request-combination__custom"
+            ref="customFields"
+            hidden
+          >
+            <p class="request-combination__custom-text">
+              {{- 'blocks.request_combination.custom_blurb' | t -}}
+            </p>
+            <a
+              href="{{ custom_order_page.url }}"
+              class="button request-combination__custom-link"
+            >
+              {{- 'blocks.request_combination.custom_cta' | t -}}
+            </a>
+          </div>
+        {%- endif -%}
       {%- endform -%}
 
       {%- comment -%}
@@ -453,6 +503,26 @@
 
   .request-combination__stock-fields[hidden] {
     display: none;
+  }
+
+  .request-combination__request-fields,
+  .request-combination__custom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__request-fields[hidden],
+  .request-combination__custom[hidden] {
+    display: none;
+  }
+
+  .request-combination__custom-text {
+    margin-block: 0;
+  }
+
+  .request-combination__custom-link {
+    align-self: flex-start;
   }
 
   .request-combination__input {

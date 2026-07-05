@@ -27,18 +27,21 @@ const AVAILABILITY_TOKENS = {
  * @property {HTMLInputElement} availabilityField - Hidden contact[Availability] input.
  * @property {HTMLScriptElement} variantData - JSON script with the reduced variant map.
  * @property {HTMLSelectElement[]} optionSelects - One select per product option.
- * @property {HTMLInputElement[]} pathRadios - The two request-type radios.
+ * @property {HTMLInputElement[]} pathRadios - The request-type radios (2 or 3).
+ * @property {HTMLElement} requestFields - Wrapper around the on-page request form.
+ * @property {HTMLInputElement} emailField - Email input.
  * @property {HTMLElement} stockFields - Wrapper around the option selects + status line.
  * @property {HTMLTextAreaElement} noteField - Shared note/description textarea.
  * @property {HTMLElement} noteLabelText - Text span of the note/description label.
  * @property {HTMLElement} noteRequiredMark - Required marker, shown on the different path.
+ * @property {HTMLElement} [customFields] - Custom-order handoff block; rendered only when the custom-orders page exists.
  * @property {HTMLElement} [closeButton] - Dialog close button.
  * @property {HTMLElement} [successSummary] - Rendered only after a successful post.
  * @property {HTMLElement} [errorSummary] - Rendered only after a failed post.
  */
 
 /**
- * @typedef {'stock' | 'different'} RequestPath
+ * @typedef {'stock' | 'different' | 'custom'} RequestPath
  */
 
 /**
@@ -77,6 +80,8 @@ class RequestCombinationComponent extends DialogComponent {
     'variantData',
     'optionSelects',
     'pathRadios',
+    'requestFields',
+    'emailField',
     'stockFields',
     'noteField',
     'noteLabelText',
@@ -108,7 +113,7 @@ class RequestCombinationComponent extends DialogComponent {
     // dialog shows what was actually requested. The selected path is not
     // server-rendered, so it is restored from the snapshot; #applyPath then
     // reconciles field visibility and (for the stock path) the status line.
-    const path = snapshot.path === 'different' ? 'different' : 'stock';
+    const path = snapshot.path === 'different' || snapshot.path === 'custom' ? snapshot.path : 'stock';
     this.#setPath(path);
     if (path === 'stock') this.#setSelectValues(snapshot.values);
     this.#applyPath(path);
@@ -217,8 +222,8 @@ class RequestCombinationComponent extends DialogComponent {
    * 'stock' if none is checked (server renders 'stock' checked).
    */
   #currentPath() {
-    const checked = this.refs.pathRadios.find((radio) => radio.checked);
-    return checked?.dataset.path === 'different' ? 'different' : 'stock';
+    const path = this.refs.pathRadios.find((radio) => radio.checked)?.dataset.path;
+    return path === 'different' || path === 'custom' ? path : 'stock';
   }
 
   /**
@@ -233,24 +238,55 @@ class RequestCombinationComponent extends DialogComponent {
   }
 
   /**
-   * Shows only the active path's fields. The stock path reveals the option
-   * selects (enabled, so they post) and refreshes the live status; the
-   * different path hides and disables them (so no "Requested <option>" keys
-   * post), marks availability "Not applicable", and makes the note textarea a
-   * required description. Email stays required and visible on both paths.
+   * Shows only the active path's fields.
+   * - stock: reveals the option selects (enabled, so they post) and refreshes
+   *   the live status; the note is an optional note.
+   * - different: hides and disables the selects (so no "Requested <option>"
+   *   keys post), marks availability "Not applicable", and makes the note a
+   *   required description.
+   * - custom: hides the whole on-page form and shows the custom-order link;
+   *   nothing posts from this path, so email is disabled.
+   * Email is required on the stock and different paths.
    *
    * @param {RequestPath} path
    */
   #applyPath(path) {
+    const isStock = path === 'stock';
     const isDifferent = path === 'different';
-    const { stockFields, optionSelects, noteField, noteLabelText, noteRequiredMark, availabilityField, statusLine } =
-      this.refs;
+    const isCustom = path === 'custom';
+    const {
+      requestFields,
+      customFields,
+      stockFields,
+      optionSelects,
+      emailField,
+      noteField,
+      noteLabelText,
+      noteRequiredMark,
+      availabilityField,
+      statusLine,
+    } = this.refs;
 
-    stockFields.hidden = isDifferent;
+    // Custom hands off to the custom-orders page: swap the whole request form
+    // for the link. customFields is only rendered when that page exists.
+    requestFields.hidden = isCustom;
+    if (customFields) customFields.hidden = !isCustom;
+
+    // Email is required on the two on-page paths; disabled on custom so it
+    // neither validates nor posts.
+    emailField.disabled = isCustom;
+    emailField.required = !isCustom;
+    emailField.setAttribute('aria-required', isCustom ? 'false' : 'true');
+
+    // Option selects apply only to the stock path; disabled elsewhere so they
+    // never post.
+    stockFields.hidden = !isStock;
     optionSelects.forEach((select) => {
-      select.disabled = isDifferent;
+      select.disabled = !isStock;
     });
 
+    // The note is an optional note on stock and a required description on
+    // different.
     noteField.toggleAttribute('required', isDifferent);
     noteField.setAttribute('aria-required', isDifferent ? 'true' : 'false');
     noteRequiredMark.hidden = !isDifferent;
@@ -258,11 +294,11 @@ class RequestCombinationComponent extends DialogComponent {
       ? this.dataset.descriptionLabel ?? ''
       : this.dataset.noteLabel ?? '';
 
-    if (isDifferent) {
+    if (isStock) {
+      this.#updateStatus();
+    } else {
       availabilityField.value = AVAILABILITY_TOKENS['not-applicable'];
       statusLine.hidden = true;
-    } else {
-      this.#updateStatus();
     }
   }
 
