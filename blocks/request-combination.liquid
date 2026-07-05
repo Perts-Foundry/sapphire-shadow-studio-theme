@@ -16,10 +16,16 @@
     recorded as data only; nobody is auto-subscribed. No client-side
     timestamp field is included on purpose: it would be spoofable and the
     notification email's own Date header already captures when.
-  - Custom field names carry a "Requested " prefix so they can never collide
-    with Shopify's reserved contact keys (email, body, name). Option names
-    containing "[" or "]" would mangle under bracket-style param parsing;
-    none exist on this store.
+  - Option-derived field names carry a "Requested " prefix so a
+    merchant-named option like "Email" or "Name" can never collide with
+    Shopify's reserved contact keys; the fixed fields (Marketing consent,
+    Product, Product URL, Availability) use static non-reserved names.
+    Option names containing "[" or "]" would mangle under bracket-style
+    param parsing; none exist on this store.
+  - The customer-facing sold-out status means "variant exists but is not
+    currently orderable". blocks/buy-buttons.liquid distinguishes Sold out
+    from Unavailable more finely (inventory-policy aware); on this store
+    (managed inventory, deny policy) the wordings coincide.
   - The hidden `contact[Availability]`, `contact[Product]`, and
     `contact[Product URL]` values are client-asserted hints that a direct
     POST can forge; treat them as triage aids, not facts, and do not click
@@ -32,12 +38,17 @@
     redirect is therefore gated on a sessionStorage snapshot written at
     submit time (see assets/request-combination.js). If the block is added
     twice on one template, both instances share posted state; the snapshot
-    gate keeps only the submitting product's dialogs eligible to reopen.
+    gate limits auto-reopen to the submitting product, and the first
+    matching instance consumes the snapshot, so at most one dialog reopens.
+    A snapshot written for a submission whose captcha challenge was
+    abandoned persists for the tab session; the gate makes that cosmetic at
+    worst.
   - The close button is first in the dialog DOM per
     docs/accessibility-patterns.md (Modal); blocks/popup-link.liquid places
     it last, which this block deliberately does not copy.
   - Renders nothing for products with only the default variant (no
-    combinations to request) or outside a product context.
+    combinations to request) or outside a product context (except the theme
+    editor's visual preview, which substitutes the first product).
 
   @example
   {% content_for 'block', type: 'request-combination', id: 'request-combination' %}
@@ -55,18 +66,6 @@
     assign form_id = 'RequestCombination-' | append: block.id
     assign heading_id = 'RequestCombinationHeading-' | append: block.id
     assign email_error_id = 'RequestCombinationEmailError-' | append: block.id
-
-    assign current_variant = product.selected_or_first_available_variant
-    if current_variant == blank
-      assign initial_status = 'not-offered'
-      assign initial_status_text = 'blocks.request_combination.status_not_offered' | t
-    elsif current_variant.available
-      assign initial_status = 'available'
-      assign initial_status_text = 'blocks.request_combination.status_available' | t
-    else
-      assign initial_status = 'sold-out'
-      assign initial_status_text = 'blocks.request_combination.status_sold_out' | t
-    endif
   -%}
 
   <request-combination-component
@@ -171,14 +170,16 @@
           </div>
         {%- endfor -%}
 
+        {%- comment -%}
+          Populated by JS at dialog-open time. The dialog is unreachable
+          without JS, so no server-rendered status text is needed.
+        {%- endcomment -%}
         <p
           ref="statusLine"
           class="request-combination__status"
           role="status"
-          data-status="{{ initial_status }}"
-        >
-          {{- initial_status_text | escape -}}
-        </p>
+          hidden
+        ></p>
 
         <div class="request-combination__field">
           <label for="RequestCombinationEmail-{{ block.id }}">
@@ -226,7 +227,9 @@
           value="No"
         >
         {%- liquid
-          assign consent_label_text = 'blocks.request_combination.consent_label' | t
+          # Single-escaped at the call site because snippets/checkbox.liquid
+          # renders its label param raw (data-label attribute + span text).
+          assign consent_label_text = 'blocks.request_combination.consent_label' | t | escape
           assign consent_id = 'RequestCombinationConsent-' | append: block.id
         -%}
         {% render 'checkbox',
@@ -290,8 +293,8 @@
   }
 
   .request-combination__trigger {
-    width: 100%;
-    min-height: 44px;
+    inline-size: 100%;
+    min-block-size: var(--minimum-touch-target);
   }
 
   .request-combination__dialog {
@@ -301,7 +304,8 @@
     background-color: var(--color-background);
     padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
     inline-size: min(30rem, calc(100vw - var(--padding-xl) * 2));
-    max-height: var(--modal-max-height);
+    max-block-size: var(--modal-max-height);
+    overflow-y: auto;
 
     @media screen and (min-width: 750px) {
       padding: var(--padding-5xl);
@@ -344,7 +348,7 @@
   }
 
   .request-combination__input {
-    width: 100%;
+    inline-size: 100%;
     color: var(--color-input-text);
     background-color: var(--color-input-background);
     padding: var(--padding-lg) var(--padding-xl);

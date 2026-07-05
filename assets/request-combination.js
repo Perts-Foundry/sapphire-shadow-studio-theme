@@ -55,7 +55,7 @@ const AVAILABILITY_TOKENS = {
  * would otherwise leave a stale map behind.
  */
 class RequestCombinationComponent extends DialogComponent {
-  requiredRefs = ['dialog', 'statusLine', 'availabilityField', 'variantData'];
+  requiredRefs = ['dialog', 'statusLine', 'availabilityField', 'variantData', 'optionSelects'];
 
   /** @type {{ options: string[], available: boolean }[] | null} */
   #variantMap = null;
@@ -70,14 +70,18 @@ class RequestCombinationComponent extends DialogComponent {
     if (!summary) return;
 
     // Auto-open is gated on a matching snapshot so that posted state shared
-    // with any other contact form on the page cannot pop this dialog.
+    // with any other contact form on the page cannot pop this dialog. A
+    // mismatched snapshot is left in place on purpose: a matching instance
+    // elsewhere on the page (e.g. a featured-product section) may still need
+    // it, and an unconsumed snapshot is cosmetic at worst.
     const snapshot = this.#readSnapshot();
     if (!snapshot || snapshot.productId !== this.dataset.productId) return;
 
-    if (this.refs.errorSummary) {
-      this.#applySnapshot(snapshot);
-      this.#updateStatus();
-    }
+    // Restore the requested combination on both paths: on error so the
+    // customer can correct and resubmit, on success so the reopened dialog
+    // shows the combination that was actually requested.
+    this.#setSelectValues(snapshot.values);
+    this.#updateStatus();
 
     // Clear on both success and error paths so a later, unrelated round trip
     // cannot restore a stale combination.
@@ -124,11 +128,13 @@ class RequestCombinationComponent extends DialogComponent {
 
   /**
    * Reads the current selection from the page's variant picker and mirrors
-   * it into the dialog selects. Uses the picker's own selected-option
-   * contract (see assets/variant-picker.js selectedOptionsValues) instead of
-   * per-style markup internals, scoped to this section and product so
-   * quick-add pickers for other products are never read. Fails soft: on any
-   * mismatch the server-rendered selection stands.
+   * it into the dialog selects. The query mirrors the selector that
+   * assets/variant-picker.js uses internally for its own selected-option
+   * reads ('select option[selected], fieldset input:checked'), but reads
+   * display values rather than option-value ids; if the variant picker
+   * markup changes shape, update both call sites together. Scoped to this
+   * section and product so quick-add pickers for other products are never
+   * read. Fails soft: on any mismatch the server-rendered selection stands.
    */
   #syncFromPagePicker() {
     const productId = this.dataset.productId ?? '';
@@ -139,29 +145,33 @@ class RequestCombinationComponent extends DialogComponent {
 
     const selected = picker.querySelectorAll('select option[selected], fieldset input:checked');
     const values = Array.from(selected, (element) => /** @type {HTMLInputElement} */ (element).value);
-    const selects = this.#optionSelects();
-    if (values.length !== selects.length) return;
+    this.#setSelectValues(values);
+  }
+
+  /**
+   * Applies values to the option selects in position order. Guarded: applies
+   * nothing on length mismatch and skips values missing from a select's
+   * options, so callers fail soft to the current selection.
+   *
+   * @param {unknown} values
+   */
+  #setSelectValues(values) {
+    const selects = this.refs.optionSelects;
+    if (!Array.isArray(values) || values.length !== selects.length) return;
 
     selects.forEach((select, index) => {
       const value = values[index];
-      if (value === undefined) return;
+      if (typeof value !== 'string') return;
       const match = Array.from(select.options).some((option) => option.value === value);
       if (match) select.value = value;
     });
   }
 
   /**
-   * @returns {HTMLSelectElement[]}
-   */
-  #optionSelects() {
-    return this.refs.optionSelects ?? [];
-  }
-
-  /**
    * @returns {string[]} Selected option values in option-position order.
    */
   #selectedValues() {
-    return this.#optionSelects().map((select) => select.value);
+    return this.refs.optionSelects.map((select) => select.value);
   }
 
   /**
@@ -211,7 +221,6 @@ class RequestCombinationComponent extends DialogComponent {
     availabilityField.value = AVAILABILITY_TOKENS[status];
     statusLine.hidden = status === 'unknown';
     if (status !== 'unknown') {
-      statusLine.dataset.status = status;
       const text = {
         available: this.dataset.statusAvailable,
         'sold-out': this.dataset.statusSoldOut,
@@ -219,21 +228,6 @@ class RequestCombinationComponent extends DialogComponent {
       }[status];
       statusLine.textContent = text ?? '';
     }
-  }
-
-  /**
-   * @param {RequestSnapshot} snapshot
-   */
-  #applySnapshot(snapshot) {
-    const selects = this.#optionSelects();
-    if (!Array.isArray(snapshot.values) || snapshot.values.length !== selects.length) return;
-
-    selects.forEach((select, index) => {
-      const value = snapshot.values[index];
-      if (typeof value !== 'string') return;
-      const match = Array.from(select.options).some((option) => option.value === value);
-      if (match) select.value = value;
-    });
   }
 
   /**
