@@ -451,16 +451,22 @@
      order. Below 750px that base treatment forces modals full-screen
      (edge-to-edge, square corners); this popover instead stays a floating,
      rounded card on both mobile and desktop. */
+  /* Physical width/height here on purpose (not logical inline-/block-size).
+     The base .dialog-modal mobile rules set physical width/height/max-* to go
+     full-screen below 750px; mixing logical + physical for the same dimension
+     makes the override non-deterministic (the base height wins, so the dialog
+     is not capped and its corners fall off-screen). Same-property physical at
+     higher specificity wins cleanly at every breakpoint. */
   dialog.request-combination__dialog {
     box-shadow: var(--shadow-popover);
     border: var(--style-border-popover);
     border-radius: var(--style-border-radius-popover);
     background-color: var(--color-background);
     padding: 0;
-    inline-size: min(30rem, calc(100vw - var(--padding-xl) * 2));
-    max-inline-size: calc(100vw - var(--padding-xl) * 2);
-    block-size: auto;
-    max-block-size: var(--modal-max-height);
+    width: min(30rem, calc(100vw - var(--padding-xl) * 2));
+    max-width: calc(100vw - var(--padding-xl) * 2);
+    height: auto;
+    max-height: var(--modal-max-height);
     /* Scrolling lives on the inner wrapper; hidden here so the rounded
        corners clip the scrollbar instead of it squaring off the dialog's
        side (a plain overflow-y: auto here leaves square corners next to the
