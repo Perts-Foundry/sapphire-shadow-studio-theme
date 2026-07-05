@@ -188,6 +188,34 @@
           </label>
         </fieldset>
 
+        {%- comment -%}
+          Email sits directly under the path selector so its position is
+          identical on both paths. Required on both; the option selects and
+          description below it swap in per the selected path.
+        {%- endcomment -%}
+        <div class="request-combination__field">
+          <label for="RequestCombinationEmail-{{ block.id }}">
+            {{- 'blocks.request_combination.email_label' | t -}}
+            <span aria-hidden="true">*</span>
+          </label>
+          <input
+            type="email"
+            id="RequestCombinationEmail-{{ block.id }}"
+            class="request-combination__input"
+            autocomplete="email"
+            name="contact[email]"
+            spellcheck="false"
+            autocapitalize="off"
+            value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
+            required
+            aria-required="true"
+            {% if form.errors contains 'email' %}
+              aria-invalid="true"
+              aria-describedby="{{ email_error_id }}"
+            {% endif %}
+          >
+        </div>
+
         <div class="request-combination__stock-fields" ref="stockFields">
         {%- for product_option in product.options_with_values -%}
           <div class="request-combination__field">
@@ -225,29 +253,6 @@
           role="status"
           hidden
         ></p>
-        </div>
-
-        <div class="request-combination__field">
-          <label for="RequestCombinationEmail-{{ block.id }}">
-            {{- 'blocks.request_combination.email_label' | t -}}
-            <span aria-hidden="true">*</span>
-          </label>
-          <input
-            type="email"
-            id="RequestCombinationEmail-{{ block.id }}"
-            class="request-combination__input"
-            autocomplete="email"
-            name="contact[email]"
-            spellcheck="false"
-            autocapitalize="off"
-            value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
-            required
-            aria-required="true"
-            {% if form.errors contains 'email' %}
-              aria-invalid="true"
-              aria-describedby="{{ email_error_id }}"
-            {% endif %}
-          >
         </div>
 
         {%- comment -%}
