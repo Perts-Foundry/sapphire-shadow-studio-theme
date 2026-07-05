@@ -1064,11 +1064,11 @@
     "right_padding": "Right padding",
     "request_combination": {
       "button_label": "Button label",
-      "button_label_default": "Want a different combination?",
+      "button_label_default": "Looking for something else?",
       "heading": "Heading",
-      "heading_default": "Request a combination",
+      "heading_default": "Tell us what you're after",
       "body": "Description",
-      "body_default": "Pick the combination you're looking for and leave your email. We'll let you know if we can make it."
+      "body_default": "Pick the combination you want and leave your email. We'll let you know if we can make it happen."
     },
     "return_policy_acknowledgment": {
       "label": "Checkbox label",
