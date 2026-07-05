@@ -41,7 +41,10 @@
     the URL reflexively on a suspicious submission.
   - There is no honeypot on purpose: Shopify processes /contact regardless
     of extra fields and nothing merchant-side can drop the email before the
-    inbox, so the platform hCaptcha is the gate.
+    inbox, so the platform hCaptcha is the gate. The form carries
+    data-shopify-captcha so that gate wires up even though the form is
+    rendered inside a closed dialog; it still depends on the merchant keeping
+    spam protection enabled (Online Store > Preferences).
   - Posted state (form.posted_successfully? / form.errors) is shared by
     every contact form on the page. Auto-reopening the dialog after the
     redirect is therefore gated on a sessionStorage snapshot written at
@@ -127,7 +130,14 @@
         <p class="request-combination__body">{{ block.settings.body | escape | newline_to_br }}</p>
       {%- endif -%}
 
-      {%- form 'contact', id: form_id, class: 'request-combination__form', return_to: product.url -%}
+      {%- comment -%}
+        Shopify auto-wires hCaptcha to contact forms present at page load, but
+        this one is server-rendered inside a closed <dialog>; data-shopify-
+        captcha forces immediate wiring so the hidden form is covered. Stays
+        risk-based/invisible for real customers, and is inert if the merchant
+        disables spam protection in Online Store > Preferences.
+      {%- endcomment -%}
+      {%- form 'contact', id: form_id, class: 'request-combination__form', return_to: product.url, data-shopify-captcha: 'true' -%}
         {%- if form.errors -%}
           <div
             id="{{ email_error_id }}"
