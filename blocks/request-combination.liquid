@@ -1,11 +1,15 @@
 {%- doc -%}
   "Request a combination" capture block for product pages. Renders an
-  always-visible secondary button that opens a modal dialog where customers
-  pick any option combination (including sold-out and never-created ones),
-  see a live availability status, and send the request through Shopify's
-  native contact form (full-page POST to /contact, guarded by Shopify's
-  built-in spam protection). Each submission arrives as a structured email
-  at the store's sender address. Inventory behavior is untouched.
+  always-visible secondary button that opens a modal dialog offering two
+  request paths, chosen with a radio group: (1) an out-of-stock combination,
+  where the customer picks any option combination and sees a live
+  availability status; or (2) something different, a free-text description
+  for anything outside the option matrix. The selected path shows only its
+  relevant fields; email is required either way. Requests send through
+  Shopify's native contact form (full-page POST to /contact, guarded by
+  Shopify's built-in spam protection). Each submission arrives as a
+  structured email at the store's sender address. Inventory behavior is
+  untouched.
 
   Conventions and caveats:
 
@@ -18,8 +22,10 @@
     notification email's own Date header already captures when.
   - Option-derived field names carry a "Requested " prefix so a
     merchant-named option like "Email" or "Name" can never collide with
-    Shopify's reserved contact keys; the fixed fields (Marketing consent,
-    Product, Product URL, Availability) use static non-reserved names.
+    Shopify's reserved contact keys; the fixed fields (Request type,
+    Marketing consent, Product, Product URL, Availability) use static
+    non-reserved names. Request type posts a fixed English token from the
+    selected radio; Availability is "Not applicable" on the different path.
     Option names containing "[" or "]" would mangle under bracket-style
     param parsing; none exist on this store.
   - The customer-facing sold-out status means "variant exists but is not
@@ -75,6 +81,8 @@
     data-status-available="{{ 'blocks.request_combination.status_available' | t | escape }}"
     data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t | escape }}"
     data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t | escape }}"
+    data-note-label="{{ 'blocks.request_combination.note_label' | t | escape }}"
+    data-description-label="{{ 'blocks.request_combination.description_label' | t | escape }}"
     on:submit="/handleSubmit"
     {{ block.shopify_attributes }}
   >
@@ -144,6 +152,43 @@
           </div>
         {%- endif -%}
 
+        {%- comment -%}
+          Two-path selector. The radio values are fixed English tokens (like
+          the Availability tokens in the JS): they post to the merchant inbox
+          as contact[Request type] and must not vary with the customer's
+          storefront locale. Only the visible <span> labels are translated.
+          "Stock" reveals the option selects + live status; "different" hides
+          them (JS disables the selects so they don't post) and makes the note
+          textarea a required free-text description.
+        {%- endcomment -%}
+        <fieldset class="request-combination__paths">
+          <legend>{{ 'blocks.request_combination.request_type_legend' | t | escape }}</legend>
+          <label class="request-combination__path">
+            <input
+              type="radio"
+              name="contact[Request type]"
+              value="Out of stock combination"
+              data-path="stock"
+              ref="pathRadios[]"
+              on:change="/handlePathChange"
+              checked
+            >
+            <span>{{ 'blocks.request_combination.request_type_stock' | t | escape }}</span>
+          </label>
+          <label class="request-combination__path">
+            <input
+              type="radio"
+              name="contact[Request type]"
+              value="Something different"
+              data-path="different"
+              ref="pathRadios[]"
+              on:change="/handlePathChange"
+            >
+            <span>{{ 'blocks.request_combination.request_type_different' | t | escape }}</span>
+          </label>
+        </fieldset>
+
+        <div class="request-combination__stock-fields" ref="stockFields">
         {%- for product_option in product.options_with_values -%}
           <div class="request-combination__field">
             <label for="RequestCombinationOption-{{ block.id }}-{{ forloop.index0 }}">
@@ -180,6 +225,7 @@
           role="status"
           hidden
         ></p>
+        </div>
 
         <div class="request-combination__field">
           <label for="RequestCombinationEmail-{{ block.id }}">
@@ -204,15 +250,26 @@
           >
         </div>
 
+        {%- comment -%}
+          Shared note/description textarea. In the "stock" path it is an
+          optional note; in the "different" path JS swaps the label to the
+          description copy, reveals the required marker, and toggles the
+          required / aria-required attributes so the browser enforces a
+          non-empty description. One contact[body] field keeps the merchant
+          email consistent across both paths.
+        {%- endcomment -%}
         <div class="request-combination__field">
           <label for="RequestCombinationNote-{{ block.id }}">
-            {{- 'blocks.request_combination.note_label' | t | escape -}}
+            <span ref="noteLabelText">{{ 'blocks.request_combination.note_label' | t | escape }}</span>
+            <span ref="noteRequiredMark" aria-hidden="true" hidden>*</span>
           </label>
           <textarea
             rows="3"
             id="RequestCombinationNote-{{ block.id }}"
             class="request-combination__input request-combination__input--textarea"
             name="contact[body]"
+            ref="noteField"
+            aria-required="false"
           >{{- form.body | escape -}}</textarea>
         </div>
 
@@ -345,6 +402,40 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
+  }
+
+  .request-combination__paths {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+  }
+
+  .request-combination__paths legend {
+    padding: 0;
+    margin-block-end: var(--margin-2xs);
+    font-weight: var(--font-weight-bold);
+  }
+
+  .request-combination__path {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-block-size: var(--minimum-touch-target);
+    cursor: pointer;
+  }
+
+  .request-combination__stock-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__stock-fields[hidden] {
+    display: none;
   }
 
   .request-combination__input {

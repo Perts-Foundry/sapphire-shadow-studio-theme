@@ -16,6 +16,7 @@ const AVAILABILITY_TOKENS = {
   available: 'Available',
   'sold-out': 'Sold out',
   'not-offered': 'Not offered',
+  'not-applicable': 'Not applicable',
   unknown: 'Not verified',
 };
 
@@ -26,23 +27,37 @@ const AVAILABILITY_TOKENS = {
  * @property {HTMLInputElement} availabilityField - Hidden contact[Availability] input.
  * @property {HTMLScriptElement} variantData - JSON script with the reduced variant map.
  * @property {HTMLSelectElement[]} optionSelects - One select per product option.
+ * @property {HTMLInputElement[]} pathRadios - The two request-type radios.
+ * @property {HTMLElement} stockFields - Wrapper around the option selects + status line.
+ * @property {HTMLTextAreaElement} noteField - Shared note/description textarea.
+ * @property {HTMLElement} noteLabelText - Text span of the note/description label.
+ * @property {HTMLElement} noteRequiredMark - Required marker, shown on the different path.
  * @property {HTMLElement} [closeButton] - Dialog close button.
  * @property {HTMLElement} [successSummary] - Rendered only after a successful post.
  * @property {HTMLElement} [errorSummary] - Rendered only after a failed post.
  */
 
 /**
+ * @typedef {'stock' | 'different'} RequestPath
+ */
+
+/**
  * @typedef {object} RequestSnapshot
  * @property {string} productId
+ * @property {RequestPath} path - Which request path was selected at submit time.
  * @property {string[]} values - Selected option values, in option-position order.
  */
 
 /**
- * Modal form that lets customers request a sold-out or never-created variant
- * combination. Transport is Shopify's native contact form (full-page POST to
+ * Modal form that lets customers request either a sold-out / never-created
+ * variant combination (the "stock" path, with a live availability status) or
+ * something outside the option matrix (the "different" path, a required
+ * free-text description). A radio group switches paths; this component shows
+ * only the active path's fields and posts the selection as contact[Request
+ * type]. Transport is Shopify's native contact form (full-page POST to
  * /contact guarded by Shopify's spam protection); this component only handles
- * the dialog, prefill, the live availability status, and restoring state
- * after the redirect round trip.
+ * the dialog, prefill, path switching, the live availability status, and
+ * restoring state after the redirect round trip.
  *
  * The submit snapshot persisted to sessionStorage carries ONLY
  * {productId, values}. Never add the email or note to it: both round-trip
@@ -55,7 +70,18 @@ const AVAILABILITY_TOKENS = {
  * would otherwise leave a stale map behind.
  */
 class RequestCombinationComponent extends DialogComponent {
-  requiredRefs = ['dialog', 'statusLine', 'availabilityField', 'variantData', 'optionSelects'];
+  requiredRefs = [
+    'dialog',
+    'statusLine',
+    'availabilityField',
+    'variantData',
+    'optionSelects',
+    'pathRadios',
+    'stockFields',
+    'noteField',
+    'noteLabelText',
+    'noteRequiredMark',
+  ];
 
   /** @type {{ options: string[], available: boolean }[] | null} */
   #variantMap = null;
@@ -77,11 +103,15 @@ class RequestCombinationComponent extends DialogComponent {
     const snapshot = this.#readSnapshot();
     if (!snapshot || snapshot.productId !== this.dataset.productId) return;
 
-    // Restore the requested combination on both paths: on error so the
-    // customer can correct and resubmit, on success so the reopened dialog
-    // shows the combination that was actually requested.
-    this.#setSelectValues(snapshot.values);
-    this.#updateStatus();
+    // Restore the requested combination on both round-trip outcomes: on error
+    // so the customer can correct and resubmit, on success so the reopened
+    // dialog shows what was actually requested. The selected path is not
+    // server-rendered, so it is restored from the snapshot; #applyPath then
+    // reconciles field visibility and (for the stock path) the status line.
+    const path = snapshot.path === 'different' ? 'different' : 'stock';
+    this.#setPath(path);
+    if (path === 'stock') this.#setSelectValues(snapshot.values);
+    this.#applyPath(path);
 
     // Clear on both success and error paths so a later, unrelated round trip
     // cannot restore a stale combination.
@@ -96,7 +126,7 @@ class RequestCombinationComponent extends DialogComponent {
    */
   handleOpen() {
     this.#syncFromPagePicker();
-    this.#updateStatus();
+    this.#applyPath(this.#currentPath());
     this.showDialog();
   }
 
@@ -105,6 +135,13 @@ class RequestCombinationComponent extends DialogComponent {
    */
   handleOptionChange() {
     this.#updateStatus();
+  }
+
+  /**
+   * Switches visible fields when the request-type radio changes.
+   */
+  handlePathChange() {
+    this.#applyPath(this.#currentPath());
   }
 
   /**
@@ -117,6 +154,7 @@ class RequestCombinationComponent extends DialogComponent {
       /** @type {RequestSnapshot} */
       const snapshot = {
         productId: this.dataset.productId ?? '',
+        path: this.#currentPath(),
         values: this.#selectedValues(),
       };
       sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
@@ -172,6 +210,60 @@ class RequestCombinationComponent extends DialogComponent {
    */
   #selectedValues() {
     return this.refs.optionSelects.map((select) => select.value);
+  }
+
+  /**
+   * @returns {RequestPath} The checked request-type radio, defaulting to
+   * 'stock' if none is checked (server renders 'stock' checked).
+   */
+  #currentPath() {
+    const checked = this.refs.pathRadios.find((radio) => radio.checked);
+    return checked?.dataset.path === 'different' ? 'different' : 'stock';
+  }
+
+  /**
+   * Checks the radio matching the given path (used on snapshot restore).
+   *
+   * @param {RequestPath} path
+   */
+  #setPath(path) {
+    this.refs.pathRadios.forEach((radio) => {
+      radio.checked = radio.dataset.path === path;
+    });
+  }
+
+  /**
+   * Shows only the active path's fields. The stock path reveals the option
+   * selects (enabled, so they post) and refreshes the live status; the
+   * different path hides and disables them (so no "Requested <option>" keys
+   * post), marks availability "Not applicable", and makes the note textarea a
+   * required description. Email stays required and visible on both paths.
+   *
+   * @param {RequestPath} path
+   */
+  #applyPath(path) {
+    const isDifferent = path === 'different';
+    const { stockFields, optionSelects, noteField, noteLabelText, noteRequiredMark, availabilityField, statusLine } =
+      this.refs;
+
+    stockFields.hidden = isDifferent;
+    optionSelects.forEach((select) => {
+      select.disabled = isDifferent;
+    });
+
+    noteField.toggleAttribute('required', isDifferent);
+    noteField.setAttribute('aria-required', isDifferent ? 'true' : 'false');
+    noteRequiredMark.hidden = !isDifferent;
+    noteLabelText.textContent = isDifferent
+      ? this.dataset.descriptionLabel ?? ''
+      : this.dataset.noteLabel ?? '';
+
+    if (isDifferent) {
+      availabilityField.value = AVAILABILITY_TOKENS['not-applicable'];
+      statusLine.hidden = true;
+    } else {
+      this.#updateStatus();
+    }
   }
 
   /**

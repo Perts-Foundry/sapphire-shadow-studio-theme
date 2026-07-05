@@ -8,8 +8,12 @@
       "success": "Mulțumim pentru că te-ai abonat!"
     },
     "request_combination": {
+      "request_type_legend": "TODO: What can we help with?",
+      "request_type_stock": "TODO: A combination that's out of stock",
+      "request_type_different": "TODO: Something completely different",
       "email_label": "TODO: Email",
-      "note_label": "TODO: Something different in mind? Describe it (optional)",
+      "note_label": "TODO: Anything else to add? (optional)",
+      "description_label": "TODO: Describe what you're after",
       "consent_label": "TODO: You may email me about this request and future availability.",
       "submit_label": "TODO: Send it over",
       "status_available": "TODO: Good news: this combination is available to order now.",
