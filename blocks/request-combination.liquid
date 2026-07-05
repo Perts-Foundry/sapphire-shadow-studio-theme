@@ -461,12 +461,12 @@
     max-inline-size: calc(100vw - var(--padding-xl) * 2);
     block-size: auto;
     max-block-size: var(--modal-max-height);
-    display: flex;
-    flex-direction: column;
     /* Scrolling lives on the inner wrapper; hidden here so the rounded
        corners clip the scrollbar instead of it squaring off the dialog's
        side (a plain overflow-y: auto here leaves square corners next to the
-       scrollbar). */
+       scrollbar). Do NOT set `display` here: it would override the UA
+       `dialog:not([open]) { display: none }` and render the closed dialog
+       inline under the trigger. The flex layout is applied on [open] below. */
     overflow: hidden;
   }
 
@@ -480,7 +480,11 @@
     }
   }
 
-  .request-combination__dialog[open] {
+  /* Flex layout for the inner scroll wrapper applies only while open, so the
+     closed dialog keeps the UA `display: none` and never renders inline. */
+  dialog.request-combination__dialog[open] {
+    display: flex;
+    flex-direction: column;
     animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
   }
 
