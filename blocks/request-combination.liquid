@@ -254,6 +254,17 @@
             ref="emailField"
             spellcheck="false"
             autocapitalize="off"
+            {%- comment -%}
+              Opt this field out of password-manager inline autofill menus. The dialog opens
+              via dialog.showModal() (top layer); Bitwarden's inline menu is also a top-layer
+              popover, and the two competing for the top position trips Bitwarden's anti-hijack
+              guard ("This page is interfering with the Bitwarden experience"). Skipping the
+              field removes the competing popover. Sibling opt-outs cover 1Password / LastPass.
+              Autofill still works via the extension popup. Upstream bug: bitwarden/clients#21388.
+            {%- endcomment -%}
+            data-bwignore
+            data-lpignore="true"
+            data-1p-ignore
             value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
             required
             aria-required="true"
