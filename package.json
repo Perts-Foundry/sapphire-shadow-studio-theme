@@ -4,7 +4,7 @@
   "private": true,
   "description": "Custom Shopify theme based on Horizon. CI tooling pinned via @shopify/cli devDependency.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "shopify": "shopify",
