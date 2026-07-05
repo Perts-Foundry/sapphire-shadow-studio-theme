@@ -450,7 +450,10 @@
      .dialog-modal rules (0,1,0) at every width, regardless of stylesheet
      order. Below 750px that base treatment forces modals full-screen
      (edge-to-edge, square corners); this popover instead stays a floating,
-     rounded card on both mobile and desktop. */
+     rounded card on both mobile and desktop. Exception: border-radius alone
+     is re-declared on the [open] rule below, because predictive-search.liquid
+     ships a page-global `.dialog-modal[open] { border-radius: 0 }` (0,2,0)
+     at <750px that outranks this rule. */
   /* Physical width/height here on purpose (not logical inline-/block-size).
      The base .dialog-modal mobile rules set physical width/height/max-* to go
      full-screen below 750px; mixing logical + physical for the same dimension
@@ -487,10 +490,15 @@
   }
 
   /* Flex layout for the inner scroll wrapper applies only while open, so the
-     closed dialog keeps the UA `display: none` and never renders inline. */
+     closed dialog keeps the UA `display: none` and never renders inline.
+     border-radius repeats here at (0,2,1) to beat predictive-search.liquid's
+     page-global mobile `.dialog-modal[open] { border-radius: 0 }` (0,2,0);
+     the aggregated compiled stylesheet applies that rule to every open
+     .dialog-modal on the page, not just the search modal. */
   dialog.request-combination__dialog[open] {
     display: flex;
     flex-direction: column;
+    border-radius: var(--style-border-radius-popover);
     animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
   }
 
