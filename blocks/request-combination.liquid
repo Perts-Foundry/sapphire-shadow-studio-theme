@@ -5,8 +5,9 @@
   combination, where the customer picks any option combination and sees a
   live availability status; (2) something different, a free-text description
   for anything outside the option matrix; and (3) a custom order, which hands
-  off to the /pages/custom-orders page (the radio and its panel render only
-  when that page exists). The selected path shows only its relevant fields;
+  off to a page chosen in the block's "Custom order page" setting (the radio
+  and its panel render only when that setting points at a page). The selected
+  path shows only its relevant fields;
   email is required on paths 1 and 2. Paths 1 and 2 send through Shopify's
   native contact form (full-page POST to /contact, guarded by Shopify's
   built-in spam protection); path 3 posts nothing, it is a link. Each form
@@ -74,10 +75,10 @@
     assign form_id = 'RequestCombination-' | append: block.id
     assign heading_id = 'RequestCombinationHeading-' | append: block.id
     assign email_error_id = 'RequestCombinationEmailError-' | append: block.id
-    # The custom-order path and its radio only render when this page exists.
-    # Handle hardcoded to match the storefront's existing /pages/custom-orders
-    # links (cf. templates/page.faq.json); a missing page hides the option.
-    assign custom_order_page = pages['custom-orders']
+    # The custom-order path and its radio render only when the merchant has
+    # pointed the "Custom order page" setting at a page; leaving it blank
+    # hides the option.
+    assign custom_order_page = block.settings.custom_order_page
   -%}
 
   <request-combination-component
@@ -159,13 +160,15 @@
         {%- endif -%}
 
         {%- comment -%}
-          Two-path selector. The radio values are fixed English tokens (like
-          the Availability tokens in the JS): they post to the merchant inbox
-          as contact[Request type] and must not vary with the customer's
-          storefront locale. Only the visible <span> labels are translated.
-          "Stock" reveals the option selects + live status; "different" hides
-          them (JS disables the selects so they don't post) and makes the note
-          textarea a required free-text description.
+          Request-type selector (two or three paths; the custom radio renders
+          only when the custom-order page is set). The radio values are fixed
+          English tokens (like the Availability tokens in the JS): they post to
+          the merchant inbox as contact[Request type] and must not vary with
+          the customer's storefront locale. Only the visible <span> labels are
+          translated. "Stock" reveals the option selects + live status;
+          "different" hides them (JS disables the selects so they don't post)
+          and makes the note textarea a required description; "custom" hides the
+          whole on-page form and shows the custom-order link.
         {%- endcomment -%}
         <fieldset class="request-combination__paths">
           <legend>{{ 'blocks.request_combination.request_type_legend' | t }}</legend>
@@ -215,7 +218,7 @@
         <div class="request-combination__request-fields" ref="requestFields">
         {%- comment -%}
           Email sits directly under the path selector so its position is
-          identical on both paths. Required on the stock and different paths;
+          identical on the stock and different paths. Required on those two;
           disabled on the custom path, which posts nothing. The option selects
           and description below it swap in per the selected path.
         {%- endcomment -%}
@@ -288,7 +291,7 @@
           description copy, reveals the required marker, and toggles the
           required / aria-required attributes so the browser enforces a
           non-empty description. One contact[body] field keeps the merchant
-          email consistent across both paths.
+          email consistent across the stock and different paths.
         {%- endcomment -%}
         <div class="request-combination__field">
           <label for="RequestCombinationNote-{{ block.id }}">
@@ -399,6 +402,12 @@
       </script>
     </dialog>
   </request-combination-component>
+
+  <script
+    src="{{ 'request-combination.js' | asset_url }}"
+    type="module"
+    fetchpriority="low"
+  ></script>
 {%- endif -%}
 
 {% stylesheet %}
@@ -409,6 +418,13 @@
   .request-combination__trigger {
     inline-size: 100%;
     min-block-size: var(--minimum-touch-target);
+  }
+
+  /* Hide the trigger until the component upgrades, so a no-JS or
+     pre-hydration page never shows an inert button (the dialog needs JS to
+     open). */
+  request-combination-component:not(:defined) .request-combination__trigger {
+    display: none;
   }
 
   .request-combination__dialog {
@@ -434,7 +450,10 @@
     animation: modalSlideOutTop var(--animation-speed) var(--animation-easing) forwards;
   }
 
+  /* Explicit position so placement anchors to the dialog rather than
+     silently depending on the slide-in animation's terminal transform. */
   .request-combination__close {
+    position: absolute;
     top: var(--margin-2xs);
     right: var(--margin-2xs);
     opacity: 0.8;
@@ -570,12 +589,6 @@
   }
 {% endstylesheet %}
 
-<script
-  src="{{ 'request-combination.js' | asset_url }}"
-  type="module"
-  fetchpriority="low"
-></script>
-
 {% schema %}
 {
   "name": "t:names.request_combination",
@@ -598,6 +611,12 @@
       "id": "body",
       "label": "t:settings.request_combination.body",
       "default": "t:settings.request_combination.body_default"
+    },
+    {
+      "type": "page",
+      "id": "custom_order_page",
+      "label": "t:settings.request_combination.custom_order_page",
+      "info": "t:settings.request_combination.custom_order_page_info"
     },
     { "type": "header", "content": "t:content.padding" },
     { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },

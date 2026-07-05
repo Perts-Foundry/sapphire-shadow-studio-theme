@@ -1068,7 +1068,9 @@
       "heading": "Heading",
       "heading_default": "Tell us what you're after",
       "body": "Description",
-      "body_default": "Pick an option below and leave your email. We'll follow up as soon as we can."
+      "body_default": "Pick an option below and leave your email. We'll follow up as soon as we can.",
+      "custom_order_page": "Custom order page",
+      "custom_order_page_info": "Adds a custom-order option that links to this page. Leave blank to hide it."
     },
     "return_policy_acknowledgment": {
       "label": "Checkbox label",

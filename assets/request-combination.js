@@ -52,20 +52,25 @@ const AVAILABILITY_TOKENS = {
  */
 
 /**
- * Modal form that lets customers request either a sold-out / never-created
- * variant combination (the "stock" path, with a live availability status) or
- * something outside the option matrix (the "different" path, a required
- * free-text description). A radio group switches paths; this component shows
- * only the active path's fields and posts the selection as contact[Request
- * type]. Transport is Shopify's native contact form (full-page POST to
- * /contact guarded by Shopify's spam protection); this component only handles
- * the dialog, prefill, path switching, the live availability status, and
- * restoring state after the redirect round trip.
+ * Modal form with up to three request paths, switched by a radio group:
+ * - "stock": request a sold-out / never-created variant combination, with a
+ *   live availability status.
+ * - "different": describe a different version of this product (required
+ *   free-text).
+ * - "custom": hand off to the custom-order page (rendered only when that page
+ *   setting is filled in); this path posts nothing, it is a link.
+ * This component shows only the active path's fields and posts the selection
+ * as contact[Request type]. Transport for the stock and different paths is
+ * Shopify's native contact form (full-page POST to /contact guarded by
+ * Shopify's spam protection); this component only handles the dialog, prefill,
+ * path switching, the live availability status, and restoring state after the
+ * redirect round trip.
  *
  * The submit snapshot persisted to sessionStorage carries ONLY
- * {productId, values}. Never add the email or note to it: both round-trip
- * server-side via form.email / form.body on the error re-render, and keeping
- * PII out of client-side storage is a deliberate property of this design.
+ * {productId, path, values}. Never add the email or note to it: both
+ * round-trip server-side via form.email / form.body on the error re-render,
+ * and keeping PII out of client-side storage is a deliberate property of this
+ * design.
  *
  * The variant map is parsed lazily (and re-parsed when the script content
  * changes) rather than in connectedCallback: a combined-listing product swap
