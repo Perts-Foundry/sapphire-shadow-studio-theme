@@ -1,0 +1,698 @@
+{%- doc -%}
+  "Request a combination" capture block for product pages. Renders an
+  always-visible secondary button that opens a modal dialog offering up to
+  three request paths, chosen with a radio group: (1) an out-of-stock
+  combination, where the customer picks any option combination and sees a
+  live availability status; (2) something different, a free-text description
+  for anything outside the option matrix; and (3) a custom order, which hands
+  off to a page chosen in the block's "Custom order page" setting (the radio
+  and its panel render only when that setting points at a page). The selected
+  path shows only its relevant fields;
+  email is required on paths 1 and 2. Paths 1 and 2 send through Shopify's
+  native contact form (full-page POST to /contact, guarded by Shopify's
+  built-in spam protection); path 3 posts nothing, it is a link. Each form
+  submission arrives as a structured email at the store's sender address.
+  Inventory behavior is untouched.
+
+  Conventions and caveats:
+
+  - Marketing consent uses the paired-hidden-input encoding: a hidden
+    `contact[Marketing consent]=No` sits immediately before the checkbox
+    with value `Yes` and the same name; duplicate keys parse last-wins, so
+    the merchant email always shows an explicit Yes or No. Consent is
+    recorded as data only; nobody is auto-subscribed. No client-side
+    timestamp field is included on purpose: it would be spoofable and the
+    notification email's own Date header already captures when.
+  - Option-derived field names carry a "Requested " prefix so a
+    merchant-named option like "Email" or "Name" can never collide with
+    Shopify's reserved contact keys; the fixed fields (Request type,
+    Marketing consent, Product, Product URL, Availability) use static
+    non-reserved names. Request type posts a fixed English token from the
+    selected radio; Availability is "Not applicable" on the different path.
+    Option names containing "[" or "]" would mangle under bracket-style
+    param parsing; none exist on this store.
+  - The customer-facing sold-out status means "variant exists but is not
+    currently orderable". blocks/buy-buttons.liquid distinguishes Sold out
+    from Unavailable more finely (inventory-policy aware); on this store
+    (managed inventory, deny policy) the wordings coincide.
+  - The hidden `contact[Availability]`, `contact[Product]`, and
+    `contact[Product URL]` values are client-asserted hints that a direct
+    POST can forge; treat them as triage aids, not facts, and do not click
+    the URL reflexively on a suspicious submission.
+  - There is no honeypot on purpose: Shopify processes /contact regardless
+    of extra fields and nothing merchant-side can drop the email before the
+    inbox, so the platform hCaptcha is the gate. The form carries
+    data-shopify-captcha so that gate wires up even though the form is
+    rendered inside a closed dialog; it still depends on the merchant keeping
+    spam protection enabled (Online Store > Preferences).
+  - Posted state (form.posted_successfully? / form.errors) is shared by
+    every contact form on the page. Auto-reopening the dialog after the
+    redirect is therefore gated on a sessionStorage snapshot written at
+    submit time (see assets/request-combination.js). If the block is added
+    twice on one template, both instances share posted state; the snapshot
+    gate limits auto-reopen to the submitting product, and the first
+    matching instance consumes the snapshot, so at most one dialog reopens.
+    A snapshot written for a submission whose captcha challenge was
+    abandoned persists for the tab session; the gate makes that cosmetic at
+    worst.
+  - The close button is first in the dialog DOM per
+    docs/accessibility-patterns.md (Modal); blocks/popup-link.liquid places
+    it last, which this block deliberately does not copy.
+  - Renders nothing for products with only the default variant (no
+    combinations to request) or outside a product context (except the theme
+    editor's visual preview, which substitutes the first product).
+
+  @example
+  {% content_for 'block', type: 'request-combination', id: 'request-combination' %}
+{%- enddoc -%}
+
+{%- liquid
+  assign product = closest.product
+  if request.visual_preview_mode and product == blank
+    assign product = collections.all.products.first
+  endif
+-%}
+
+{%- if product != blank and product.has_only_default_variant == false -%}
+  {%- liquid
+    assign form_id = 'RequestCombination-' | append: block.id
+    assign heading_id = 'RequestCombinationHeading-' | append: block.id
+    assign email_error_id = 'RequestCombinationEmailError-' | append: block.id
+    # The custom-order path and its radio render only when the merchant has
+    # pointed the "Custom order page" setting at a page; leaving it blank
+    # hides the option.
+    assign custom_order_page = block.settings.custom_order_page
+  -%}
+
+  <request-combination-component
+    class="request-combination spacing-style"
+    style="{% render 'spacing-style', settings: block.settings %}"
+    data-product-id="{{ product.id }}"
+    data-status-available="{{ 'blocks.request_combination.status_available' | t }}"
+    data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t }}"
+    data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t }}"
+    data-note-label="{{ 'blocks.request_combination.note_label' | t }}"
+    data-description-label="{{ 'blocks.request_combination.description_label' | t }}"
+    on:submit="/handleSubmit"
+    {{ block.shopify_attributes }}
+  >
+    <button
+      type="button"
+      class="button button-secondary request-combination__trigger"
+      aria-haspopup="dialog"
+      on:click="/handleOpen"
+    >
+      {{- block.settings.button_label | escape -}}
+    </button>
+
+    <dialog
+      ref="dialog"
+      class="request-combination__dialog dialog-modal color-{{ settings.popover_color_scheme }}"
+      aria-labelledby="{{ heading_id }}"
+    >
+      <button
+        ref="closeButton"
+        on:click="/closeDialog"
+        class="button button-unstyled close-button request-combination__close"
+        aria-label="{{ 'accessibility.close_dialog' | t }}"
+      >
+        {{- 'icon-close.svg' | inline_asset_content -}}
+      </button>
+
+      {%- comment -%}
+        Inner scroll container: scrolling lives here, not on the dialog, so
+        the dialog's rounded corners (overflow: hidden) clip the scrollbar
+        rather than the scrollbar squaring off the corner on its side. The
+        close button stays outside it, pinned to the dialog. Matches the
+        pattern in snippets/quick-add-modal.liquid and search-modal.liquid.
+      {%- endcomment -%}
+      <div class="request-combination__scroll">
+      <h2
+        id="{{ heading_id }}"
+        class="request-combination__heading"
+      >
+        {{- block.settings.heading | escape -}}
+      </h2>
+
+      {%- if block.settings.body != blank -%}
+        <p class="request-combination__body">{{ block.settings.body | escape | newline_to_br }}</p>
+      {%- endif -%}
+
+      {%- comment -%}
+        Shopify auto-wires hCaptcha to contact forms present at page load, but
+        this one is server-rendered inside a closed <dialog>; data-shopify-
+        captcha forces immediate wiring so the hidden form is covered. Stays
+        risk-based/invisible for real customers, and is inert if the merchant
+        disables spam protection in Online Store > Preferences.
+      {%- endcomment -%}
+      {%- form 'contact', id: form_id, class: 'request-combination__form', return_to: product.url, data-shopify-captcha: 'true' -%}
+        {%- if form.errors -%}
+          <div
+            id="{{ email_error_id }}"
+            class="request-combination__error"
+            ref="errorSummary"
+            role="alert"
+            tabindex="-1"
+            autofocus
+          >
+            {{- 'icon-error.svg' | inline_asset_content -}}
+            <span>
+              {{- 'blocks.request_combination.error_heading' | t }}
+              {{ form.errors.translated_fields.email | capitalize | escape }}
+              {{ form.errors.messages.email | escape -}}
+            </span>
+          </div>
+        {%- endif -%}
+
+        {%- if form.posted_successfully? -%}
+          <div
+            class="request-combination__success"
+            ref="successSummary"
+            role="status"
+            tabindex="-1"
+            autofocus
+          >
+            {{- 'icon-checkmark.svg' | inline_asset_content -}}
+            <span>{{ 'blocks.request_combination.post_success' | t }}</span>
+          </div>
+        {%- endif -%}
+
+        {%- comment -%}
+          Request-type selector (two or three paths; the custom radio renders
+          only when the custom-order page is set). The radio values are fixed
+          English tokens (like the Availability tokens in the JS): they post to
+          the merchant inbox as contact[Request type] and must not vary with
+          the customer's storefront locale. Only the visible <span> labels are
+          translated. "Stock" reveals the option selects + live status;
+          "different" hides them (JS disables the selects so they don't post)
+          and makes the note textarea a required description; "custom" hides the
+          whole on-page form and shows the custom-order link.
+        {%- endcomment -%}
+        <fieldset class="request-combination__paths">
+          <legend>{{ 'blocks.request_combination.request_type_legend' | t }}</legend>
+          <label class="request-combination__path">
+            <input
+              type="radio"
+              name="contact[Request type]"
+              value="Out of stock combination"
+              data-path="stock"
+              ref="pathRadios[]"
+              on:change="/handlePathChange"
+              checked
+            >
+            <span>{{ 'blocks.request_combination.request_type_stock' | t }}</span>
+          </label>
+          <label class="request-combination__path">
+            <input
+              type="radio"
+              name="contact[Request type]"
+              value="Different product version"
+              data-path="different"
+              ref="pathRadios[]"
+              on:change="/handlePathChange"
+            >
+            <span>{{ 'blocks.request_combination.request_type_different' | t }}</span>
+          </label>
+          {%- if custom_order_page != blank -%}
+            <label class="request-combination__path">
+              <input
+                type="radio"
+                name="contact[Request type]"
+                value="Custom order"
+                data-path="custom"
+                ref="pathRadios[]"
+                on:change="/handlePathChange"
+              >
+              <span>{{ 'blocks.request_combination.request_type_custom' | t }}</span>
+            </label>
+          {%- endif -%}
+        </fieldset>
+
+        {%- comment -%}
+          The on-page request form (email + path-specific fields + submit),
+          shown for the stock and different paths. The custom path hides this
+          whole block and shows the custom-order link below instead.
+        {%- endcomment -%}
+        <div class="request-combination__request-fields" ref="requestFields">
+        {%- comment -%}
+          Email sits directly under the path selector so its position is
+          identical on the stock and different paths. Required on those two;
+          disabled on the custom path, which posts nothing. The option selects
+          and description below it swap in per the selected path.
+        {%- endcomment -%}
+        <div class="request-combination__field">
+          <label for="RequestCombinationEmail-{{ block.id }}">
+            {{- 'blocks.request_combination.email_label' | t -}}
+            <span aria-hidden="true">*</span>
+          </label>
+          <input
+            type="email"
+            id="RequestCombinationEmail-{{ block.id }}"
+            class="request-combination__input"
+            autocomplete="email"
+            name="contact[email]"
+            ref="emailField"
+            spellcheck="false"
+            autocapitalize="off"
+            {%- comment -%}
+              Opt this field out of password-manager inline autofill menus. The dialog opens
+              via dialog.showModal() (top layer); Bitwarden's inline menu is also a top-layer
+              popover, and the two competing for the top position trips Bitwarden's anti-hijack
+              guard ("This page is interfering with the Bitwarden experience"). Skipping the
+              field removes the competing popover. Sibling opt-outs cover 1Password / LastPass.
+              Autofill still works via the extension popup. Upstream bug: bitwarden/clients#21388.
+            {%- endcomment -%}
+            data-bwignore
+            data-lpignore="true"
+            data-1p-ignore
+            value="{% if form.email %}{{ form.email | escape }}{% elsif customer %}{{ customer.email | escape }}{% endif %}"
+            required
+            aria-required="true"
+            {% if form.errors contains 'email' %}
+              aria-invalid="true"
+              aria-describedby="{{ email_error_id }}"
+            {% endif %}
+          >
+        </div>
+
+        <div class="request-combination__stock-fields" ref="stockFields">
+        {%- for product_option in product.options_with_values -%}
+          <div class="request-combination__field">
+            <label for="RequestCombinationOption-{{ block.id }}-{{ forloop.index0 }}">
+              {{- product_option.name | escape -}}
+            </label>
+            <select
+              id="RequestCombinationOption-{{ block.id }}-{{ forloop.index0 }}"
+              class="request-combination__input"
+              name="contact[Requested {{ product_option.name | escape }}]"
+              ref="optionSelects[]"
+              on:change="/handleOptionChange"
+            >
+              {%- for product_option_value in product_option.values -%}
+                <option
+                  value="{{ product_option_value | escape }}"
+                  {% if product_option_value.selected %}
+                    selected
+                  {% endif %}
+                >
+                  {{- product_option_value | escape -}}
+                </option>
+              {%- endfor -%}
+            </select>
+          </div>
+        {%- endfor -%}
+
+        {%- comment -%}
+          Populated by JS at dialog-open time. The dialog is unreachable
+          without JS, so no server-rendered status text is needed.
+        {%- endcomment -%}
+        <p
+          ref="statusLine"
+          class="request-combination__status"
+          role="status"
+          hidden
+        ></p>
+        </div>
+
+        {%- comment -%}
+          Shared note/description textarea. In the "stock" path it is an
+          optional note; in the "different" path JS swaps the label to the
+          description copy, reveals the required marker, and toggles the
+          required / aria-required attributes so the browser enforces a
+          non-empty description. One contact[body] field keeps the merchant
+          email consistent across the stock and different paths.
+        {%- endcomment -%}
+        <div class="request-combination__field">
+          <label for="RequestCombinationNote-{{ block.id }}">
+            <span ref="noteLabelText">{{ 'blocks.request_combination.note_label' | t }}</span>
+            <span ref="noteRequiredMark" aria-hidden="true" hidden>*</span>
+          </label>
+          <textarea
+            rows="3"
+            id="RequestCombinationNote-{{ block.id }}"
+            class="request-combination__input request-combination__input--textarea"
+            name="contact[body]"
+            ref="noteField"
+            aria-required="false"
+          >{{- form.body | escape -}}</textarea>
+        </div>
+
+        {%- comment -%}
+          Paired-hidden-input consent encoding: the hidden No must sit
+          immediately before the same-named Yes checkbox (last-wins). See the
+          doc block above before changing either input.
+        {%- endcomment -%}
+        <input
+          type="hidden"
+          name="contact[Marketing consent]"
+          value="No"
+        >
+        {%- liquid
+          # The t filter HTML-escapes its output, so this single pass is
+          # already safe for snippets/checkbox.liquid, which renders its label
+          # param raw (data-label attribute + span text). Do not add | escape:
+          # it double-escapes and renders entities like &#39; literally.
+          assign consent_label_text = 'blocks.request_combination.consent_label' | t
+          assign consent_id = 'RequestCombinationConsent-' | append: block.id
+        -%}
+        {% render 'checkbox',
+          name: 'contact[Marketing consent]',
+          value: 'Yes',
+          label: consent_label_text,
+          id: consent_id,
+          checked: false,
+          events: '',
+          disabled: false
+        %}
+
+        <input
+          type="hidden"
+          name="contact[Product]"
+          value="{{ product.title | escape }}"
+        >
+        <input
+          type="hidden"
+          name="contact[Product URL]"
+          value="{{ shop.url | append: product.url | escape }}"
+        >
+        <input
+          type="hidden"
+          name="contact[Availability]"
+          ref="availabilityField"
+          value="Not verified"
+        >
+
+        <button
+          type="submit"
+          class="button request-combination__submit"
+        >
+          {{- 'blocks.request_combination.submit_label' | t -}}
+        </button>
+        </div>
+
+        {%- if custom_order_page != blank -%}
+          {%- comment -%}
+            Custom path hands off to the dedicated custom-orders page. This is
+            a link, not a form submission: nothing posts from this path.
+          {%- endcomment -%}
+          <div
+            class="request-combination__custom"
+            ref="customFields"
+            hidden
+          >
+            <p class="request-combination__custom-text">
+              {{- 'blocks.request_combination.custom_blurb' | t -}}
+            </p>
+            <a
+              href="{{ custom_order_page.url }}"
+              class="button request-combination__custom-link"
+            >
+              {{- 'blocks.request_combination.custom_cta' | t -}}
+            </a>
+          </div>
+        {%- endif -%}
+      {%- endform -%}
+
+      {%- comment -%}
+        Reduced availability map for the live status line. Fields are pinned
+        to exactly options + available: never add inventory_quantity,
+        inventory_policy, or SKU here (this JSON is public page content).
+      {%- endcomment -%}
+      <script
+        type="application/json"
+        ref="variantData"
+      >
+        [
+          {%- for variant in product.variants -%}
+            {"options": {{ variant.options | json }}, "available": {{ variant.available | json }}}
+            {%- unless forloop.last %},{% endunless -%}
+          {%- endfor -%}
+        ]
+      </script>
+      </div>
+    </dialog>
+  </request-combination-component>
+
+  <script
+    src="{{ 'request-combination.js' | asset_url }}"
+    type="module"
+    fetchpriority="low"
+  ></script>
+{%- endif -%}
+
+{% stylesheet %}
+  .request-combination {
+    display: block;
+  }
+
+  .request-combination__trigger {
+    inline-size: 100%;
+    min-block-size: var(--minimum-touch-target);
+  }
+
+  /* Hide the trigger until the component upgrades, so a no-JS or
+     pre-hydration page never shows an inert button (the dialog needs JS to
+     open). */
+  request-combination-component:not(:defined) .request-combination__trigger {
+    display: none;
+  }
+
+  /* Element + class selector (specificity 0,1,1) so these beat the base
+     .dialog-modal rules (0,1,0) at every width, regardless of stylesheet
+     order. Below 750px that base treatment forces modals full-screen
+     (edge-to-edge, square corners); this popover instead stays a floating,
+     rounded card on both mobile and desktop. Exception: border-radius alone
+     is re-declared on the [open] rule below, because predictive-search.liquid
+     ships a page-global `.dialog-modal[open] { border-radius: 0 }` (0,2,0)
+     at <750px that outranks this rule. */
+  /* Physical width/height here on purpose (not logical inline-/block-size).
+     The base .dialog-modal mobile rules set physical width/height/max-* to go
+     full-screen below 750px; mixing logical + physical for the same dimension
+     makes the override non-deterministic (the base height wins, so the dialog
+     is not capped and its corners fall off-screen). Same-property physical at
+     higher specificity wins cleanly at every breakpoint. */
+  dialog.request-combination__dialog {
+    box-shadow: var(--shadow-popover);
+    border: var(--style-border-popover);
+    border-radius: var(--style-border-radius-popover);
+    background-color: var(--color-background);
+    padding: 0;
+    width: min(30rem, calc(100vw - var(--padding-xl) * 2));
+    max-width: calc(100vw - var(--padding-xl) * 2);
+    height: auto;
+    max-height: var(--modal-max-height);
+    /* Scrolling lives on the inner wrapper; hidden here so the rounded
+       corners clip the scrollbar instead of it squaring off the dialog's
+       side (a plain overflow-y: auto here leaves square corners next to the
+       scrollbar). Do NOT set `display` here: it would override the UA
+       `dialog:not([open]) { display: none }` and render the closed dialog
+       inline under the trigger. The flex layout is applied on [open] below. */
+    overflow: hidden;
+  }
+
+  .request-combination__scroll {
+    min-block-size: 0;
+    overflow-y: auto;
+    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
+
+    @media screen and (min-width: 750px) {
+      padding: var(--padding-5xl);
+    }
+  }
+
+  /* Flex layout for the inner scroll wrapper applies only while open, so the
+     closed dialog keeps the UA `display: none` and never renders inline.
+     border-radius repeats here at (0,2,1) to beat predictive-search.liquid's
+     page-global mobile `.dialog-modal[open] { border-radius: 0 }` (0,2,0);
+     the aggregated compiled stylesheet applies that rule to every open
+     .dialog-modal on the page, not just the search modal. */
+  dialog.request-combination__dialog[open] {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--style-border-radius-popover);
+    animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .request-combination__dialog.dialog-closing {
+    animation: modalSlideOutTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  /* Explicit position so placement anchors to the dialog rather than
+     silently depending on the slide-in animation's terminal transform. */
+  .request-combination__close {
+    position: absolute;
+    top: var(--margin-2xs);
+    right: var(--margin-2xs);
+    opacity: 0.8;
+    animation: none;
+  }
+
+  .request-combination__heading {
+    margin-block: 0 var(--margin-sm);
+    font-size: var(--font-size--2xl);
+  }
+
+  .request-combination__body {
+    margin-block: 0 var(--margin-md);
+  }
+
+  .request-combination__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+  }
+
+  .request-combination__paths {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+  }
+
+  .request-combination__paths legend {
+    padding: 0;
+    margin-block-end: var(--gap-2xs);
+    font-size: var(--font-size--sm);
+  }
+
+  /* Bordered option rows so the choices read as one group and match the
+     bordered selects / inputs below them. */
+  .request-combination__path {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-block-size: var(--minimum-touch-target);
+    padding-inline: var(--padding-xl);
+    border: var(--style-border-width-inputs) solid var(--color-input-border);
+    border-radius: var(--style-border-radius-inputs);
+    cursor: pointer;
+  }
+
+  .request-combination__path:has(input:checked) {
+    border-color: var(--color-input-text);
+  }
+
+  .request-combination__stock-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__stock-fields[hidden] {
+    display: none;
+  }
+
+  .request-combination__request-fields,
+  .request-combination__custom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .request-combination__request-fields[hidden],
+  .request-combination__custom[hidden] {
+    display: none;
+  }
+
+  .request-combination__custom-text {
+    margin-block: 0;
+  }
+
+  .request-combination__custom-link {
+    align-self: flex-start;
+  }
+
+  .request-combination__input {
+    inline-size: 100%;
+    color: var(--color-input-text);
+    background-color: var(--color-input-background);
+    padding: var(--padding-lg) var(--padding-xl);
+    border-radius: var(--style-border-radius-inputs);
+    border: var(--style-border-width-inputs) solid var(--color-input-border);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .request-combination__input--textarea {
+    resize: vertical;
+  }
+
+  .request-combination__status {
+    margin-block: 0;
+    font-size: var(--font-size--sm);
+  }
+
+  .request-combination__error,
+  .request-combination__success {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+  }
+
+  /*
+   * The shared checkbox snippet (snippets/checkbox.liquid) ships with
+   * white-space: nowrap + text-overflow: ellipsis on .checkbox__label-text
+   * (assets/base.css) because it was designed for short labels. The consent
+   * copy is a full sentence; allow wrapping here only. Same override as
+   * blocks/return-policy-acknowledgment.liquid, documented there.
+   */
+  .request-combination .checkbox__label {
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+
+  .request-combination .checkbox__label-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "t:names.request_combination",
+  "tag": null,
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "t:settings.request_combination.button_label",
+      "default": "t:settings.request_combination.button_label_default"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:settings.request_combination.heading",
+      "default": "t:settings.request_combination.heading_default"
+    },
+    {
+      "type": "textarea",
+      "id": "body",
+      "label": "t:settings.request_combination.body",
+      "default": "t:settings.request_combination.body_default"
+    },
+    {
+      "type": "page",
+      "id": "custom_order_page",
+      "label": "t:settings.request_combination.custom_order_page",
+      "info": "t:settings.request_combination.custom_order_page_info"
+    },
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-start", "label": "t:settings.left", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-end", "label": "t:settings.right", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 }
+  ],
+  "presets": [
+    { "name": "t:names.request_combination", "category": "t:categories.product" }
+  ]
+}
+{% endschema %}
