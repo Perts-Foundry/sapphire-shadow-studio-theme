@@ -119,6 +119,14 @@
         {{- 'icon-close.svg' | inline_asset_content -}}
       </button>
 
+      {%- comment -%}
+        Inner scroll container: scrolling lives here, not on the dialog, so
+        the dialog's rounded corners (overflow: hidden) clip the scrollbar
+        rather than the scrollbar squaring off the corner on its side. The
+        close button stays outside it, pinned to the dialog. Matches the
+        pattern in snippets/quick-add-modal.liquid and search-modal.liquid.
+      {%- endcomment -%}
+      <div class="request-combination__scroll">
       <h2
         id="{{ heading_id }}"
         class="request-combination__heading"
@@ -410,6 +418,7 @@
           {%- endfor -%}
         ]
       </script>
+      </div>
     </dialog>
   </request-combination-component>
 
@@ -447,12 +456,24 @@
     border: var(--style-border-popover);
     border-radius: var(--style-border-radius-popover);
     background-color: var(--color-background);
-    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
+    padding: 0;
     inline-size: min(30rem, calc(100vw - var(--padding-xl) * 2));
     max-inline-size: calc(100vw - var(--padding-xl) * 2);
     block-size: auto;
     max-block-size: var(--modal-max-height);
+    display: flex;
+    flex-direction: column;
+    /* Scrolling lives on the inner wrapper; hidden here so the rounded
+       corners clip the scrollbar instead of it squaring off the dialog's
+       side (a plain overflow-y: auto here leaves square corners next to the
+       scrollbar). */
+    overflow: hidden;
+  }
+
+  .request-combination__scroll {
+    min-block-size: 0;
     overflow-y: auto;
+    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
 
     @media screen and (min-width: 750px) {
       padding: var(--padding-5xl);
