@@ -56,6 +56,14 @@ Memory files under `~/.claude/projects/.../memory/` may contain real operator an
 
 When the user references a screenshot, or when troubleshooting any issue, proactively check for the latest screenshot. The user's screenshots directory lives in their private global `~/.claude/CLAUDE.md`; ask for it the first time it's referenced in a session if you don't already have it. **Do not commit literal local-machine paths to this repo** (see Sensitive Content above).
 
+## Browser testing
+
+Browser-driven testing of the storefront or a PR preview theme uses the chrome-devtools MCP. It is opt-in: **do not auto-open preview or storefront URLs.** Drive a browser only when the user asks for visual or behavioural verification, not as a default step after a change.
+
+- **Password-protected storefront.** The storefront (custom domain and `*.myshopify.com`) is password-protected, so anonymous requests (WebFetch, curl, a plain `?preview_theme_id=` link) get a 401 or the password page. To view a PR preview theme, open the store's admin themes page (`https://admin.shopify.com/store/sapphire-shadow-studio/themes`), open the draft theme's "more theme actions" menu, and use its **Preview** link. That link carries a `key=` param that sets the password-bypass cookie for the whole browser session; curl does not pick the bypass up.
+- **hCaptcha blocks automated form submits.** Shopify's invisible hCaptcha will not complete for storefront form submissions from the automation-flagged MCP browser, so full contact-form round trips must be verified manually.
+- **Shopify admin login loops in the MCP browser.** accounts.shopify.com silently rejects the chrome-devtools MCP's automation-flagged Chrome (POST `/lookup` goes out with `origin: null`, the server 302s back to the form with a fresh `verify=` param, and "Continue with email" loops forever). Workaround: kill the MCP-launched Chrome, relaunch the same binary manually with the same `--user-data-dir` (`~/.cache/chrome-devtools-mcp/chrome-profile`) but no automation flags, log in there, then close it; the next MCP call relaunches the browser and the session cookies carry over. The profile is persistent, so login survives MCP restarts until the session expires.
+
 ## Project overview
 
 Custom Shopify theme based on **Horizon** (Shopify's flagship); server-rendered Liquid + theme blocks + progressive enhancement. Private, single-merchant theme, not a Shopify Theme Store submission. The repo is **standalone, not a GitHub fork** of `Shopify/horizon`; attribution and upstream-merge mechanics in `LICENSE.md` and `README.md`.
@@ -68,10 +76,11 @@ PR-based deploy model. Direct edits to `main` and to the live theme are not part
 
 1. `git switch -c <feature-branch> origin/main`.
 2. Local dev: `npm ci && npx shopify theme dev`. The dev server uses an unpublished on-the-fly theme; storefront edits don't touch live or `shopify-sync`.
-3. Open a PR. Validate runs `theme-check`, `reconcile`, `actionlint`, `zizmor --pedantic`, `gitleaks` as one sequential job. Single required check on `main`: `validate / validate`. To re-run, push a new commit (no comment trigger).
-4. Local actionlint with the same shellcheck excludes CI uses: `SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint` (see `validate.yml` 113-119).
-5. If `reconcile` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
-6. Comment `deploy` on the PR. `deploy.yml` handles live push, smoke, preview cleanup, squash-merge, and `shopify-sync` fast-forward. On step failure a sticky failure report overwrites the deploy report and the PR stays open.
+3. Before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every Liquid file you changed. It catches schema / filter / tag errors locally and earlier than the CI `theme-check` step; it complements that job, it does not replace it.
+4. Open a PR. Validate runs `theme-check`, `reconcile`, `actionlint`, `zizmor --pedantic`, `gitleaks` as one sequential job. Single required check on `main`: `validate / validate`. To re-run, push a new commit (no comment trigger).
+5. Local actionlint with the same shellcheck excludes CI uses: `SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint` (see `validate.yml` 113-119).
+6. If `reconcile` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
+7. Comment `deploy` on the PR. `deploy.yml` handles live push, smoke, preview cleanup, squash-merge, and `shopify-sync` fast-forward. On step failure a sticky failure report overwrites the deploy report and the PR stays open.
 
 ### Admin-side edits
 
@@ -152,6 +161,14 @@ npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodel
 ```
 
 **Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Live pushes happen exclusively via `deploy.yml`.
+
+## Shopify MCP tools and limits
+
+Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Known gaps, so a task isn't misrouted through the MCP:
+
+- **No media / image upload.** The `shopify` Admin MCP exposes product / variant / option / order / customer tools (`get-products`, `create-product`, `manage-product-variants`, `update-product`, etc.) but no image or file upload. Theme imagery ships through the `assets/` directory; product / media imagery goes through the Admin UI or the Files API, not the MCP.
+- **Shopify Flow is unreachable.** No MCP tool reads or writes Flow. A `.flow-export` file cannot be round-tripped through the MCP; Flow automations are inspected and edited only in the Admin Flow app. Do not attempt to reconstruct or diff Flow state from the MCP.
+- **`validate_theme_codeblocks`** (shopify-dev MCP) is the local Liquid validator invoked in the Code-changes workflow above; prefer it over guessing whether a schema / filter / tag is valid.
 
 ## Shopify best practices
 
