@@ -17,7 +17,7 @@ The interesting part of this repo is not the theme; it is the deploy model. `mai
 | Runtime | Node `>=20`, npm |
 | Deploy model | Comment `deploy` on a green PR (plus auto-deploy for `shopify-sync` reconcile and Dependabot PRs) |
 | Live theme | `#181702754604` (disconnected from GitHub; only the deploy workflow writes to it) |
-| Workflows | `validate`, `preview`, `sync`, `deploy`, plus the non-required `size-chart-tests` (in `.github/workflows/`) |
+| Workflows | `validate`, `preview`, `sync`, `deploy` (in `.github/workflows/`) |
 | License | Shopify Horizon license (MIT-style with a theme-interop restriction) |
 
 ## Prerequisites
@@ -75,7 +75,7 @@ The deploy gate is deliberately layered: a collaborator check on the comment aut
 
 ## Workflows
 
-Five workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-party actions to commit SHAs, and set `permissions: {}` at the workflow root with per-job grants. Four are the deploy pipeline; `size-chart-tests` is a non-required tooling test workflow (see its row).
+Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-party actions to commit SHAs, and set `permissions: {}` at the workflow root with per-job grants.
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
@@ -83,7 +83,6 @@ Five workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 | `preview` | PR opened / synchronize / closed | Creates a per-PR unpublished theme `pr-<n>-preview`, comments the link, deletes it on close. |
 | `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
 | `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**` | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
-| `size-chart-tests` | PR touching `scripts/size-chart/**` | Runs the `node --test` unit suite for the size-chart operator tooling. Non-required and off branch protection, so it never gates a deploy or an auto-deploy path. |
 
 Dependabot keeps GitHub Actions and npm dependencies current weekly (Monday 13:00 UTC), grouped into one PR per ecosystem ([`.github/dependabot.yml`](.github/dependabot.yml)).
 

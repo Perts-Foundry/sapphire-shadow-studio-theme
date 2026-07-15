@@ -76,6 +76,6 @@ npm run size-chart:test   # node --test over the pure-logic + writer + render-sm
 
 The suite covers unit conversion against the known seed numbers, profile validation (including
 rejection of transcription swaps and out-of-range values), a byte-for-byte cohesion golden against
-the live template row, template-writer idempotency and byte-stability, and a render smoke check. CI
-runs it via `.github/workflows/size-chart-tests.yml` only when `scripts/size-chart/**` changes; it is
-intentionally not a required check, so operator tooling never gates a theme deploy.
+the live template row, template-writer idempotency and byte-stability, the sync-guard decision, and a
+render smoke check. Run it locally before committing changes to this tooling; there is no CI workflow
+for it (it is operator tooling, not shipped theme code, so it is not part of the deploy gate).
