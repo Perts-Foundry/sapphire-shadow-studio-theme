@@ -3,6 +3,10 @@
 Operational tooling for the theme. These scripts are **not** part of the Shopify theme; the
 Shopify CLI only pushes recognized theme directories, so nothing here reaches the live theme.
 
+- `process-product-images.mjs` (below): batch-process raw product photos for manual upload.
+- `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
+  a per-blank profile. See [`size-chart/README.md`](size-chart/README.md).
+
 ## process-product-images.mjs
 
 Batch-processes raw product photos into Shopify-upload-ready JPEGs plus a `manifest.csv`, so
@@ -73,7 +77,8 @@ warning and logged in the manifest.
 
 1. Drag-drop the files from `product-images/processed/` onto each product.
 2. Set the strongest shot as the **featured image** (it shows on collection cards and the
-   homepage product list). Put size charts last.
+   homepage product list). Put size charts last (the size-chart PNG is produced by
+   `size-chart/render-size-chart.mjs`).
 3. Assign colour/design photos to their **variants** (this theme swaps the image on variant
    selection via `attached_to_variant`).
 4. Fill **alt text** on every image; use the manifest's `alt` column to track it.
