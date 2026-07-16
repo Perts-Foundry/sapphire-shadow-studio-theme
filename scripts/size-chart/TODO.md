@@ -16,10 +16,19 @@ both regenerate from those. See `README.md` for the tooling. Importance (imp) is
 
 - **Column-driven generalisation.** Profiles now declare their own ordered `columns` (role + kind +
   authored heading/how + optional `derive`), pick a `garment` silhouette (crewneck / quarter-zip /
-  vest, with a no-diagram fallback), and set a per-profile `canvas_height` guarded against overflow.
-  The crewneck output stays byte-identical (SVG + on-page goldens). The quarter-zip and both
-  microfleece vests are onboarded (PNG only; on-page insertion waits until those products exist in
-  Shopify).
+  vest, with a no-diagram fallback). The on-page accordion golden stays byte-identical. The
+  quarter-zip and both microfleece vests are onboarded (PNG only; on-page insertion waits until those
+  products exist in Shopify).
+
+- **Vertical-rhythm pass on the PNG.** Tightened the top whitespace (the wordmark sat too low), and
+  the canvas height is now derived from content + a fixed bottom margin so every garment gets matching
+  top/bottom whitespace (`canvas_height` becomes an optional override). Each garment declares its own
+  collar-crown extent (`garmentTop` in `garments.mjs`), and the diagram + legend are co-centred with
+  the taller of the two seated a fixed gap below the "Start here" panel. So the garment always reads
+  as centred within the diagram/legend band: the tall quarter-zip / vest stand collars no longer
+  overlap the panel, and the 4-callout quarter-zip diagram drops to stay centred in its taller legend
+  (instead of the legend clamping upward, which left the diagram sitting too high). The SVG render
+  golden was regenerated for the new spacing; the on-page cohesion golden is unaffected.
 
 ## High priority
 

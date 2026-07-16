@@ -171,6 +171,17 @@ export function drawGarment(id, tx, ty, s, callouts = {}) {
 
 export const KNOWN_GARMENTS = Object.keys(GARMENTS);
 
+// Local y of each garment's topmost drawn pixel (the collar crown), so render-svg can seat every
+// silhouette the same distance below the "Start here" panel regardless of collar height. The crewneck
+// crew neckline tops out at its shoulder line (~150); the quarter-zip and vest stand collars rise
+// higher (crowns at 114 / 118, the t=0.5 point of the `Q...Z` collar caps in quarterZip() / vest()).
+// Without this, the taller stand collars were seated by the shared anchor reference (144) and pushed
+// up into the panel. 144 is the safe fall-back for the null / unknown (no-diagram) garment.
+const GARMENT_TOP = { crewneck: 150, 'quarter-zip': 114, vest: 118 };
+export function garmentTop(id) {
+  return GARMENT_TOP[id] ?? 144;
+}
+
 // The anchor names a garment exposes (chest / body / sleeve / zipper), derived from its own drawing.
 // Returns [] for the null / unknown garment. The schema uses this to reject a badge whose anchor the
 // chosen garment does not draw.

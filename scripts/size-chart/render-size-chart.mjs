@@ -17,7 +17,7 @@ import { setupFontconfig } from './lib/fontconfig.mjs';
 import { loadProfile } from './lib/profile-io.mjs';
 
 const DEFAULT_OUT_DIR = 'product-images/processed';
-const SCALE = 2; // render at 2x the 1600x2180 default canvas for a crisp gallery image (3200x4360)
+const SCALE = 2; // render at 2x the 1600-wide (content-derived height) canvas for a crisp gallery image
 
 function parseArgs(argv) {
   const opts = { profile: null, out: null, outDir: DEFAULT_OUT_DIR, scale: SCALE };

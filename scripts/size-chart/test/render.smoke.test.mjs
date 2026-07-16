@@ -23,15 +23,22 @@ test('renders a navy PNG of the expected dimensions', async (t) => {
   }
 
   const svg = buildSvg(SEED);
+  // Height is derived from content (the crewneck pins no canvas_height), so read the authoritative
+  // value back off the SVG rather than hardcoding it; the raster must match that exactly.
+  const svgH = Number(svg.match(/height="(\d+)"/)[1]);
 
   const density = 36; // half the 72dpi default -> half-size raster, keeps the test fast
   const scale = density / 72;
   const { data, info } = await sharp(Buffer.from(svg), { density }).png().toBuffer({ resolveWithObject: true });
 
   assert.equal(info.width, Math.round(CANVAS.W * scale));
-  assert.equal(info.height, Math.round((SEED.canvas_height ?? CANVAS.H) * scale));
+  assert.equal(info.height, Math.round(svgH * scale));
   assert.ok(data.length > 2000, 'PNG should be non-trivially sized');
 
+  // Top-left should be the brand navy #071e3f. The background is a vertical gradient normalized to
+  // the canvas height, so the top row's sub-pixel sample drifts by ~1 LSB as the derived height
+  // changes; assert proximity to the target rather than an exact byte (which would pin the height).
   const px = await sharp(data).extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer();
-  assert.deepEqual([px[0], px[1], px[2]], [7, 30, 63], 'top-left pixel should be the brand navy #071e3f');
+  const target = [7, 30, 63];
+  target.forEach((c, i) => assert.ok(Math.abs(px[i] - c) <= 2, `top-left channel ${i} (${px[i]}) should be ~${c} (brand navy #071e3f)`));
 });

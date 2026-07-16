@@ -9,8 +9,8 @@ import { altText } from '../render-size-chart.mjs';
 
 // Every shipped profile must validate and render an SVG without throwing. This is the coverage that
 // exercises the whole generalization payload at once: the vest / quarter-zip silhouettes, the zipper
-// anchor, the new roles + range/string kinds, derive in both directions, and the canvas_height
-// default + overflow guard on real content.
+// anchor, the new roles + range/string kinds, derive in both directions, and the content-derived
+// canvas height on real content.
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');

@@ -8,13 +8,31 @@
 // golden; the layout math below must not change its output.
 
 import { deriveRows } from './normalize.mjs';
-import { drawGarment, ROLE_ANCHOR } from './garments.mjs';
+import { drawGarment, garmentTop, ROLE_ANCHOR } from './garments.mjs';
 import { BG, PANEL, STRIPE, ACCENT, ACCENT_LT, WHITE, BODY, FONT, esc } from './svg-shared.mjs';
 
-// ---- canvas ---------------------------------------------------------------
+// ---- canvas + vertical rhythm ---------------------------------------------
+// The layout flows strictly top-down from TOP; no content position depends on the canvas height, so
+// H is derived from the footer bottom plus a fixed bottom margin. That gives every garment the same
+// top and bottom whitespace regardless of how tall its legend/table run, unless a profile pins
+// canvas_height explicitly (then that is honored and the content is asserted to fit).
 const W = 1600;
-const DEFAULT_H = 2180;
-const M = 110;
+const M = 110;                 // left / right margin
+const TOP = 112;               // eyebrow baseline; sets the top whitespace (~= M) so the header sits high
+const BOTTOM_MARGIN = 74;      // gap below the footer's box; the wrapped footer's baseline sits ~27px
+                               // above footBottom, so the visible bottom whitespace (~101px) matches TOP
+const DEFAULT_H = 2180;        // legacy fallback exported in CANVAS; real charts derive or pin their height
+
+// Header rhythm: baselines relative to TOP (inter-line deltas carried over from the SS3000 header).
+const DY_SIZE_GUIDE = 100;     // "Size Guide" baseline below the eyebrow
+const DY_SUBTITLE = 162;       // garment-name subtitle baseline
+const DY_DIVIDER = 206;        // rule under the header
+const DY_PANEL = 258;          // "Start here" panel top
+
+// Block spacing.
+const GAP_PANEL_DIAGRAM = 52;  // panel bottom -> garment collar crown (seats every collar the same)
+const GAP_BLOCK_TABLE = 60;    // block bottom -> table
+const GAP_TABLE_FOOTER = 56;   // table bottom -> footer
 
 // ---- helpers --------------------------------------------------------------
 function text(str, { x, y, size, weight = 400, fill = BODY, anchor = 'start', spacing = 0 }) {
@@ -212,65 +230,86 @@ function anchorMapFrom(columns) {
 
 // ---- top-level ------------------------------------------------------------
 export function buildSvg(profile) {
-  const H = profile.canvas_height ?? DEFAULT_H;
   const rows = deriveRows(profile);
   const columns = profile.columns;
   const parts = [];
 
-  parts.push(defs());
-  parts.push(`<rect width="${W}" height="${H}" fill="url(#bgGrad)"/>`);
-
   // header
-  parts.push(text('SAPPHIRE SHADOW STUDIO', { x: M, y: 150, size: 30, weight: 700, fill: ACCENT_LT, spacing: 6 }));
-  parts.push(text('Size Guide', { x: M, y: 250, size: 92, weight: 800, fill: WHITE }));
-  parts.push(text(profile.display_name, { x: M, y: 312, size: 34, weight: 400, fill: BODY }));
-  parts.push(`<line x1="${M}" y1="356" x2="${W - M}" y2="356" stroke="${ACCENT}" stroke-width="3"/>`);
+  parts.push(text('SAPPHIRE SHADOW STUDIO', { x: M, y: TOP, size: 30, weight: 700, fill: ACCENT_LT, spacing: 6 }));
+  parts.push(text('Size Guide', { x: M, y: TOP + DY_SIZE_GUIDE, size: 92, weight: 800, fill: WHITE }));
+  parts.push(text(profile.display_name, { x: M, y: TOP + DY_SUBTITLE, size: 34, weight: 400, fill: BODY }));
+  const dividerY = TOP + DY_DIVIDER;
+  parts.push(`<line x1="${M}" y1="${dividerY}" x2="${W - M}" y2="${dividerY}" stroke="${ACCENT}" stroke-width="3"/>`);
 
   // how-to panel: the prominent "start here" section
-  const ht = howTo(M, 408, W - 2 * M, profile.how_to);
+  const panelTop = TOP + DY_PANEL;
+  const ht = howTo(M, panelTop, W - 2 * M, profile.how_to);
   parts.push(ht.svg);
 
-  // diagram (left) + legend (right), tucked close under the panel
-  const blockTop = 408 + ht.height + 40;
+  // diagram (left) + legend (right), tucked close under the panel. One rule for every garment: the
+  // diagram and the legend share a vertical centre, and whichever is TALLER has its top seated
+  // GAP_PANEL_DIAGRAM below the panel while the shorter one is centred against it. So the garment
+  // always reads as centred within the diagram/legend band: a short 2-callout legend (vest) sits in
+  // the middle of the taller diagram; a tall 4-callout legend (quarter-zip) is taller than the
+  // diagram, so the diagram drops to stay centred in it (rather than the legend clamping upward).
+  const panelBottom = panelTop + ht.height;
+  const blockTop = panelBottom + GAP_PANEL_DIAGRAM;
   const legendX = M + 700;
+  const legendW = W - M - legendX;
   const gScale = 1.25;
-  // garment local silhouette spans y ~[144..500] (collar to hem) plus a shadow to ~532, centred on
-  // x280. Scale it up, centre it in the left column, and tuck the collar just under the panel.
+  const callouts = calloutsFrom(columns);
+
+  // Visual extents. The garment silhouette spans from its collar crown (garmentTop) down to a shadow
+  // ~532 below its local origin, centred on x280. The legend's first badge sits ~25px above its
+  // baseline y and its last line ~30px above y+height, so its visual centre is at y+(height-55)/2.
+  const gTopOff = garmentTop(profile.garment) * gScale;
+  const gBotOff = 532 * gScale;
+  const gCenterOff = (gTopOff + gBotOff) / 2;
+  const diagH = gBotOff - gTopOff;
+  const lgH = legend(legendX, 0, legendW, callouts).height;
+  const lgVisualH = lgH - 30 + 25; // visual span [y-25 .. y+height-30], so height - 30 + 25 = lgH - 5
+
+  const centerY = blockTop + Math.max(diagH, lgVisualH) / 2; // shared centre of the band
   const gTx = (M + legendX) / 2 - 280 * gScale;
-  const gTy = blockTop - 144 * gScale;
+  const gTy = Math.round(centerY - gCenterOff);
   parts.push(drawGarment(profile.garment, gTx, gTy, gScale, anchorMapFrom(columns)));
 
-  // legend, vertically centred against the diagram silhouette so it does not favour the top now
-  // that there are only three callouts. Measure it, then place its optical centre at the silhouette
-  // middle (the first badge sits ~25px above the given y, hence the +27 correction).
-  const callouts = calloutsFrom(columns);
-  const legendW = W - M - legendX;
-  const gMid = gTy + 336 * gScale; // vertical middle of the silhouette + its shadow (collar 144 -> ~532)
-  const lgH = legend(legendX, 0, legendW, callouts).height;
-  const lgY = gMid - lgH / 2 + 27;
+  const lgY = Math.round(centerY - (lgH - 55) / 2);
   const lg = legend(legendX, lgY, legendW, callouts);
   parts.push(lg.svg);
 
   // table below whichever of the diagram / legend reaches lower
-  const gBottom = gTy + 532 * gScale;
-  const tableY = Math.max(gBottom + 60, lgY + lg.height + 60);
+  const gBottom = gTy + gBotOff;
+  const tableY = Math.max(gBottom + GAP_BLOCK_TABLE, lgY + lg.height + GAP_BLOCK_TABLE);
   const tbl = table(M, tableY, rows, columns);
   parts.push(tbl.svg);
 
   // footer (wrapped so a longer per-garment note does not run past the right edge)
-  const footY = tableY + tbl.height + 56;
+  const footY = tableY + tbl.height + GAP_TABLE_FOOTER;
   const foot = paragraph(profile.footer || '', {
     x: M, y: footY, size: 24, fill: BODY, maxWidth: W - 2 * M, lineHeight: 32,
   });
-  if (footY + foot.height + 8 > H) {
-    throw new Error(
-      `size-chart content overflows the ${H}px canvas (footer bottom ${Math.round(footY + foot.height)}); `
-      + `raise canvas_height in the profile.`,
-    );
-  }
   parts.push(foot.svg);
 
+  // Canvas height: honor an explicit pin (and assert the content fits), otherwise derive it so the
+  // bottom whitespace matches the top margin on every garment regardless of legend / table height.
+  const footBottom = footY + foot.height;
+  let H;
+  if (profile.canvas_height != null) {
+    H = profile.canvas_height;
+    if (footBottom + 8 > H) {
+      throw new Error(
+        `size-chart content overflows the ${H}px canvas (footer bottom ${Math.round(footBottom)}); `
+        + `raise canvas_height in the profile, or remove it to auto-size.`,
+      );
+    }
+  } else {
+    H = footBottom + BOTTOM_MARGIN;
+  }
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
+    + defs()
+    + `<rect width="${W}" height="${H}" fill="url(#bgGrad)"/>`
     + parts.join('') + `</svg>`;
 }
 

@@ -31,7 +31,8 @@ stored measurements are in **inches**.
   ],
   "how_to": { "eyebrow": "Start here", "heading": "...", "note": "...", "steps": [ ... ] },
   "footer": "Measurements are of the garment laid flat. ...",
-  "canvas_height": 2280,                   // optional; default 2180. buildSvg throws if content overflows.
+  "canvas_height": 2280,                   // optional override; omit to auto-size (height derived from
+                                           // content + a fixed margin). If pinned, buildSvg throws on overflow.
   "handles": ["product-handle-a"]          // blank -> products mapping; empty until the product exists
 }
 ```
@@ -60,8 +61,10 @@ node scripts/size-chart/render-size-chart.mjs --profile quarter-zip-midweight
 ```
 
 Builds the navy/sapphire SVG (`lib/render-svg.mjs` + `lib/garments.mjs`) and rasterises it to
-`product-images/processed/size-chart-<blank_id>.png` via sharp. The canvas is `1600 x canvas_height`
-(default `1600 x 2180`), rendered at 2x by default, so a default chart is `3200 x 4360`. The bundled
+`product-images/processed/size-chart-<blank_id>.png` via sharp. The canvas is `1600` wide; the height
+is auto-derived from the content plus a fixed top/bottom margin (so every garment gets matching
+whitespace) unless a profile pins `canvas_height`. Rendered at 2x by default, so a chart is `3200`
+wide by roughly `4300-4700` tall depending on the legend and table. The bundled
 Inter font (`fonts/Inter.ttf`, SIL OFL, license in `fonts/OFL.txt`) is registered through a runtime
 fontconfig file, because librsvg resolves fonts through fontconfig and ignores `@font-face` embedding.
 
