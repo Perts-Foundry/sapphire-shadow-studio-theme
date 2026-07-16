@@ -19,7 +19,7 @@ const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck
 // The live, byte-identical Size Chart row from a shipped product template. This is the cohesion
 // anchor: the generator must reproduce it exactly for the seed blank.
 function canonicalRow() {
-  const raw = readFileSync(path.join(ROOT, 'templates', 'product.medical-applique-embroidered-sweatshirt.json'), 'utf8');
+  const raw = readFileSync(path.join(ROOT, 'templates', 'product.huddle-crewneck.json'), 'utf8');
   const body = raw.replace(/^﻿?\s*\/\*[\s\S]*?\*\/\s*/, '');
   const t = JSON.parse(body);
   return t.sections.main.blocks['product-details'].blocks.accordion_HrL6gj.blocks.accordion_row_sc001;
