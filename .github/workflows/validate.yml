@@ -106,6 +106,42 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── Size-chart tooling tests ───────────────────────────────
+      # `scripts/size-chart/` is operator tooling, not shipped theme code, so it
+      # reaches no storefront. It is gated here anyway because it owns the
+      # on-page size-chart prose: its cohesion goldens compare generated output
+      # against the shipped product templates, and that invariant is only worth
+      # anything if something enforces it.
+      - name: Size chart tests
+        id: size-chart
+        run: |
+          set +e
+          OUTPUT=$(npm run size-chart:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # `node --test <glob>` expands the glob itself and exits 0 when it matches
+          # nothing, so a renamed directory or an edited npm script would leave this
+          # gate reporting a green "0 tests" forever. That is the same silently-covering-
+          # nothing failure this step exists to prevent, so assert the suite actually ran.
+          # The reporter is TTY-dependent: CI logs `# tests 60`, a local TTY prints
+          # `<info> tests 60`. Match the count, not the prefix.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::size-chart suite reported ${TESTS_RUN:-0} tests. The glob in the size-chart:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            # tail -50, not the -30 the linter steps use: node --test emits ~20 lines of stack per
+            # failure in its trailing "failing tests:" block, so -30 would push all but the last
+            # failure out of the PR comment when several tests break at once.
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── actionlint (workflows + composite actions) ─────────────
       - name: actionlint
         id: actionlint
@@ -171,12 +207,13 @@ jobs:
         env:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -205,11 +242,13 @@ jobs:
           PR_SHA: ${{ github.event.pull_request.head.sha }}
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
           THEME_CHECK_OUTPUT: ${{ steps.theme-check.outputs.output }}
           RECONCILE_OUTPUT: ${{ steps.reconcile.outputs.output }}
+          SIZE_CHART_OUTPUT: ${{ steps.size-chart.outputs.output }}
           ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
           ZIZMOR_OUTPUT: ${{ steps.zizmor.outputs.output }}
           GITLEAKS_OUTPUT: ${{ steps.gitleaks.outputs.output }}
@@ -236,12 +275,14 @@ jobs:
 
             const themeCheck = process.env.THEME_CHECK_EXIT;
             const reconcile = process.env.RECONCILE_EXIT;
+            const sizeChart = process.env.SIZE_CHART_EXIT;
             const actionlint = process.env.ACTIONLINT_EXIT;
             const zizmor = process.env.ZIZMOR_EXIT;
             const gitleaks = process.env.GITLEAKS_EXIT;
 
             const themeCheckOut = sanitize(process.env.THEME_CHECK_OUTPUT) || 'No issues found';
             const reconcileOut = sanitize(process.env.RECONCILE_OUTPUT) || 'No output';
+            const sizeChartOut = sanitize(process.env.SIZE_CHART_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
             const gitleaksOut = sanitize(process.env.GITLEAKS_OUTPUT) || 'No issues found';
@@ -262,6 +303,12 @@ jobs:
               `|:------|:-----|:------:|`,
               `| **Theme Check** | \`shopify theme check --fail-level error\` | ${status(themeCheck)} |`,
               `| **Reconcile** | \`git cherry HEAD origin/shopify-sync\` | ${status(reconcile)} |`,
+              '',
+              '### Tooling',
+              '',
+              `| Check | Tool | Result |`,
+              `|:------|:-----|:------:|`,
+              `| **Size chart** | \`npm run size-chart:test\` | ${status(sizeChart)} |`,
               '',
               '### Workflows',
               '',
@@ -290,6 +337,14 @@ jobs:
               '',
               '```',
               reconcileOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Size chart</strong> (<code>npm run size-chart:test</code>)</summary>',
+              '',
+              '```',
+              sizeChartOut,
               '```',
               '',
               '</details>',
@@ -366,6 +421,7 @@ jobs:
         env:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+          SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
@@ -383,6 +439,7 @@ jobs:
           FAILED=0
           check_exit "theme-check" "$THEME_CHECK_EXIT"
           check_exit "reconcile" "$RECONCILE_EXIT"
+          check_exit "size-chart" "$SIZE_CHART_EXIT"
           check_exit "actionlint" "$ACTIONLINT_EXIT"
           check_exit "zizmor" "$ZIZMOR_EXIT"
           check_exit "gitleaks" "$GITLEAKS_EXIT"

@@ -129,5 +129,12 @@ ranges, transcription swaps, range/string rejection paths), a byte-for-byte cohe
 on-page row against the live template, an environment-independent **SVG golden** of the crewneck PNG
 (so the canonical SS3000 design cannot silently change), the canvas overflow guard, template-writer
 idempotency / byte-stability, the sync-guard decision, and a render smoke check. Run it locally before
-committing changes to this tooling; there is no CI workflow for it (it is operator tooling, not
-shipped theme code, so it is not part of the deploy gate).
+committing changes to this tooling. It also runs in CI as the `Size chart tests` step of
+`validate.yml`, so a red suite blocks the PR. That is deliberate despite this being operator tooling
+rather than shipped theme code: the suite owns the on-page size-chart prose, and its cohesion goldens
+assert that generated output still matches the shipped product templates. That invariant is only
+worth something if something enforces it.
+
+The render smoke check hard-fails in CI when `sharp` cannot be imported, rather than skipping as it
+does locally. A skip there would leave the run green with rasterisation coverage silently gone, which
+is the failure this gate exists to close.
