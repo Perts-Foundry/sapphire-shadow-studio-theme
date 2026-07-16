@@ -23,7 +23,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   Half of this exists: `blocks/return-policy-acknowledgment.liquid` already renders a *required*
   checkbox bound to the product form with a configurable `checkbox_label`, and its click handler
   scrolls itself into view. Two gaps. (1) It is missing from `product.shift-fuel-crewneck.json` (the
-  Shift Fuel crewneck); the other two product templates carry it. (2) It does not mention the size
+  Shift Fuel crewneck); the other four product templates carry it. (2) It does not mention the size
   guide. Decide whether that is a second required checkbox or one combined acknowledgement, and note
   the tension: every extra required checkbox is add-to-cart friction, and the size-chart backlog
   already deliberately excluded a "pre-purchase size nudge" for that reason. Pairs with the
@@ -52,8 +52,10 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
 
 - **Column-driven generalisation.** Profiles declare their own ordered `columns` (role + kind +
   authored heading/how + optional `derive`) and pick a `garment` silhouette (crewneck / quarter-zip /
-  vest, with a no-diagram fallback). The quarter-zip and the microfleece vests were onboarded (PNG
-  only; on-page insertion waits until those products exist in Shopify).
+  vest, with a no-diagram fallback). The quarter-zip and the women's microfleece vest are onboarded
+  end to end: profile, PNG, and on-page row in `templates/product.lead-ii-quarter-zip.json` and
+  `product.lead-ii-vest-womens.json`. Neither product exists in Shopify Admin yet, so their
+  storefront URLs do not resolve; Admin creation is the remaining step, not template work.
 
 - **Vertical-rhythm pass on the PNG.** Tightened the top whitespace and derived canvas height from
   content plus a fixed bottom margin, so every garment gets matching top/bottom whitespace

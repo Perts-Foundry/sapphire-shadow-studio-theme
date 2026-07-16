@@ -129,9 +129,14 @@ npm run size-chart:test   # node --test over the pure-logic + writer + render su
 The suite covers unit conversion (tie round-up, trailing-`.0` strip, independent laid-flat cm),
 column-driven `deriveRows` (measure / derive / range / string kinds), profile validation (per-role
 ranges, transcription swaps, range/string rejection paths), a byte-for-byte cohesion golden of the
-on-page row against the live template, an environment-independent **SVG golden** of the crewneck PNG
-(so the canonical SS3000 design cannot silently change), the canvas overflow guard, template-writer
-idempotency / byte-stability, the sync-guard decision, and a render smoke check. Run it locally before
+on-page row against the live template for every suffix a profile claims (so a template cloned from
+an already-charted one cannot keep the source blank's chart, and a profile edited without re-running
+`apply-size-chart.mjs` goes red), the renderability of that row (present in `block_order`, no
+`disabled: true` on it or any ancestor), at most one size-chart row per product template on disk
+(the only check that would see the default `product.json`, which no profile's handles can claim),
+an environment-independent **SVG golden** of the crewneck PNG (so the canonical SS3000 design cannot
+silently change), the canvas overflow guard, template-writer idempotency / byte-stability, the
+sync-guard decision, and a render smoke check. Run it locally before
 committing changes to this tooling. It also runs in CI as the `Size chart tests` step of
 `validate.yml`, so a red suite blocks the PR. That is deliberate despite this being operator tooling
 rather than shipped theme code: the suite owns the on-page size-chart prose, and its cohesion goldens
