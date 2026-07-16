@@ -14,6 +14,13 @@ both regenerate from those. See `README.md` for the tooling. Importance (imp) is
   and applies to every blank. Templates regenerated via `apply-size-chart.mjs`; cohesion golden
   tests stay green.
 
+- **Column-driven generalisation.** Profiles now declare their own ordered `columns` (role + kind +
+  authored heading/how + optional `derive`), pick a `garment` silhouette (crewneck / quarter-zip /
+  vest, with a no-diagram fallback), and set a per-profile `canvas_height` guarded against overflow.
+  The crewneck output stays byte-identical (SVG + on-page goldens). The quarter-zip and both
+  microfleece vests are onboarded (PNG only; on-page insertion waits until those products exist in
+  Shopify).
+
 ## High priority
 
 - [ ] **Per-garment fit descriptor (imp 5).** Do NOT hardcode in `copy.md`; fit differs per blank.
@@ -54,9 +61,11 @@ both regenerate from those. See `README.md` for the tooling. Importance (imp) is
 - [ ] **Torso-drop descriptor (imp 3).** Plain-language note on where the (long) body length lands,
   framed for shorter and women wearers. Rides the fit-descriptor copy; no new field.
 
-- [ ] **Body-length start-point note (imp 2).** Clarify in the body-length prose that measurement
-  starts at the shoulder-sleeve seam (not high-point-of-shoulder), so a shopper comparing an
-  HPS-measured chart elsewhere is not confused by a shorter number.
+- [ ] **Body-length start-point note (imp 2).** The shipped crewneck copy measures body length from
+  the high point of the shoulder (HPS); the vests measure "at back" (`body_length_back`) with their
+  own definition. If a future blank's manufacturer measures from the shoulder-sleeve seam instead,
+  spell that out in that column's `how` text so a shopper comparing charts is not thrown by a shorter
+  number.
 
 ## Intentionally excluded (operator decision, 2026-07-14)
 

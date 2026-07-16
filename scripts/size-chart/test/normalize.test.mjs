@@ -30,20 +30,34 @@ test('cmTenths and formatCm building blocks', () => {
   assert.equal(formatCm(978), '97.8');
 });
 
-test('deriveRows computes every column for one size', () => {
+test('deriveRows returns cells in column order, with a halved derived column', () => {
   const profile = {
     sizes: ['XS'],
-    measurements: {
-      chest_circumference: [38],
-      body_length: [25],
-      sleeve_length: [34],
-    },
+    columns: [
+      { role: 'size', heading: 'Size', kind: 'label' },
+      { role: 'chest_laid_flat', heading: 'Chest (laid flat)', kind: 'measure', derive: { from: 'chest_circumference', factor: 0.5 } },
+      { role: 'chest_circumference', heading: 'Chest (circumference)', kind: 'measure', values: [38] },
+      { role: 'body_length_hps', heading: 'Body Length', kind: 'measure', values: [25] },
+      { role: 'sleeve_cb', heading: 'Sleeve Length', kind: 'measure', values: [34] },
+    ],
   };
-  assert.deepEqual(deriveRows(profile)[0], {
-    size: 'XS',
-    chest_circumference: '38" / 96.5 cm',
-    chest_laid_flat: '19" / 48.3 cm',
-    body_length: '25" / 63.5 cm',
-    sleeve_length: '34" / 86.4 cm',
-  });
+  assert.deepEqual(deriveRows(profile)[0], [
+    'XS', '19" / 48.3 cm', '38" / 96.5 cm', '25" / 63.5 cm', '34" / 86.4 cm',
+  ]);
+});
+
+test('deriveRows formats string, doubled-derive, and range columns', () => {
+  const profile = {
+    sizes: ['XS', 'S'],
+    columns: [
+      { role: 'size', heading: 'Size', kind: 'label' },
+      { role: 'size_numeric', heading: 'US', kind: 'string', values: ['2', '4/6'] },
+      { role: 'chest_laid_flat', heading: 'Chest', kind: 'measure', values: [19.5, 20] },
+      { role: 'chest_circumference', heading: 'Chest (circ)', kind: 'measure', derive: { from: 'chest_laid_flat', factor: 2 } },
+      { role: 'body_chest_range', heading: 'To Fit', kind: 'range', values: [[32, 34], [35, 37]] },
+    ],
+  };
+  const rows = deriveRows(profile);
+  assert.deepEqual(rows[0], ['XS', '2', '19.5" / 49.5 cm', '39" / 99.1 cm', '32-34"']);
+  assert.deepEqual(rows[1], ['S', '4/6', '20" / 50.8 cm', '40" / 101.6 cm', '35-37"']);
 });

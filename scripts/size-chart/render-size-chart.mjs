@@ -9,19 +9,15 @@
 // themes-only). Upload + alt text are manual in Shopify Admin. Mirrors process-product-images.mjs:
 // output is guarded to a product-images/ path so no image binaries land in the public repo.
 
-import { readFile } from 'node:fs/promises';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { validateProfile } from './lib/profile-schema.mjs';
-import { readCopy } from './lib/copy.mjs';
-import { buildSvg, CANVAS } from './lib/render-svg.mjs';
+import { pathToFileURL } from 'node:url';
+import { buildSvg } from './lib/render-svg.mjs';
 import { setupFontconfig } from './lib/fontconfig.mjs';
+import { loadProfile } from './lib/profile-io.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROFILES_DIR = path.join(HERE, 'profiles');
 const DEFAULT_OUT_DIR = 'product-images/processed';
-const SCALE = 2; // render at 2x the 1600x2000 canvas for a crisp gallery image (3200x4000)
+const SCALE = 2; // render at 2x the 1600x2180 default canvas for a crisp gallery image (3200x4360)
 
 function parseArgs(argv) {
   const opts = { profile: null, out: null, outDir: DEFAULT_OUT_DIR, scale: SCALE };
@@ -45,21 +41,19 @@ function parseArgs(argv) {
   return opts;
 }
 
-async function loadProfile(ref) {
-  const p = ref.endsWith('.json') ? path.resolve(ref) : path.join(PROFILES_DIR, `${ref}.json`);
-  let json;
-  try {
-    json = JSON.parse(await readFile(p, 'utf8'));
-  } catch (e) {
-    throw new Error(`Cannot read profile '${ref}' (${p}): ${e.message}`);
-  }
-  validateProfile(json);
-  return json;
-}
-
+// Column-driven alt text for the gallery image: list the measured columns (measure + range kinds),
+// so the description matches whatever the garment actually charts.
 export function altText(profile) {
-  return `${profile.display_name} size guide: chest circumference and laid-flat width, body length, `
-    + `and sleeve length in inches and centimeters for sizes ${profile.sizes.join(', ')}.`;
+  const measures = profile.columns
+    .filter((c) => c.kind === 'measure' || c.kind === 'range')
+    .map((c) => c.heading.toLowerCase());
+  const list = measures.length <= 1
+    ? measures.join('')
+    : measures.length === 2
+      ? measures.join(' and ')
+      : `${measures.slice(0, -1).join(', ')}, and ${measures[measures.length - 1]}`;
+  return `${profile.display_name} size guide: ${list} in inches and centimeters `
+    + `for sizes ${profile.sizes.join(', ')}.`;
 }
 
 async function main() {
@@ -71,8 +65,7 @@ async function main() {
   }
 
   const profile = await loadProfile(opts.profile);
-  const { pngLegend } = readCopy();
-  const svg = buildSvg(profile, pngLegend);
+  const svg = buildSvg(profile);
 
   // Fontconfig must be configured before sharp is imported/initialised.
   process.env.FONTCONFIG_FILE = setupFontconfig();
@@ -98,4 +91,7 @@ async function main() {
   console.log('Next: upload this image to the product gallery in Shopify Admin and set the alt text above.');
 }
 
-main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+// Only run the CLI when executed directly, so tests can import altText() without triggering main().
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+}

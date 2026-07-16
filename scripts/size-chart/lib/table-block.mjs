@@ -3,39 +3,29 @@
 // reproduces the existing block byte-for-byte for the seed blank (the cohesion golden test).
 //
 // The row nests a `text_sc001` rich-text block (prose from copy.md) and a `table_9Nak3q` table
-// block (six columns, rows 1-6 filled from the profile, rows 7-8 left empty so they auto-hide).
-// Pure; no fs beyond copy.md via readCopy, no sharp.
+// block. The table is column-driven: `column_count`, the `colN_heading` labels, and the `rMcN` cells
+// all come from the profile's `columns` (rows 1..sizes.length filled, the rest left empty so the
+// theme block auto-hides them). Pure; no fs beyond copy.md via readCopy, no sharp.
 
 import { deriveRows } from './normalize.mjs';
 import { readCopy } from './copy.mjs';
 
-const HEADINGS = [
-  'Size',
-  'Chest (laid flat)',
-  'Chest (circumference)',
-  'Body Length',
-  'Sleeve Length',
-];
+// The theme table block (blocks/table.liquid) supports up to 8 rows and 6 columns.
+const MAX_ROWS = 8;
 
-// Column keys in table order (col1..col5) as produced by deriveRows.
-const COL_KEYS = ['size', 'chest_laid_flat', 'chest_circumference', 'body_length', 'sleeve_length'];
-
-function buildTableSettings(rows) {
+function buildTableSettings(rows, columns) {
+  const n = columns.length;
   const settings = {
-    column_count: '5',
+    column_count: String(n),
     show_header: true,
     stripe_rows: true,
-    col1_heading: HEADINGS[0],
-    col2_heading: HEADINGS[1],
-    col3_heading: HEADINGS[2],
-    col4_heading: HEADINGS[3],
-    col5_heading: HEADINGS[4],
   };
-  // 8 rows x 5 columns, row-major, matching the live key order (r1c1..r8c5).
-  for (let r = 1; r <= 8; r++) {
+  for (let c = 1; c <= n; c++) settings[`col${c}_heading`] = columns[c - 1].heading;
+  // rows x columns, row-major, matching the live key order (r1c1..r8cN). Unused rows stay empty.
+  for (let r = 1; r <= MAX_ROWS; r++) {
     const row = rows[r - 1];
-    for (let c = 1; c <= 5; c++) {
-      settings[`r${r}c${c}`] = row ? row[COL_KEYS[c - 1]] : '';
+    for (let c = 1; c <= n; c++) {
+      settings[`r${r}c${c}`] = row ? row[c - 1] : '';
     }
   }
   return settings;
@@ -77,7 +67,7 @@ export function buildAccordionRow(profile, { copyPath } = {}) {
       table_9Nak3q: {
         type: 'table',
         name: 't:names.table',
-        settings: buildTableSettings(rows),
+        settings: buildTableSettings(rows, profile.columns),
         blocks: {},
       },
     },

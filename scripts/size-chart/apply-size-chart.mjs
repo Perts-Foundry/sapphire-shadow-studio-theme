@@ -7,17 +7,15 @@
 // carries an in-flight edit to it that has not been reconciled to main, so a hand-off edit is not
 // silently clobbered. It never commits, pushes, or opens a PR; that stays the operator's step.
 
-import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateProfile } from './lib/profile-schema.mjs';
 import { upsertSizeChart } from './lib/template-writer.mjs';
 import { classifyInFlight } from './lib/sync-guard.mjs';
+import { loadProfile } from './lib/profile-io.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROFILES_DIR = path.join(HERE, 'profiles');
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 
 function parseArgs(argv) {
@@ -64,13 +62,6 @@ function guardInFlight(relPath) {
     return false;
   }
   return true;
-}
-
-async function loadProfile(ref) {
-  const p = ref.endsWith('.json') ? path.resolve(ref) : path.join(PROFILES_DIR, `${ref}.json`);
-  const json = JSON.parse(await readFile(p, 'utf8'));
-  validateProfile(json);
-  return json;
 }
 
 async function main() {

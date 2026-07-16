@@ -1,9 +1,11 @@
-// Reader for scripts/size-chart/copy.md, the single source of truth for size-chart wording.
+// Reader for scripts/size-chart/copy.md, the single source of truth for the on-page size-chart prose.
 //
-// copy.md carries two machine-consumed regions delimited by HTML comment markers:
-//   - accordion-html: the verbatim rich-text HTML for the on-page `text_sc001` block. It must
-//     stay byte-for-byte identical to the live block; the cohesion golden test depends on it.
-//   - png-legend: a JSON object of condensed measurement definitions drawn onto the PNG.
+// copy.md carries one machine-consumed region delimited by HTML comment markers:
+//   - accordion-html: the verbatim rich-text HTML for the on-page `text_sc001` block. It must stay
+//     byte-for-byte identical to the live block; the cohesion golden test depends on it.
+//
+// (The PNG's how-to panel and measurement callouts are per-profile now, so they live in each
+// profile's `how_to` + `columns`, not here.)
 //
 // Pure Node fs; no external dependency.
 
@@ -30,6 +32,5 @@ function region(text, name) {
 export function readCopy(copyPath = DEFAULT_COPY_PATH) {
   const text = readFileSync(copyPath, 'utf8');
   const accordionHtml = region(text, 'accordion-html');
-  const pngLegend = JSON.parse(region(text, 'png-legend'));
-  return { accordionHtml, pngLegend };
+  return { accordionHtml };
 }

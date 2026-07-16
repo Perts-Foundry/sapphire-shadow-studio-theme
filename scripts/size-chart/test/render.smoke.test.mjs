@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSvg, CANVAS } from '../lib/render-svg.mjs';
-import { readCopy } from '../lib/copy.mjs';
 import { setupFontconfig } from '../lib/fontconfig.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -23,15 +22,14 @@ test('renders a navy PNG of the expected dimensions', async (t) => {
     return;
   }
 
-  const { pngLegend } = readCopy();
-  const svg = buildSvg(SEED, pngLegend);
+  const svg = buildSvg(SEED);
 
   const density = 36; // half the 72dpi default -> half-size raster, keeps the test fast
   const scale = density / 72;
   const { data, info } = await sharp(Buffer.from(svg), { density }).png().toBuffer({ resolveWithObject: true });
 
   assert.equal(info.width, Math.round(CANVAS.W * scale));
-  assert.equal(info.height, Math.round(CANVAS.H * scale));
+  assert.equal(info.height, Math.round((SEED.canvas_height ?? CANVAS.H) * scale));
   assert.ok(data.length > 2000, 'PNG should be non-trivially sized');
 
   const px = await sharp(data).extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer();
