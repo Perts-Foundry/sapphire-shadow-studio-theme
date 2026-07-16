@@ -19,7 +19,7 @@ const FONT = 'Inter';
 
 // ---- canvas ---------------------------------------------------------------
 const W = 1600;
-const H = 2000;
+const H = 2180;
 const M = 110;
 
 // ---- helpers --------------------------------------------------------------
@@ -60,33 +60,86 @@ function badge(cx, cy, letter, r = 19) {
     + `fill="${WHITE}" text-anchor="middle">${esc(letter)}</text>`;
 }
 
+// ---- gradients ------------------------------------------------------------
+// Reusable paint servers: a subtle background vignette and a top-lit garment fill that gives the
+// flat-lay a sense of volume. librsvg renders linearGradient reliably (unlike @font-face / filters).
+function defs() {
+  return '<defs>'
+    + '<linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">'
+    + `<stop offset="0" stop-color="${BG}"/><stop offset="1" stop-color="#05162e"/>`
+    + '</linearGradient>'
+    + '<linearGradient id="garmentGrad" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0" stop-color="#17427e"/><stop offset="0.55" stop-color="#0f3462"/>'
+    + '<stop offset="1" stop-color="#0a2748"/>'
+    + '</linearGradient>'
+    + '</defs>';
+}
+
 // ---- garment diagram ------------------------------------------------------
-// Stylised flat-lay crewneck sweatshirt with A/B/C/D measurement callouts. Drawn in a local
-// coordinate box then translated. Callout letters key to the legend and the table columns:
-//   A chest (laid flat), B body length, C shoulder width, D sleeve length.
-function garment(tx, ty) {
-  const line = (x1, y1, x2, y2) =>
-    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ACCENT_LT}" stroke-width="3" stroke-linecap="round"/>`;
-  const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="5" fill="${ACCENT_LT}"/>`;
+// Flat-lay crewneck sweatshirt (front), drawn in a local ~560x600 box then translated. A top-lit
+// gradient fill gives soft volume; a ribbed crew collar, ribbed hem, and cuff seams read as a
+// sweatshirt. Dashed A/B/C guides key to the legend and table columns:
+//   A chest (laid flat), B body length (from HPS), C sleeve length (from centre back).
+function garment(tx, ty, s = 1) {
+  const guide = (x1, y1, x2, y2) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ACCENT_LT}" stroke-width="2.5" `
+    + `stroke-dasharray="1 7" stroke-linecap="round"/>`;
+  const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="5.5" fill="${ACCENT_LT}"/>`;
+  const dbadge = (cx, cy, letter) =>
+    `<circle cx="${cx}" cy="${cy}" r="21" fill="${ACCENT}" stroke="${WHITE}" stroke-opacity="0.9" stroke-width="2"/>`
+    + `<text x="${cx}" y="${cy + 7.5}" font-family="${FONT}" font-weight="700" font-size="23" `
+    + `fill="${WHITE}" text-anchor="middle">${esc(letter)}</text>`;
 
-  const path = 'M224,64 Q280,112 336,64 L392,92 L516,168 L470,300 L372,232 '
-    + 'L372,520 L188,520 L188,232 L90,300 L44,168 L168,92 Z';
+  // outer silhouette: crewneck sweatshirt, front flat lay. Set-in tubular sleeves hang down-and-out
+  // to ribbed cuffs; boxy body; ribbed crew collar and waistband. Symmetric about x=280.
+  const body = 'M238,152 Q280,192 322,152 Q356,150 384,158 Q472,250 512,384 Q516,398 470,430 '
+    + 'Q424,344 384,256 L384,486 Q384,500 370,500 L190,500 Q176,500 176,486 L176,256 '
+    + 'Q136,344 90,430 Q44,398 48,384 Q88,250 176,158 Q204,150 238,152 Z';
 
-  return `<g transform="translate(${tx},${ty})">`
-    // garment body
-    + `<path d="${path}" fill="${PANEL}" stroke="${WHITE}" stroke-opacity="0.35" stroke-width="3" stroke-linejoin="round"/>`
-    // neckline inner detail
-    + `<path d="M232,70 Q280,104 328,70" fill="none" stroke="${WHITE}" stroke-opacity="0.25" stroke-width="3"/>`
-    // hem + cuff ribbing hints
-    + `<line x1="188" y1="496" x2="372" y2="496" stroke="${WHITE}" stroke-opacity="0.18" stroke-width="2"/>`
-    // C: shoulder width (top)
-    + line(168, 84, 392, 84) + dot(168, 84) + dot(392, 84) + badge(280, 50, 'C')
-    // A: chest laid flat (across body)
-    + line(188, 290, 372, 290) + dot(188, 290) + dot(372, 290) + badge(280, 290, 'A')
-    // B: body length (right side)
-    + line(404, 232, 404, 520) + dot(404, 232) + dot(404, 520) + badge(404, 376, 'B')
-    // D: sleeve length (along right sleeve)
-    + line(398, 108, 500, 238) + dot(398, 108) + dot(500, 238) + badge(452, 173, 'D')
+  // ribbed waistband: vertical ticks inside a lighter band
+  let hemRibs = '';
+  for (let x = 190; x <= 370; x += 11) {
+    hemRibs += `<line x1="${x}" y1="474" x2="${x}" y2="494" stroke="#0a2a52" stroke-width="2" opacity="0.55"/>`;
+  }
+  // cuff / seam band: a line with two short perpendicular rib ticks
+  const cuff = (ax, ay, bx, by) => {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+    const nx = (-dy / len) * 8, ny = (dx / len) * 8; // short perpendicular rib
+    const rib = (t) => {
+      const px = ax + dx * t, py = ay + dy * t;
+      return `<line x1="${(px - nx).toFixed(1)}" y1="${(py - ny).toFixed(1)}" x2="${(px + nx).toFixed(1)}" y2="${(py + ny).toFixed(1)}" stroke="#0b2c56" stroke-width="2" opacity="0.6"/>`;
+    };
+    return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#3d6ea6" stroke-opacity="0.55" stroke-width="2.5"/>`
+      + rib(0.34) + rib(0.66);
+  };
+
+  return `<g transform="translate(${tx},${ty}) scale(${s})">`
+    // grounding shadow
+    + `<ellipse cx="280" cy="516" rx="150" ry="16" fill="#030b1a" opacity="0.45"/>`
+    // body
+    + `<path d="${body}" fill="url(#garmentGrad)" stroke="#3f6fa8" stroke-opacity="0.55" stroke-width="2.5" stroke-linejoin="round"/>`
+    // soft center sheen for volume (diffuse, so it reads as light, not a stripe)
+    + `<ellipse cx="280" cy="320" rx="70" ry="140" fill="${WHITE}" opacity="0.025"/>`
+    // set-in sleeve seams (armscye), so the sleeves read as set in, not batwing
+    + `<path d="M384,158 Q408,206 384,256" fill="none" stroke="#2a5a99" stroke-opacity="0.5" stroke-width="2.5"/>`
+    + `<path d="M176,158 Q152,206 176,256" fill="none" stroke="#2a5a99" stroke-opacity="0.5" stroke-width="2.5"/>`
+    // ribbed waistband
+    + `<path d="M176,470 L384,470" stroke="#3d6ea6" stroke-opacity="0.45" stroke-width="2"/>`
+    + `<rect x="180" y="470" width="204" height="24" fill="#10345f" opacity="0.42"/>`
+    + hemRibs
+    // ribbed cuffs (a seam just up-sleeve of each wrist opening)
+    + cuff(500, 382, 460, 424)
+    + cuff(60, 382, 100, 424)
+    // ribbed crew collar (band + inner shadow)
+    + `<path d="M232,150 Q280,202 328,150" fill="none" stroke="#2f5f9e" stroke-width="13" stroke-linecap="round"/>`
+    + `<path d="M242,152 Q280,188 318,152" fill="none" stroke="#0c2a52" stroke-width="4" stroke-linecap="round"/>`
+    // A: chest width laid flat (across the body, about an inch below the armhole)
+    + guide(176, 292, 384, 292) + dot(176, 292) + dot(384, 292) + dbadge(280, 292, 'A')
+    // B: body length (from the high point of the shoulder straight down to the hem edge; the
+    // endpoints sit exactly on the shoulder and the hem, not beyond either)
+    + guide(214, 152, 214, 494) + dot(214, 152) + dot(214, 494) + dbadge(214, 322, 'B')
+    // C: sleeve length (from the centre back neck, across the shoulder, down to the cuff)
+    + guide(280, 152, 492, 408) + dot(280, 152) + dot(492, 408) + dbadge(424, 328, 'C')
     + `</g>`;
 }
 
@@ -107,12 +160,12 @@ function legend(x, y, width, callouts) {
 }
 
 // ---- table ----------------------------------------------------------------
-const HEADINGS = ['Size', 'Chest (circumference)', 'Chest (laid flat)', 'Body Length', 'Shoulder Width', 'Sleeve Length'];
-const HEAD_BADGE = [null, null, 'A', 'B', 'C', 'D']; // callout letter per column
-const COL_KEYS = ['size', 'chest_circumference', 'chest_laid_flat', 'body_length', 'shoulder_width', 'sleeve_length'];
+const HEADINGS = ['Size', 'Chest (laid flat)', 'Chest (circumference)', 'Body Length', 'Sleeve Length'];
+const HEAD_BADGE = [null, 'A', null, 'B', 'C']; // callout letter per column
+const COL_KEYS = ['size', 'chest_laid_flat', 'chest_circumference', 'body_length', 'sleeve_length'];
 
 function table(x0, y0, rows) {
-  const widths = [150, 246, 246, 246, 246, 246];
+  const widths = [180, 300, 300, 300, 300];
   const totalW = widths.reduce((a, b) => a + b, 0);
   const xs = [];
   let xacc = x0;
@@ -126,13 +179,22 @@ function table(x0, y0, rows) {
   parts.push(`<rect x="${x0}" y="${y0}" width="${totalW}" height="${headH}" fill="${ACCENT}" rx="6"/>`);
   // header labels (wrapped up to 2 lines), each column
   HEADINGS.forEach((h, c) => {
-    const cx = xs[c] + pad;
-    const lines = wrapText(h, widths[c] - pad * 2 - (HEAD_BADGE[c] ? 30 : 0), 25, 0.56);
+    const letter = HEAD_BADGE[c];
+    const r = 17;
+    const badgeSpace = letter ? r * 2 + 14 : 0; // room for a front badge + gap
+    const textX = xs[c] + pad + badgeSpace;
+    const lines = wrapText(h, widths[c] - pad * 2 - badgeSpace, 25, 0.56);
     const startY = y0 + headH / 2 - (lines.length - 1) * 15 + 8;
+    // front-of-column badge: a navy chip with a white letter so it stays legible on the accent
+    // header band (an accent-on-accent circle would vanish) and maps 1:1 to the diagram badges.
+    if (letter) {
+      const bcx = xs[c] + pad + r, bcy = y0 + headH / 2;
+      parts.push(`<circle cx="${bcx}" cy="${bcy}" r="${r}" fill="${BG}" stroke="${WHITE}" stroke-opacity="0.85" stroke-width="1.5"/>`);
+      parts.push(`<text x="${bcx}" y="${bcy + 6}" font-family="${FONT}" font-weight="800" font-size="20" fill="${WHITE}" text-anchor="middle">${esc(letter)}</text>`);
+    }
     lines.forEach((ln, i) => {
-      parts.push(text(ln, { x: cx, y: startY + i * 30, size: 25, weight: 700, fill: WHITE }));
+      parts.push(text(ln, { x: textX, y: startY + i * 30, size: 25, weight: 700, fill: WHITE }));
     });
-    if (HEAD_BADGE[c]) parts.push(badge(xs[c] + widths[c] - 26, y0 + 30, HEAD_BADGE[c], 16));
   });
 
   // data rows
@@ -162,12 +224,55 @@ function table(x0, y0, rows) {
   return { height: tableH, svg: parts.join('') };
 }
 
+// ---- how-to panel ---------------------------------------------------------
+// The prominent "Start here" section: a bordered panel with an eyebrow, heading, the garment-vs-body
+// note, and numbered steps joined by chevrons, so a shopper sees the reading order before the table.
+function howTo(x0, y0, width, data) {
+  if (!data) return { height: 0, svg: '' };
+  const pad = 46;
+  const inner = x0 + pad;
+  const steps = data.steps || [];
+  const stepsTop = y0 + 196;
+  const colW = (width - 2 * pad) / (steps.length || 1);
+  const badgeR = 22;
+
+  const stepSvg = [];
+  let maxBottom = stepsTop;
+  steps.forEach((s, i) => {
+    const cx = inner + i * colW;
+    const bcx = cx + badgeR, bcy = stepsTop + badgeR;
+    stepSvg.push(`<circle cx="${bcx}" cy="${bcy}" r="${badgeR}" fill="${ACCENT}"/>`);
+    stepSvg.push(`<text x="${bcx}" y="${bcy + 9}" font-family="${FONT}" font-weight="800" font-size="26" `
+      + `fill="${WHITE}" text-anchor="middle">${i + 1}</text>`);
+    const tw = colW - 30;
+    const titleLines = wrapText(s.title, tw, 26, 0.55);
+    titleLines.forEach((ln, j) => {
+      stepSvg.push(text(ln, { x: cx, y: stepsTop + 84 + j * 32, size: 26, weight: 700, fill: WHITE }));
+    });
+    const dY = stepsTop + 84 + titleLines.length * 32 + 6;
+    const dp = paragraph(s.detail, { x: cx, y: dY, size: 23, fill: BODY, maxWidth: tw, lineHeight: 30 });
+    stepSvg.push(dp.svg);
+    maxBottom = Math.max(maxBottom, dY + dp.height);
+  });
+
+  const panelH = (maxBottom + pad - 6) - y0;
+  const parts = [];
+  parts.push(`<rect x="${x0}" y="${y0}" width="${width}" height="${panelH}" rx="18" fill="${PANEL}" fill-opacity="0.4" stroke="${ACCENT}" stroke-opacity="0.5" stroke-width="2"/>`);
+  parts.push(`<rect x="${x0}" y="${y0 + 14}" width="6" height="${panelH - 28}" rx="3" fill="${ACCENT}"/>`);
+  parts.push(text((data.eyebrow || 'Start here').toUpperCase(), { x: inner, y: y0 + 52, size: 25, weight: 700, fill: ACCENT_LT, spacing: 5 }));
+  parts.push(text(data.heading || '', { x: inner, y: y0 + 106, size: 44, weight: 800, fill: WHITE }));
+  if (data.note) parts.push(text(data.note, { x: inner, y: y0 + 148, size: 25, fill: BODY }));
+  parts.push(stepSvg.join(''));
+  return { height: panelH, svg: parts.join('') };
+}
+
 // ---- top-level ------------------------------------------------------------
 export function buildSvg(profile, pngLegend) {
   const rows = deriveRows(profile);
   const parts = [];
 
-  parts.push(`<rect width="${W}" height="${H}" fill="${BG}"/>`);
+  parts.push(defs());
+  parts.push(`<rect width="${W}" height="${H}" fill="url(#bgGrad)"/>`);
 
   // header
   parts.push(text('SAPPHIRE SHADOW STUDIO', { x: M, y: 150, size: 30, weight: 700, fill: ACCENT_LT, spacing: 6 }));
@@ -175,24 +280,39 @@ export function buildSvg(profile, pngLegend) {
   parts.push(text(profile.display_name, { x: M, y: 312, size: 34, weight: 400, fill: BODY }));
   parts.push(`<line x1="${M}" y1="356" x2="${W - M}" y2="356" stroke="${ACCENT}" stroke-width="3"/>`);
 
-  // intro
-  const intro = paragraph(pngLegend.intro, { x: M, y: 416, size: 30, fill: BODY, maxWidth: W - 2 * M, lineHeight: 44 });
-  parts.push(intro.svg);
+  // how-to panel: the prominent "start here" section
+  const ht = howTo(M, 408, W - 2 * M, pngLegend.how_to);
+  parts.push(ht.svg);
 
-  // diagram + legend
-  const midY = 456 + intro.height + 40;
-  parts.push(garment(M + 10, midY));
-  const lg = legend(M + 700, midY + 60, W - M - (M + 700), pngLegend.callouts);
+  // diagram (left) + legend (right), tucked close under the panel
+  const blockTop = 408 + ht.height + 40;
+  const legendX = M + 700;
+  const gScale = 1.25;
+  // garment local silhouette spans y ~[144..500] (collar to hem) plus a shadow to ~532, centred on
+  // x280. Scale it up, centre it in the left column, and tuck the collar just under the panel.
+  const gTx = (M + legendX) / 2 - 280 * gScale;
+  const gTy = blockTop - 144 * gScale;
+  parts.push(garment(gTx, gTy, gScale));
+
+  // legend, vertically centred against the diagram silhouette so it does not favour the top now
+  // that there are only three callouts. Measure it, then place its optical centre at the silhouette
+  // middle (the first badge sits ~25px above the given y, hence the +27 correction).
+  const legendW = W - M - legendX;
+  const gMid = gTy + 336 * gScale; // vertical middle of the silhouette + its shadow (collar 144 -> ~532)
+  const lgH = legend(legendX, 0, legendW, pngLegend.callouts).height;
+  const lgY = gMid - lgH / 2 + 27;
+  const lg = legend(legendX, lgY, legendW, pngLegend.callouts);
   parts.push(lg.svg);
 
-  // table
-  const tableY = Math.max(midY + 600, midY + lg.height + 80);
+  // table below whichever of the diagram / legend reaches lower
+  const gBottom = gTy + 532 * gScale;
+  const tableY = Math.max(gBottom + 60, lgY + lg.height + 60);
   const tbl = table(M, tableY, rows);
   parts.push(tbl.svg);
 
   // footer
   const footY = tableY + tbl.height + 56;
-  parts.push(text('Measurements are of the garment laid flat, in inches and centimeters. Every piece is made to order.', { x: M, y: footY, size: 24, fill: BODY }));
+  parts.push(text('Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.', { x: M, y: footY, size: 24, fill: BODY }));
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
     + parts.join('') + `</svg>`;

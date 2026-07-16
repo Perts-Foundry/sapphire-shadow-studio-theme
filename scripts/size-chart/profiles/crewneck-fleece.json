@@ -4,10 +4,9 @@
   "unit": "in",
   "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
   "measurements": {
-    "chest_circumference": [38.5, 43.5, 45.5, 49, 54, 58],
-    "body_length": [24.5, 25, 25.75, 27, 27.75, 28],
-    "shoulder_width": [19.5, 22, 23, 25, 27.5, 29],
-    "sleeve_length": [22, 22.5, 23, 23.5, 24, 24.5]
+    "chest_circumference": [38, 41, 44, 47, 50, 53],
+    "body_length": [25, 26.5, 28, 29.5, 31, 32.5],
+    "sleeve_length": [34, 35, 36, 37, 38, 39]
   },
   "handles": [
     "medical-applique-embroidered-sweatshirt",

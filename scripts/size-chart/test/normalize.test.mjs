@@ -30,22 +30,20 @@ test('cmTenths and formatCm building blocks', () => {
   assert.equal(formatCm(978), '97.8');
 });
 
-test('deriveRows computes all six columns for one size', () => {
+test('deriveRows computes every column for one size', () => {
   const profile = {
     sizes: ['XS'],
     measurements: {
-      chest_circumference: [38.5],
-      body_length: [24.5],
-      shoulder_width: [19.5],
-      sleeve_length: [22],
+      chest_circumference: [38],
+      body_length: [25],
+      sleeve_length: [34],
     },
   };
   assert.deepEqual(deriveRows(profile)[0], {
     size: 'XS',
-    chest_circumference: '38.5" / 97.8 cm',
-    chest_laid_flat: '19.25" / 48.9 cm',
-    body_length: '24.5" / 62.2 cm',
-    shoulder_width: '19.5" / 49.5 cm',
-    sleeve_length: '22" / 55.9 cm',
+    chest_circumference: '38" / 96.5 cm',
+    chest_laid_flat: '19" / 48.3 cm',
+    body_length: '25" / 63.5 cm',
+    sleeve_length: '34" / 86.4 cm',
   });
 });

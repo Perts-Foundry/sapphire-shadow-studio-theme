@@ -59,7 +59,7 @@ async function loadProfile(ref) {
 
 export function altText(profile) {
   return `${profile.display_name} size guide: chest circumference and laid-flat width, body length, `
-    + `shoulder width, and sleeve length in inches and centimeters for sizes ${profile.sizes.join(', ')}.`;
+    + `and sleeve length in inches and centimeters for sizes ${profile.sizes.join(', ')}.`;
 }
 
 async function main() {

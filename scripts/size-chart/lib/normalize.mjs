@@ -29,15 +29,14 @@ export function cell(inchNum) {
   return `${formatInch(inchNum)}" / ${formatCm(cmTenths(inchNum))} cm`;
 }
 
-// Column order matches the on-page table: Size, Chest (circumference), Chest (laid flat),
-// Body Length, Shoulder Width, Sleeve Length. Chest laid-flat is derived as half the
-// circumference; every other column is a stored measurement.
+// Column order matches the on-page table: Size, Chest (laid flat), Chest (circumference),
+// Body Length, Sleeve Length. Chest laid-flat is derived as half the circumference; every other
+// column is a stored measurement.
 export const DISPLAY_COLUMNS = [
   'size',
-  'chest_circumference',
   'chest_laid_flat',
+  'chest_circumference',
   'body_length',
-  'shoulder_width',
   'sleeve_length',
 ];
 
@@ -49,7 +48,6 @@ export function deriveRows(profile) {
     chest_circumference: cell(measurements.chest_circumference[i]),
     chest_laid_flat: cell(measurements.chest_circumference[i] / 2),
     body_length: cell(measurements.body_length[i]),
-    shoulder_width: cell(measurements.shoulder_width[i]),
     sleeve_length: cell(measurements.sleeve_length[i]),
   }));
 }

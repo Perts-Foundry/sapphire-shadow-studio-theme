@@ -11,19 +11,18 @@ import { readCopy } from './copy.mjs';
 
 const HEADINGS = [
   'Size',
-  'Chest (circumference)',
   'Chest (laid flat)',
+  'Chest (circumference)',
   'Body Length',
-  'Shoulder Width',
   'Sleeve Length',
 ];
 
-// Column keys in table order (col1..col6) as produced by deriveRows.
-const COL_KEYS = ['size', 'chest_circumference', 'chest_laid_flat', 'body_length', 'shoulder_width', 'sleeve_length'];
+// Column keys in table order (col1..col5) as produced by deriveRows.
+const COL_KEYS = ['size', 'chest_laid_flat', 'chest_circumference', 'body_length', 'sleeve_length'];
 
 function buildTableSettings(rows) {
   const settings = {
-    column_count: '6',
+    column_count: '5',
     show_header: true,
     stripe_rows: true,
     col1_heading: HEADINGS[0],
@@ -31,12 +30,11 @@ function buildTableSettings(rows) {
     col3_heading: HEADINGS[2],
     col4_heading: HEADINGS[3],
     col5_heading: HEADINGS[4],
-    col6_heading: HEADINGS[5],
   };
-  // 8 rows x 6 columns, row-major, matching the live key order (r1c1..r8c6).
+  // 8 rows x 5 columns, row-major, matching the live key order (r1c1..r8c5).
   for (let r = 1; r <= 8; r++) {
     const row = rows[r - 1];
-    for (let c = 1; c <= 6; c++) {
+    for (let c = 1; c <= 5; c++) {
       settings[`r${r}c${c}`] = row ? row[COL_KEYS[c - 1]] : '';
     }
   }

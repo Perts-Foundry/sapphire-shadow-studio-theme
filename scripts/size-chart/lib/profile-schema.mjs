@@ -2,16 +2,17 @@
 // a malformed or transcription-swapped profile half-render a wrong number onto a customer-facing
 // chart. Pure; no fs, no sharp.
 
-const MEASUREMENTS = ['chest_circumference', 'body_length', 'shoulder_width', 'sleeve_length'];
+const MEASUREMENTS = ['chest_circumference', 'body_length', 'sleeve_length'];
 const TOP_LEVEL = new Set(['blank_id', 'display_name', 'unit', 'sizes', 'measurements', 'handles']);
 
 // Sane per-measurement garment ranges in inches; anything outside is almost certainly a units
 // or transcription error (e.g. a body measurement, a cm value pasted as inches).
 const RANGES = {
   chest_circumference: [24, 80],
-  body_length: [18, 40],
-  shoulder_width: [12, 40],
-  sleeve_length: [15, 40],
+  body_length: [18, 44],
+  // Sleeve is measured from centre back including the cuff rib (the SS3000 convention), so it runs
+  // longer than a shoulder-to-cuff figure.
+  sleeve_length: [20, 46],
 };
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;

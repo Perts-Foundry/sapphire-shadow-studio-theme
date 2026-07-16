@@ -39,8 +39,8 @@ test('rejects a non-kebab blank_id', () => {
 });
 
 test('rejects a missing measurement', () => {
-  const p = clone(SEED); delete p.measurements.shoulder_width;
-  assert.throws(() => validateProfile(p), /shoulder_width/);
+  const p = clone(SEED); delete p.measurements.sleeve_length;
+  assert.throws(() => validateProfile(p), /sleeve_length/);
 });
 
 test('rejects a non-numeric cell', () => {
