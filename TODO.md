@@ -22,13 +22,13 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
   Half of this exists: `blocks/return-policy-acknowledgment.liquid` already renders a *required*
   checkbox bound to the product form with a configurable `checkbox_label`, and its click handler
-  scrolls itself into view. Two gaps. (1) It is missing from
-  `product.powered-by-caffeine-and-trauma-embroidered-sweatshirt.json` (the Shift Fuel crewneck); the
-  other two product templates carry it. (2) It does not mention the size guide. Decide whether that
-  is a second required checkbox or one combined acknowledgement, and note the tension: every extra
-  required checkbox is add-to-cart friction, and the size-chart backlog already deliberately excluded
-  a "pre-purchase size nudge" for that reason. Pairs with the size-guide-link item below, since
-  asking someone to review a guide they cannot find from the buy button is worse than not asking.
+  scrolls itself into view. Two gaps. (1) It is missing from `product.shift-fuel-crewneck.json` (the
+  Shift Fuel crewneck); the other two product templates carry it. (2) It does not mention the size
+  guide. Decide whether that is a second required checkbox or one combined acknowledgement, and note
+  the tension: every extra required checkbox is add-to-cart friction, and the size-chart backlog
+  already deliberately excluded a "pre-purchase size nudge" for that reason. Pairs with the
+  size-guide-link item below, since asking someone to review a guide they cannot find from the buy
+  button is worse than not asking.
 
 ## Size-chart tooling
 

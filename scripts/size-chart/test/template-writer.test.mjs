@@ -9,7 +9,7 @@ import { upsertSizeChart, applyToTemplateObject } from '../lib/template-writer.m
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
 const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
-const ORIG_PATH = path.join(ROOT, 'templates', 'product.medical-credential-embroidered-sweatshirt.json');
+const ORIG_PATH = path.join(ROOT, 'templates', 'product.lead-ii-crewneck.json');
 const ORIG = readFileSync(ORIG_PATH, 'utf8');
 
 function tmpFile(content) {
