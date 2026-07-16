@@ -764,6 +764,8 @@
     "anchor_id_info": "Lets other blocks link straight to this row. Plain name, no spaces (for example Shipping). Must be unique on the page. Leave blank for no link target.",
     "size_option": "Size option",
     "size_option_info": "The product option holding sizes. Adds a size-guide link beside it. Leave blank to hide the link.",
+    "color_option": "Color option",
+    "color_option_info": "The product option holding colors. The gallery shows photos whose alt text names the selected value, plus photos naming no value. Use the exact value (Navy, not Blue), and only one per photo. Leave blank to show all photos.",
     "align_baseline": "Align text baseline",
     "animation": "Animation",
     "animation_repeat": "Repeat animation",

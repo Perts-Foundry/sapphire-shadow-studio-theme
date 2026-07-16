@@ -25,11 +25,106 @@
 {%- liquid
   assign selected_product = closest.product
   assign selected_variant_media = selected_product.selected_or_first_available_variant.featured_media
-  assign first_3d_model = selected_product.media | where: 'media_type', 'model' | first
 
   if block_settings.hide_variants
     assign variant_images = selected_product.images | where: 'attached_to_variant?', true | map: 'src'
   endif
+
+  # ===== BEGIN colour media filter (theme addition; see docs/product-media-alt-text.md) =====
+  # Shopify caps a variant at one attached media, so `attached_to_variant?` can express one hero
+  # image per colour and can never express "every black photo". Alt text is the tagging channel
+  # instead: a media shows when its alt names the selected colour option value, or when it names
+  # no value at all (shared, e.g. group shots and design-only shots). Blank `color_option_name`
+  # is the kill switch, matching how `size-option-position.liquid` treats `size_option_name`.
+  assign filtered_media = selected_product.media
+  assign colour_option = nil
+  assign colour_target = settings.color_option_name | downcase | strip
+
+  if colour_target != blank
+    for product_option in selected_product.options_with_values
+      assign product_option_name = product_option.name | downcase | strip
+      if product_option_name == colour_target
+        assign colour_option = product_option
+        break
+      endif
+    endfor
+  endif
+
+  assign selected_colour = ''
+  if colour_option
+    # Read the colour from the same variant that produced `selected_variant_media` above.
+    # `product_option.selected_value` resolves differently when no variant is available, and
+    # disagreeing would pin one colour's media while filtering by another.
+    assign colour_index = colour_option.position | minus: 1
+    assign selected_colour = selected_product.selected_or_first_available_variant.options[colour_index] | downcase | strip
+  endif
+
+  if selected_colour != blank
+    assign colour_names = colour_option.values | map: 'name'
+    assign selected_token = ' ' | append: selected_colour | append: ' '
+    assign filtered_media = '' | split: ','
+
+    for media in selected_product.media
+      # Match whole space-separated words, never raw substrings: a bare `contains 'gray'` also
+      # matches "grayscale", and `contains 'red'` matches "shredded".
+      assign media_alt = media.alt | default: '' | downcase | replace: '-', ' ' | replace: '_', ' ' | replace: ',', ' ' | replace: '.', ' ' | replace: '/', ' ' | replace: '(', ' ' | replace: ')', ' '
+      assign media_alt = ' ' | append: media_alt | append: ' '
+
+      assign names_a_colour = false
+      for colour_name in colour_names
+        assign colour_name_normalised = colour_name | downcase | strip
+        assign colour_token = ' ' | append: colour_name_normalised | append: ' '
+        if media_alt contains colour_token
+          assign names_a_colour = true
+          break
+        endif
+      endfor
+
+      assign show_media = false
+      if names_a_colour == false
+        assign show_media = true
+      elsif media_alt contains selected_token
+        assign show_media = true
+        # A multi-word value shadows its own substring: with Blue selected, a photo tagged
+        # "light blue" would otherwise match. Never fires for Black / Gray / Navy.
+        for colour_name in colour_names
+          assign colour_name_normalised = colour_name | downcase | strip
+          assign colour_token = ' ' | append: colour_name_normalised | append: ' '
+          if colour_token != selected_token and colour_token contains selected_token and media_alt contains colour_token
+            assign show_media = false
+            break
+          endif
+        endfor
+      endif
+
+      if show_media
+        assign found_media = selected_product.media | where: 'id', media.id
+        assign filtered_media = filtered_media | concat: found_media
+      endif
+    endfor
+
+    # Fall back before force-including the variant media below. An attached hero would otherwise
+    # keep the set non-empty and this could never fire, leaving a colour with no tagged photos
+    # showing exactly one image instead of the whole gallery.
+    if filtered_media.size == 0
+      assign filtered_media = selected_product.media
+    endif
+
+    # An explicit variant binding outranks an inferred alt tag, and it keeps the pin in the sort
+    # below resolvable: without it a mis-tagged variant image would leave `sorted_media` empty on
+    # the first pass, and the `sorted_media.size > 0` guard would let one image slip past
+    # `hide_variants`.
+    if selected_variant_media
+      assign pinned_present = filtered_media | where: 'id', selected_variant_media.id
+      if pinned_present.size == 0
+        assign pinned_media = selected_product.media | where: 'id', selected_variant_media.id
+        assign filtered_media = filtered_media | concat: pinned_media
+      endif
+    endif
+  endif
+  # ===== END colour media filter =====
+
+  assign first_3d_model = filtered_media | where: 'media_type', 'model' | first
 
   if block_settings.slideshow_controls_style == 'thumbnails'
     assign controls_on_media = false
@@ -61,13 +156,13 @@
 
   assign slideshow_controls_style = block_settings.slideshow_controls_style
   # Use a counter instead of dots when there are many images to avoid cropping/overflow.
-  if slideshow_controls_style == 'dots' and selected_product.media.size > 15
+  if slideshow_controls_style == 'dots' and filtered_media.size > 15
     assign slideshow_controls_style = 'counter'
   endif
 
   assign render_slideshow_arrows = false
 
-  if selected_product.media.size <= 1
+  if filtered_media.size <= 1
     assign slideshow_class = 'product-media-gallery__slideshow--single-media slideshow--single-media'
   else
     assign slideshow_class = ''
@@ -101,20 +196,20 @@
 
   assign sorted_media = '' | split: ','
   if selected_variant_media
-    assign sorted_media = sorted_media | concat: selected_product.media | where: 'id', selected_variant_media.id
+    assign sorted_media = sorted_media | concat: filtered_media | where: 'id', selected_variant_media.id
 
-    for media in selected_product.media
+    for media in filtered_media
       if block_settings.hide_variants and variant_images contains media.src and sorted_media.size > 0
         continue
       endif
 
       if media.id != selected_variant_media.id
-        assign found_media = selected_product.media | where: 'id', media.id
+        assign found_media = filtered_media | where: 'id', media.id
         assign sorted_media = sorted_media | concat: found_media
       endif
     endfor
   else
-    assign sorted_media = selected_product.media
+    assign sorted_media = filtered_media
   endif
   assign has_image_drop = sorted_media | has: 'media_type', 'image'
 

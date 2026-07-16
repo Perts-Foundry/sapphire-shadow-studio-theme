@@ -9,14 +9,31 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
-- [ ] **Per-variant image matching for colours.** Show the photo for the colour the shopper picked,
-  rather than a fixed gallery. **The theme already does the swap**: both
-  `snippets/product-media-gallery-content.liquid:31` and `snippets/card-gallery.liquid:88` filter on
-  `where: 'attached_to_variant?', true`, so the plumbing exists and this is mostly an Admin task
-  (attach each colour's photos to its variants) plus a decision about
-  `_product-media-gallery`'s `"hide_variants": true` setting, which the shipped product templates all
-  set. Start by checking what that flag does with variant-attached media before writing any code.
-  Blocked in practice on having per-colour photography: the quarter-zip has black / blue / gray, the
+- [x] **Per-variant image matching for colours.** Shipped as an alt-text filter. The gallery shows
+  photos whose alt text names the selected `Color` option value, plus photos naming no value at all
+  (group shots and design-only shots), and falls back to the full gallery for a colour with nothing
+  of its own rather than rendering empty. Driven by one global `color_option_name` setting with
+  blank as the kill switch, mirroring `size_option_name`. Both gallery surfaces render
+  `product-media-gallery-content.liquid`, so no block schema and no product template changed. The
+  contract is `docs/product-media-alt-text.md`. The `alt` column in
+  `product-images/processed/manifest.csv` is where the strings are drafted, but that path is
+  gitignored on purpose, so it is a local convenience only: nothing in the repo or in CI can
+  catch wrong alt text, and Admin holds the only live copy.
+  **The original note here was wrong about the mechanism.** It claimed the theme already does the
+  swap, reading that off `snippets/product-media-gallery-content.liquid:31` and
+  `snippets/card-gallery.liquid:88` filtering on `where: 'attached_to_variant?', true`. They do
+  filter on it, but Shopify caps a variant at one attached media
+  (`PRODUCT_VARIANT_ALREADY_HAS_MEDIA`), so attachment expresses one hero per colour and can never
+  express "all three black photos". `hide_variants: true` was a no-op only because nothing was
+  attached yet; with heroes attached it would have hidden the other colours' heroes and left every
+  one of their secondary photos in the carousel. Kept rather than deleted, because the mistake is
+  the useful part: "the plumbing exists" was read off a filter that answers a different question
+  than the one being asked, and acting on it would have bought a day of Admin work for the wrong
+  result.
+  Still genuinely an Admin task, and not blocking the theme: per-colour photography plus alt text.
+  Attaching one hero per colour remains worth doing on its own merits, since `variant.image` drives
+  cart line-item thumbnails and collection cards, which the gallery filter never touches. Coverage
+  today: the crewnecks have black / navy / gray, the quarter-zip has black / blue / gray, the
   women's vest is black only.
 
 - [x] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
