@@ -104,7 +104,7 @@ Options: `--out <path>` (must be under `product-images/`), `--out-dir <dir>`, `-
 ## Insert the on-page block
 
 ```bash
-git switch -c size-chart/<handle> origin/main
+git switch -c size-chart/<topic> origin/main
 node scripts/size-chart/apply-size-chart.mjs --profile crewneck-fleece   # or --handle <h>
 npx shopify theme check
 ```
