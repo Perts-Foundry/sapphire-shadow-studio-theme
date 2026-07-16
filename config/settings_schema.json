@@ -2265,6 +2265,13 @@
         "content": "t:content.variant_settings"
       },
       {
+        "type": "text",
+        "id": "size_option_name",
+        "label": "t:settings.size_option",
+        "info": "t:settings.size_option_info",
+        "default": "Size"
+      },
+      {
         "type": "header",
         "content": "t:content.buttons"
       },

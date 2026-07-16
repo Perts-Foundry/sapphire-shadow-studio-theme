@@ -91,7 +91,7 @@
           "type": "faq_item",
           "settings": {
             "question": "What is the return/refund policy?",
-            "answer": "<p>The short version: you've got 14 days to return items that are unworn and in original condition. Custom items are final sale, but we've got your back if something arrives damaged or we messed up.<br/><br/>Check out our full <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for all the details.</p>",
+            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. The Shift Fuel crewneck is the exception, you've got 14 days to return that one if it's unworn and in original condition. Gift cards aren't returnable.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>Check out our full <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for all the details.</p>",
             "custom_anchor": ""
           }
         },
@@ -99,7 +99,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I return or exchange a personalized/custom item?",
-            "answer": "<p>Nope, custom items are final sale since they're made specifically for you and cannot be resold. </p><p>We're a tiny 2-person operation (plus cats), and we can't resell personalized/custom items, so we're not able to offer returns on those items.</p><p><strong>Super important:</strong> You're responsible for spelling, names, dates, and all customization details. We create exactly what you submit, so double-check everything before ordering!</p><p>Review our <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for full details.</p>",
+            "answer": "<p>Nope, custom pieces are final sale, and so is nearly everything else we make. Check the product page to see what applies to the piece you're looking at.</p><p>We're a tiny 2-person operation (plus cats), and we can't resell a piece made to your spec.</p><p><strong>Super important:</strong> You're responsible for choosing your size, and for spelling, names, dates, and all customization details. Check the size chart before you order, and double-check your text. We create exactly what you submit!</p><p>Review our <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for full details.</p>",
             "custom_anchor": ""
           }
         },

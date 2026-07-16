@@ -106,7 +106,13 @@ export function buildAccordionRow(profile) {
 
   return {
     type: '_accordion-row',
-    settings: { heading: 'Size Chart', open_by_default: false, icon: 'none', width: 20 },
+    settings: {
+      heading: 'Size Chart',
+      open_by_default: false,
+      icon: 'none',
+      width: 20,
+      anchor_id: ANCHOR_ID,
+    },
     blocks: {
       text_sc001: {
         type: 'text',
@@ -146,3 +152,12 @@ export function buildAccordionRow(profile) {
 
 // The canonical id under which this row is keyed in the parent accordion's blocks map.
 export const ACCORDION_ROW_ID = 'accordion_row_sc001';
+
+// The DOM anchor the Size Chart row exposes, rendered as an id on its <summary> by
+// blocks/_accordion-row.liquid. This is a cross-layer contract: snippets/size-guide-link.liquid
+// hardcodes the matching `href="#SizeChart"`, because the theme has no build step and a Liquid
+// literal cannot be generated from this constant. Changing this value alone will not break any
+// test that compares the generator against its own output, so the link would silently point at
+// nothing. test/anchor-contract.test.mjs is what actually holds the two ends together; read it
+// before renaming.
+export const ANCHOR_ID = 'SizeChart';

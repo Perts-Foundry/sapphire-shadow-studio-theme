@@ -32,6 +32,18 @@
       data-shopify-visual-preview
     {% endif %}
   >
+    {%- comment -%}
+      Which option holds sizes, resolved once for the whole picker rather than per iteration. The
+      lookup is shared with blocks/return-policy-acknowledgment.liquid via a global setting; see
+      snippets/size-option-position.liquid for why it is global. Blank means the merchant turned
+      the size-guide link off, or named an option that this product does not have, and no link
+      renders anywhere.
+    {%- endcomment -%}
+    {%- capture size_position_raw -%}
+      {%- render 'size-option-position', product_resource: product_resource -%}
+    {%- endcapture -%}
+    {%- assign size_position = size_position_raw | strip -%}
+
     <form class="variant-picker__form">
       {%- for product_option in product_resource.options_with_values -%}
         {%- liquid
@@ -55,17 +67,39 @@
 
         {%- if variant_style == 'swatch' or block_settings.variant_style == 'buttons' -%}
           {%- assign fieldset_index = forloop.index0 -%}
+          {%- liquid
+            assign is_size_option = false
+            if size_position != blank and product_option.position == size_position
+              assign is_size_option = true
+            endif
+            assign option_name_id = 'VariantOptionName-' | append: block.id | append: '-' | append: fieldset_index
+          -%}
           <fieldset
             class="variant-option variant-option--buttons{% if variant_style == 'swatch' %} variant-option--swatches{% else %} variant-option--{{ settings.variant_button_width }}{% endif %}"
             data-fieldset-index="{{ fieldset_index }}"
             ref="fieldsets[]"
             {{ option_id_attribute }}
+            {%- comment -%}
+              A <legend> IS the fieldset's accessible name, so the size-guide link nested inside it
+              would otherwise make this group announce as "Size Size guide". aria-labelledby wins
+              over the legend (accname-1.2 resolves it first), pointing the name at the option name
+              alone. Applied ONLY on the option that carries the link, so every other option's
+              accessible name stays exactly as it was.
+            {%- endcomment -%}
+            {% if is_size_option %}
+              aria-labelledby="{{ option_name_id }}"
+            {% endif %}
           >
             <legend>
-              {{ product_option.name | escape -}}
-              {%- if variant_style == 'swatch' -%}
-                <span class="variant-option__swatch-value">{{ product_option.selected_value }}</span>
-              {%- endif %}
+              <span class="variant-option__header">
+                <span id="{{ option_name_id }}">{{ product_option.name | escape }}</span>
+                {%- if variant_style == 'swatch' -%}
+                  <span class="variant-option__swatch-value">{{ product_option.selected_value }}</span>
+                {%- endif -%}
+                {%- if is_size_option -%}
+                  {% render 'size-guide-link' %}
+                {%- endif -%}
+              </span>
             </legend>
             {%- for product_option_value in product_option.values -%}
               {% if product_option_value.size > longest_value and option_id_attribute %}
@@ -155,8 +189,23 @@
             endif
           %}
 
+          {%- liquid
+            assign is_size_option = false
+            if size_position != blank and product_option.position == size_position
+              assign is_size_option = true
+            endif
+          -%}
           <div class="variant-option variant-option--dropdowns">
-            <label for="Option-{{ block.id }}-{{ forloop.index0 }}">{{ product_option.name | escape }}</label>
+            {%- comment -%}
+              No accessible-name concern on this path: the link is a sibling of the <label>, not
+              inside it, so it never joins the select's name.
+            {%- endcomment -%}
+            <span class="variant-option__header">
+              <label for="Option-{{ block.id }}-{{ forloop.index0 }}">{{ product_option.name | escape }}</label>
+              {%- if is_size_option -%}
+                {% render 'size-guide-link' %}
+              {%- endif -%}
+            </span>
             <div
               class="variant-option__select-wrapper"
               style="
@@ -269,6 +318,21 @@
     padding: 0;
     margin-block-end: var(--margin-xs);
     font-weight: bold;
+    /*
+     * Legends are shrink-to-fit, so the flex row inside would collapse to its content and
+     * justify-content: space-between would silently do nothing. This is what pushes the
+     * size-guide link to the far edge.
+     */
+    width: 100%;
+  }
+
+  /* Option name on one side, size-guide link (where there is one) on the other. */
+  .variant-option__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--padding-xs);
+    width: 100%;
   }
 
   .variant-option__swatch-value {

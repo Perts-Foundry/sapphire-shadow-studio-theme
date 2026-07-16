@@ -14,7 +14,26 @@
     {% endif %}
     {{ block.shopify_attributes }}
   >
-    <summary class="details__header">
+    {%- comment -%}
+      The anchor id sits on the <summary>, not the <details>: it is the element another block
+      links to, and it is the right thing to move focus to (natively focusable, and AT announces
+      it with its expanded state). This is NOT a native fragment-reveal mechanism. The HTML
+      details-revealing algorithm only walks targets slotted into the details' second slot (its
+      content); <summary> is in the first slot, so an id here never auto-opens the row. That is
+      handled in assets/accordion-custom.js instead.
+
+      `| escape` because this is merchant free text landing in an id attribute.
+
+      Deliberately not following CLAUDE.md's "IDs: CamelCase + section/block ID suffix". That
+      convention exists to force uniqueness across repeated blocks; an anchor target's whole job
+      is to be a stable, hand-authorable, linkable name.
+    {%- endcomment -%}
+    <summary
+      class="details__header"
+      {% if block_settings.anchor_id != blank %}
+        id="{{ block_settings.anchor_id | escape }}"
+      {% endif %}
+    >
       {% render 'icon-or-image',
         icon: block_settings.icon,
         image_upload: block_settings.image_upload,
@@ -37,6 +56,14 @@
 </accordion-custom>
 
 {% stylesheet %}
+  /*
+   * Only anchored rows need this: it keeps a scrolled-to summary clear of the sticky header.
+   * Scoped to [id] so every other accordion row in the theme is untouched.
+   */
+  .details__header[id] {
+    scroll-margin-block-start: var(--scroll-margin);
+  }
+
   .details__icon {
     height: auto;
     margin-inline-end: var(--margin-xs);
@@ -67,6 +94,12 @@
       "id": "open_by_default",
       "label": "t:settings.open_row_by_default",
       "default": false
+    },
+    {
+      "type": "text",
+      "id": "anchor_id",
+      "label": "t:settings.anchor_id",
+      "info": "t:settings.anchor_id_info"
     },
     {
       "type": "header",

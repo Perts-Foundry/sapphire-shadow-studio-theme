@@ -369,7 +369,8 @@
                     "heading": "Size Chart",
                     "open_by_default": false,
                     "icon": "none",
-                    "width": 20
+                    "width": 20,
+                    "anchor_id": "SizeChart"
                   },
                   "blocks": {
                     "text_sc001": {
