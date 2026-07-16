@@ -39,7 +39,10 @@ stored measurements are in **inches**.
   "footer": "Measurements are of the garment laid flat. ...",
   "canvas_height": 2280,                   // optional override; omit to auto-size (height derived from
                                            // content + a fixed margin). If pinned, buildSvg throws on overflow.
-  "handles": ["product-handle-a"]          // blank -> products mapping; empty until the product exists
+  "handles": ["huddle-crewneck"]           // alternate-template suffixes, NOT Shopify product handles:
+                                           // each one is interpolated into templates/product.<suffix>.json.
+                                           // Empty until that template exists. A suffix with no matching
+                                           // template is skipped, and the run still exits 0.
 }
 ```
 

@@ -13,7 +13,7 @@ of truth (`scripts/size-chart/profiles/<blank_id>.json`):
 
 1. a navy + sapphire **PNG** (how-to-measure text, garment diagram with lettered measurement callouts
    A/B/C/..., and the measurement table) that the operator uploads to the product's Shopify gallery, and
-2. the on-page **Size Chart accordion row** inserted into `templates/product.<handle>.json`.
+2. the on-page **Size Chart accordion row** inserted into `templates/product.<suffix>.json`.
 
 The heavy lifting is deterministic Node tooling under `scripts/size-chart/`. This skill is the glue:
 it turns an untrusted spec into a validated profile, gates on human verification, then runs the
@@ -22,8 +22,13 @@ scripts. Read `scripts/size-chart/README.md` for the tooling details.
 ## Pipeline
 
 1. **Gather the spec.** Ask for the blank's measurements (pasted numbers, a photo of the size chart,
-   or a URL) and the target product handle(s). For a known blank, skip to step 5 with its existing
-   profile.
+   or a URL) and the target alternate-template suffix(es). The profile's `handles` array holds
+   template suffixes, not Shopify product handles: each entry is interpolated into
+   `templates/product.<suffix>.json`, so enumerate the real ones by listing `templates/product.*.json`
+   rather than asking the operator to recall a product handle. The two differ (the Huddle crewneck's
+   suffix is `huddle-crewneck`; its Shopify handle is not), and a suffix with no matching template is
+   silently skipped by `apply-size-chart.mjs`, which still exits 0. For a known blank, skip to step 5
+   with its existing profile.
 2. **Establish measurement semantics (gate).** After reading the spec's columns but before any math or
    writing the profile, confirm with the operator, per column: what the measurement is (chest, body
    length, sleeve, zipper, ...); whether a chest/bust figure is a full **circumference** or an already
