@@ -31,8 +31,8 @@ function buildTableSettings(rows, columns) {
   return settings;
 }
 
-export function buildAccordionRow(profile, { copyPath } = {}) {
-  const { accordionHtml } = readCopy(copyPath);
+export function buildAccordionRow(profile) {
+  const { accordionHtml } = readCopy();
   const rows = deriveRows(profile);
 
   return {
