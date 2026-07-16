@@ -30,67 +30,88 @@
     assign variant_images = selected_product.images | where: 'attached_to_variant?', true | map: 'src'
   endif
 
-  # ===== BEGIN colour media filter (theme addition; see docs/product-media-alt-text.md) =====
+  # ===== BEGIN color media filter (theme addition; see docs/product-media-alt-text.md) =====
   # Shopify caps a variant at one attached media, so `attached_to_variant?` can express one hero
-  # image per colour and can never express "every black photo". Alt text is the tagging channel
-  # instead: a media shows when its alt names the selected colour option value, or when it names
+  # image per color and can never express "every black photo". Alt text is the tagging channel
+  # instead: a media shows when its alt names the selected color option value, or when it names
   # no value at all (shared, e.g. group shots and design-only shots). Blank `color_option_name`
   # is the kill switch, matching how `size-option-position.liquid` treats `size_option_name`.
+  # The reserved words are THIS product's option values, read per product, never a store-wide list.
   assign filtered_media = selected_product.media
-  assign colour_option = nil
-  assign colour_target = settings.color_option_name | downcase | strip
+  assign color_option = nil
+  assign color_target = settings.color_option_name | downcase | strip
 
-  if colour_target != blank
+  if color_target != blank
     for product_option in selected_product.options_with_values
       assign product_option_name = product_option.name | downcase | strip
-      if product_option_name == colour_target
-        assign colour_option = product_option
+      if product_option_name == color_target
+        assign color_option = product_option
         break
       endif
     endfor
   endif
 
-  assign selected_colour = ''
-  if colour_option
-    # Read the colour from the same variant that produced `selected_variant_media` above.
+  # No matching option (a product with no colors, or an option named differently) leaves these
+  # blank and skips the filter entirely, which is the same outcome as the kill switch.
+  assign selected_color = ''
+  assign selected_token = ''
+  assign color_tokens = '' | split: ','
+  if color_option
+    # Read the color from the same variant that produced `selected_variant_media` above.
     # `product_option.selected_value` resolves differently when no variant is available, and
-    # disagreeing would pin one colour's media while filtering by another.
-    assign colour_index = colour_option.position | minus: 1
-    assign selected_colour = selected_product.selected_or_first_available_variant.options[colour_index] | downcase | strip
+    # disagreeing would pin one color's media while filtering by another.
+    assign color_index = color_option.position | minus: 1
+    assign selected_color = selected_product.selected_or_first_available_variant.options[color_index] | downcase | strip
   endif
 
-  if selected_colour != blank
-    assign colour_names = colour_option.values | map: 'name'
-    assign selected_token = ' ' | append: selected_colour | append: ' '
+  if selected_color != blank
+    # Build one padded, punctuation-normalised token per option value, once. Both sides of the
+    # comparison below go through the SAME normalisation, so punctuation inside a value (say
+    # "Robin's Egg") cannot make that value unmatchable against its own alt text. `selected_token`
+    # is drawn from this same loop rather than normalised separately, which guarantees it is one
+    # of `color_tokens`.
+    capture color_tokens_raw
+      for color_value in color_option.values
+        assign color_value_raw = color_value.name | downcase | strip
+        assign color_value_token = color_value.name | downcase | replace: '-', ' ' | replace: '_', ' ' | replace: ',', ' ' | replace: '.', ' ' | replace: '/', ' ' | replace: '(', ' ' | replace: ')', ' ' | replace: ':', ' ' | replace: ';', ' ' | replace: "'", ' ' | strip
+        if color_value_raw == selected_color
+          assign selected_token = ' ' | append: color_value_token | append: ' '
+        endif
+        echo ' '
+        echo color_value_token
+        echo ' |'
+      endfor
+    endcapture
+    assign color_tokens = color_tokens_raw | split: '|'
+  endif
+
+  if selected_token != blank
     assign filtered_media = '' | split: ','
 
     for media in selected_product.media
       # Match whole space-separated words, never raw substrings: a bare `contains 'gray'` also
-      # matches "grayscale", and `contains 'red'` matches "shredded".
-      assign media_alt = media.alt | default: '' | downcase | replace: '-', ' ' | replace: '_', ' ' | replace: ',', ' ' | replace: '.', ' ' | replace: '/', ' ' | replace: '(', ' ' | replace: ')', ' '
+      # matches "grayscale", and `contains 'red'` matches "shredded". The replace list is the
+      # separator set; any punctuation outside it that touches a value breaks the binding.
+      assign media_alt = media.alt | default: '' | downcase | replace: '-', ' ' | replace: '_', ' ' | replace: ',', ' ' | replace: '.', ' ' | replace: '/', ' ' | replace: '(', ' ' | replace: ')', ' ' | replace: ':', ' ' | replace: ';', ' ' | replace: "'", ' ' | strip
       assign media_alt = ' ' | append: media_alt | append: ' '
 
-      assign names_a_colour = false
-      for colour_name in colour_names
-        assign colour_name_normalised = colour_name | downcase | strip
-        assign colour_token = ' ' | append: colour_name_normalised | append: ' '
-        if media_alt contains colour_token
-          assign names_a_colour = true
+      assign names_a_color = false
+      for color_token in color_tokens
+        if media_alt contains color_token
+          assign names_a_color = true
           break
         endif
       endfor
 
       assign show_media = false
-      if names_a_colour == false
+      if names_a_color == false
         assign show_media = true
       elsif media_alt contains selected_token
         assign show_media = true
         # A multi-word value shadows its own substring: with Blue selected, a photo tagged
         # "light blue" would otherwise match. Never fires for Black / Gray / Navy.
-        for colour_name in colour_names
-          assign colour_name_normalised = colour_name | downcase | strip
-          assign colour_token = ' ' | append: colour_name_normalised | append: ' '
-          if colour_token != selected_token and colour_token contains selected_token and media_alt contains colour_token
+        for color_token in color_tokens
+          if color_token != selected_token and color_token contains selected_token and media_alt contains color_token
             assign show_media = false
             break
           endif
@@ -104,16 +125,18 @@
     endfor
 
     # Fall back before force-including the variant media below. An attached hero would otherwise
-    # keep the set non-empty and this could never fire, leaving a colour with no tagged photos
-    # showing exactly one image instead of the whole gallery.
+    # keep the set non-empty and this could never fire, leaving a color with no tagged photos
+    # showing exactly one image instead of the whole gallery. Note any shared photo also keeps the
+    # set non-empty, so this only fires when the product has no shared photo either.
     if filtered_media.size == 0
       assign filtered_media = selected_product.media
     endif
 
-    # An explicit variant binding outranks an inferred alt tag, and it keeps the pin in the sort
-    # below resolvable: without it a mis-tagged variant image would leave `sorted_media` empty on
-    # the first pass, and the `sorted_media.size > 0` guard would let one image slip past
-    # `hide_variants`.
+    # The SELECTED variant's attached media outranks an inferred alt tag, and force-including it
+    # keeps the pin in the sort below resolvable: without it a mis-tagged variant image would
+    # leave `sorted_media` empty on the first pass, and the `sorted_media.size > 0` guard would
+    # let one image slip past `hide_variants`. Other variants' attached media get no such
+    # exemption; they are filtered by alt like any other photo.
     if selected_variant_media
       assign pinned_present = filtered_media | where: 'id', selected_variant_media.id
       if pinned_present.size == 0
@@ -122,7 +145,7 @@
       endif
     endif
   endif
-  # ===== END colour media filter =====
+  # ===== END color media filter =====
 
   assign first_3d_model = filtered_media | where: 'media_type', 'model' | first
 

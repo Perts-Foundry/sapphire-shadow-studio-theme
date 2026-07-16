@@ -20,7 +20,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   gitignored on purpose, so it is a local convenience only: nothing in the repo or in CI can
   catch wrong alt text, and Admin holds the only live copy.
   **The original note here was wrong about the mechanism.** It claimed the theme already does the
-  swap, reading that off `snippets/product-media-gallery-content.liquid:31` and
+  swap, reading that off `snippets/product-media-gallery-content.liquid:30` and
   `snippets/card-gallery.liquid:88` filtering on `where: 'attached_to_variant?', true`. They do
   filter on it, but Shopify caps a variant at one attached media
   (`PRODUCT_VARIANT_ALREADY_HAS_MEDIA`), so attachment expresses one hero per colour and can never
@@ -32,9 +32,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   result.
   Still genuinely an Admin task, and not blocking the theme: per-colour photography plus alt text.
   Attaching one hero per colour remains worth doing on its own merits, since `variant.image` drives
-  cart line-item thumbnails and collection cards, which the gallery filter never touches. Coverage
-  today: the crewnecks have black / navy / gray, the quarter-zip has black / blue / gray, the
-  women's vest is black only.
+  cart line-item thumbnails and collection cards, which the gallery filter never touches. Photography
+  coverage today, by *filename* colour: the crewnecks have black / blue / gray, the quarter-zip
+  black / blue / gray, the women's vest black only. Those are not the Admin option values: the
+  crewnecks' values are `Black` / `Gray` / `Navy`, and the `blue-*` files are the Navy ones. The
+  quarter-zip and vest do not exist in Admin yet, so their values are undecided; keep them on the
+  same three. See `docs/product-media-alt-text.md`, which is where that trap is spelled out.
 
 - [x] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
   Shipped as a terms summary (merchant-editable `richtext`) plus one required "I agree" checkbox,
@@ -200,6 +203,7 @@ Deferred findings from pre-PR reviews.
 - [ ] **[CR-11]** `listWorkflowRuns` `per_page: 100` may miss the latest run on a SHA with extreme re-validation count. Paginate, or accept the cap and document. (code-reviewer, 2026-05-03)
 - [ ] **[CR-14]** The `GHEOF` heredoc delimiter in every `validate.yml` capture step is a fixed literal. Test output echoes arbitrary assertion values, so a line reading exactly `GHEOF` would truncate the heredoc and corrupt `$GITHUB_OUTPUT`. Use a random delimiter. Not a trust boundary (anyone who can add such a fixture can edit the workflow), so this is robustness, not security. (code-reviewer, 2026-07-16)
 - [ ] **[CR-15]** `check_exit` in `validate.yml` treats a missing `exit_code` as a `::warning::`, not a failure, so a check that never recorded a result still merges green. Near-unreachable today (every step is `set +e` and always writes its code), but it covers `gitleaks`, where a silently skipped secret scan is worth more than a warning. (code-reviewer, 2026-07-16)
+- [ ] **[CR-16]** `snippets/product-media-gallery-content.liquid` reads `filtered_media.size` for the counter threshold and the single-media class *before* `sorted_media` is built, so with `hide_variants: true` the counts can exceed what actually renders: a shared photo that is also some variant's attached image gets skipped by the sort loop, and a two-item filtered set can render one slide with arrows and no `--single-media` class. Pre-existing in kind (the code read the even-further-off `selected_product.media.size` before the colour filter landed), and `filtered_media.size` is a strict improvement. The real fix is hoisting the `sorted_media` build above the threshold checks, which is pure assign-reordering with no side effects. Deliberately left out of the colour-filter PR to keep that diff to one concern. (code-reviewer, 2026-07-16)
 - [ ] **[DS-5 / DS-6]** `release-notes.md` historical "CI/CD cutover (2026-05-03)" section has not been frame as superseded; its file inventory still lists `pr-checks.yml` and the old workflow set as current. Add `(superseded by the comment-driven deploy refactor)` to the heading. (doc-sync-checker, 2026-05-03)
 - [ ] **[DS-17]** `README.md` "At a glance" says the Shopify CLI is pinned at `3.94.3`; `package.json` says `4.5.1`. Dependabot has bumped the dependency twice without touching the prose. Either drop the version from the prose or add a check. (doc-sync-checker, 2026-07-16)
 - [ ] **[IR-3]** `LIVE_THEME_ID` is hardcoded as `"181702754604"` in three workflow files. Move to a repo variable (`vars.LIVE_THEME_ID`) so a republish only updates one place. (infra-reviewer, 2026-05-03)

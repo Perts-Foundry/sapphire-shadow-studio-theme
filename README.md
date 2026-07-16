@@ -182,6 +182,7 @@ Before opening a PR, run `theme dev` and `theme check` locally, and follow the c
 | [`CLAUDE.md`](CLAUDE.md) | Theme conventions, component framework, accessibility, and the deploy-gate trust delta and known compensations |
 | [`release-notes.md`](release-notes.md) | Full CI/CD design rationale (attack surface, mitigations) and history |
 | [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md) | Component-specific accessibility patterns used across the theme |
+| [`docs/product-media-alt-text.md`](docs/product-media-alt-text.md) | How product alt text drives the colour gallery filter; the only record of that contract |
 | [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md) | Triaged, non-actionable theme-check findings |
 | [`LICENSE.md`](LICENSE.md) | Full license terms |
 

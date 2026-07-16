@@ -33,23 +33,37 @@ collection cards, which the gallery filter never touches.
 
 ## The match rule
 
-- Matching is against the **option's values**, not against colours in general, and not against
-  filenames. On this store the values are `Black`, `Gray`, `Navy`. "Blue" is a colour; it is not
-  a value, so it matches nothing.
+- Matching is against **that product's own Color option values**, not against colours in general,
+  not against a store-wide list, and not against filenames. The filter reads each product's
+  `options_with_values`, so a word is reserved only on products whose Color option actually lists
+  it. On the crewnecks the values are `Black`, `Gray`, `Navy`. "Blue" is a colour; it is not a
+  value there, so it matches nothing.
 - Matching is **case-insensitive** and on **whole words**. `Black` matches "black crewneck" and
-  "BLACK CREW"; it does not match "blackout". Hyphens, underscores, commas, periods, slashes,
-  and parentheses all count as word separators.
+  "BLACK CREW"; it does not match "blackout".
+- The separator list is **exhaustive**: `-` `_` `,` `.` `/` `(` `)` `:` `;` and the apostrophe.
+  Any other punctuation touching the value breaks the binding, so "Navy | front view" names no
+  value and goes shared. Stick to plain words and commas.
 - A photo that names **exactly one value** is bound to that colour and shows only there.
 - A photo that names **no value at all** is shared and shows on every colour.
+- A **multi-word value shadows its own substring**. With `Blue` selected, a photo tagged "light
+  blue" is excluded rather than shown under both, because `Light Blue` is a value that contains
+  `Blue`. Latent on today's values; it matters the day a "Heather Gray" ships.
 
 ## Binding a photo to a colour
 
 Name the value, spelled the way Admin spells it.
 
 **The filenames lie, and this is the trap.** The navy photos are named `blue-crew-1.jpg`,
-`blue-zip-2.jpg`, and so on, because that is what the colour looks like. The option value is
-`Navy`. Alt text follows Admin, never the filename. A photo whose alt says "Blue crewneck" names
-no value, becomes shared, and shows under Black and Gray as well.
+`blue-zip-2.jpg`, and so on, because that is what the colour looks like. On the crewnecks the
+option value is `Navy`. Alt text follows Admin, never the filename. A photo whose alt says "Blue
+crewneck" names no value, becomes shared, and shows under Black and Gray as well.
+
+**Check the value in Admin before trusting that.** Because the vocabulary is per product, the
+trap runs in reverse on any product whose Color option really does list `Blue`: there, "Navy
+quarter-zip" is the string that names no value and goes shared. The quarter-zip and the vest do
+not exist in Admin yet, so their values are still undecided. Keep every product on `Black` /
+`Gray` / `Navy` so one vocabulary covers the catalogue, and if one ever has to diverge, record it
+here.
 
 ## Sharing a photo across every colour
 
@@ -85,6 +99,12 @@ Use a synonym for any colour that is not the garment's own: "dark zipper", "pale
 "charcoal stitching". Describe the garment's colour with the value; describe everything else
 some other way.
 
+**The vocabulary can grow under you.** Adding a value to a product's Color option reserves that
+word retroactively, across alt text written before the value existed. That is pointed here: the
+brand is Sapphire Shadow Studio, so "Sapphire" and "Shadow" are both plausible colourway names
+and both are words that already belong in alt text describing the logo. Before creating a value,
+grep the manifest's `alt` column for the word.
+
 ## Worked examples
 
 | File | Alt text | Result |
@@ -96,6 +116,10 @@ some other way.
 | `crew-caffeine-trauma-gray-1.jpg` | Gray crewneck with the Caffeine and Trauma design | Bound to Gray |
 | `blue-crew-caffeine-trauma-1.jpg` | Navy crewneck with the Caffeine and Trauma design | Bound to Navy |
 | `crew-group-1.jpg` | Three crewnecks side by side | Shared |
+
+These are illustrative recipes, not a record of what is in Admin. The manifest's real strings are
+longer and more descriptive ("Black crewneck laid flat with the CNA design and a custom name
+embroidered on the chest"); they bind identically, because only the value word matters.
 
 Note the last three: `crew-caffeine-trauma-gray-*` and `blue-crew-caffeine-trauma-*` are design
 shots that **do** name a value, while `nurse-crew-*` is a design shot that **must not**. Same
@@ -112,7 +136,7 @@ convenience, not a reviewable record: it will never appear in a pull request. **
 repo, in CI, or in a review can tell you a photo's alt text is wrong.** Admin holds the only live
 copy, and this page is the only statement of the rule. Treat both accordingly.
 
-## Failure modes, both silent
+## Failure modes, all silent
 
 Nothing warns you. The gallery just renders differently.
 
@@ -121,7 +145,16 @@ Nothing warns you. The gallery just renders differently.
 | Alt left blank | Photo names no value, becomes shared, shows under every colour |
 | Alt uses the filename's colour ("Blue") | Same: names no value, shows under every colour |
 | Alt names a second value | Photo shows under two colours |
+| Punctuation outside the separator list touches the value ("Navy \| front") | Names no value, goes shared |
+| Color option renamed in Admin ("Colour", a stray space, or a per-product name like "Shade") | Filtering switches off **for that product only**. Every photo shows on every variant, exactly like the kill switch, with nothing in the theme editor to hint at it. More likely than any other row here |
+| A value added to the option later | That word becomes reserved retroactively, across alt text written before it existed |
 | Alt names a colour inside another word ("Grayscale backdrop") | Nothing. Whole-word matching handles it |
+
+**Do not put a colour value in a product title.** Shopify falls back to the resource title when an
+image has no alt text of its own: `image_tag` documents the alt attribute as "the media alt text,
+or the resource title" for product images. No current product title contains a value, so this is
+inert today, but a product titled "Black Friday Crewneck" could bind its untagged photos to
+Black.
 
 ## Fallback ordering
 
@@ -135,5 +168,19 @@ Two behaviours that look like bugs and are not:
    photos before adding a group shot, or that colour drops from the full gallery to the group
    shot alone.
 
-A variant-attached image always survives the filter, whatever its alt text says. An explicit
-binding in Admin outranks an inferred one.
+**Rule 1 is already inert on every product with a size chart.** `scripts/size-chart/` generates a
+size-guide PNG whose alt text ("... size guide: chest, body length, and sleeve in inches and
+centimeters ...") names no colour value, so it is a shared photo, so the filtered set is never
+empty on that product. Rule 2 is the operative one there, and a colour with no photos of its own
+gets the size chart by itself. Treat rule 1 as a backstop that mostly will not fire, not as a
+safety net, and upload each colour's own photos.
+
+The **selected** variant's attached image always survives the filter, whatever its alt text says:
+an explicit binding in Admin outranks an inferred one. Only that one image, and only on its own
+colour. Every other colour's hero is filtered by alt like any other photo, and with
+`hide_variants: true` (set on all five product templates) the non-selected ones are hidden at
+render anyway. So heroes still need correct alt text.
+
+**Do not attach a shared photo as a hero.** If a group shot is any variant's attached image,
+`hide_variants` skips it on every other colour, so it stops being shared in practice. Attach a
+colour's own photo, never the group shot.
