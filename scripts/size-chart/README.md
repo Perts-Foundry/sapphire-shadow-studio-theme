@@ -18,16 +18,22 @@ stored measurements are in **inches**.
   "display_name": "Midweight Quarter Zip", // brand-facing; renders on the public PNG + alt text
   "unit": "in",
   "garment": "quarter-zip",                // crewneck | quarter-zip | vest | null (no diagram)
+  "garment_noun": "quarter-zip",           // how a shopper says it; substituted into copy.md's prose
   "sizes": ["XS", "S", "M", "L", "XL", "2XL"],   // up to 6
   "columns": [                             // up to 6, in table order
     { "role": "size", "heading": "Size", "kind": "label" },
     { "role": "chest_laid_flat", "heading": "Chest (laid flat)", "kind": "measure",
       "values": [19.5, 20, 22, 23.5, 25.5, 26.5],
-      "badge": "A", "callout_label": "Chest (laid flat)", "how": "Across the front, ..." },
+      "badge": "A", "callout_label": "Chest (laid flat)",
+      "how": "Across the front, ...",      // one terse line for the PNG legend
+      "explain": "is the garment's chest width measured across ...", // 2-3 sentences for the accordion
+      "decides_size": true },              // exactly one column, store-wide
     { "role": "chest_circumference", "heading": "Chest (circumference)", "kind": "measure",
-      "derive": { "from": "chest_laid_flat", "factor": 2 } },
+      "derive": { "from": "chest_laid_flat", "factor": 2 },
+      "explain": "is the full around-the-body measurement ..." },
     { "role": "front_zipper", "heading": "Front Zipper", "kind": "measure",
-      "values": [8, 8, 8, 8, 8, 8.5], "badge": "D", "how": "The length of the front zip ..." }
+      "values": [8, 8, 8, 8, 8, 8.5], "badge": "D", "how": "The length of the front zip ...",
+      "explain": "is the length of the front zip placket ..." }
   ],
   "how_to": { "eyebrow": "Start here", "heading": "...", "note": "...", "steps": [ ... ] },
   "footer": "Measurements are of the garment laid flat. ...",
@@ -50,8 +56,26 @@ stored measurements are in **inches**.
   `body_chest_range`.
 - Centimetres are derived from each inch value independently and rounded to 0.1 cm (ties up, trailing
   `.0` stripped) to match the storefront's existing formatting.
-- The on-page accordion **prose** lives once in `copy.md`; the garment silhouettes live in
-  `lib/garments.mjs`.
+- **`how` vs `explain`** are two registers of the same fact, and both are authored per column. `how`
+  is one terse line for the PNG legend; `explain` is 2-3 sentences for the on-page accordion. Write
+  both; do not reuse one for the other. A test asserts `how` never leaks into the accordion.
+- **`decides_size`** marks the single column that decides a shopper's size, and is what
+  `{{deciding_label}}` resolves to in `copy.md`. Exactly one column per profile. It is a
+  merchandising claim rather than a measurement fact, so the skill gates it on operator confirmation.
+- The garment silhouettes live in `lib/garments.mjs`.
+
+### On-page prose is composed, not stored
+
+`copy.md` holds only the **garment-independent** framing. Per-measurement prose lives on each
+column's `explain`. `lib/table-block.mjs` assembles:
+
+    intro + choosing + one <p> per column that declares `explain` + trailer
+
+so a measurement is explained if and only if the blank has that column. The vests get no sleeve
+paragraph and the quarter-zip gets a zipper one, with no conditionals. Two tokens (`{{garment_noun}}`
+and `{{deciding_label}}`) are substituted into the `copy.md` regions only, never into `explain`; an
+unresolved `{{...}}` throws rather than reaching the storefront. See `copy.md`'s header for the token
+contract.
 
 ## Render the PNG
 

@@ -10,10 +10,13 @@
 import { KNOWN_GARMENTS, ROLE_ANCHOR, garmentAnchors } from './garments.mjs';
 
 const TOP_LEVEL = new Set([
-  'blank_id', 'display_name', 'unit', 'garment', 'sizes', 'columns', 'how_to', 'footer',
-  'canvas_height', 'handles',
+  'blank_id', 'display_name', 'unit', 'garment', 'garment_noun', 'sizes', 'columns', 'how_to',
+  'footer', 'canvas_height', 'handles',
 ]);
-const COLUMN_KEYS = new Set(['role', 'heading', 'kind', 'values', 'derive', 'badge', 'callout_label', 'how']);
+const COLUMN_KEYS = new Set([
+  'role', 'heading', 'kind', 'values', 'derive', 'badge', 'callout_label', 'how', 'explain',
+  'decides_size',
+]);
 const KINDS = new Set(['label', 'measure', 'range', 'string']);
 
 // Sane per-role garment ranges in inches; anything outside is almost certainly a units or
@@ -35,9 +38,28 @@ const KNOWN_ROLES = new Set(['size', 'size_numeric', ...Object.keys(ROLE_RANGES)
 
 const MAX_SIZES = 6;   // the PNG canvas + on-page table are tuned for up to 6 size rows
 const MAX_COLUMNS = 6; // blocks/table.liquid supports up to 6 columns
+const MAX_EXPLAIN = 400; // the accordion is fixed-width UI; unbounded prose is a layout bug
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
 const isPosNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+
+// Fields that land inside the accordion's rich-text HTML. table-block.mjs escapes them on write, so
+// this reject is not the safety layer; it is a loud authoring error, caught at profile-validation
+// time rather than discovered as mangled copy on the storefront. `{`/`}` are rejected too so a
+// profile cannot smuggle a `{{token}}` into the shared copy pipeline.
+const HTML_UNSAFE = /[<>&{}]/;
+
+// Banned repo-wide. These fields are the newest prose surface and the likeliest to attract one, so
+// make it mechanical rather than relying on the pre-push grep. Written as an escape, not the
+// literal glyph, so this file stays clean under the repo's own em-dash sweep.
+const EM_DASH = /\u2014/;
+
+function checkProse(errs, at, value) {
+  if (!isNonEmptyString(value)) { errs.push(`${at} must be a non-empty string`); return; }
+  if (value.length > MAX_EXPLAIN) errs.push(`${at} is ${value.length} chars; max ${MAX_EXPLAIN}`);
+  if (HTML_UNSAFE.test(value)) errs.push(`${at} must be plain prose; the engine emits the markup (no < > & { })`);
+  if (EM_DASH.test(value)) errs.push(`${at} must not contain an em dash (U+2014)`);
+}
 
 export function validateProfile(profile) {
   const errs = [];
@@ -54,6 +76,18 @@ export function validateProfile(profile) {
   else if (!/^[a-z0-9-]+$/.test(profile.blank_id)) errs.push('blank_id must be kebab-case [a-z0-9-]');
   if (!isNonEmptyString(profile.display_name)) errs.push('display_name must be a non-empty string');
   if (profile.unit !== 'in') errs.push('unit must be "in"');
+
+  // How a shopper says the garment ("sweatshirt", "quarter-zip", "vest"). Substituted mid-sentence
+  // into copy.md's shared prose, hence lowercase-only. Digits are rejected deliberately: a garment
+  // noun essentially never contains one, and the charset is the cheap guard against a supplier SKU
+  // ("qz-4050", "st254") arriving from a spec and landing in shopper-facing copy. Provenance is
+  // gated in SKILL.md; this is the mechanical backstop.
+  if (!isNonEmptyString(profile.garment_noun)) errs.push('garment_noun must be a non-empty string');
+  else if (!/^[a-z]+(?:[ -][a-z]+)*$/.test(profile.garment_noun)) {
+    errs.push("garment_noun must be a lowercase noun phrase [a-z], single spaces or hyphens between words (e.g. 'sweatshirt', 'quarter-zip')");
+  } else if (profile.garment_noun.length > 30) {
+    errs.push(`garment_noun is ${profile.garment_noun.length} chars; max 30`);
+  }
 
   if (profile.garment !== undefined && profile.garment !== null && !KNOWN_GARMENTS.includes(profile.garment)) {
     errs.push(`garment '${profile.garment}' is not one of: ${KNOWN_GARMENTS.join(', ')} (or null)`);
@@ -115,6 +149,26 @@ export function validateProfile(profile) {
         errs.push(`${at}.callout_label must be a non-empty string`);
       }
 
+      // `heading` and `callout_label` used to reach the SVG only. One of them is now also the bold
+      // subject of an accordion sentence, so they are HTML too.
+      if (isNonEmptyString(col.heading) && HTML_UNSAFE.test(col.heading)) {
+        errs.push(`${at}.heading must not contain < > & { }`);
+      }
+      if (isNonEmptyString(col.callout_label) && HTML_UNSAFE.test(col.callout_label)) {
+        errs.push(`${at}.callout_label must not contain < > & { }`);
+      }
+
+      // Long-form prose for the on-page accordion. Distinct from `how`, which is the terse
+      // PNG-legend line: different media, different registers, both authored per column.
+      if (col.explain !== undefined) checkProse(errs, `${at}.explain`, col.explain);
+
+      if (col.decides_size !== undefined) {
+        if (typeof col.decides_size !== 'boolean') errs.push(`${at}.decides_size must be a boolean`);
+        else if (col.decides_size === true && !isNonEmptyString(col.explain)) {
+          errs.push(`${at} decides the size but has no 'explain' prose for the accordion`);
+        }
+      }
+
       // Value / derive shape by kind (the size role is special: it renders profile.sizes).
       if (col.role === 'size') {
         if (col.values !== undefined || col.derive !== undefined) errs.push(`${at} (role size) must not carry values/derive; it renders profile.sizes`);
@@ -156,6 +210,16 @@ export function validateProfile(profile) {
   if (errs.length === 0) {
     // The renderer treats column 0 as the size column (fixed 180px width + accent styling).
     if (columns[0].role !== 'size') errs.push("the first column must have role 'size'");
+
+    // Exactly one column decides the size. It is what `{{deciding_label}}` resolves to in the shared
+    // "Choosing your size" copy, so zero would leave the token unresolved and two would make the
+    // sentence a lie. This is a merchandising claim rather than a measurement fact (getting it wrong
+    // produces returns, silently, with a green build), so SKILL.md gates it on operator
+    // confirmation; this is the mechanical half.
+    const deciders = columns.filter((c) => c.decides_size === true);
+    if (deciders.length !== 1) {
+      errs.push(`exactly one column must set decides_size: true (found ${deciders.length})`);
+    }
 
     const usedAnchors = new Map(); // anchor -> role, to catch two badges colliding on one anchor
     columns.forEach((col, ci) => {

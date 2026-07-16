@@ -107,11 +107,12 @@ const RANGED = {
   display_name: 'Test Vest',
   unit: 'in',
   garment: 'vest',
+  garment_noun: 'vest',
   sizes: ['XS', 'S'],
   columns: [
     { role: 'size', heading: 'Size', kind: 'label' },
     { role: 'size_numeric', heading: 'US Size', kind: 'string', values: ['2', '4/6'] },
-    { role: 'chest_laid_flat', heading: 'Chest', kind: 'measure', values: [18.5, 20], badge: 'A', how: 'x' },
+    { role: 'chest_laid_flat', heading: 'Chest', kind: 'measure', values: [18.5, 20], badge: 'A', how: 'x', explain: 'is measured across the front.', decides_size: true },
     { role: 'body_chest_range', heading: 'To Fit', kind: 'range', values: [[32, 34], [35, 37]] },
   ],
 };
@@ -161,4 +162,82 @@ test('rejects a range column whose hi bound decreases', () => {
 test('rejects a derived column whose factor pushes it out of range', () => {
   const p = clone(SEED); p.columns[COL.laidFlat].derive.factor = 0.05;
   assert.throws(() => validateProfile(p), /derived value .* outside sane range/);
+});
+
+// ── garment_noun ──────────────────────────────────────────────────────────────
+// Substituted mid-sentence into copy.md's shared prose and rendered on a public storefront page.
+
+test('rejects a missing garment_noun', () => {
+  const p = clone(SEED); delete p.garment_noun;
+  assert.throws(() => validateProfile(p), /garment_noun must be a non-empty string/);
+});
+
+test('rejects a garment_noun containing a digit (a supplier SKU shape)', () => {
+  // The charset is the mechanical backstop for the provenance gate in SKILL.md: a spec-sourced
+  // "qz-4050" or "st254" must never reach shopper-facing copy.
+  for (const bad of ['qz-4050', 'st254', 'f280 fleece']) {
+    const p = clone(SEED); p.garment_noun = bad;
+    assert.throws(() => validateProfile(p), /lowercase noun phrase/, `expected ${bad} to be rejected`);
+  }
+});
+
+test('rejects a capitalised garment_noun (tokens are sentence-medial)', () => {
+  const p = clone(SEED); p.garment_noun = 'Sweatshirt';
+  assert.throws(() => validateProfile(p), /lowercase noun phrase/);
+});
+
+test('accepts a hyphenated garment_noun', () => {
+  const p = clone(SEED); p.garment_noun = 'quarter-zip';
+  assert.equal(validateProfile(p), true);
+});
+
+// ── explain ───────────────────────────────────────────────────────────────────
+// Operator-authored prose that lands inside the accordion's rich-text HTML.
+
+test('rejects explain containing HTML or token syntax', () => {
+  // `{`/`}` are rejected so a profile cannot smuggle a token into the shared copy pipeline.
+  for (const bad of ['is <b>bold</b>', 'is a & b', 'is {{garment_noun}}']) {
+    const p = clone(SEED); p.columns[COL.body].explain = bad;
+    assert.throws(() => validateProfile(p), /plain prose/, `expected ${bad} to be rejected`);
+  }
+});
+
+test('rejects explain containing an em dash', () => {
+  const p = clone(SEED); p.columns[COL.body].explain = `is measured ${String.fromCharCode(0x2014)} like so`;
+  assert.throws(() => validateProfile(p), /em dash/);
+});
+
+test('rejects an over-length explain', () => {
+  const p = clone(SEED); p.columns[COL.body].explain = `is ${'x'.repeat(400)}`;
+  assert.throws(() => validateProfile(p), /max 400/);
+});
+
+// ── decides_size ──────────────────────────────────────────────────────────────
+// A merchandising claim, not a measurement fact: it renders into "choose your size by X" copy.
+
+test('rejects zero columns deciding the size', () => {
+  const p = clone(SEED); delete p.columns[COL.laidFlat].decides_size;
+  assert.throws(() => validateProfile(p), /exactly one column must set decides_size: true \(found 0\)/);
+});
+
+test('rejects two columns deciding the size', () => {
+  const p = clone(SEED);
+  p.columns[COL.body].decides_size = true;
+  assert.throws(() => validateProfile(p), /exactly one column must set decides_size: true \(found 2\)/);
+});
+
+test('rejects a non-boolean decides_size', () => {
+  const p = clone(SEED); p.columns[COL.body].decides_size = 'yes';
+  assert.throws(() => validateProfile(p), /decides_size must be a boolean/);
+});
+
+test('rejects a deciding column with no explain', () => {
+  // It is what {{deciding_label}} names, so it always owes the shopper a definition.
+  const p = clone(SEED); delete p.columns[COL.laidFlat].explain;
+  assert.throws(() => validateProfile(p), /decides the size but has no 'explain'/);
+});
+
+test('rejects an unknown column key (the allowlist still bites after widening)', () => {
+  const p = clone(SEED); p.columns[COL.body].explaination = 'typo';
+  assert.throws(() => validateProfile(p), /unknown key 'explaination'/);
 });
