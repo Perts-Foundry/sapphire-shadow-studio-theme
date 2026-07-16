@@ -3,47 +3,52 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAccordionRow } from '../lib/table-block.mjs';
+import { buildAccordionRow, ACCORDION_ROW_ID } from '../lib/table-block.mjs';
 import {
   ACCORDION_HTML_DIR,
   accordionHtmlOf,
   compactHtml,
   prettyHtml,
 } from './accordion-html-fixture.mjs';
+import { fileForSuffix, findAccordionOrNull, readShippedTemplate } from './shipped-template.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..', '..', '..');
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
-const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
 
-// The live, byte-identical Size Chart row from a shipped product template. This is the cohesion
-// anchor: the generator must reproduce it exactly for the seed blank.
-function canonicalRow() {
-  const raw = readFileSync(path.join(ROOT, 'templates', 'product.huddle-crewneck.json'), 'utf8');
-  const body = raw.replace(/^﻿?\s*\/\*[\s\S]*?\*\/\s*/, '');
-  const t = JSON.parse(body);
-  return t.sections.main.blocks['product-details'].blocks.accordion_HrL6gj.blocks.accordion_row_sc001;
+// The live Size Chart row from a shipped product template. This is the cohesion anchor: the
+// generator must reproduce every shipped row exactly.
+function shippedRow(suffix) {
+  const found = findAccordionOrNull(readShippedTemplate(fileForSuffix(suffix)));
+  return found?.accordion?.blocks?.[ACCORDION_ROW_ID];
 }
 
-test('built row deep-equals the canonical template row', () => {
-  assert.deepStrictEqual(buildAccordionRow(SEED), canonicalRow());
-});
+// Run this over every (profile, suffix) pair the profiles claim, not just the seed. A template is
+// cloned from an already-charted one, so it arrives carrying the source blank's chart under the
+// canonical id: the right shape, the wrong garment. Presence checks cannot see that, and neither
+// can a duplicate scan, because there is exactly one row and it looks correct. Only comparing the
+// row against a rebuild from its own profile catches it, and the same comparison catches a profile
+// edited without re-running apply-size-chart.mjs, which is the same bug arriving later.
+for (const f of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
+  const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
+  for (const suffix of profile.handles ?? []) {
+    test(`${f} -> product.${suffix}.json: shipped row deep-equals a rebuild from the profile`, () => {
+      assert.deepStrictEqual(shippedRow(suffix), buildAccordionRow(profile));
+    });
 
-test('built row serialises byte-identically (key order preserved)', () => {
-  // Environment-independent golden: JSON text, not pixels.
-  assert.equal(JSON.stringify(buildAccordionRow(SEED)), JSON.stringify(canonicalRow()));
-});
+    test(`${f} -> product.${suffix}.json: shipped row serialises byte-identically (key order)`, () => {
+      // Environment-independent golden: JSON text, not pixels.
+      assert.equal(JSON.stringify(shippedRow(suffix)), JSON.stringify(buildAccordionRow(profile)));
+    });
+  }
+}
 
 // ── Accordion prose characterisation ──────────────────────────────────────────
 //
-// The two goldens above only cover the crewneck, and only against a shipped template. That leaves
-// two gaps these fixtures close:
-//
-//   1. The quarter-zip and both vests have no `handles`, so no shipped template exists and nothing
-//      pins their prose at all.
-//   2. `apply-size-chart.mjs` rewrites the very templates the goldens above read. After a regen they
-//      compare the generator against its own fresh output, so they cannot review a prose change.
-//      These fixtures are captured independently and diff as prose, one paragraph per line.
+// The goldens above cover every blank that has a shipped template, but they are self-referential:
+// `apply-size-chart.mjs` rewrites the very templates they read, so after a regen they compare the
+// generator against its own fresh output and cannot review a prose change. These fixtures are
+// captured independently and diff as prose, one paragraph per line. They also cover any blank
+// authored ahead of its template, which has no `handles` yet and so nothing above pins it.
 //
 // If one of these goes red, read the diff: it is the wording change, in reviewable form. Regenerate
 // with `npm run size-chart:golden:update` only once the diff is the change you meant to make.

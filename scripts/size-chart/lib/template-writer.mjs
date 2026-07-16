@@ -14,7 +14,9 @@ const HEADER_RE = /^﻿?\s*\/\*[\s\S]*?\*\/\s*/;
 // The Size Chart row is conventionally placed just after the "Product Details" row.
 const ANCHOR_ROW_ID = 'accordion_row_pd001';
 
-function splitHeader(raw) {
+// Exported for the tests, which assert against shipped templates and must strip the header and
+// locate the accordion exactly the way the writer does. A second copy of either would drift.
+export function splitHeader(raw) {
   const m = raw.match(HEADER_RE);
   const header = m ? m[0] : '';
   return { header, body: raw.slice(header.length) };
@@ -34,7 +36,7 @@ function insertAfter(obj, afterKey, newKey, newVal) {
   return out;
 }
 
-function findAccordion(obj) {
+export function findAccordion(obj) {
   const details = obj?.sections?.main?.blocks?.['product-details'];
   if (!details || typeof details.blocks !== 'object') {
     throw new Error('template has no sections.main.blocks["product-details"].blocks; cannot place size chart');

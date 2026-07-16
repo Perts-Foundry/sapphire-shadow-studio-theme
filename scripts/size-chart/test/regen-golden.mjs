@@ -8,8 +8,8 @@
 //
 // The accordion-html fixtures make a prose change reviewable *as prose*: the shipped product
 // templates carry the same HTML inside a JSON string, where a wording change renders as one 2KB
-// changed line that no reviewer can read. They are also the only coverage the quarter-zip and vest
-// blanks have, since those have no `handles` yet and so no shipped template for the cohesion
+// changed line that no reviewer can read. They are also the only coverage a blank authored ahead
+// of its template has, since it has no `handles` yet and so no shipped template for the cohesion
 // goldens to compare against.
 //
 // Not a test file (no `.test.mjs`), so `node --test` does not pick it up.
