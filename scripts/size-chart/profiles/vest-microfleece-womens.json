@@ -33,7 +33,7 @@
       "badge": "B",
       "callout_label": "Body length",
       "how": "From the highest point of the shoulder straight down to the finished hem at the back.",
-      "explain": "is measured from the highest point of the shoulder straight down to the finished hem at the back. To replicate, lay the garment flat and measure vertically from that shoulder point to the lowest edge of the hem. The hem is curved, so measure to the longest point."
+      "explain": "is measured from the highest point of the shoulder straight down to the finished hem at the back. To replicate, lay the garment flat and measure vertically from that shoulder point to the lowest edge of the hem."
     }
   ],
   "how_to": {
@@ -47,5 +47,5 @@
     ]
   },
   "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.",
-  "handles": []
+  "handles": ["lead-ii-vest-womens"]
 }

@@ -40,6 +40,51 @@ for (const f of files) {
   });
 }
 
+// Count the accordion rows headed "Size Chart" in a product template. Keyed on the heading rather
+// than the accordion_row_sc001 id: the id is what the writer upserts on, so a duplicate under that
+// id is impossible (JSON keys collapse), and the reachable duplicate is a second row under some
+// other id. A template cloned from a charted one carries that clone's chart, which is how a vest
+// ends up showing crewneck sleeve measurements.
+function sizeChartRows(suffix) {
+  const raw = readFileSync(path.join(ROOT, 'templates', `product.${suffix}.json`), 'utf8');
+  const obj = JSON.parse(raw.replace(/^﻿?\s*\/\*[\s\S]*?\*\/\s*/, ''));
+  const accordions = obj.sections.main.blocks['product-details'].blocks;
+  return Object.values(accordions)
+    .filter((b) => b.type === 'accordion')
+    .flatMap((b) => Object.values(b.blocks ?? {}))
+    .filter((row) => row.settings?.heading === 'Size Chart');
+}
+
+const templateSuffixes = readdirSync(path.join(ROOT, 'templates'))
+  .map((f) => f.match(/^product\.(.+)\.json$/)?.[1])
+  .filter(Boolean);
+
+// No product page may ever show two size charts. Asserted over every template on disk, including
+// any that no profile claims, since a stray hand-added row is exactly the case the handles-driven
+// check below cannot see.
+for (const suffix of templateSuffixes) {
+  test(`template product.${suffix}.json has no duplicate size-chart row`, () => {
+    const rows = sizeChartRows(suffix);
+    assert.ok(rows.length <= 1, `expected <= 1 Size Chart row, found ${rows.length}`);
+  });
+}
+
+// The other direction: a suffix a profile claims must actually carry that blank's chart. Guards the
+// silent-SKIP path, where apply-size-chart.mjs reports success having written nothing.
+for (const f of files) {
+  const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
+  for (const suffix of profile.handles ?? []) {
+    test(`profile ${f} handle '${suffix}' has exactly one size-chart row`, () => {
+      const rows = sizeChartRows(suffix);
+      assert.equal(rows.length, 1, `expected exactly 1 Size Chart row, found ${rows.length}`);
+      assert.ok(
+        Object.values(rows[0].blocks ?? {}).some((b) => b.type === 'table'),
+        'size-chart row has no table block',
+      );
+    });
+  }
+}
+
 for (const f of files) {
   test(`profile ${f} validates and renders`, () => {
     const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
