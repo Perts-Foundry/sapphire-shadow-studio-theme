@@ -315,3 +315,5 @@ Load `docs/accessibility-patterns.md` before implementing or modifying any of th
 ## Theme settings
 
 Global CSS variables in `snippets/theme-styles-variables.liquid`; color schemes via `color_scheme_group` in `config/settings_schema.json` rendered through `snippets/color-schemes.liquid`. `settings_schema.json` opens with a `theme_info` object. Presets that use nested blocks must declare a `block_order` array. Setting `label` text: under 30 characters, title case, no redundant type qualifier ("Columns", not "Number of columns").
+
+**Product media alt text drives the gallery.** `snippets/product-media-gallery-content.liquid` filters media by matching alt text against the values of that product's option named by `settings.color_option_name`, so those values are reserved words in alt text. The data lives in Admin, no test reaches it, and every failure is silent. Read `docs/product-media-alt-text.md` before authoring alt text or changing the filter.

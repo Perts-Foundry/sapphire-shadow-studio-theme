@@ -77,6 +77,7 @@
     "card_corner_radius": 4,
     "show_variant_image": true,
     "size_option_name": "Size",
+    "color_option_name": "Color",
     "variant_swatch_width": 34,
     "variant_swatch_height": 34,
     "variant_swatch_radius": 32,

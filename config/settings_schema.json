@@ -2272,6 +2272,13 @@
         "default": "Size"
       },
       {
+        "type": "text",
+        "id": "color_option_name",
+        "label": "t:settings.color_option",
+        "info": "t:settings.color_option_info",
+        "default": "Color"
+      },
+      {
         "type": "header",
         "content": "t:content.buttons"
       },

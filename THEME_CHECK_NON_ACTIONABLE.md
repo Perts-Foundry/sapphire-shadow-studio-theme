@@ -170,12 +170,12 @@ However, this is purely cosmetic and provides no functional benefit.
 - `sections/header.liquid:182, 255` - `block.id`
 - `snippets/divider.liquid:24` - `block.shopify_attributes`
 - `snippets/jumbo-text.liquid:12, 61` - `block.settings`, `block.shopify_attributes`
-- `snippets/product-media-gallery-content.liquid:137, 144` - `block` parameter
+- `snippets/product-media-gallery-content.liquid:232, 239` - `block` parameter
 - `snippets/quantity-selector.liquid:40` - `block.shopify_attributes`
 
 ##### `section` object (5 warnings)
 - `snippets/cart-summary.liquid:142` - `section.id`
-- `snippets/product-media-gallery-content.liquid:137, 144` - `section` parameter
+- `snippets/product-media-gallery-content.liquid:232, 239` - `section` parameter
 - `snippets/variant-main-picker.liquid:12, 22, 50` - `section.settings`, `section.id`
 
 #### Why Not Actionable

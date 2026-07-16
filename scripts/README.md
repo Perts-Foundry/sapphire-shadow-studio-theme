@@ -79,6 +79,16 @@ warning and logged in the manifest.
 2. Set the strongest shot as the **featured image** (it shows on collection cards and the
    homepage product list). Put size charts last (the size-chart PNG is produced by
    `size-chart/render-size-chart.mjs`).
-3. Assign colour/design photos to their **variants** (this theme swaps the image on variant
-   selection via `attached_to_variant`).
-4. Fill **alt text** on every image; use the manifest's `alt` column to track it.
+3. Fill **alt text** on every image, drafting in the manifest's `alt` column first. On this theme
+   alt text is not only accessibility text: it is what swaps the gallery on colour selection. A
+   photo whose alt names the selected Color option value shows for that colour; a photo naming no
+   value is shared across every colour. **Read `docs/product-media-alt-text.md` before writing
+   any of it.** The rules are not guessable, both failure directions are silent, and nothing in
+   the repo or CI can catch a mistake. The trap in one line: the navy photos are named
+   `blue-*.jpg`, and alt text must follow the Admin option value, not the filename.
+4. Optionally attach one hero image per colour to that colour's variants. This does **not** drive
+   the gallery: Shopify caps a variant at one attached media, so attachment can express one hero
+   per colour and never "all three black photos", which is why the gallery reads alt text
+   instead. It is still worth doing, because `variant.image` drives cart line-item thumbnails and
+   collection cards, which the gallery filter never touches. Do not attach a shared photo (a
+   group shot) as a hero: `hide_variants` then hides it from every other colour.
