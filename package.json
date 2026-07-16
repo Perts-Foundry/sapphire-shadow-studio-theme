@@ -9,7 +9,9 @@
   "scripts": {
     "shopify": "shopify",
     "theme:check": "shopify theme check",
-    "theme:dev": "shopify theme dev"
+    "theme:dev": "shopify theme dev",
+    "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
+    "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs"
   },
   "devDependencies": {
     "@shopify/cli": "4.3.0",

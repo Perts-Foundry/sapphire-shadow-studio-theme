@@ -1,0 +1,64 @@
+{
+  "blank_id": "quarter-zip-midweight",
+  "display_name": "Midweight Quarter Zip",
+  "unit": "in",
+  "garment": "quarter-zip",
+  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
+  "columns": [
+    { "role": "size", "heading": "Size", "kind": "label" },
+    {
+      "role": "chest_laid_flat",
+      "heading": "Chest (laid flat)",
+      "kind": "measure",
+      "values": [19.5, 20, 22, 23.5, 25.5, 26.5],
+      "badge": "A",
+      "callout_label": "Chest (laid flat)",
+      "how": "Across the front, seam to seam, about an inch below the armhole. The circumference column is double this figure."
+    },
+    {
+      "role": "chest_circumference",
+      "heading": "Chest (circumference)",
+      "kind": "measure",
+      "derive": { "from": "chest_laid_flat", "factor": 2 }
+    },
+    {
+      "role": "body_length_hps",
+      "heading": "Body Length",
+      "kind": "measure",
+      "values": [26.5, 28, 29, 30, 31, 32],
+      "badge": "B",
+      "callout_label": "Body length",
+      "how": "From the highest point of the shoulder, next to the collar, straight down to the bottom hem."
+    },
+    {
+      "role": "sleeve_cb",
+      "heading": "Sleeve Length",
+      "kind": "measure",
+      "values": [34, 35, 36, 37, 38, 39],
+      "badge": "C",
+      "callout_label": "Sleeve length",
+      "how": "From the center of the back neck, across the shoulder, and down the sleeve to the cuff edge, including the cuff rib."
+    },
+    {
+      "role": "front_zipper",
+      "heading": "Front Zipper",
+      "kind": "measure",
+      "values": [8, 8, 8, 8, 8, 8.5],
+      "badge": "D",
+      "callout_label": "Front zipper",
+      "how": "The length of the front zip placket, from the base of the collar down to the bottom of the zipper."
+    }
+  ],
+  "how_to": {
+    "eyebrow": "Start here",
+    "heading": "How to Find Your Perfect Fit",
+    "note": "Every measurement in this guide is of the garment laid flat, not your body.",
+    "steps": [
+      { "title": "Grab a quarter-zip you love", "detail": "One you already own that fits how you want. Lay it flat." },
+      { "title": "Measure and compare", "detail": "Match it to the chart below. Chest decides your size." },
+      { "title": "Pick your size", "detail": "Between two? These run a standard unisex fit: size up for room, or down for a closer fit." }
+    ]
+  },
+  "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.",
+  "handles": []
+}

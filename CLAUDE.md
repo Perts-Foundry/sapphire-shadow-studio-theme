@@ -146,7 +146,7 @@ GitHub Actions auto-redacts `secrets.*` in logs (`***`); `vars.*` is plaintext. 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific triggers:
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: skip (no JS test framework configured).
+- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. The `scripts/size-chart/` tooling does have a `node --test` suite (`npm run size-chart:test`); run test-engineer when that tooling changes.
 - **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.

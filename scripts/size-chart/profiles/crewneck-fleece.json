@@ -1,0 +1,59 @@
+{
+  "blank_id": "crewneck-fleece",
+  "display_name": "Unisex Crewneck Fleece",
+  "unit": "in",
+  "garment": "crewneck",
+  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
+  "columns": [
+    { "role": "size", "heading": "Size", "kind": "label" },
+    {
+      "role": "chest_laid_flat",
+      "heading": "Chest (laid flat)",
+      "kind": "measure",
+      "derive": { "from": "chest_circumference", "factor": 0.5 },
+      "badge": "A",
+      "callout_label": "Chest (laid flat)",
+      "how": "Across the front, seam to seam, about an inch below the armhole. The circumference column is double this figure."
+    },
+    {
+      "role": "chest_circumference",
+      "heading": "Chest (circumference)",
+      "kind": "measure",
+      "values": [38, 41, 44, 47, 50, 53]
+    },
+    {
+      "role": "body_length_hps",
+      "heading": "Body Length",
+      "kind": "measure",
+      "values": [25, 26.5, 28, 29.5, 31, 32.5],
+      "badge": "B",
+      "callout_label": "Body length",
+      "how": "From the highest point of the shoulder, next to the collar, straight down to the bottom hem."
+    },
+    {
+      "role": "sleeve_cb",
+      "heading": "Sleeve Length",
+      "kind": "measure",
+      "values": [34, 35, 36, 37, 38, 39],
+      "badge": "C",
+      "callout_label": "Sleeve length",
+      "how": "From the center of the back neck, across the shoulder, and down the sleeve to the cuff edge."
+    }
+  ],
+  "how_to": {
+    "eyebrow": "Start here",
+    "heading": "How to Find Your Perfect Fit",
+    "note": "Every measurement in this guide is of the garment laid flat, not your body.",
+    "steps": [
+      { "title": "Grab a sweatshirt you love", "detail": "One you already own that fits how you want. Lay it flat." },
+      { "title": "Measure and compare", "detail": "Match it to the chart below. Chest decides your size." },
+      { "title": "Pick your size", "detail": "Between two? These run a standard unisex fit: size up for room, or down for a closer fit." }
+    ]
+  },
+  "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.",
+  "handles": [
+    "medical-applique-embroidered-sweatshirt",
+    "medical-credential-embroidered-sweatshirt",
+    "powered-by-caffeine-and-trauma-embroidered-sweatshirt"
+  ]
+}

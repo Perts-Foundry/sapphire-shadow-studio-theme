@@ -1,0 +1,164 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { validateProfile } from '../lib/profile-schema.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+// Index of the seed's columns for targeted mutation.
+const COL = { size: 0, laidFlat: 1, circ: 2, body: 3, sleeve: 4 };
+
+test('accepts the seed profile', () => {
+  assert.equal(validateProfile(SEED), true);
+});
+
+test('rejects a non-object profile', () => {
+  assert.throws(() => validateProfile(null), /must be an object/);
+  assert.throws(() => validateProfile([]), /must be an object/);
+});
+
+test('rejects an unknown top-level key', () => {
+  const p = clone(SEED); p.foo = 1;
+  assert.throws(() => validateProfile(p), /unknown key 'foo'/);
+});
+
+test('rejects a non-kebab blank_id', () => {
+  const p = clone(SEED); p.blank_id = 'Crew Neck';
+  assert.throws(() => validateProfile(p), /kebab/);
+});
+
+test('rejects unit other than inches', () => {
+  const p = clone(SEED); p.unit = 'cm';
+  assert.throws(() => validateProfile(p), /unit must be/);
+});
+
+test('rejects an unknown garment', () => {
+  const p = clone(SEED); p.garment = 'trousers';
+  assert.throws(() => validateProfile(p), /is not one of/);
+});
+
+test('rejects a canvas_height out of range', () => {
+  const p = clone(SEED); p.canvas_height = 200;
+  assert.throws(() => validateProfile(p), /canvas_height/);
+});
+
+test('rejects more than six sizes', () => {
+  const p = clone(SEED); p.sizes = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+  assert.throws(() => validateProfile(p), /exceeds the 6/);
+});
+
+test('rejects a handle that could traverse out of templates/', () => {
+  const p = clone(SEED); p.handles = ['../../evil'];
+  assert.throws(() => validateProfile(p), /kebab-case/);
+});
+
+test('rejects a measure column whose length does not match sizes', () => {
+  const p = clone(SEED); p.columns[COL.circ].values.pop();
+  assert.throws(() => validateProfile(p), /!= sizes length/);
+});
+
+test('rejects a non-monotonic measure column (transcription swap)', () => {
+  const p = clone(SEED); p.columns[COL.circ].values[2] = 30;
+  assert.throws(() => validateProfile(p), /decreases/);
+});
+
+test('rejects an out-of-range measure value (units error)', () => {
+  const p = clone(SEED); p.columns[COL.circ].values = [5, 6, 7, 8, 9, 10];
+  assert.throws(() => validateProfile(p), /outside sane range/);
+});
+
+test('rejects a non-numeric measure cell', () => {
+  const p = clone(SEED); p.columns[COL.sleeve].values[0] = '22';
+  assert.throws(() => validateProfile(p), /positive number/);
+});
+
+test('rejects an unknown column role', () => {
+  const p = clone(SEED); p.columns[COL.body].role = 'inseam_x';
+  assert.throws(() => validateProfile(p), /not a known role/);
+});
+
+test('rejects a duplicated role', () => {
+  const p = clone(SEED); p.columns[COL.body].role = 'chest_circumference';
+  assert.throws(() => validateProfile(p), /duplicated/);
+});
+
+test('rejects a duplicated badge', () => {
+  const p = clone(SEED); p.columns[COL.body].badge = 'A';
+  assert.throws(() => validateProfile(p), /badge 'A' is duplicated/);
+});
+
+test('rejects a badge with no how text', () => {
+  const p = clone(SEED); p.columns[COL.circ].badge = 'D';
+  assert.throws(() => validateProfile(p), /no 'how' text/);
+});
+
+test('rejects a derive.from that matches no column role', () => {
+  const p = clone(SEED); p.columns[COL.laidFlat].derive.from = 'bust';
+  assert.throws(() => validateProfile(p), /does not match any column role/);
+});
+
+// A synthetic vest-style profile exercising string + range column kinds and a doubled derive.
+const RANGED = {
+  blank_id: 'test-vest',
+  display_name: 'Test Vest',
+  unit: 'in',
+  garment: 'vest',
+  sizes: ['XS', 'S'],
+  columns: [
+    { role: 'size', heading: 'Size', kind: 'label' },
+    { role: 'size_numeric', heading: 'US Size', kind: 'string', values: ['2', '4/6'] },
+    { role: 'chest_laid_flat', heading: 'Chest', kind: 'measure', values: [18.5, 20], badge: 'A', how: 'x' },
+    { role: 'body_chest_range', heading: 'To Fit', kind: 'range', values: [[32, 34], [35, 37]] },
+  ],
+};
+
+test('accepts a profile with string + range columns', () => {
+  assert.equal(validateProfile(RANGED), true);
+});
+
+test('rejects a range cell with lo greater than hi', () => {
+  const p = clone(RANGED); p.columns[3].values[0] = [36, 34];
+  assert.throws(() => validateProfile(p), /lo > hi/);
+});
+
+test('rejects a profile with no size column', () => {
+  const p = clone(SEED); p.columns = p.columns.filter((c) => c.role !== 'size');
+  assert.throws(() => validateProfile(p), /first column must have role 'size'/);
+});
+
+test('rejects a size column not at index 0', () => {
+  const p = clone(SEED); const s = p.columns.shift(); p.columns.splice(1, 0, s);
+  assert.throws(() => validateProfile(p), /first column must have role 'size'/);
+});
+
+test('rejects a badge on an anchor the garment does not expose', () => {
+  // front_zipper -> zipper anchor, which the crewneck garment does not draw.
+  const p = clone(SEED);
+  p.columns.push({ role: 'front_zipper', heading: 'Zip', kind: 'measure', values: [8, 8, 8, 8, 8, 8.5], badge: 'D', how: 'x' });
+  assert.throws(() => validateProfile(p), /does not have/);
+});
+
+test('rejects two badges colliding on the same anchor', () => {
+  // chest_circumference -> chest, same anchor as chest_laid_flat (badge A).
+  const p = clone(SEED); p.columns[COL.circ].badge = 'E'; p.columns[COL.circ].how = 'x';
+  assert.throws(() => validateProfile(p), /both badge the 'chest' anchor/);
+});
+
+test('rejects a badge on a role with no diagram anchor', () => {
+  const p = clone(RANGED); p.columns[3].badge = 'C'; p.columns[3].how = 'x'; // body_chest_range has no anchor
+  assert.throws(() => validateProfile(p), /no diagram anchor/);
+});
+
+test('rejects a range column whose hi bound decreases', () => {
+  const p = clone(RANGED); p.columns[3].values = [[32, 40], [35, 38]];
+  assert.throws(() => validateProfile(p), /'hi' decreases/);
+});
+
+test('rejects a derived column whose factor pushes it out of range', () => {
+  const p = clone(SEED); p.columns[COL.laidFlat].derive.factor = 0.05;
+  assert.throws(() => validateProfile(p), /derived value .* outside sane range/);
+});

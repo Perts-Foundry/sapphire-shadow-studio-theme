@@ -1,5 +1,8 @@
-# Claude AI generated files
-.claude/
+# Claude AI generated files. Everything under .claude/ is local-only EXCEPT
+# .claude/skills/, which is version-controlled so shared skills travel with the repo.
+# Memory (.claude/projects/) stays ignored: it may hold real operator/merchant context.
+.claude/*
+!.claude/skills/
 
 # npm
 node_modules/

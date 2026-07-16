@@ -1,0 +1,46 @@
+{
+  "blank_id": "vest-microfleece-mens",
+  "display_name": "Men's Microfleece Vest",
+  "unit": "in",
+  "garment": "vest",
+  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
+  "columns": [
+    { "role": "size", "heading": "Size", "kind": "label" },
+    {
+      "role": "chest_laid_flat",
+      "heading": "Chest (laid flat)",
+      "kind": "measure",
+      "values": [18.5, 20, 21.5, 23, 24.5, 26],
+      "badge": "A",
+      "callout_label": "Chest (laid flat)",
+      "how": "Across the front, seam to seam, about an inch below the armhole, with the vest laid flat."
+    },
+    {
+      "role": "body_length_back",
+      "heading": "Body Length",
+      "kind": "measure",
+      "values": [27, 28, 29, 30, 31, 32],
+      "badge": "B",
+      "callout_label": "Body length",
+      "how": "From the highest point of the shoulder straight down to the finished hem at the back."
+    },
+    {
+      "role": "body_chest_range",
+      "heading": "To Fit (chest)",
+      "kind": "range",
+      "values": [[32, 34], [35, 37], [38, 40], [41, 43], [44, 46], [47, 49]]
+    }
+  ],
+  "how_to": {
+    "eyebrow": "Start here",
+    "heading": "How to Find Your Perfect Fit",
+    "note": "Every measurement in this guide is of the garment laid flat, not your body.",
+    "steps": [
+      { "title": "Grab a layer you love", "detail": "A vest or light jacket that fits how you want. Lay it flat." },
+      { "title": "Measure and compare", "detail": "Match it to the chart below. Chest decides your size." },
+      { "title": "Pick your size", "detail": "No layer to compare? Use the To Fit column: pick the size for your body chest." }
+    ]
+  },
+  "footer": "Garment measurements are of the vest laid flat. To Fit is the body chest each size is cut to fit. A manufacturing tolerance of ±1 inch applies.",
+  "handles": []
+}

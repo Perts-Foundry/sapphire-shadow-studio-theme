@@ -1,0 +1,41 @@
+{
+  "blank_id": "vest-microfleece-womens",
+  "display_name": "Women's Microfleece Vest",
+  "unit": "in",
+  "garment": "vest",
+  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
+  "columns": [
+    { "role": "size", "heading": "Size", "kind": "label" },
+    { "role": "size_numeric", "heading": "US Size", "kind": "string", "values": ["2", "4/6", "8/10", "12/14", "16/18", "20/22"] },
+    {
+      "role": "bust",
+      "heading": "Bust (laid flat)",
+      "kind": "measure",
+      "values": [17.25, 18.25, 19.25, 20.75, 22.25, 23.75],
+      "badge": "A",
+      "callout_label": "Bust (laid flat)",
+      "how": "Across the front, seam to seam, about an inch below the armhole, with the vest laid flat."
+    },
+    {
+      "role": "body_length_back",
+      "heading": "Body Length",
+      "kind": "measure",
+      "values": [26.25, 26.75, 27.25, 27.75, 28.25, 28.75],
+      "badge": "B",
+      "callout_label": "Body length",
+      "how": "From the highest point of the shoulder straight down to the finished hem at the back."
+    }
+  ],
+  "how_to": {
+    "eyebrow": "Start here",
+    "heading": "How to Find Your Perfect Fit",
+    "note": "Every measurement in this guide is of the garment laid flat, not your body.",
+    "steps": [
+      { "title": "Grab a layer you love", "detail": "A vest or light jacket that fits how you want. Lay it flat." },
+      { "title": "Measure and compare", "detail": "Match it to the chart below. Bust decides your size." },
+      { "title": "Pick your size", "detail": "Between two? Size up for a relaxed layering fit, or down for a closer one." }
+    ]
+  },
+  "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.",
+  "handles": []
+}
