@@ -17,7 +17,13 @@ test('renders a navy PNG of the expected dimensions', async (t) => {
   let sharp;
   try {
     ({ default: sharp } = await import('sharp'));
-  } catch {
+  } catch (err) {
+    // Locally, an exotic platform with no sharp binary should not block the whole suite. In CI it
+    // must: a silent skip there would leave the run green while rasterisation coverage quietly
+    // vanished, which is the exact failure mode gating this suite is meant to close. sharp ships its
+    // binaries as optionalDependencies, so `npm ci --ignore-scripts` still resolves them; if that
+    // ever stops being true, this should be loud.
+    if (process.env.CI) throw new Error(`sharp failed to load in CI: ${err.message}`);
     t.skip('sharp unavailable in this environment');
     return;
   }
