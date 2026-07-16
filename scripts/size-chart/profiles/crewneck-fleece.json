@@ -3,6 +3,7 @@
   "display_name": "Unisex Crewneck Fleece",
   "unit": "in",
   "garment": "crewneck",
+  "garment_noun": "sweatshirt",
   "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
   "columns": [
     { "role": "size", "heading": "Size", "kind": "label" },
@@ -13,13 +14,16 @@
       "derive": { "from": "chest_circumference", "factor": 0.5 },
       "badge": "A",
       "callout_label": "Chest (laid flat)",
-      "how": "Across the front, seam to seam, about an inch below the armhole. The circumference column is double this figure."
+      "how": "Across the front, seam to seam, about an inch below the armhole. The circumference column is double this figure.",
+      "explain": "is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a sweatshirt you own, lay it flat and measure straight across at that point. This is exactly half the circumference figure.",
+      "decides_size": true
     },
     {
       "role": "chest_circumference",
       "heading": "Chest (circumference)",
       "kind": "measure",
-      "values": [38, 41, 44, 47, 50, 53]
+      "values": [38, 41, 44, 47, 50, 53],
+      "explain": "is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits."
     },
     {
       "role": "body_length_hps",
@@ -28,7 +32,8 @@
       "values": [25, 26.5, 28, 29.5, 31, 32.5],
       "badge": "B",
       "callout_label": "Body length",
-      "how": "From the highest point of the shoulder, next to the collar, straight down to the bottom hem."
+      "how": "From the highest point of the shoulder, next to the collar, straight down to the bottom hem.",
+      "explain": "is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge."
     },
     {
       "role": "sleeve_cb",
@@ -37,7 +42,8 @@
       "values": [34, 35, 36, 37, 38, 39],
       "badge": "C",
       "callout_label": "Sleeve length",
-      "how": "From the center of the back neck, across the shoulder, and down the sleeve to the cuff edge."
+      "how": "From the center of the back neck, across the shoulder, and down the sleeve to the cuff edge.",
+      "explain": "is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff ribbing. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge."
     }
   ],
   "how_to": {

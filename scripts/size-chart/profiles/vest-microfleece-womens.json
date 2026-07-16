@@ -3,10 +3,17 @@
   "display_name": "Women's Microfleece Vest",
   "unit": "in",
   "garment": "vest",
+  "garment_noun": "vest",
   "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
   "columns": [
     { "role": "size", "heading": "Size", "kind": "label" },
-    { "role": "size_numeric", "heading": "US Size", "kind": "string", "values": ["2", "4/6", "8/10", "12/14", "16/18", "20/22"] },
+    {
+      "role": "size_numeric",
+      "heading": "US Size",
+      "kind": "string",
+      "values": ["2", "4/6", "8/10", "12/14", "16/18", "20/22"],
+      "explain": "is the US dress size each letter size corresponds to on this blank. It is a guide to the cut, not a measurement of the garment. If it disagrees with the bust column, trust the bust column."
+    },
     {
       "role": "bust",
       "heading": "Bust (laid flat)",
@@ -14,7 +21,9 @@
       "values": [17.25, 18.25, 19.25, 20.75, 22.25, 23.75],
       "badge": "A",
       "callout_label": "Bust (laid flat)",
-      "how": "Across the front, seam to seam, about an inch below the armhole, with the vest laid flat."
+      "how": "Across the front, seam to seam, about an inch below the armhole, with the vest laid flat.",
+      "explain": "is the garment's width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a vest you own, lay it flat and measure straight across at that point, with the zip closed. This is a contoured women's cut, so it is shaped through the waist below this point.",
+      "decides_size": true
     },
     {
       "role": "body_length_back",
@@ -23,7 +32,8 @@
       "values": [26.25, 26.75, 27.25, 27.75, 28.25, 28.75],
       "badge": "B",
       "callout_label": "Body length",
-      "how": "From the highest point of the shoulder straight down to the finished hem at the back."
+      "how": "From the highest point of the shoulder straight down to the finished hem at the back.",
+      "explain": "is measured from the highest point of the shoulder straight down to the finished hem at the back. To replicate, lay the garment flat and measure vertically from that shoulder point to the lowest edge of the hem. The hem is curved, so measure to the longest point."
     }
   ],
   "how_to": {

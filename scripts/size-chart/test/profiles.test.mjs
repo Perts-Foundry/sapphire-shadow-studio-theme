@@ -16,8 +16,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
 const files = readdirSync(PROFILES_DIR).filter((f) => f.endsWith('.json'));
 
+// The three shipping blanks: crewneck-fleece, quarter-zip-midweight, vest-microfleece-womens.
+// Was 4 until the unisex microfleece vest was dropped from the launch (2026-07-16); its profile is
+// recoverable from git history if that blank comes back.
 test('the profiles directory has the expected blanks', () => {
-  assert.ok(files.length >= 4, `expected >= 4 profiles, found ${files.length}`);
+  assert.ok(files.length >= 3, `expected >= 3 profiles, found ${files.length}`);
 });
 
 for (const f of files) {

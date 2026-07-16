@@ -46,8 +46,8 @@ function findAccordion(obj) {
 }
 
 // Mutate the parsed template object in place: upsert the Size Chart row into its accordion.
-export function applyToTemplateObject(obj, profile, { copyPath } = {}) {
-  const row = buildAccordionRow(profile, { copyPath });
+export function applyToTemplateObject(obj, profile) {
+  const row = buildAccordionRow(profile);
   const { details, accId, accordion } = findAccordion(obj);
 
   accordion.blocks = accordion.blocks && typeof accordion.blocks === 'object' ? accordion.blocks : {};
@@ -66,12 +66,12 @@ export function applyToTemplateObject(obj, profile, { copyPath } = {}) {
 
 // Read a product template, upsert the size chart, write it back byte-stably. Returns
 // { changed, path }. changed=false means the file was already up to date (no write performed).
-export async function upsertSizeChart({ templatePath, profile, copyPath } = {}) {
+export async function upsertSizeChart({ templatePath, profile } = {}) {
   const raw = await readFile(templatePath, 'utf8');
   const { header, body } = splitHeader(raw);
   const obj = JSON.parse(body);
 
-  applyToTemplateObject(obj, profile, { copyPath });
+  applyToTemplateObject(obj, profile);
 
   const trailingNewline = body.endsWith('\n') ? '\n' : '';
   const next = header + JSON.stringify(obj, null, 2) + trailingNewline;
