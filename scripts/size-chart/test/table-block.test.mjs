@@ -42,6 +42,10 @@ for (const f of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
   }
 }
 
+// The anchor id this row carries is asserted in test/anchor-contract.test.mjs, which owns that
+// contract end to end. Nothing about it belongs here: a test in this file would compare the
+// generator against its own constant and agree by construction.
+
 // ── Accordion prose characterisation ──────────────────────────────────────────
 //
 // The goldens above cover every blank that has a shipped template, but they are self-referential:

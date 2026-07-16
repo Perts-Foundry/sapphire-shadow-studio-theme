@@ -253,6 +253,8 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 
 **Critical**: only ONE `{% content_for 'blocks' %}` per file. If you need the same dynamic-block region in multiple places, **capture** it once into a variable and emit the variable.
 
+**A block cannot read another block's settings.** When two blocks must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`, read by both the variant picker and the acknowledgement block). Duplicating the setting on each block gives two sources of truth that drift apart silently.
+
 ### Schema targeting
 
 - Restrict nesting via `"blocks": [...]`. Use `{ "type": "@theme" }` for any theme block, `{ "type": "@app" }` for app blocks, or specific names.
@@ -280,7 +282,7 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 
 ### HTML
 
-- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`.
+- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`. The suffix is there to keep repeated blocks unique. **Exception: link anchors**, whose job is to be stable and hand-authorable, so they are bare. The only one today is `SizeChart` (`anchor_id` on `_accordion-row`, emitted by `scripts/size-chart/`, targeted by `snippets/size-guide-link.liquid` and by shared `#SizeChart` URLs). Do NOT "fix" it to `SizeChart-{{ block.id }}`; that silently breaks the size-guide link and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` fails if you do.
 - Typed inputs (`type="search|tel|url|date|time|datetime-local|month|week|color"`) for native validation and mobile keyboards. `pattern=` for regex validation; `formnovalidate` / `formaction` on submit buttons that bypass validation or post elsewhere.
 - View transitions: declare `@view-transition` and per-element `view-transition-name` for smooth navigation.
 - Avoid `position: fixed` near the bottom of the viewport on mobile (the on-screen keyboard overlaps it).

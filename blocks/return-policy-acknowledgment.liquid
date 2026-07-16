@@ -1,71 +1,186 @@
 {%- doc -%}
-  Required acknowledgement checkbox for products that are final-sale (made-to-order,
-  embroidered, personalized). The block:
+  Required acknowledgement for products that are final-sale (made to order, embroidered,
+  personalized). The block:
 
-  - Renders a required checkbox bound to the product form via `form="..."`, so the
-    native HTML5 submit-time validation blocks Add to Cart until ticked.
-  - Records the acknowledgement as a `properties[Return policy acknowledged]`
-    line-item property for support-ticket triage. Not a click-wrap contract.
-  - Hides the accelerated-checkout container (Shop Pay / Apple Pay / Google Pay)
-    while the box is unchecked via a `data-return-policy-pending` attribute set
-    on the sibling `<product-form-component>`. The cross-block CSS hook is
-    documented inline in `blocks/accelerated-checkout.liquid`.
+  - Renders a merchant-editable terms summary, then a required checkbox bound to the product
+    form via `form="..."`, so native HTML5 submit-time validation blocks Add to Cart until
+    ticked. The terms are wired to the checkbox with `aria-describedby`: the label is short
+    ("I agree to the above") and does not carry the meaning on its own, so the terms are the
+    accessible description rather than decoration.
+  - Records the acknowledgement as a `properties[Return policy acknowledged]` line-item
+    property, whose value names the size that was on screen when the shopper agreed. For
+    support-ticket triage. Not a click-wrap contract.
+  - Unticks itself whenever the shopper changes any option, which is what keeps that value
+    honest: the box can only ever be ticked for the currently selected variant. Unticking
+    re-hides accelerated checkout and is announced politely, because silently clearing a box
+    the shopper ticked would otherwise just look like a broken Add to Cart button.
+  - Hides the accelerated-checkout container (Shop Pay / Apple Pay / Google Pay) while the box
+    is unchecked via a `data-return-policy-pending` attribute set on this element. The
+    cross-block CSS hook is documented inline in `blocks/accelerated-checkout.liquid`.
+  - Renders its validation message as visible `role="alert"` text, with `aria-invalid` on the
+    checkbox and the message's id appended to its `aria-describedby`, rather than relying on the
+    browser's native bubble. Native bubbles auto-dismiss, vanish on scroll or blur, cannot be
+    magnified, and expose no programmatic association, so they cannot be the only error mechanism
+    (WCAG 3.3.1). The bubble still fires; it is a bonus.
+
+  **Blank `terms` hides the whole block.** A required checkbox reading "I agree to the above"
+  with nothing above it is a consent gate with no terms, which is worse than no gate at all.
+
+  That is why the schema declares `"tag": null` and this file emits its own
+  `<return-policy-acknowledgment-component>` root: a schema-generated tag renders even when the
+  block body is empty, and the fail-closed `:has()` rule would match that empty element and hide
+  accelerated checkout with no checkbox present to ever un-hide it. Do not move the element back
+  into the schema's `tag`.
 
   This block depends on a sibling `buy-buttons` block in the same section: the
   `product_form_id` is derived from the section id (`BuyButtons-ProductForm-{section.id}`)
   and the `<product-form-component>` element is queried within the section root by JS.
 
-  Add the block to any product template via the theme editor. The block has no
-  template restriction in its schema (theme-check rejects `enabled_on` on
-  blocks); when added outside a product context the JS no-ops and logs a
-  diagnostic warning to the console.
+  Add the block to any product template via the theme editor. The block has no template
+  restriction in its schema (theme-check rejects `enabled_on` on blocks); when added outside
+  a product context the JS no-ops and logs a diagnostic warning to the console.
 {%- enddoc -%}
 
 {%- liquid
   assign block_settings = block.settings
   assign product_form_id = 'BuyButtons-ProductForm-' | append: section.id
   assign element_id = 'ReturnPolicyAck-' | append: block.id
+  assign terms_id = 'ReturnPolicyAckTerms-' | append: block.id
+  assign error_id = 'ReturnPolicyAckError-' | append: block.id
   assign label_text = block_settings.checkbox_label
+  assign terms = block_settings.terms
+
+  assign product_resource = closest.product
+
+  comment
+    The size option's position is resolved once here and handed to JS as a data attribute. The
+    lookup itself is shared with the size-guide link via a global setting, because a theme block
+    cannot read another block's settings. See snippets/size-option-position.liquid.
+  endcomment
+  capture size_position_raw
+    render 'size-option-position', product_resource: product_resource
+  endcapture
+  assign size_position = size_position_raw | strip
+
+  comment
+    Server-rendered so the value is correct with JS off: without JS the variant picker's radios
+    never rewrite the variant id, so the initially selected variant is the one that submits.
+  endcomment
+  assign selected_variant = product_resource.selected_or_first_available_variant
+  if size_position != blank
+    assign size_index = size_position | minus: 1
+    assign selected_size = selected_variant.options[size_index]
+  endif
+
+  if selected_size != blank
+    assign initial_value = 'products.product.return_policy_acknowledgment_value' | t: size: selected_size
+  else
+    assign initial_value = 'products.product.return_policy_acknowledgment_value_no_size' | t
+  endif
 -%}
 
-<div
-  class="spacing-style"
-  style="{% render 'spacing-style', settings: block_settings %}"
-  {{ block.shopify_attributes }}
->
-  {% render 'checkbox',
-    name: 'properties[Return policy acknowledged]',
-    value: 'yes',
-    label: label_text,
-    id: element_id,
-    checked: false,
-    events: 'on:change="/handleChange"',
-    disabled: false,
-    required: true,
-    formId: product_form_id,
-    inputRef: 'checkbox'
-  %}
+{%- comment -%}
+  Blank terms renders nothing at all, which is why this block declares `"tag": null` and emits
+  its own custom element. With a schema-generated tag the wrapper renders even when the block
+  body is empty, and the fail-closed `:has()` rule below would then match a component that has
+  no checkbox in it: accelerated checkout hidden forever, with no gate the shopper could ever
+  satisfy. No element, no gate.
 
-  <p class="return-policy-acknowledgment__policy-link">
-    <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
-  </p>
+  The data attributes belong on this element specifically, not an inner wrapper: the JS reads
+  them off `this.dataset`, where `this` is the custom element.
+{%- endcomment -%}
+{%- if terms != blank -%}
+  <return-policy-acknowledgment-component
+    class="spacing-style"
+    style="{% render 'spacing-style', settings: block_settings %}"
+    data-product-id="{{ product_resource.id }}"
+    data-size-option-position="{{ size_position }}"
+    {{ block.shopify_attributes }}
+  >
+    {%- comment -%}
+      The setting value must be the only child of its parent element, with no surrounding Liquid
+      and no filter but `escape`, or the theme editor cannot live-update it. The {% if %} above
+      is deliberately outside this div for the same reason, and no filter is applied because
+      `escape` would render the rich text as visible markup.
+    {%- endcomment -%}
+    <div id="{{ terms_id }}" class="return-policy-acknowledgment__terms">{{ block.settings.terms }}</div>
 
-  {%- comment -%}
-    Source of the translated validation message; passed to setCustomValidity so
-    the browser shows its native HTML5 bubble on submit (matches the UX of
-    blocks/applique-pattern-select.liquid). Permanently hidden visually.
-  {%- endcomment -%}
-  <span
-    hidden
-    ref="invalidMessage"
-  >{{- 'products.product.return_policy_acknowledgment_invalid' | t | escape -}}</span>
+    {% render 'checkbox',
+      name: 'properties[Return policy acknowledged]',
+      value: initial_value,
+      label: label_text,
+      id: element_id,
+      checked: false,
+      events: 'on:change="/handleChange"',
+      disabled: false,
+      required: true,
+      formId: product_form_id,
+      inputRef: 'checkbox',
+      describedBy: terms_id
+    %}
 
-  <noscript>
-    <style>
-      product-form-component [ref="acceleratedCheckoutButtonContainer"] { display: none; }
-    </style>
-  </noscript>
-</div>
+    {%- comment -%}
+      The visible error message. Empty until JS fills it, so it never occupies space or announces
+      on a valid form. `role="alert"` is what makes it announce the moment it is filled; without
+      it the message appears silently unless focus happens to be on the checkbox. Matches
+      blocks/embroidery-custom-text.liquid and the Form pattern in docs/accessibility-patterns.md.
+
+      The JS pairs this with `aria-invalid` on the checkbox and appends this id to the checkbox's
+      `aria-describedby` (not `aria-errormessage`, which has thinner support). That is why the
+      shared checkbox snippet's `describedBy` param takes a token list.
+    {%- endcomment -%}
+    <p
+      id="{{ error_id }}"
+      class="return-policy-acknowledgment__error"
+      ref="errorMessage"
+      role="alert"
+      hidden
+    ></p>
+
+    <p class="return-policy-acknowledgment__policy-link">
+      <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
+    </p>
+
+    {%- comment -%}
+      Announces the automatic untick on option change. Politely: the shopper initiated an option
+      change, not this, so it must not interrupt. Empty on load so it announces nothing until
+      there is something to say.
+    {%- endcomment -%}
+    {%- comment -%}
+      `role="status"` alone: it already implies aria-live="polite" plus aria-atomic="true", and
+      carrying both has been reported to double-announce in some AT pairings.
+    {%- endcomment -%}
+    <p
+      class="return-policy-acknowledgment__status"
+      role="status"
+      ref="statusMessage"
+    ></p>
+
+    {%- comment -%}
+      Translated string sources for JS. Permanently hidden; the JS reads textContent and, for
+      the value template, substitutes the [size] placeholder. Mirrors the interpolation
+      convention in snippets/localization-form.liquid.
+    {%- endcomment -%}
+    <span hidden ref="invalidMessage">
+      {{- 'products.product.return_policy_acknowledgment_invalid' | t | escape -}}
+    </span>
+    <span hidden ref="clearedMessage">
+      {{- 'products.product.return_policy_acknowledgment_cleared' | t | escape -}}
+    </span>
+    <span hidden ref="valueTemplate">
+      {{- 'products.product.return_policy_acknowledgment_value' | t: size: '[size]' | escape -}}
+    </span>
+    <span hidden ref="valueTemplateNoSize">
+      {{- 'products.product.return_policy_acknowledgment_value_no_size' | t | escape -}}
+    </span>
+
+    <noscript>
+      <style>
+        product-form-component [ref="acceleratedCheckoutButtonContainer"] { display: none; }
+      </style>
+    </noscript>
+  </return-policy-acknowledgment-component>
+{%- endif -%}
 
 {% stylesheet %}
   return-policy-acknowledgment-component {
@@ -73,19 +188,55 @@
     width: 100%;
   }
 
+  return-policy-acknowledgment-component .return-policy-acknowledgment__terms {
+    margin-block-end: var(--padding-xs);
+    font-size: var(--font-size--xs);
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__terms ul {
+    margin-block: 0;
+    padding-inline-start: 1.25em;
+  }
+
   return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
     margin-block: var(--padding-xs) 0;
     font-size: var(--font-size--xs);
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__error {
+    margin-block: var(--padding-xs) 0;
+    font-size: var(--font-size--xs);
+    color: var(--color-error, currentcolor);
+    font-weight: bold;
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__error[hidden] {
+    display: none;
+  }
+
+  /*
+   * The status region is announced, not seen. It must stay in the accessibility tree, so it
+   * cannot use display:none or the visually-hidden clip trick would also drop it from some
+   * screen readers' virtual buffers. This keeps it rendered but out of the layout.
+   */
+  return-policy-acknowledgment-component .return-policy-acknowledgment__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   /*
    * The shared checkbox snippet (snippets/checkbox.liquid) ships with
    * white-space: nowrap + text-overflow: ellipsis on .checkbox__label-text
    * (assets/base.css:2634-2639) because it was designed for short labels
-   * (e.g. "Include gift wrap"). Our acknowledgement copy is a full sentence
-   * and gets truncated mid-word on narrow product columns. Allow wrapping
-   * here only; line-height + flex-start keep the icon aligned with the first
-   * line when the label wraps.
+   * (e.g. "Include gift wrap"). The default label is short now, but the
+   * setting is merchant-editable, so keep the wrap override.
    */
   return-policy-acknowledgment-component .checkbox__label {
     align-items: flex-start;
@@ -130,8 +281,15 @@
 {% schema %}
 {
   "name": "t:names.return_policy_acknowledgment",
-  "tag": "return-policy-acknowledgment-component",
+  "tag": null,
   "settings": [
+    {
+      "type": "richtext",
+      "id": "terms",
+      "label": "t:settings.return_policy_acknowledgment.terms",
+      "default": "t:settings.return_policy_acknowledgment.default_terms",
+      "info": "t:settings.return_policy_acknowledgment.terms_info"
+    },
     {
       "type": "text",
       "id": "checkbox_label",

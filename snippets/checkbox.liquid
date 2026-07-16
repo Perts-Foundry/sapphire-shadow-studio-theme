@@ -13,6 +13,8 @@
   @param {string} [inputRef] - input ref attribute for use with component framework
   @param {string} [labelRef] - label ref attribute for use with component framework
   @param {boolean} [autofocus] - whether the input should be autofocused
+  @param {string} [describedBy] - space-separated id list for aria-describedby, e.g. a terms
+    summary and an error message. Use when the label alone does not carry the meaning.
 {%- enddoc -%}
 <div
   class="checkbox{% if disabled %} checkbox--disabled{% endif %}"
@@ -40,17 +42,24 @@
     {% if inputRef != blank %}
       ref="{{ inputRef }}"
     {% endif %}
+    {% if describedBy != blank %}
+      aria-describedby="{{ describedBy }}"
+    {% endif %}
     {% if autofocus %}
       autofocus
     {% endif %}
   >
+  {%- comment -%}
+    No role override here. The <input> above is the checkbox; giving this <label> role="checkbox"
+    (as it used to) exposed a second, nameless checkbox node with no aria-checked state to every
+    screen reader, next to every real checkbox in the theme. The label is a label.
+  {%- endcomment -%}
   <label
     class="checkbox__label"
     for="{{ id }}"
     {% if labelRef != blank %}
       ref="{{ labelRef }}"
     {% endif %}
-    role="checkbox"
   >
     {{ 'icon-checkmark.svg' | inline_asset_content }}
     <span class="checkbox__label-text">{{- label -}}</span>

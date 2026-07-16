@@ -1,0 +1,54 @@
+{%- doc -%}
+  Renders a "Size guide" link that opens and scrolls to the Size Chart accordion row further down
+  the product page.
+
+  Rendered beside the size option by `snippets/variant-main-picker.liquid`, which decides *which*
+  option is the size one via `snippets/size-option-position.liquid`. This snippet only draws the
+  link.
+
+  The `#SizeChart` target is a cross-layer contract: `scripts/size-chart/lib/table-block.mjs`
+  writes `anchor_id: 'SizeChart'` into each product template, and `blocks/_accordion-row.liquid`
+  renders it as an id on its `<summary>`. The literal is duplicated here because the theme has no
+  build step and Liquid cannot read the JS constant. Do not rename it here alone;
+  `scripts/size-chart/test/anchor-contract.test.mjs` is what fails if you do.
+
+  A real `<a href>` rather than a button, so the link can be copied, opened in a new tab, and read
+  as a link by assistive tech. When the target is missing (a product with a size option but no
+  generated chart), `assets/size-guide-link.js` removes the link rather than leaving a control
+  that silently does nothing.
+
+  @example
+  {% render 'size-guide-link' %}
+{%- enddoc -%}
+<size-guide-link class="size-guide-link">
+  <a class="size-guide-link__anchor" href="#SizeChart" on:click="/handleClick">
+    {{- 'products.product.size_guide_link_label' | t -}}
+  </a>
+</size-guide-link>
+
+{% stylesheet %}
+  .size-guide-link {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  /*
+   * The hit area, not the text, is what has to reach 44x44 (CLAUDE.md; WCAG 2.5.8 asks for 24x24).
+   * Text alone lands around 17-20px tall. The 2.5.8 inline exception does not apply: this is a
+   * standalone control in an option header, not a link inside a sentence.
+   *
+   * Padding does the work, and the negative inline margin pulls the padded box back so the link
+   * text still sits flush with the option row's edge. min-height rather than height so it grows
+   * with a longer translation.
+   */
+  .size-guide-link__anchor {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: var(--padding-xs, 0.5rem);
+    margin-inline-end: calc(var(--padding-xs, 0.5rem) * -1);
+    font-size: var(--font-size--xs);
+    text-underline-offset: 0.2em;
+    white-space: nowrap;
+  }
+{% endstylesheet %}

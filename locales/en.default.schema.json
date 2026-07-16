@@ -760,6 +760,10 @@
     "account": "Account",
     "alignment": "Alignment",
     "alignment_mobile": "Mobile alignment",
+    "anchor_id": "Anchor ID",
+    "anchor_id_info": "Lets other blocks link straight to this row. Plain name, no spaces (for example Shipping). Must be unique on the page. Leave blank for no link target.",
+    "size_option": "Size option",
+    "size_option_info": "The product option holding sizes. Adds a size-guide link beside it. Leave blank to hide the link.",
     "align_baseline": "Align text baseline",
     "animation": "Animation",
     "animation_repeat": "Repeat animation",
@@ -1074,8 +1078,11 @@
     },
     "return_policy_acknowledgment": {
       "label": "Checkbox label",
-      "default_label": "I understand this item is personalized and final sale. No returns or exchanges.",
-      "label_info": "Shown next to the required checkbox on the product page."
+      "default_label": "I agree to the above",
+      "label_info": "Shown next to the required checkbox on the product page. The terms above carry the meaning; keep this short.",
+      "terms": "Terms",
+      "default_terms": "<p><strong>Before you order</strong></p><ul><li>Made to order just for you.</li><li>Final sale: no returns or exchanges.</li><li>Check the size chart before you choose your size.</li></ul>",
+      "terms_info": "Shown above the checkbox and read out as its description. Leave blank to hide the whole acknowledgement."
     },
     "row": "Row",
     "scroll_speed": "Time to next announcement",

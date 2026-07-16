@@ -1,0 +1,36 @@
+{%- doc -%}
+  Echoes the 1-based position of the product option that holds sizes, or nothing when there is
+  no match. The option is identified by the global `settings.size_option_name` theme setting.
+
+  Two consumers rely on this, which is why the lookup is shared rather than duplicated:
+  `snippets/variant-main-picker.liquid` (to place the size-guide link beside the right option)
+  and `blocks/return-policy-acknowledgment.liquid` (to record the confirmed size on the
+  line-item property). A theme block cannot read another block's settings, so a block-level
+  setting would mean two sources of truth that drift apart silently; one global setting keeps
+  them honest.
+
+  Emits nothing when `settings.size_option_name` is blank, which is the intended kill switch:
+  no size-guide link anywhere, and the acknowledgement falls back to the variant title.
+
+  Callers must strip the captured value before comparing it numerically. This snippet already
+  avoids emitting whitespace, but `{% capture %}` preserves whatever surrounds the render tag.
+
+  @param {object} product_resource - The product whose options are searched.
+
+  @example
+  {%- capture size_position %}{% render 'size-option-position', product_resource: product %}{% endcapture -%}
+  {%- assign size_position = size_position | strip -%}
+{%- enddoc -%}
+{%- liquid
+  assign target = settings.size_option_name | downcase | strip
+
+  if target != blank
+    for product_option in product_resource.options_with_values
+      assign option_name = product_option.name | downcase | strip
+      if option_name == target
+        echo product_option.position
+        break
+      endif
+    endfor
+  endif
+-%}

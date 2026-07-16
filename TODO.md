@@ -19,16 +19,34 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   Blocked in practice on having per-colour photography: the quarter-zip has black / blue / gray, the
   women's vest is black only.
 
-- [ ] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
-  Half of this exists: `blocks/return-policy-acknowledgment.liquid` already renders a *required*
-  checkbox bound to the product form with a configurable `checkbox_label`, and its click handler
-  scrolls itself into view. Two gaps. (1) It is missing from `product.shift-fuel-crewneck.json` (the
-  Shift Fuel crewneck); the other four product templates carry it. (2) It does not mention the size
-  guide. Decide whether that is a second required checkbox or one combined acknowledgement, and note
-  the tension: every extra required checkbox is add-to-cart friction, and the size-chart backlog
-  already deliberately excluded a "pre-purchase size nudge" for that reason. Pairs with the
-  size-guide-link item below, since asking someone to review a guide they cannot find from the buy
-  button is worse than not asking.
+- [x] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
+  Shipped as a terms summary (merchant-editable `richtext`) plus one required "I agree" checkbox,
+  wired together with `aria-describedby`, and a policy link outside the label. The checkbox unticks
+  itself on any option change, which is what lets the `properties[Return policy acknowledged]` value
+  name the confirmed size honestly: the box can only ever be ticked for the variant on screen.
+  Unticking re-hides accelerated checkout and is announced in a polite live region. Blank `terms`
+  hides the block entirely (hence `"tag": null`, so no empty element trips the fail-closed
+  `:has()` rule). Validation now renders as visible text with `aria-invalid`, not just the native
+  bubble.
+  **The original note here had gap (1) backwards**: it called for adding the block to
+  `product.shift-fuel-crewneck.json`. That is the one product with no personalization and a plain
+  14-day return window, so it is the one product the checkbox must not appear on. The real
+  inconsistency was `product.huddle-crewneck.json`, which carried the checkbox while its own Returns
+  Policy accordion promised a 14-day return. Kept rather than deleted, because the mistake is the
+  useful part: block placement, not block content, is what expresses the policy.
+
+- [ ] **Gift card template.** The gift card product is active, has no product template, and this
+  theme ships no default `templates/product.json`. Decide what it renders with. The FAQ copy already
+  states gift cards are not returnable, so that answer does not depend on this; the open question is
+  what the product page itself uses.
+
+- [ ] **Revisit the Shift Fuel return window for consistency.** It is the only product that accepts
+  returns. Worth confirming that is still the intent once the catalogue settles.
+
+- [ ] **Size-guide link on products with no chart.** `assets/size-guide-link.js` removes the link
+  when `#SizeChart` is absent, so a product with a size option but no generated chart degrades
+  cleanly with JS on. With JS off the link renders and does nothing. Gate it in Liquid instead if a
+  chartless product with sizes ever ships.
 
 ## Size-chart tooling
 
@@ -90,12 +108,20 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
   "size up for room / down for a closer fit" sentence currently sitting in the shared choosing copy,
   since the direction depends on the cut.
 
-- [ ] **Size-guide link at the size selector (imp 4).** The chart is only reachable via the Size
-  Chart accordion below the buy buttons; nothing sits next to the variant/size picker where the size
-  decision happens. Add a small "Size guide" link/anchor beside the variant-picker that opens or
-  scrolls to the accordion. Theme-level change (variant-picker / product-details), outside the
-  current tooling; could optionally be emitted by `apply-size-chart.mjs`. Pairs with the
-  acknowledgement-checkbox item above.
+- [x] **Size-guide link at the size selector (imp 4).** Shipped. `snippets/size-guide-link.liquid` +
+  `assets/size-guide-link.js` render a real `<a href="#SizeChart">` beside the size option on both
+  variant-picker styles; it opens the accordion row, scrolls, and moves focus to the summary. The
+  size option is identified by a global `size_option_name` setting resolved through
+  `snippets/size-option-position.liquid`, shared with the acknowledgement block because a theme
+  block cannot read another block's settings. `_accordion-row.liquid` gained an optional `anchor_id`
+  setting, emitted as `SizeChart` by `table-block.mjs`, so it does survive `apply-size-chart.mjs`
+  (a hand-edited value would be upserted away). `accordion-custom.js` gained a `data-latched-open`
+  latch so a row opened this way is not slammed shut by the 750px breakpoint handler, and it now
+  honours a direct `#SizeChart` page load.
+  **Cross-layer contract**: the anchor literal is duplicated across the generator, the Liquid, and
+  the link's href, because the theme has no build step. `test/anchor-contract.test.mjs` is the only
+  thing holding those together; the goldens cannot, since they compare the generator to its own
+  output.
 
 - [ ] **Fabric & care block (imp 4/3).** Add an optional `fabric` object to the profile schema
   (`pre_shrunk` bool + `care` string + weight / composition / stretch) and render a compact

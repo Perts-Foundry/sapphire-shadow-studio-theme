@@ -7,6 +7,18 @@
 
 {% unless product_resource == blank %}
   {% render 'variant-main-picker', product_resource: product_resource %}
+
+  {%- comment -%}
+    Upgrades the size-guide link that variant-main-picker renders beside the size option (see
+    snippets/size-guide-link.liquid). Loaded here rather than from the snippet because the snippet
+    emits its markup inside a <legend>, and once per matching option; this block renders once per
+    picker. The link works without it, just without the open-the-accordion behaviour.
+  {%- endcomment -%}
+  <script
+    src="{{ 'size-guide-link.js' | asset_url }}"
+    type="module"
+    fetchpriority="low"
+  ></script>
 {% endunless %}
 
 {% schema %}
