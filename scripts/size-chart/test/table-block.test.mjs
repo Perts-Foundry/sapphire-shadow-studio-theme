@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAccordionRow, ACCORDION_ROW_ID, ANCHOR_ID } from '../lib/table-block.mjs';
+import { buildAccordionRow, ACCORDION_ROW_ID } from '../lib/table-block.mjs';
 import {
   ACCORDION_HTML_DIR,
   accordionHtmlOf,
@@ -42,24 +42,9 @@ for (const f of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
   }
 }
 
-// ── Anchor id ─────────────────────────────────────────────────────────────────
-//
-// Two assertions, deliberately not one. `row.settings.anchor_id === ANCHOR_ID` on its own is
-// nearly worthless: rename the constant to 'SizeGuide' and both sides of that comparison move
-// together, `apply-size-chart.mjs` rewrites the templates to agree, every golden above still
-// passes, and the suite goes green while snippets/size-guide-link.liquid's href="#SizeChart"
-// points at nothing. The JS and Liquid layers depend on the literal, not on the constant, so the
-// literal is what has to be pinned. See test/anchor-contract.test.mjs for the other end.
-
-test('ANCHOR_ID is the literal the Liquid layer hardcodes', () => {
-  assert.equal(ANCHOR_ID, 'SizeChart');
-});
-
-test('every generated row carries the anchor id', () => {
-  for (const profile of profiles) {
-    assert.equal(buildAccordionRow(profile).settings.anchor_id, ANCHOR_ID, profile.blank_id);
-  }
-});
+// The anchor id this row carries is asserted in test/anchor-contract.test.mjs, which owns that
+// contract end to end. Nothing about it belongs here: a test in this file would compare the
+// generator against its own constant and agree by construction.
 
 // ── Accordion prose characterisation ──────────────────────────────────────────
 //

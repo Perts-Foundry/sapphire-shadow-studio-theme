@@ -135,10 +135,15 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     errorMessage.hidden = false;
     checkbox.setAttribute('aria-invalid', 'true');
 
+    // #baseDescribedBy is captured once from the server-rendered attribute and never mutated, so
+    // it holds the terms id and nothing else; no need to check whether the error id is already in
+    // it. setAttribute is idempotent, so a repeat call is harmless.
     const errorId = errorMessage.id;
-    if (errorId && !this.#baseDescribedBy.split(/\s+/).includes(errorId)) {
-      const described = this.#baseDescribedBy ? `${this.#baseDescribedBy} ${errorId}` : errorId;
-      checkbox.setAttribute('aria-describedby', described);
+    if (errorId) {
+      checkbox.setAttribute(
+        'aria-describedby',
+        this.#baseDescribedBy ? `${this.#baseDescribedBy} ${errorId}` : errorId
+      );
     }
   }
 

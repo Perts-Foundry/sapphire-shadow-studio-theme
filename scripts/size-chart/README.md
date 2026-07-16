@@ -120,6 +120,30 @@ to skip that check.
 
 It never commits, pushes, opens a PR, or comments `deploy`; that stays your step.
 
+### The `SizeChart` anchor (a contract this tooling owns)
+
+The row's settings also carry `anchor_id: 'SizeChart'` (`ANCHOR_ID` in `lib/table-block.mjs`).
+`blocks/_accordion-row.liquid` renders that value as an `id` on its `<summary>`, and
+`snippets/size-guide-link.liquid` links to `href="#SizeChart"` from beside the size selector. So
+this tooling writes a **theme-visible identifier**: the rest of `scripts/` is inert, but this value
+is not.
+
+The literal is duplicated across those three layers because there is no build step (theme assets
+ship as-is), so Liquid cannot read the JS constant. **No golden can catch a rename**: the goldens
+compare each shipped row against a rebuild from the same generator, so changing `ANCHOR_ID` and
+re-running `apply-size-chart.mjs` makes the templates agree and every one of them stays green while
+the size-guide link points at nothing. It fails silently in the browser too, because
+`assets/size-guide-link.js` deliberately bails rather than hijacking a missing anchor.
+
+`test/anchor-contract.test.mjs` is the only thing holding the ends together. It hardcodes the
+literal rather than importing `ANCHOR_ID` (same reasoning as `test/profiles.test.mjs:66`: a test
+that reads the writer's own constant agrees with it by construction), so renaming the anchor means
+deliberately editing that test. That is intended: `#SizeChart` is also an **external** contract,
+since `assets/accordion-custom.js` honours a shared or bookmarked `/products/<handle>#SizeChart`
+URL, and a rename breaks links already in the wild.
+
+Hand-editing `anchor_id` in a template is pointless: it is upserted away on the next run.
+
 ## Tests
 
 ```bash
@@ -136,8 +160,16 @@ an already-charted one cannot keep the source blank's chart, and a profile edite
 (the only check that would see the default `product.json`, which no profile's handles can claim),
 an environment-independent **SVG golden** of the crewneck PNG (so the canonical SS3000 design cannot
 silently change), the canvas overflow guard, template-writer idempotency / byte-stability, the
-sync-guard decision, and a render smoke check. Run it locally before
-committing changes to this tooling. It also runs in CI as the `Size chart tests` step of
+sync-guard decision, the **anchor contract** described above (the generator's emitted value against
+the hardcoded literal, the link's `href`, the block's schema key and escaped-and-guarded `<summary>`
+id, and no duplicate `SizeChart` anchor on any product template), and a render smoke check. Run it
+locally before committing changes to this tooling.
+
+`test/anchor-contract.test.mjs` is the one suite that reads theme files rather than tooling output,
+which is deliberate: the tooling writes the value, so the tooling owns the contract, and this is the
+only layer in the repo with a test runner. It asserts on markup only, stripping `{% comment %}` and
+`{% doc %}` first, because those files document the very markup being pinned and an unstripped grep
+would happily match the prose instead of the tag. It also runs in CI as the `Size chart tests` step of
 `validate.yml`, so a red suite blocks the PR. That is deliberate despite this being operator tooling
 rather than shipped theme code: the suite owns the on-page size-chart prose, and its cohesion goldens
 assert that generated output still matches the shipped product templates. That invariant is only

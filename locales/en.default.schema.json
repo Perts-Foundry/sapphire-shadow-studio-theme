@@ -761,7 +761,7 @@
     "alignment": "Alignment",
     "alignment_mobile": "Mobile alignment",
     "anchor_id": "Anchor ID",
-    "anchor_id_info": "Lets other blocks link straight to this row. Plain name, no spaces (for example SizeChart). Leave blank for no link target.",
+    "anchor_id_info": "Lets other blocks link straight to this row. Plain name, no spaces (for example Shipping). Must be unique on the page. Leave blank for no link target.",
     "size_option": "Size option",
     "size_option_info": "The product option holding sizes. Adds a size-guide link beside it. Leave blank to hide the link.",
     "align_baseline": "Align text baseline",

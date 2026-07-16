@@ -17,10 +17,11 @@
   - Hides the accelerated-checkout container (Shop Pay / Apple Pay / Google Pay) while the box
     is unchecked via a `data-return-policy-pending` attribute set on this element. The
     cross-block CSS hook is documented inline in `blocks/accelerated-checkout.liquid`.
-  - Renders its validation message as visible text with `aria-invalid` / `aria-errormessage`,
-    not only as the browser's native bubble. Native bubbles auto-dismiss, vanish on scroll or
-    blur, cannot be magnified, and expose no programmatic association, so they cannot be the
-    only error mechanism (WCAG 3.3.1). The bubble still fires; it is a bonus.
+  - Renders its validation message as visible `role="alert"` text, with `aria-invalid` on the
+    checkbox and the message's id appended to its `aria-describedby`, rather than relying on the
+    browser's native bubble. Native bubbles auto-dismiss, vanish on scroll or blur, cannot be
+    magnified, and expose no programmatic association, so they cannot be the only error mechanism
+    (WCAG 3.3.1). The bubble still fires; it is a bonus.
 
   **Blank `terms` hides the whole block.** A required checkbox reading "I agree to the above"
   with nothing above it is a consent gate with no terms, which is worse than no gate at all.
@@ -119,14 +120,20 @@
     %}
 
     {%- comment -%}
-      The visible error message. Empty until JS fills it from the hidden source below, so it
-      never occupies space or announces on a valid form. `aria-errormessage` is only honoured
-      while `aria-invalid="true"`, both of which the JS toggles together.
+      The visible error message. Empty until JS fills it, so it never occupies space or announces
+      on a valid form. `role="alert"` is what makes it announce the moment it is filled; without
+      it the message appears silently unless focus happens to be on the checkbox. Matches
+      blocks/embroidery-custom-text.liquid and the Form pattern in docs/accessibility-patterns.md.
+
+      The JS pairs this with `aria-invalid` on the checkbox and appends this id to the checkbox's
+      `aria-describedby` (not `aria-errormessage`, which has thinner support). That is why the
+      shared checkbox snippet's `describedBy` param takes a token list.
     {%- endcomment -%}
     <p
       id="{{ error_id }}"
       class="return-policy-acknowledgment__error"
       ref="errorMessage"
+      role="alert"
       hidden
     ></p>
 
@@ -139,10 +146,13 @@
       change, not this, so it must not interrupt. Empty on load so it announces nothing until
       there is something to say.
     {%- endcomment -%}
+    {%- comment -%}
+      `role="status"` alone: it already implies aria-live="polite" plus aria-atomic="true", and
+      carrying both has been reported to double-announce in some AT pairings.
+    {%- endcomment -%}
     <p
       class="return-policy-acknowledgment__status"
       role="status"
-      aria-live="polite"
       ref="statusMessage"
     ></p>
 

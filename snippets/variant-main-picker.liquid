@@ -42,7 +42,22 @@
     {%- capture size_position_raw -%}
       {%- render 'size-option-position', product_resource: product_resource -%}
     {%- endcapture -%}
+    {%- comment -%}
+      Coerce to a number before comparing. `product_option.position` is an integer and a captured
+      value is always a string, and Liquid's `==` does not coerce: `3 == "3"` is false, so
+      comparing the raw capture matches nothing and the link silently never renders. `| plus: 0`
+      is the coercion (filters DO coerce, which is also why the acknowledgement block's
+      `| minus: 1` works on the same value).
+
+      -1 for "no size option", rather than letting a blank capture become 0 via `plus`: 0 is not
+      blank, so a blank-means-off check on the coerced value would read as "on". No option has
+      position -1, so it matches nothing.
+    {%- endcomment -%}
     {%- assign size_position = size_position_raw | strip -%}
+    {%- assign size_position_num = -1 -%}
+    {%- if size_position != blank -%}
+      {%- assign size_position_num = size_position | plus: 0 -%}
+    {%- endif -%}
 
     <form class="variant-picker__form">
       {%- for product_option in product_resource.options_with_values -%}
@@ -69,7 +84,7 @@
           {%- assign fieldset_index = forloop.index0 -%}
           {%- liquid
             assign is_size_option = false
-            if size_position != blank and product_option.position == size_position
+            if product_option.position == size_position_num
               assign is_size_option = true
             endif
             assign option_name_id = 'VariantOptionName-' | append: block.id | append: '-' | append: fieldset_index
@@ -191,7 +206,7 @@
 
           {%- liquid
             assign is_size_option = false
-            if size_position != blank and product_option.position == size_position
+            if product_option.position == size_position_num
               assign is_size_option = true
             endif
           -%}
