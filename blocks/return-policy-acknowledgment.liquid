@@ -5,7 +5,7 @@
   - Renders a merchant-editable terms summary, then a required checkbox bound to the product
     form via `form="..."`, so native HTML5 submit-time validation blocks Add to Cart until
     ticked. The terms are wired to the checkbox with `aria-describedby`: the label is short
-    ("I agree to the above") and does not carry the meaning on its own, so the terms are the
+    ("I understand the above") and does not carry the meaning on its own, so the terms are the
     accessible description rather than decoration.
   - Records the acknowledgement as a `properties[Return policy acknowledged]` line-item
     property, whose value names the size that was on screen when the shopper agreed. For
@@ -23,7 +23,7 @@
     magnified, and expose no programmatic association, so they cannot be the only error mechanism
     (WCAG 3.3.1). The bubble still fires; it is a bonus.
 
-  **Blank `terms` hides the whole block.** A required checkbox reading "I agree to the above"
+  **Blank `terms` hides the whole block.** A required checkbox reading "I understand the above"
   with nothing above it is a consent gate with no terms, which is worse than no gate at all.
 
   That is why the schema declares `"tag": null` and this file emits its own
@@ -105,6 +105,15 @@
     {%- endcomment -%}
     <div id="{{ terms_id }}" class="return-policy-acknowledgment__terms">{{ block.settings.terms }}</div>
 
+    {%- comment -%}
+      The policy link sits above the checkbox by design: read the terms, follow the link to the
+      full policy if wanted, then agree. It is not part of the checkbox's `aria-describedby`
+      (that is the terms div), so its position here is purely reading order.
+    {%- endcomment -%}
+    <p class="return-policy-acknowledgment__policy-link">
+      <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
+    </p>
+
     {% render 'checkbox',
       name: 'properties[Return policy acknowledged]',
       value: initial_value,
@@ -136,10 +145,6 @@
       role="alert"
       hidden
     ></p>
-
-    <p class="return-policy-acknowledgment__policy-link">
-      <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
-    </p>
 
     {%- comment -%}
       Announces the automatic untick on option change. Politely: the shopper initiated an option
@@ -241,6 +246,8 @@
   return-policy-acknowledgment-component .checkbox__label {
     align-items: flex-start;
     line-height: 1.4;
+    /* Small separation from the policy link above, so the consent control reads as distinct. */
+    margin-block-start: var(--padding-2xs);
   }
 
   return-policy-acknowledgment-component .checkbox__label-text {
