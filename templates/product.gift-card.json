@@ -222,7 +222,7 @@
             "return_policy_ack_001": {
               "type": "return-policy-acknowledgment",
               "settings": {
-                "terms": "<p><strong>Before you order</strong></p><ul><li>Gift cards are delivered by email, not shipped.</li><li>Gift cards are not returnable or refundable.</li><li>Double-check the amount and the recipient's email before you add to cart.</li></ul>",
+                "terms": "<p><strong>Before you order, please review the following:</strong></p><ul><li>Gift cards are delivered by email, not shipped.</li><li>Gift cards are not returnable or refundable.</li><li>Double-check the amount and the recipient's email before you add to cart.</li></ul>",
                 "padding-block-start": 0,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,

@@ -193,9 +193,19 @@
     width: 100%;
   }
 
+  /*
+   * Consistent vertical rhythm with the adjacent custom-text block, whose heading uses
+   * `margin-block: 0 var(--padding-sm)`. Every major gap inside this block (heading -> bullets,
+   * bullets -> policy link, policy link -> checkbox) is one --padding-sm step, and no element
+   * adds its own extra above/below, so the spacing reads as uniform.
+   */
   return-policy-acknowledgment-component .return-policy-acknowledgment__terms {
-    margin-block-end: var(--padding-xs);
+    margin-block-end: var(--padding-sm);
     font-size: var(--font-size--xs);
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__terms p {
+    margin-block: 0 var(--padding-sm);
   }
 
   return-policy-acknowledgment-component .return-policy-acknowledgment__terms ul {
@@ -203,13 +213,8 @@
     padding-inline-start: 1.25em;
   }
 
-  /* Drop the leading paragraph's default top margin so the terms sit tight to the block top. */
-  return-policy-acknowledgment-component .return-policy-acknowledgment__terms > :first-child {
-    margin-block-start: 0;
-  }
-
   return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
-    margin-block: var(--padding-xs) 0;
+    margin-block: 0;
     font-size: var(--font-size--xs);
   }
 
@@ -251,8 +256,8 @@
   return-policy-acknowledgment-component .checkbox__label {
     align-items: flex-start;
     line-height: 1.4;
-    /* Separation from the policy link above, so the consent control reads as distinct. */
-    margin-block-start: var(--padding-xs);
+    /* Separation from the policy link above, one --padding-sm step like the other gaps. */
+    margin-block-start: var(--padding-sm);
   }
 
   return-policy-acknowledgment-component .checkbox__label-text {

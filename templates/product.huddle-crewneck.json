@@ -227,7 +227,7 @@
                 "placeholder": "Select a pattern (required)",
                 "pattern_options": "1. Medic\n2. Pink\n3. Test",
                 "padding-block-start": 0,
-                "padding-block-end": 8,
+                "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
               },
@@ -282,7 +282,7 @@
               "type": "request-combination",
               "settings": {
                 "custom_order_page": "custom-orders",
-                "padding-block-start": 8,
+                "padding-block-start": 0,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
