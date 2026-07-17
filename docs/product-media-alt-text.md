@@ -60,10 +60,23 @@ crewneck" names no value, becomes shared, and shows under Black and Gray as well
 
 **Check the value in Admin before trusting that.** Because the vocabulary is per product, the
 trap runs in reverse on any product whose Color option really does list `Blue`: there, "Navy
-quarter-zip" is the string that names no value and goes shared. The quarter-zip and the vest do
-not exist in Admin yet, so their values are still undecided. Keep every product on `Black` /
-`Gray` / `Navy` so one vocabulary covers the catalogue, and if one ever has to diverge, record it
-here.
+quarter-zip" is the string that names no value and goes shared.
+
+The values in Admin today, which is the only authority:
+
+| Product | Color option values |
+|---|---|
+| Lead II Crewneck | `Black` / `Gray` / `Navy` |
+| Lead II Quarter-Zip | `Black` / `Gray` / `Navy` |
+| Shift Fuel Crewneck | `Black` / `Gray` / `Navy` |
+| Huddle Crewneck | `Black` / `Gray` / `Navy` |
+| **Lead II Vest, Women's** | **`Black` only** |
+
+No product uses `Blue`, so every `blue-*.jpg` file is a `Navy` photo. The vest is the one
+deliberate divergence: it is sold in black only, so `Black` is its entire vocabulary and `Gray`
+and `Navy` are ordinary words there, reserved nowhere on that product. Keep new products on
+`Black` / `Gray` / `Navy` unless there is a reason not to, and record any further divergence in
+this table.
 
 ## Sharing a photo across every colour
 
