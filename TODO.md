@@ -34,10 +34,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   Attaching one hero per colour remains worth doing on its own merits, since `variant.image` drives
   cart line-item thumbnails and collection cards, which the gallery filter never touches. Photography
   coverage today, by *filename* colour: the crewnecks have black / blue / gray, the quarter-zip
-  black / blue / gray, the women's vest black only. Those are not the Admin option values: the
-  crewnecks' values are `Black` / `Gray` / `Navy`, and the `blue-*` files are the Navy ones. The
-  quarter-zip and vest do not exist in Admin yet, so their values are undecided; keep them on the
-  same three. See `docs/product-media-alt-text.md`, which is where that trap is spelled out.
+  black / blue / gray, the women's vest black only. Those are not the Admin option values: every
+  product's values are `Black` / `Gray` / `Navy` (the vest, `Black` only), and the `blue-*` files
+  are the Navy ones. All 53 media across the five products were alt-tagged on 2026-07-17. Huddle
+  is deliberately left unbound because its colour and design are locked 1:1, so filtering by
+  colour would hide the shopper's chosen design. See `docs/product-media-alt-text.md`, which
+  carries the per-product value table and the traps.
 
 - [x] **Require acknowledging the return policy and reviewing the size guide before add-to-cart.**
   Shipped as a terms summary (merchant-editable `richtext`) plus one required "I agree" checkbox,
@@ -68,6 +70,21 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   cleanly with JS on. With JS off the link renders and does nothing. Gate it in Liquid instead if a
   chartless product with sizes ever ships.
 
+- [ ] **Remove the brand logo SVG from the product galleries.** Every product carries an
+  `SSS-Square-*.svg` in its media (`SSS-Square-transparent-svg.svg` on the three crewnecks,
+  `SSS-Square-White-BG-svg.svg` on the quarter-zip and vest), left over from before real
+  photography existed. It is a logo, not a product photo, and it names no colour, so the gallery
+  filter treats it as shared and shows it on every colourway. It has alt text now
+  (`Sapphire Shadow Studio logo`), so it is not an accessibility problem, just a merchandising
+  one. Deleting it in Admin is the fix; nothing in the theme needs to change.
+
+- [ ] **Shift Fuel's gray colourway photographs badly.** The design is white thread on light
+  heather, so at full-garment scale it is effectively invisible; only the close-up
+  (`crew-caffeine-trauma-gray-3.jpg`) shows it. This did not matter while every colour showed all
+  the photos, but now that Gray filters to its own three, two of the three read as a blank
+  sweatshirt. Either reorder that variant's media so the close-up leads, or reshoot the gray in a
+  contrasting thread. Worth confirming on the storefront before deciding.
+
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent
@@ -92,8 +109,8 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
   authored heading/how + optional `derive`) and pick a `garment` silhouette (crewneck / quarter-zip /
   vest, with a no-diagram fallback). The quarter-zip and the women's microfleece vest are onboarded
   end to end: profile, PNG, and on-page row in `templates/product.lead-ii-quarter-zip.json` and
-  `product.lead-ii-vest-womens.json`. Neither product exists in Shopify Admin yet, so their
-  storefront URLs do not resolve; Admin creation is the remaining step, not template work.
+  `product.lead-ii-vest-womens.json`. Both products were created in Shopify Admin on 2026-07-17
+  with their media and size-chart PNGs uploaded, so this is complete.
 
 - **Vertical-rhythm pass on the PNG.** Tightened the top whitespace and derived canvas height from
   content plus a fixed bottom margin, so every garment gets matching top/bottom whitespace
