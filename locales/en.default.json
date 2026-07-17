@@ -378,7 +378,7 @@
       "return_policy_acknowledgment_invalid": "Please acknowledge the return policy before adding to cart.",
       "return_policy_link_label": "See the Return Policy",
       "return_policy_acknowledgment_cleared": "Your acknowledgement was cleared because you changed an option. Please review the terms and agree again.",
-      "return_policy_acknowledgment_value": "Final sale, size [size] confirmed",
+      "return_policy_acknowledgment_value": "Final sale, size {{ size }} confirmed",
       "return_policy_acknowledgment_value_no_size": "Final sale confirmed",
       "size_guide_link_label": "Size guide",
       "custom_text_invalid": "Please fill out this field before adding to cart."
