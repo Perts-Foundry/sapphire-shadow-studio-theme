@@ -203,6 +203,11 @@
     padding-inline-start: 1.25em;
   }
 
+  /* Drop the leading paragraph's default top margin so the terms sit tight to the block top. */
+  return-policy-acknowledgment-component .return-policy-acknowledgment__terms > :first-child {
+    margin-block-start: 0;
+  }
+
   return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
     margin-block: var(--padding-xs) 0;
     font-size: var(--font-size--xs);
@@ -246,14 +251,15 @@
   return-policy-acknowledgment-component .checkbox__label {
     align-items: flex-start;
     line-height: 1.4;
-    /* Small separation from the policy link above, so the consent control reads as distinct. */
-    margin-block-start: var(--padding-2xs);
+    /* Separation from the policy link above, so the consent control reads as distinct. */
+    margin-block-start: var(--padding-xs);
   }
 
   return-policy-acknowledgment-component .checkbox__label-text {
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
+    font-weight: bold;
   }
 
   /*
