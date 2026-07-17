@@ -355,8 +355,7 @@
       "return_policy_acknowledgment_invalid": "TODO: Please acknowledge the return policy before adding to cart.",
       "return_policy_link_label": "TODO: See the Return Policy",
       "return_policy_acknowledgment_cleared": "TODO: Your acknowledgement was cleared because you changed an option. Please review the terms and agree again.",
-      "return_policy_acknowledgment_value": "TODO: Final sale, size [size] confirmed",
-      "return_policy_acknowledgment_value_no_size": "TODO: Final sale confirmed",
+      "return_policy_acknowledgment_value": "TODO: Yes",
       "size_guide_link_label": "TODO: Size guide",
       "custom_text_invalid": "TODO: Please fill out this field before adding to cart."
     }

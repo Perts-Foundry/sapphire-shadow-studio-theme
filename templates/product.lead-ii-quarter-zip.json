@@ -232,7 +232,7 @@
                 "placeholder": "Your name here...",
                 "placeholder_textarea": "Enter your special instructions",
                 "padding-block-start": 0,
-                "padding-block-end": 8,
+                "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
               },
@@ -241,7 +241,7 @@
             "return_policy_ack_001": {
               "type": "return-policy-acknowledgment",
               "settings": {
-                "padding-block-start": 8,
+                "padding-block-start": 0,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
@@ -287,7 +287,7 @@
               "type": "request-combination",
               "settings": {
                 "custom_order_page": "custom-orders",
-                "padding-block-start": 8,
+                "padding-block-start": 0,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0

@@ -6,8 +6,6 @@ import { ThemeEvents } from '@theme/events';
  * @property {HTMLInputElement} checkbox
  * @property {HTMLElement} invalidMessage
  * @property {HTMLElement} clearedMessage
- * @property {HTMLElement} valueTemplate
- * @property {HTMLElement} valueTemplateNoSize
  * @property {HTMLElement} errorMessage
  * @property {HTMLElement} statusMessage
  */
@@ -173,11 +171,11 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     const scope = this.closest('[id^="ProductInformation-"]');
 
     if (!scope) {
-      // Loud on purpose. Degrading quietly here would leave the checkbox ticked across an
-      // option change and record a size the shopper never confirmed, which is precisely the
-      // thing this component exists to prevent. A warning is recoverable; wrong evidence is not.
+      // Loud on purpose. Degrading quietly here would leave the checkbox ticked across an option
+      // change, recording consent for a variant the shopper never re-confirmed, which is precisely
+      // the thing this component exists to prevent. A warning is recoverable; wrong evidence is not.
       console.error(
-        '[return-policy-acknowledgment] No [id^="ProductInformation-"] ancestor. Option changes will not clear the acknowledgement, so the recorded size may not match what the shopper agreed to.'
+        '[return-policy-acknowledgment] No [id^="ProductInformation-"] ancestor. Option changes will not clear the acknowledgement, so consent may be recorded for a variant the shopper did not confirm.'
       );
       return;
     }
@@ -188,13 +186,9 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
   }
 
   /**
-   * Clears the acknowledgement whenever the shopper changes any option, and re-points the
-   * recorded value at the newly selected size.
-   *
-   * Unticking is what makes the line-item property honest: the box can only ever be ticked for
-   * the variant currently on screen, so the value that submits is always the one the shopper
-   * actually agreed to. (An unchecked checkbox submits nothing at all, so the value is only ever
-   * recorded when ticked.)
+   * Clears the acknowledgement whenever the shopper changes any option, so consent is re-affirmed
+   * for the variant actually on screen (the size guide is size-specific). An unchecked checkbox
+   * submits nothing at all, so the acknowledgement is only ever recorded when ticked.
    *
    * @param {Event} event
    */
@@ -210,13 +204,6 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
       return;
     }
 
-    // The variant lives on `resource`. The `detail.variant` shown in the doc comment at
-    // assets/events.js is stale: VariantUpdateEvent has always assigned `resource`, and every
-    // other consumer in the theme (product-form, local-pickup, product-card) reads it.
-    const variant = detail?.resource ?? null;
-
-    this.#updateValue(variant);
-
     // Only announce when something was actually cleared. Announcing on every option change
     // would be noise, and the live region would say "cleared" when nothing was.
     const wasChecked = this.refs.checkbox.checked;
@@ -228,28 +215,6 @@ class ReturnPolicyAcknowledgmentComponent extends Component {
     this.#syncGate();
     this.#announce(this.refs.clearedMessage.textContent?.trim() ?? '');
   };
-
-  /**
-   * Re-points the checkbox value at the selected size. Falls back to the size-less string when
-   * the size option cannot be resolved (no Size option, a renamed option, or an unavailable
-   * combination, where `resource` is null).
-   *
-   * @param {any} variant
-   */
-  #updateValue(variant) {
-    const position = Number(this.dataset.sizeOptionPosition);
-    const size =
-      variant && Number.isInteger(position) && position > 0
-        ? (variant.options?.[position - 1] ?? variant[`option${position}`] ?? null)
-        : null;
-
-    if (size) {
-      const template = this.refs.valueTemplate?.textContent?.trim() ?? '';
-      this.refs.checkbox.value = template.replace('[size]', size);
-    } else {
-      this.refs.checkbox.value = this.refs.valueTemplateNoSize?.textContent?.trim() ?? '';
-    }
-  }
 
   /**
    * Pushes a message into the polite live region. Cleared first so an identical consecutive

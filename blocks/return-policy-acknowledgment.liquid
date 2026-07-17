@@ -5,15 +5,16 @@
   - Renders a merchant-editable terms summary, then a required checkbox bound to the product
     form via `form="..."`, so native HTML5 submit-time validation blocks Add to Cart until
     ticked. The terms are wired to the checkbox with `aria-describedby`: the label is short
-    ("I agree to the above") and does not carry the meaning on its own, so the terms are the
+    ("I understand the above") and does not carry the meaning on its own, so the terms are the
     accessible description rather than decoration.
-  - Records the acknowledgement as a `properties[Return policy acknowledged]` line-item
-    property, whose value names the size that was on screen when the shopper agreed. For
-    support-ticket triage. Not a click-wrap contract.
-  - Unticks itself whenever the shopper changes any option, which is what keeps that value
-    honest: the box can only ever be ticked for the currently selected variant. Unticking
-    re-hides accelerated checkout and is announced politely, because silently clearing a box
-    the shopper ticked would otherwise just look like a broken Add to Cart button.
+  - Records the acknowledgement as a line-item property with a constant `Yes` value. The property
+    key is the merchant-editable `property_label` setting (a garment reads "size guide & return
+    policy", a gift card reads "final sale"). For support-ticket triage. Not a click-wrap contract.
+    The selected size is not repeated here; it already appears as its own cart property.
+  - Unticks itself whenever the shopper changes any option, so consent is re-affirmed for the
+    variant actually on screen (the size guide is size-specific). Unticking re-hides accelerated
+    checkout and is announced politely, because silently clearing a box the shopper ticked would
+    otherwise just look like a broken Add to Cart button.
   - Hides the accelerated-checkout container (Shop Pay / Apple Pay / Google Pay) while the box
     is unchecked via a `data-return-policy-pending` attribute set on this element. The
     cross-block CSS hook is documented inline in `blocks/accelerated-checkout.liquid`.
@@ -23,7 +24,7 @@
     magnified, and expose no programmatic association, so they cannot be the only error mechanism
     (WCAG 3.3.1). The bubble still fires; it is a bonus.
 
-  **Blank `terms` hides the whole block.** A required checkbox reading "I agree to the above"
+  **Blank `terms` hides the whole block.** A required checkbox reading "I understand the above"
   with nothing above it is a consent gate with no terms, which is worse than no gate at all.
 
   That is why the schema declares `"tag": null` and this file emits its own
@@ -53,30 +54,13 @@
   assign product_resource = closest.product
 
   comment
-    The size option's position is resolved once here and handed to JS as a data attribute. The
-    lookup itself is shared with the size-guide link via a global setting, because a theme block
-    cannot read another block's settings. See snippets/size-option-position.liquid.
+    The line-item property key (the label shown before the colon in the cart) is merchant-editable
+    per block, so a garment can read "size guide & return policy" while a gift card reads
+    "final sale". The value is a constant Yes: the selected size is not repeated here, since it
+    already appears as its own cart property.
   endcomment
-  capture size_position_raw
-    render 'size-option-position', product_resource: product_resource
-  endcapture
-  assign size_position = size_position_raw | strip
-
-  comment
-    Server-rendered so the value is correct with JS off: without JS the variant picker's radios
-    never rewrite the variant id, so the initially selected variant is the one that submits.
-  endcomment
-  assign selected_variant = product_resource.selected_or_first_available_variant
-  if size_position != blank
-    assign size_index = size_position | minus: 1
-    assign selected_size = selected_variant.options[size_index]
-  endif
-
-  if selected_size != blank
-    assign initial_value = 'products.product.return_policy_acknowledgment_value' | t: size: selected_size
-  else
-    assign initial_value = 'products.product.return_policy_acknowledgment_value_no_size' | t
-  endif
+  assign property_name = 'properties[' | append: block_settings.property_label | append: ']'
+  assign ack_value = 'products.product.return_policy_acknowledgment_value' | t
 -%}
 
 {%- comment -%}
@@ -94,7 +78,6 @@
     class="spacing-style"
     style="{% render 'spacing-style', settings: block_settings %}"
     data-product-id="{{ product_resource.id }}"
-    data-size-option-position="{{ size_position }}"
     {{ block.shopify_attributes }}
   >
     {%- comment -%}
@@ -105,9 +88,18 @@
     {%- endcomment -%}
     <div id="{{ terms_id }}" class="return-policy-acknowledgment__terms">{{ block.settings.terms }}</div>
 
+    {%- comment -%}
+      The policy link sits above the checkbox by design: read the terms, follow the link to the
+      full policy if wanted, then agree. It is not part of the checkbox's `aria-describedby`
+      (that is the terms div), so its position here is purely reading order.
+    {%- endcomment -%}
+    <p class="return-policy-acknowledgment__policy-link">
+      <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
+    </p>
+
     {% render 'checkbox',
-      name: 'properties[Return policy acknowledged]',
-      value: initial_value,
+      name: property_name,
+      value: ack_value,
       label: label_text,
       id: element_id,
       checked: false,
@@ -137,10 +129,6 @@
       hidden
     ></p>
 
-    <p class="return-policy-acknowledgment__policy-link">
-      <a href="/policies/refund-policy">{{ 'products.product.return_policy_link_label' | t | escape }}</a>
-    </p>
-
     {%- comment -%}
       Announces the automatic untick on option change. Politely: the shopper initiated an option
       change, not this, so it must not interrupt. Empty on load so it announces nothing until
@@ -167,12 +155,6 @@
     <span hidden ref="clearedMessage">
       {{- 'products.product.return_policy_acknowledgment_cleared' | t | escape -}}
     </span>
-    <span hidden ref="valueTemplate">
-      {{- 'products.product.return_policy_acknowledgment_value' | t: size: '[size]' | escape -}}
-    </span>
-    <span hidden ref="valueTemplateNoSize">
-      {{- 'products.product.return_policy_acknowledgment_value_no_size' | t | escape -}}
-    </span>
 
     <noscript>
       <style>
@@ -188,9 +170,19 @@
     width: 100%;
   }
 
+  /*
+   * Consistent vertical rhythm with the adjacent custom-text block, whose heading uses
+   * `margin-block: 0 var(--padding-sm)`. Every major gap inside this block (heading -> bullets,
+   * bullets -> policy link, policy link -> checkbox) is one --padding-sm step, and no element
+   * adds its own extra above/below, so the spacing reads as uniform.
+   */
   return-policy-acknowledgment-component .return-policy-acknowledgment__terms {
-    margin-block-end: var(--padding-xs);
+    margin-block-end: var(--padding-sm);
     font-size: var(--font-size--xs);
+  }
+
+  return-policy-acknowledgment-component .return-policy-acknowledgment__terms p {
+    margin-block: 0 var(--padding-sm);
   }
 
   return-policy-acknowledgment-component .return-policy-acknowledgment__terms ul {
@@ -199,7 +191,7 @@
   }
 
   return-policy-acknowledgment-component .return-policy-acknowledgment__policy-link {
-    margin-block: var(--padding-xs) 0;
+    margin-block: 0;
     font-size: var(--font-size--xs);
   }
 
@@ -241,12 +233,15 @@
   return-policy-acknowledgment-component .checkbox__label {
     align-items: flex-start;
     line-height: 1.4;
+    /* Separation from the policy link above, one --padding-sm step like the other gaps. */
+    margin-block-start: var(--padding-sm);
   }
 
   return-policy-acknowledgment-component .checkbox__label-text {
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
+    font-weight: bold;
   }
 
   /*
@@ -296,6 +291,13 @@
       "label": "t:settings.return_policy_acknowledgment.label",
       "default": "t:settings.return_policy_acknowledgment.default_label",
       "info": "t:settings.return_policy_acknowledgment.label_info"
+    },
+    {
+      "type": "text",
+      "id": "property_label",
+      "label": "t:settings.return_policy_acknowledgment.property_label",
+      "default": "t:settings.return_policy_acknowledgment.default_property_label",
+      "info": "t:settings.return_policy_acknowledgment.property_label_info"
     },
     { "type": "header", "content": "t:content.padding" },
     { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },

@@ -219,28 +219,11 @@
               },
               "blocks": {}
             },
-            "custom_text_001": {
-              "type": "product-custom-property",
-              "settings": {
-                "property_heading": "Add Custom Text",
-                "property_description": "Required. Add your name, nickname, class year, or anything you'd like embroidered on your sweatshirt!",
-                "property_key": "Custom Text",
-                "input_type": "text",
-                "max_length": 20,
-                "checkbox_label": "Include gift wrapping",
-                "required": true,
-                "placeholder": "Your name here...",
-                "placeholder_textarea": "Enter your special instructions",
-                "padding-block-start": 0,
-                "padding-block-end": 0,
-                "padding-inline-start": 0,
-                "padding-inline-end": 0
-              },
-              "blocks": {}
-            },
             "return_policy_ack_001": {
               "type": "return-policy-acknowledgment",
               "settings": {
+                "terms": "<p><strong>Before you order, please review the following:</strong></p><ul><li>Gift cards are delivered by email, not shipped.</li><li>Gift cards are not returnable or refundable.</li><li>Double-check the amount and the recipient's email before you add to cart.</li></ul>",
+                "property_label": "Customer confirm final sale",
                 "padding-block-start": 0,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,
@@ -283,17 +266,6 @@
               },
               "block_order": []
             },
-            "request_combination_001": {
-              "type": "request-combination",
-              "settings": {
-                "custom_order_page": "custom-orders",
-                "padding-block-start": 0,
-                "padding-block-end": 0,
-                "padding-inline-start": 0,
-                "padding-inline-end": 0
-              },
-              "blocks": {}
-            },
             "accordion_HrL6gj": {
               "type": "accordion",
               "name": "t:names.accordion",
@@ -326,7 +298,7 @@
                     "text_hiw001": {
                       "type": "text",
                       "settings": {
-                        "text": "<p>Choose your credential, your size, and your color, then make it truly yours with custom text.</p><p>Custom text is required and included at no extra cost. Most people add their name, but this is your sweater: add a nickname, a class year, your unit, a motivational word, or a loved one's name.</p><p>Every piece is made to order, never sitting in a warehouse, never mass-produced. We digitize and embroider each design in-house using commercial-grade thread and the highest quality materials, so the stitching is as durable as the career it represents. No heat transfers, no screen printing, no shortcuts.  <a href=\"/pages/about\" title=\"About\">Learn more about who we are and our values.</a></p><p>Have questions about the something? Our <a href=\"/pages/faq\" title=\"FAQ\">FAQ</a> covers the most common ones.</p>",
+                        "text": "<p>Choose an amount and let us handle the rest. Your gift card is delivered by email with a unique code the recipient enters at checkout. Send it to yourself to give in person, or send it straight to someone else's inbox.</p><p>Gift cards can be used on any product in the shop. Have a question? Our <a href=\"/pages/faq\" title=\"FAQ\">FAQ</a> covers the most common ones.</p>",
                         "width": "100%",
                         "max_width": "normal",
                         "alignment": "left",
@@ -353,19 +325,19 @@
                     "text_hiw001"
                   ]
                 },
-                "accordion_row_pd001": {
+                "accordion_row_del001": {
                   "type": "_accordion-row",
                   "settings": {
-                    "heading": "Product Details",
+                    "heading": "Delivery",
                     "open_by_default": false,
                     "icon": "none",
                     "width": 20
                   },
                   "blocks": {
-                    "text_pd001": {
+                    "text_del001": {
                       "type": "text",
                       "settings": {
-                        "text": "<h5><strong>Fabric</strong></h5><p>Premium 8 oz. fleece, 52% airlume combed and ring-spun cotton / 48% polyester (32 singles). Combed and ring-spun cotton removes impurities and short fibers before spinning, resulting in a smoother, stronger yarn that holds its shape and softness wash after wash. The fleece interior is brushed for warmth without added bulk.</p><h5><strong>Fit & Construction</strong></h5><p>Unisex retail fit, not boxy, not cropped. Dropped shoulders give it a relaxed, modern silhouette while side seams keep structure through repeated wear. Ribbed cuffs and waistband maintain their shape over time. Tear-away label for comfort against the skin.</p><h5><strong>Embroidery</strong></h5><p>Digitized and produced in-house using commercial-grade thread. Embroidery is stitched directly into the fabric, not printed, not transferred, so it won't crack, peel, or fade. The stitch count is optimized for fleece weight, giving you sharp definition without puckering.</p>",
+                        "text": "<p>Gift cards are delivered by email. Choose to send yours right away or schedule it for a later date, and add a personal message if you like. If the recipient does not see it, ask them to check their spam or promotions folder.</p><p>Because gift cards are digital, there is nothing to ship and no shipping cost.</p>",
                         "width": "100%",
                         "max_width": "normal",
                         "alignment": "left",
@@ -389,118 +361,22 @@
                     }
                   },
                   "block_order": [
-                    "text_pd001"
+                    "text_del001"
                   ]
                 },
-                "accordion_row_sc001": {
+                "accordion_row_tr001": {
                   "type": "_accordion-row",
                   "settings": {
-                    "heading": "Size Chart",
-                    "open_by_default": false,
-                    "icon": "none",
-                    "width": 20,
-                    "anchor_id": "SizeChart"
-                  },
-                  "blocks": {
-                    "text_sc001": {
-                      "type": "text",
-                      "settings": {
-                        "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a sweatshirt you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Chest (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>Chest (laid flat)</strong> is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a sweatshirt you own, lay it flat and measure straight across at that point. This is exactly half the circumference figure.</p><p><strong>Chest (circumference)</strong> is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge.</p><p><strong>Sleeve length</strong> is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff ribbing. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge.</p><p> </p>",
-                        "width": "100%",
-                        "max_width": "normal",
-                        "alignment": "left",
-                        "type_preset": "rte",
-                        "font": "var(--font-body--family)",
-                        "font_size": "1rem",
-                        "line_height": "normal",
-                        "letter_spacing": "normal",
-                        "case": "none",
-                        "wrap": "pretty",
-                        "color": "var(--color-foreground)",
-                        "background": false,
-                        "background_color": "#00000026",
-                        "corner_radius": 0,
-                        "padding-block-start": 0,
-                        "padding-block-end": 0,
-                        "padding-inline-start": 0,
-                        "padding-inline-end": 0
-                      },
-                      "blocks": {}
-                    },
-                    "table_9Nak3q": {
-                      "type": "table",
-                      "name": "t:names.table",
-                      "settings": {
-                        "column_count": "5",
-                        "show_header": true,
-                        "stripe_rows": true,
-                        "col1_heading": "Size",
-                        "col2_heading": "Chest (laid flat)",
-                        "col3_heading": "Chest (circumference)",
-                        "col4_heading": "Body Length",
-                        "col5_heading": "Sleeve Length",
-                        "r1c1": "XS",
-                        "r1c2": "19\" / 48.3 cm",
-                        "r1c3": "38\" / 96.5 cm",
-                        "r1c4": "25\" / 63.5 cm",
-                        "r1c5": "34\" / 86.4 cm",
-                        "r2c1": "S",
-                        "r2c2": "20.5\" / 52.1 cm",
-                        "r2c3": "41\" / 104.1 cm",
-                        "r2c4": "26.5\" / 67.3 cm",
-                        "r2c5": "35\" / 88.9 cm",
-                        "r3c1": "M",
-                        "r3c2": "22\" / 55.9 cm",
-                        "r3c3": "44\" / 111.8 cm",
-                        "r3c4": "28\" / 71.1 cm",
-                        "r3c5": "36\" / 91.4 cm",
-                        "r4c1": "L",
-                        "r4c2": "23.5\" / 59.7 cm",
-                        "r4c3": "47\" / 119.4 cm",
-                        "r4c4": "29.5\" / 74.9 cm",
-                        "r4c5": "37\" / 94 cm",
-                        "r5c1": "XL",
-                        "r5c2": "25\" / 63.5 cm",
-                        "r5c3": "50\" / 127 cm",
-                        "r5c4": "31\" / 78.7 cm",
-                        "r5c5": "38\" / 96.5 cm",
-                        "r6c1": "2XL",
-                        "r6c2": "26.5\" / 67.3 cm",
-                        "r6c3": "53\" / 134.6 cm",
-                        "r6c4": "32.5\" / 82.6 cm",
-                        "r6c5": "39\" / 99.1 cm",
-                        "r7c1": "",
-                        "r7c2": "",
-                        "r7c3": "",
-                        "r7c4": "",
-                        "r7c5": "",
-                        "r8c1": "",
-                        "r8c2": "",
-                        "r8c3": "",
-                        "r8c4": "",
-                        "r8c5": ""
-                      },
-                      "blocks": {}
-                    }
-                  },
-                  "block_order": [
-                    "text_sc001",
-                    "table_9Nak3q"
-                  ]
-                },
-                "accordion_row_ci001": {
-                  "type": "_accordion-row",
-                  "settings": {
-                    "heading": "Care Instructions",
+                    "heading": "Terms & Returns",
                     "open_by_default": false,
                     "icon": "none",
                     "width": 20
                   },
                   "blocks": {
-                    "text_ci001": {
+                    "text_tr001": {
                       "type": "text",
                       "settings": {
-                        "text": "<p>Always follow the care instructions on your shirt's tag, when in doubt, the tag wins. The guidelines below apply to most cases and will keep your sweatshirt and embroidery looking sharp for years to come.</p><ul><li>Machine wash cold, inside out, on a gentle cycle.</li><li>Do not bleach.</li><li>Tumble dry on low heat or hang to dry.</li><li>Do not iron directly on embroidery.</li></ul>",
+                        "text": "<p>Gift cards are not returnable or refundable. Please double-check the amount and the recipient's email address before you add to cart.</p><p>See our <a href=\"/policies/refund-policy\" title=\"Refund Policy\">Refund &amp; Return Policy</a> for full details.</p>",
                         "width": "100%",
                         "max_width": "normal",
                         "alignment": "left",
@@ -524,95 +400,14 @@
                     }
                   },
                   "block_order": [
-                    "text_ci001"
-                  ]
-                },
-                "accordion_row_st001": {
-                  "type": "_accordion-row",
-                  "settings": {
-                    "heading": "Shipping & Turnaround",
-                    "open_by_default": false,
-                    "icon": "none",
-                    "width": 20
-                  },
-                  "blocks": {
-                    "text_st001": {
-                      "type": "text",
-                      "settings": {
-                        "text": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" title=\"Shipping Policy\">Shipping Policy</a> for all the details!</p>",
-                        "width": "100%",
-                        "max_width": "normal",
-                        "alignment": "left",
-                        "type_preset": "rte",
-                        "font": "var(--font-body--family)",
-                        "font_size": "1rem",
-                        "line_height": "normal",
-                        "letter_spacing": "normal",
-                        "case": "none",
-                        "wrap": "pretty",
-                        "color": "var(--color-foreground)",
-                        "background": false,
-                        "background_color": "#00000026",
-                        "corner_radius": 0,
-                        "padding-block-start": 0,
-                        "padding-block-end": 0,
-                        "padding-inline-start": 0,
-                        "padding-inline-end": 0
-                      },
-                      "blocks": {}
-                    }
-                  },
-                  "block_order": [
-                    "text_st001"
-                  ]
-                },
-                "accordion_row_rp001": {
-                  "type": "_accordion-row",
-                  "settings": {
-                    "heading": "Returns Policy",
-                    "open_by_default": false,
-                    "icon": "none",
-                    "width": 20
-                  },
-                  "blocks": {
-                    "text_rp001": {
-                      "type": "text",
-                      "settings": {
-                        "text": "<h5><strong>Final Sale</strong></h5><p>Your sweatshirt is <strong>final sale. We are not able to accept returns or exchanges. </strong>Please check the size chart before you choose your size, and double check your custom text before completing your order. We embroider exactly what you submit, and we are not responsible for misspellings or incorrectly entered names or details. Review our <a href=\"/policies/refund-policy\" title=\"Refund Policy\">Refund / Return policy</a> for full details.</p><h5><strong>Defects or Our Errors</strong></h5><p>If something arrives damaged or defective, we'll make it right. See our <a href=\"/policies/refund-policy\" title=\"Refund Policy\">Refund & Return Policy</a> for how to reach us and what to expect.</p>",
-                        "width": "100%",
-                        "max_width": "normal",
-                        "alignment": "left",
-                        "type_preset": "rte",
-                        "font": "var(--font-body--family)",
-                        "font_size": "1rem",
-                        "line_height": "normal",
-                        "letter_spacing": "normal",
-                        "case": "none",
-                        "wrap": "pretty",
-                        "color": "var(--color-foreground)",
-                        "background": false,
-                        "background_color": "#00000026",
-                        "corner_radius": 0,
-                        "padding-block-start": 0,
-                        "padding-block-end": 0,
-                        "padding-inline-start": 0,
-                        "padding-inline-end": 0
-                      },
-                      "blocks": {}
-                    }
-                  },
-                  "block_order": [
-                    "text_rp001"
+                    "text_tr001"
                   ]
                 }
               },
               "block_order": [
                 "accordion_row_hiw001",
-                "accordion_row_pd001",
-                "accordion_row_sc001",
-                "accordion_row_ci001",
-                "accordion_row_st001",
-                "accordion_row_rp001"
+                "accordion_row_del001",
+                "accordion_row_tr001"
               ]
             }
           },
@@ -621,10 +416,8 @@
             "text_aEtTtq",
             "divider_VJhene",
             "variant_picker_R3rGDr",
-            "custom_text_001",
             "return_policy_ack_001",
             "buy_buttons_eYQEYi",
-            "request_combination_001",
             "accordion_HrL6gj"
           ]
         }

@@ -1080,11 +1080,14 @@
     },
     "return_policy_acknowledgment": {
       "label": "Checkbox label",
-      "default_label": "I agree to the above",
+      "default_label": "I understand the above",
       "label_info": "Shown next to the required checkbox on the product page. The terms above carry the meaning; keep this short.",
       "terms": "Terms",
-      "default_terms": "<p><strong>Before you order</strong></p><ul><li>Made to order just for you.</li><li>Final sale: no returns or exchanges.</li><li>Check the size chart before you choose your size.</li></ul>",
-      "terms_info": "Shown above the checkbox and read out as its description. Leave blank to hide the whole acknowledgement."
+      "default_terms": "<p><strong>Before you order, please review the following:</strong></p><ul><li>Personalized Item made just for you.</li><li>Final sale: no returns or exchanges.</li><li>Review the size guide before choosing your size.</li></ul>",
+      "terms_info": "Shown above the checkbox and read out as its description. Leave blank to hide the whole acknowledgement.",
+      "property_label": "Cart property label",
+      "default_property_label": "Customer confirm size guide & return policy",
+      "property_label_info": "The label shown before the colon on the cart line item. Keep it short."
     },
     "row": "Row",
     "scroll_speed": "Time to next announcement",

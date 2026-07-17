@@ -57,10 +57,10 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   Policy accordion promised a 14-day return. Kept rather than deleted, because the mistake is the
   useful part: block placement, not block content, is what expresses the policy.
 
-- [ ] **Gift card template.** The gift card product is active, has no product template, and this
-  theme ships no default `templates/product.json`. Decide what it renders with. The FAQ copy already
-  states gift cards are not returnable, so that answer does not depend on this; the open question is
-  what the product page itself uses.
+- [x] **Gift card template.** Added `templates/product.gift-card.json` (cloned from the Huddle
+  crewneck, then stripped of garment framing: no size chart, no applique, no combination request).
+  Keeps the native recipient form via `gift_card_form: true` and a gift-card-specific acknowledgement
+  and accordion. Assign the `gift-card` template suffix to the product in Admin after this deploys.
 
 - [ ] **Revisit the Shift Fuel return window for consistency.** It is the only product that accepts
   returns. Worth confirming that is still the intent once the catalogue settles.
