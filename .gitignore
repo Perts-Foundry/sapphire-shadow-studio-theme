@@ -17,6 +17,7 @@ npm-debug.log
 .idea/
 
 # Product image processing: raw + processed binaries + manifest never enter the repo
-# (Shopify's CDN is their home). Scoped to this dir so theme assets/ raster files are
-# unaffected; the script refuses to write outside a product-images/ path.
-product-images/
+# (Shopify's CDN is their home). Anchored to the repo root so it ignores only the top-level
+# image folder, not the like-named `.claude/skills/product-images/` skill or theme assets/.
+# The script refuses to write outside a product-images/ path.
+/product-images/

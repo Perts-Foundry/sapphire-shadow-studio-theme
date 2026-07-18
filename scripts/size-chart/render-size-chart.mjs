@@ -5,8 +5,8 @@
 // to PNG with sharp. The font is the bundled Inter, resolved via a runtime fontconfig file that MUST
 // be set before sharp loads (librsvg reads fontconfig on first text layout, and ignores @font-face).
 //
-// It does NOT upload to Shopify (the Shopify MCP has no media-upload capability; the Admin token is
-// themes-only). Upload + alt text are manual in Shopify Admin. Mirrors process-product-images.mjs:
+// It does NOT upload to Shopify; upload + alt text are a separate step in Shopify Admin (or via the
+// Admin API when the app's granted scopes cover it). Mirrors process-product-images.mjs:
 // output is guarded to a product-images/ path so no image binaries land in the public repo.
 
 import { mkdir, writeFile } from 'node:fs/promises';
