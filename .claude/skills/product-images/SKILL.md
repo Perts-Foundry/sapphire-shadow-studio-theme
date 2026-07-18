@@ -43,16 +43,18 @@ line / garment / colour / shot ships.
 
 ## Pipeline
 
-Steps 2, 3, 5, 6, and 7 are hard STOPs: ask the specific question, stop, and do not proceed without
-an explicit yes. (Steps 1, 4, and 8 are not approval gates: pointing at the input, processing, and
-handing off carry no STOP.) Do not batch the gates or assume approval.
+Steps 2, 3, and 5 are hard STOPs: ask the specific question, stop, and do not proceed without an
+explicit yes. (Steps 1, 4, 6, and 7 are not approval gates: pointing at the input, processing,
+executing the already-approved write, and handing off carry no separate STOP.) Do not batch the gates
+or assume approval.
 
-There are two distinct review gates, and they check different things. Gate 5 is an **offline**
-text-versus-photo review: you and the operator read each composed alt string against the actual
-photo, with nothing touching the live store. Gate 6 is the **uploader dry-run**: it hits the live
-store read-only to catch product/colour drift and prints the exact per-image action
-(create / update-alt / skip) that the live write will take. Passing one does not stand in for the
-other; run both.
+Step 5 is the one consolidated review before anything reaches the live store. It combines the two
+checks that used to be separate stops: the **offline** text-versus-photo review (you and the operator
+read each composed alt string against the actual photo) and the **uploader dry-run** (a read-only hit
+to the live store that catches product/colour drift and prints the exact per-image action
+create / update-alt / skip that the write will take). Both run back to back and are presented together
+at a single STOP, so the operator approves the composed alt and the exact live plan in one decision.
+The dry-run is read-only, so folding it in front of the same stop costs nothing.
 
 1. **Point at the input.** Confirm the finished photos are in `product-images/originals/` (the
    default) or take an explicit `--input-dir <path>` (an external folder with spaces is fine). Do not
@@ -74,53 +76,60 @@ other; run both.
    guessed), writes a reversible `rename-log.csv`, and is a no-op for already-canonical names. This is
    the one operation that modifies originals; default is never to run it.
 
-4. **Process.** `node scripts/process-product-images.mjs --clean`, then
-   `node scripts/process-product-images.mjs --verify`. Confirm every file cleared the caps and the
-   verify passed. A reprocess preserves any alt and `upload_status` already in the manifest, so this
-   is safe to re-run.
+4. **Process into a fresh batch directory.** `node scripts/process-product-images.mjs --new-batch`.
+   `--new-batch` writes this run into its own timestamped `product-images/processed/<timestamp>/`
+   folder (images + `manifest.csv`) so running the skill again on a later day never overwrites an
+   earlier batch. It prints the batch directory and manifest path: **capture both and reuse them for
+   every remaining step this run** (`--out '<batch-dir>'` for the processor, `--manifest
+   '<batch-dir>/manifest.csv'` for the uploader). Then verify that same batch, passing the **same**
+   `--input-dir` you processed from (verify's file-count check compares the output against the input,
+   so a mismatched or omitted `--input-dir` will false-fail):
+   `node scripts/process-product-images.mjs --verify --out '<batch-dir>' --input-dir '<same-input>'`
+   (drop `--input-dir` only if you used the default for the process step too). Confirm every file
+   cleared the caps and the verify passed. A reprocess of the same batch (same `--out`) preserves any
+   alt and `upload_status` already in that manifest, so it is safe to re-run.
 
-5. **Draft the alt text, and STOP for review.** Author the `alt` column in
-   `product-images/processed/manifest.csv` following `docs/product-media-alt-text.md`. **The reserved
-   Admin colour value is script-owned, but no code composes the alt for you: copy the manifest's
-   `admin_color` value verbatim into the alt string you write, then add your descriptive prose. Take
-   the colour word from `admin_color`, never re-derive it from the filename. A prose-only alt that
-   names no colour value fails the guard and is skipped, not auto-completed.** Apply the rulebook: the filenames-lie trap (the
-   colour comes from `admin_color`, never from the file's colour word), name at most one value, and
-   the design-shot-versus-group-shot distinction (a group/shared row has an empty `admin_color` and
-   its alt must name no colour value at all). Re-run step 4's `--verify` (or the processor once more)
-   so the alt-colour guard checks your text; every non-group alt must contain exactly its
-   `admin_color` and nothing else. Present the composed alt strings and STOP until the operator
-   confirms them against the actual photos.
+5. **Draft the alt text, dry-run the whole batch, and STOP for one combined review.** First author
+   the `alt` column in the batch manifest (`<batch-dir>/manifest.csv`) following
+   `docs/product-media-alt-text.md`. **The reserved Admin colour value is script-owned, but no code
+   composes the alt for you: copy the manifest's `admin_color` value verbatim into the alt string you
+   write, then add your descriptive prose. Take the colour word from `admin_color`, never re-derive it
+   from the filename. A prose-only alt that names no colour value fails the guard and is skipped, not
+   auto-completed.** Apply the rulebook: the filenames-lie trap (the colour comes from `admin_color`,
+   never from the file's colour word), name at most one value, and the design-shot-versus-group-shot
+   distinction (a group/shared row has an empty `admin_color` and its alt must name no colour value at
+   all). Every non-group alt must contain exactly its `admin_color` and nothing else; you do not need a
+   separate processor verify pass for this, because the dry-run below re-runs the same alt-colour guard
+   over your text (editing alt does not change the image caps already checked at step 4).
 
-6. **Live-write confirmation gate (the dry-run that must precede any write).**
-   Run the uploader dry-run **at the same scope you intend to write**, so the reviewed plan is the
-   plan that executes: `node scripts/upload-product-media.mjs --product <handle> --dry-run` for the
-   one-product path, or `node scripts/upload-product-media.mjs --all --dry-run` for the whole-batch
-   path. It resolves each product, verifies the recorded GID and Color option values still match the
-   live store (it fails loudly on drift), runs the alt-colour guard again, and prints, per image, the
-   exact plan: `{product, action=create|update-alt|skip, verbatim alt, admin_color}`. Present that
-   plan and STOP. Do not run a live write until the operator says yes to this specific plan. A passing
-   scope check is capability, not authorization; it never substitutes for this gate.
+   Then, in the same step, dry-run the **entire** batch against the live store:
+   `node scripts/upload-product-media.mjs --all --dry-run --manifest '<batch-dir>/manifest.csv'`. This
+   is read-only: it resolves every product, verifies each recorded GID and the Color option values
+   still match the live store (it fails loudly on drift), runs the alt-colour guard again, and prints,
+   per image for every product, the exact plan `{product, action=create|update-alt|skip, verbatim alt,
+   admin_color}`.
 
-7. **Upload.** On yes to the gate-6 plan, write to the live store at the **same scope that plan
-   covered** (never write wider than you dry-ran). Two paths are supported.
-   - **One product first (recommended, and required for the tool's first-ever live run).** After a
-     `--product <handle> --dry-run` gate-6 approval, run `node scripts/upload-product-media.mjs
-     --product <handle>` (no `--dry-run`) for that single product. Report the per-image result, then
-     have the operator open the storefront and confirm that selecting each colour shows the right
-     photos (the alt-text colour binding, which nothing in the repo can check). Only after that
-     confirmation move to the next product, or to `--all`.
-   - **Whole batch.** For an operator who has run this tool live before and wants the batch in one
-     shot: after an `--all --dry-run` gate-6 approval of the complete plan (every product's per-image
-     create / update-alt / skip), write it with `node scripts/upload-product-media.mjs --all`. Still
-     do the storefront colour-filter check afterwards.
+   Present **both** in one report: the composed alt strings reviewed against the actual photos, and
+   the full per-image live plan for all products. STOP. Do not run any live write until the operator
+   says yes to this specific combined plan. A passing scope check is capability, not authorization; it
+   never substitutes for this gate.
+
+6. **Upload the whole batch.** On yes to the gate-5 plan, write it to the live store at the scope you
+   dry-ran: `node scripts/upload-product-media.mjs --all --manifest '<batch-dir>/manifest.csv'`. Report
+   the per-image result, then have the operator open the storefront and confirm that selecting each
+   colour shows the right photos (the alt-text colour binding, which nothing in the repo can check).
+   If the operator instead wants a cautious first write of just one product, `--product <handle>` is
+   still supported and is a safe subset of the already-approved `--all` plan; but the default, and what
+   the operator asked for, is the reviewed batch in one shot. Never write **wider** than the gate-5
+   dry-run covered.
 
    If the scope check fails (the app no longer grants `write_products` + `write_files`), the uploader
    stops and you fall back to manual upload in Admin; do not try to work around it. Per-colour variant
    heroes are opt-in via `--attach-heroes` and drive cart thumbnails and collection cards, not the
    gallery; offer them separately and only after the media upload is confirmed correct.
 
-8. **Hand off.** Summarise what was uploaded and to which products. The skill stops here.
+7. **Hand off.** Summarise what was uploaded and to which products, and note the batch directory
+   that holds this run's images and manifest. The skill stops here.
 
 ## Non-goals
 

@@ -38,6 +38,7 @@ import {
 const MAX_MEGAPIXELS = 20;
 const MAX_BYTES = 20 * 1024 * 1024;
 const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff']);
+const DEFAULT_OUT = 'product-images/processed';
 
 // ---------------------------------------------------------------------------
 // Arg parsing (no dependency; supports "--k v" and "--k=v" and boolean flags).
@@ -45,8 +46,9 @@ const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff']);
 function parseArgs(argv) {
   const opts = {
     in: 'product-images/originals',
-    out: 'product-images/processed',
+    out: DEFAULT_OUT,
     manifest: null, // defaults to <out>/manifest.csv; the generic string-option branch parses it.
+    newBatch: false, // route this run into a fresh timestamped <out>/<stamp>/ so runs never clobber.
     max: 4000,
     quality: 85,
     clean: false,
@@ -58,10 +60,11 @@ function parseArgs(argv) {
   const alias = {
     'dry-run': 'dryRun',
     'input-dir': 'in',
+    'new-batch': 'newBatch',
     'rename-originals': 'renameOriginals',
     'rename-only': 'renameOnly',
   };
-  const bools = new Set(['clean', 'dryRun', 'verify', 'renameOriginals', 'renameOnly']);
+  const bools = new Set(['clean', 'dryRun', 'verify', 'newBatch', 'renameOriginals', 'renameOnly']);
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -353,9 +356,27 @@ function planRenames(files, existing) {
 // ---------------------------------------------------------------------------
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+
+  // --new-batch routes this run into its own timestamped directory so re-running the pipeline at a
+  // later date never overwrites an earlier batch's images or manifest. It owns the output location,
+  // so it cannot be combined with an explicit --out / --manifest. Thread the printed paths through
+  // the remaining pipeline steps to keep every step on the same batch.
+  if (opts.newBatch) {
+    if (opts.out !== DEFAULT_OUT) throw new Error('--new-batch manages the output directory; do not also pass --out');
+    if (opts.manifest) throw new Error('--new-batch manages the manifest path; do not also pass --manifest');
+    const stamp = new Date().toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z'); // e.g. 2026-07-18T15-30-42Z, colon-free
+    opts.out = path.join(DEFAULT_OUT, stamp);
+  }
+
   const inDir = path.resolve(opts.in);
   const outDir = path.resolve(opts.out);
   const manifestPath = opts.manifest ? path.resolve(opts.manifest) : path.join(outDir, 'manifest.csv');
+
+  if (opts.newBatch) {
+    console.log(`New batch directory: ${outDir}`);
+    console.log(`Batch manifest:      ${manifestPath}`);
+    console.log(`Keep every later step on this batch: pass  --out '${opts.out}'  to the processor and  --manifest '${manifestPath}'  to the uploader.\n`);
+  }
 
   // Refuse to write anywhere but a product-images/ path, so overriding --out or --manifest can't
   // scatter unignored files into the repo (the .gitignore only covers product-images/). The manifest

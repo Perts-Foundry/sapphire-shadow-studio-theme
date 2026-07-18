@@ -73,8 +73,9 @@ Note the women's vest is `Black`-only, a deliberate divergence encoded in the mo
   (recorded in the manifest).
 - Does **not** convert to WebP/AVIF, Shopify's CDN does that on delivery.
 
-Outputs land in `product-images/processed/`. All of `product-images/` is gitignored, so no image
-binaries or the manifest enter this public repo.
+Outputs land in `product-images/processed/` (or a timestamped `product-images/processed/<timestamp>/`
+subfolder with `--new-batch`). All of `product-images/` is gitignored, so no image binaries or the
+manifest enter this public repo.
 
 ### The alt-colour guard
 
@@ -113,6 +114,7 @@ node scripts/process-product-images.mjs --rename-originals --rename-only        
 | --- | --- | --- |
 | `--input-dir <dir>` | `product-images/originals` | Source folder (can be an absolute path). `--in` is a back-compat alias. |
 | `--out <dir>` | `product-images/processed` | Output folder. Must be under a `product-images/` path (guards against writing unignored binaries into the repo). |
+| `--new-batch` | off | Write this run into a fresh timestamped `product-images/processed/<timestamp>/` folder (images + `manifest.csv`) and print the paths, so re-running later never clobbers an earlier batch. Cannot be combined with `--out` / `--manifest`; pass the printed `--out` / `--manifest` to the run's later steps. |
 | `--manifest <path>` | `<out>/manifest.csv` | Manifest file to read (for preserved `alt` / `upload_status`) and write. Point it elsewhere to keep more than one manifest. |
 | `--max <px>` | `4000` | Max long-edge in pixels. |
 | `--quality <n>` | `85` | JPEG quality (1-100). 88-90 is reasonable for archival masters. |
@@ -140,8 +142,10 @@ cautious.
 - **Scopes.** Needs `write_products` **and** `write_files`. It mints a token at runtime from
   `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` (never printed, never committed) and checks both
   scopes before doing anything; if either is missing it stops and you upload manually in Admin.
-- **One product first.** You must pass `--product <handle>` (or `--all` to opt into every product);
-  `--limit <n>` caps the count. There is no implicit "upload everything".
+- **Scope is explicit.** You must pass `--all` (every product in the manifest) or `--product <handle>`
+  (one product); `--limit <n>` caps the count. There is no implicit "upload everything". The skill's
+  default flow reviews an `--all --dry-run` for the whole batch and then writes `--all`; a single
+  `--product` write is a safe subset of that reviewed plan if you want to go one product at a time.
 - **`--manifest <path>`** overrides the default `product-images/processed/manifest.csv`; the processed
   images are read from the manifest's own directory, so a relocated manifest and its images stay
   together.
@@ -155,19 +159,19 @@ cautious.
   appends a per-colour variant hero. It never deletes media and never edits other product fields.
 
 ```bash
-# Verify the plan for one product (read-only):
-node scripts/upload-product-media.mjs --product lead-ii-crewneck --dry-run
+# Review the whole batch's per-image plan against the live store (read-only), pointing at the
+# batch manifest that --new-batch produced:
+node scripts/upload-product-media.mjs --all --dry-run --manifest 'product-images/processed/<timestamp>/manifest.csv'
 
-# Apply to that one product, then check the storefront colour filter before doing more:
-node scripts/upload-product-media.mjs --product lead-ii-crewneck
+# On approval, write the whole batch, then check the storefront colour filter:
+node scripts/upload-product-media.mjs --all --manifest 'product-images/processed/<timestamp>/manifest.csv'
 
-# Later, once one product is confirmed correct, a bulk run:
-node scripts/upload-product-media.mjs --all
+# Or, to write one product at a time (a safe subset of the reviewed --all plan):
+node scripts/upload-product-media.mjs --product lead-ii-crewneck --manifest 'product-images/processed/<timestamp>/manifest.csv'
 ```
 
-After a single-product upload, open the storefront and confirm that selecting each colour shows the
-right photos. That colour binding is the alt-text filter, and nothing in the repo or CI can verify it
-for you.
+After an upload, open the storefront and confirm that selecting each colour shows the right photos.
+That colour binding is the alt-text filter, and nothing in the repo or CI can verify it for you.
 
 ### Manual alternative: upload in Shopify Admin
 
