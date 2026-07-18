@@ -46,6 +46,7 @@ function parseArgs(argv) {
   const opts = {
     in: 'product-images/originals',
     out: 'product-images/processed',
+    manifest: null, // defaults to <out>/manifest.csv; the generic string-option branch parses it.
     max: 4000,
     quality: 85,
     clean: false,
@@ -276,9 +277,10 @@ async function processOne(srcPath, outPath, { max, quality }) {
 // Verify an already-produced output dir against all the caps and invariants, and (if a manifest
 // is present) the alt-colour guard.
 // ---------------------------------------------------------------------------
-async function verify(outDir, maxEdge, expectedCount) {
+async function verify(outDir, maxEdge, expectedCount, manifestPath) {
   const files = (await readdir(outDir)).filter((f) => f.toLowerCase().endsWith('.jpg'));
   const problems = [];
+  const warnings = [];
   for (const f of files) {
     const p = path.join(outDir, f);
     const { size } = await stat(p);
@@ -294,7 +296,6 @@ async function verify(outDir, maxEdge, expectedCount) {
     problems.push(`output count ${files.length} != expected ${expectedCount} (collision/overwrite data loss?)`);
   }
   // Alt-colour guard over the manifest, if one exists (reconstruct minimal rows from it).
-  const manifestPath = path.join(outDir, 'manifest.csv');
   let text;
   try { text = await readFile(manifestPath, 'utf8'); } catch { text = null; }
   if (text) {
@@ -304,11 +305,21 @@ async function verify(outDir, maxEdge, expectedCount) {
     const rows = lines.slice(1).map((l) => {
       const c = parseCsvLine(l);
       const get = (k) => (idx(k) >= 0 ? (c[idx(k)] || '') : '');
-      return { new_name: get('new_name'), line: get('line'), garment: get('garment'), admin_color: get('admin_color'), product: get('product'), alt: get('alt') };
+      return { new_name: get('new_name'), line: get('line'), garment: get('garment'), admin_color: get('admin_color'), product: get('product'), alt: get('alt'), upload_status: get('upload_status') };
     });
     for (const g of altGuardProblems(rows)) problems.push(`alt-colour: ${g}`);
+    // Nothing this tool writes ever puts prose in upload_status: the uploader records short tokens
+    // (created / updated-alt / skipped). A value with whitespace almost always means an unquoted
+    // comma in a hand-edited alt spilled the tail of the alt into this column, silently truncating
+    // the alt that drives the gallery colour filter. Warn (do not fail) so the operator re-quotes it.
+    for (const r of rows) {
+      const s = (r.upload_status || '').trim();
+      if (s && /\s/.test(s)) {
+        warnings.push(`upload_status: ${r.new_name || '(unnamed row)'}: value "${s}" looks like prose, not a status token; a raw comma in the alt likely overflowed into this column and truncated the alt. Re-check and quote the alt.`);
+      }
+    }
   }
-  return { count: files.length, problems };
+  return { count: files.length, problems, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -344,11 +355,20 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const inDir = path.resolve(opts.in);
   const outDir = path.resolve(opts.out);
+  const manifestPath = opts.manifest ? path.resolve(opts.manifest) : path.join(outDir, 'manifest.csv');
 
-  // Refuse to write anywhere but a product-images/ path, so overriding --out can't
-  // scatter unignored binaries into the repo (the .gitignore only covers product-images/).
-  if (!opts.dryRun && !opts.renameOnly && !/(^|[\\/])product-images([\\/]|$)/.test(outDir)) {
+  // Refuse to write anywhere but a product-images/ path, so overriding --out or --manifest can't
+  // scatter unignored files into the repo (the .gitignore only covers product-images/). The manifest
+  // is text, but the repo rule is that it never enters a PR, so it gets the same containment as the
+  // image binaries.
+  const underProductImages = (p) => /(^|[\\/])product-images([\\/]|$)/.test(p);
+  if (!opts.dryRun && !opts.renameOnly && !underProductImages(outDir)) {
     throw new Error(`--out must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
+  }
+  // The manifest is only written on a normal process run (not --verify, which reads it, nor the
+  // dry-run / rename-only paths that write no manifest).
+  if (!opts.dryRun && !opts.renameOnly && !opts.verify && !underProductImages(manifestPath)) {
+    throw new Error(`--manifest must be under a 'product-images/' directory (got ${manifestPath}); refusing to write it into the tracked repo.`);
   }
 
   let entries;
@@ -362,6 +382,10 @@ async function main() {
   const skipped = [];
   for (const e of entries) {
     if (!e.isFile()) continue;
+    // Silently ignore NTFS alternate-data-stream sidecars (e.g. "photo.jpg:Zone.Identifier" from a
+    // Windows download, surfaced as their own entries on WSL). They are not files the operator chose;
+    // warning on them is pure noise and they must never reach the manifest.
+    if (e.name.includes(':')) continue;
     const ext = path.extname(e.name).toLowerCase();
     if (INPUT_EXTS.has(ext)) recognized.push(e.name);
     else skipped.push(e.name);
@@ -400,11 +424,12 @@ async function main() {
   }
 
   const nameMap = buildNameMap(recognized);
-  const preserved = await readExistingManifest(path.join(outDir, 'manifest.csv'));
+  const preserved = await readExistingManifest(manifestPath);
 
   if (opts.verify) {
-    const { count, problems } = await verify(outDir, opts.max, recognized.length);
+    const { count, problems, warnings } = await verify(outDir, opts.max, recognized.length, manifestPath);
     console.log(`Verified ${count} file(s) in ${outDir}`);
+    warnings.forEach((w) => console.warn(`WARN: ${w}`));
     if (problems.length) { problems.forEach((p) => console.error(`FAIL: ${p}`)); process.exitCode = 1; }
     else console.log('All checks passed.');
     return;
@@ -482,7 +507,7 @@ async function main() {
     'w_before', 'h_before', 'mp_before', 'kb_before', 'w_after', 'h_after', 'kb_after',
     'alt', 'upload_status', 'notes'];
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(','))].join('\n') + '\n';
-  await writeFile(path.join(outDir, 'manifest.csv'), csv);
+  await writeFile(manifestPath, csv);
 
   const guard = altGuardProblems(rows);
   if (guard.length) {
@@ -491,7 +516,7 @@ async function main() {
   }
 
   const ok = rows.filter((r) => r.new_name).length;
-  console.log(`\nWrote ${ok}/${recognized.length} image(s) + manifest.csv to ${outDir}`);
+  console.log(`\nWrote ${ok}/${recognized.length} image(s) to ${outDir}; manifest at ${manifestPath}`);
   if (ok !== recognized.length) { console.error('Some files were skipped; see manifest notes.'); process.exitCode = 1; }
 }
 

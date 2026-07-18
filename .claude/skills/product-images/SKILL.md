@@ -43,8 +43,16 @@ line / garment / colour / shot ships.
 
 ## Pipeline
 
-Each numbered gate is a hard STOP: ask the specific question, stop, and do not proceed without an
-explicit yes. Do not batch the gates or assume approval.
+Steps 2, 3, 5, 6, and 7 are hard STOPs: ask the specific question, stop, and do not proceed without
+an explicit yes. (Steps 1, 4, and 8 are not approval gates: pointing at the input, processing, and
+handing off carry no STOP.) Do not batch the gates or assume approval.
+
+There are two distinct review gates, and they check different things. Gate 5 is an **offline**
+text-versus-photo review: you and the operator read each composed alt string against the actual
+photo, with nothing touching the live store. Gate 6 is the **uploader dry-run**: it hits the live
+store read-only to catch product/colour drift and prints the exact per-image action
+(create / update-alt / skip) that the live write will take. Passing one does not stand in for the
+other; run both.
 
 1. **Point at the input.** Confirm the finished photos are in `product-images/originals/` (the
    default) or take an explicit `--input-dir <path>` (an external folder with spaces is fine). Do not
@@ -84,26 +92,35 @@ explicit yes. Do not batch the gates or assume approval.
    `admin_color` and nothing else. Present the composed alt strings and STOP until the operator
    confirms them against the actual photos.
 
-5.5. **Live-write confirmation gate (the last stop before any write).**
-   `node scripts/upload-product-media.mjs --product <handle> --dry-run` for the first product. It
-   resolves the product, verifies the recorded GID and Color option values still match the live store
-   (it fails loudly on drift), runs the alt-colour guard again, and prints, per image, the exact
-   plan: `{product, action=create|update-alt|skip, verbatim alt, admin_color}`. Present that plan and
-   STOP. Do not run a live write until the operator says yes to this specific plan. A passing scope
-   check is capability, not authorization; it never substitutes for this gate.
+6. **Live-write confirmation gate (the dry-run that must precede any write).**
+   Run the uploader dry-run **at the same scope you intend to write**, so the reviewed plan is the
+   plan that executes: `node scripts/upload-product-media.mjs --product <handle> --dry-run` for the
+   one-product path, or `node scripts/upload-product-media.mjs --all --dry-run` for the whole-batch
+   path. It resolves each product, verifies the recorded GID and Color option values still match the
+   live store (it fails loudly on drift), runs the alt-colour guard again, and prints, per image, the
+   exact plan: `{product, action=create|update-alt|skip, verbatim alt, admin_color}`. Present that
+   plan and STOP. Do not run a live write until the operator says yes to this specific plan. A passing
+   scope check is capability, not authorization; it never substitutes for this gate.
 
-6. **Upload, one product first.** On yes, run
-   `node scripts/upload-product-media.mjs --product <handle>` (no `--dry-run`) for that single
-   product. Report the per-image result. Then have the operator open the storefront and confirm that
-   selecting each colour shows the right photos (the alt-text colour binding, which nothing in the
-   repo can check). Only after that confirmation move to the next product, or to `--all` for a bulk
-   run. If the scope check fails (the app no longer grants `write_products` + `write_files`), the
-   uploader stops and you fall back to manual upload in Admin; do not try to work around it.
-   Per-colour variant heroes are opt-in via `--attach-heroes` and drive cart thumbnails and
-   collection cards, not the gallery; offer them separately and only after the media upload is
-   confirmed correct.
+7. **Upload.** On yes to the gate-6 plan, write to the live store at the **same scope that plan
+   covered** (never write wider than you dry-ran). Two paths are supported.
+   - **One product first (recommended, and required for the tool's first-ever live run).** After a
+     `--product <handle> --dry-run` gate-6 approval, run `node scripts/upload-product-media.mjs
+     --product <handle>` (no `--dry-run`) for that single product. Report the per-image result, then
+     have the operator open the storefront and confirm that selecting each colour shows the right
+     photos (the alt-text colour binding, which nothing in the repo can check). Only after that
+     confirmation move to the next product, or to `--all`.
+   - **Whole batch.** For an operator who has run this tool live before and wants the batch in one
+     shot: after an `--all --dry-run` gate-6 approval of the complete plan (every product's per-image
+     create / update-alt / skip), write it with `node scripts/upload-product-media.mjs --all`. Still
+     do the storefront colour-filter check afterwards.
 
-7. **Hand off.** Summarise what was uploaded and to which products. The skill stops here.
+   If the scope check fails (the app no longer grants `write_products` + `write_files`), the uploader
+   stops and you fall back to manual upload in Admin; do not try to work around it. Per-colour variant
+   heroes are opt-in via `--attach-heroes` and drive cart thumbnails and collection cards, not the
+   gallery; offer them separately and only after the media upload is confirmed correct.
+
+8. **Hand off.** Summarise what was uploaded and to which products. The skill stops here.
 
 ## Non-goals
 

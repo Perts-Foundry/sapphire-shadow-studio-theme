@@ -37,7 +37,7 @@ const HERO_SHOT_PRIORITY = ['styled', 'flat', 'angled', 'closeup']; // first ava
 
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const opts = { dryRun: false, all: false, attachHeroes: false, product: null, limit: Infinity };
+  const opts = { dryRun: false, all: false, attachHeroes: false, product: null, manifest: null, limit: Infinity };
   const alias = { 'dry-run': 'dryRun', 'attach-heroes': 'attachHeroes' };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
@@ -51,6 +51,9 @@ function parseArgs(argv) {
       opts[key] = val === undefined ? true : val !== 'false';
     } else if (key === 'product') {
       opts.product = val ?? argv[++i];
+    } else if (key === 'manifest') {
+      opts.manifest = val ?? argv[++i];
+      if (opts.manifest === undefined) throw new Error('Missing value for --manifest');
     } else if (key === 'limit') {
       opts.limit = Number(val ?? argv[++i]);
       if (!Number.isFinite(opts.limit) || opts.limit < 1) throw new Error('--limit must be a positive number');
@@ -275,9 +278,12 @@ async function main() {
   const domain = requireEnv('MYSHOPIFY_DOMAIN');
   const redact = makeRedactor(process.env.SHOPIFY_CLIENT_SECRET);
 
-  const manifestPath = path.join(PROCESSED_DIR, 'manifest.csv');
+  // --manifest relocates the manifest; the processed images are expected in the same directory
+  // (that is how process-product-images.mjs writes them), so derive the image dir from it.
+  const manifestPath = opts.manifest ? path.resolve(opts.manifest) : path.join(PROCESSED_DIR, 'manifest.csv');
+  const processedDir = path.dirname(manifestPath);
   const allRows = await readManifest(manifestPath);
-  const present = new Set((await readdir(PROCESSED_DIR)).filter((f) => f.toLowerCase().endsWith('.jpg')));
+  const present = new Set((await readdir(processedDir)).filter((f) => f.toLowerCase().endsWith('.jpg')));
 
   // Rows eligible for upload: successfully processed, file present, resolved product.
   let rows = allRows.filter((r) => r.new_name && present.has(r.new_name) && r.product);
@@ -332,7 +338,7 @@ async function main() {
       const guard = key ? altColorProblem(row.alt, expected, key) : null;
       if (guard) { problems.push(`${row.new_name}: alt-colour guard: ${guard}`); skipped++; continue; }
 
-      const filePath = path.join(PROCESSED_DIR, row.new_name);
+      const filePath = path.join(processedDir, row.new_name);
 
       // Dedup against existing live media.
       const dupe = existingByFile.get(row.new_name) || existingByAlt.get(row.alt);

@@ -113,6 +113,7 @@ node scripts/process-product-images.mjs --rename-originals --rename-only        
 | --- | --- | --- |
 | `--input-dir <dir>` | `product-images/originals` | Source folder (can be an absolute path). `--in` is a back-compat alias. |
 | `--out <dir>` | `product-images/processed` | Output folder. Must be under a `product-images/` path (guards against writing unignored binaries into the repo). |
+| `--manifest <path>` | `<out>/manifest.csv` | Manifest file to read (for preserved `alt` / `upload_status`) and write. Point it elsewhere to keep more than one manifest. |
 | `--max <px>` | `4000` | Max long-edge in pixels. |
 | `--quality <n>` | `85` | JPEG quality (1-100). 88-90 is reasonable for archival masters. |
 | `--clean` | off | Delete the output folder before writing (avoids stale orphans). Still preserves `alt` / `upload_status` from the prior manifest. |
@@ -122,7 +123,13 @@ node scripts/process-product-images.mjs --rename-originals --rename-only        
 | `--rename-only` | off | With `--rename-originals`, do only the rename and skip processing. |
 
 Accepted inputs: `.jpg .jpeg .png .tif .tiff`. Anything else (e.g. HEIC) is skipped with a
-warning and logged in the manifest.
+warning and logged in the manifest. NTFS alternate-data-stream sidecars (a `name:Zone.Identifier`
+entry beside a file downloaded on Windows, visible on WSL) are ignored silently: no warning, no
+manifest row.
+
+`--verify` also warns when a row's `upload_status` column holds prose rather than a short status
+token; that usually means an unquoted comma in a hand-edited `alt` overflowed into the next column
+and truncated the alt. It is a warning, not a failure: re-quote the alt and reprocess.
 
 ## upload-product-media.mjs
 
@@ -135,6 +142,9 @@ cautious.
   scopes before doing anything; if either is missing it stops and you upload manually in Admin.
 - **One product first.** You must pass `--product <handle>` (or `--all` to opt into every product);
   `--limit <n>` caps the count. There is no implicit "upload everything".
+- **`--manifest <path>`** overrides the default `product-images/processed/manifest.csv`; the processed
+  images are read from the manifest's own directory, so a relocated manifest and its images stay
+  together.
 - **Dry-run first.** `--dry-run` resolves IDs, verifies the recorded product GID and Color option
   values still match the live store (it fails loudly on drift), runs the alt-colour guard, prints the
   per-image plan, and writes nothing.
