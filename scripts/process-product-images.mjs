@@ -30,6 +30,7 @@
 import sharp from 'sharp';
 import { readdir, stat, mkdir, rm, writeFile, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   normalizeName, productForLineGarment, colorwayToAdminValue, altColorProblem,
 } from './lib/photo-naming.mjs';
@@ -56,6 +57,7 @@ function parseArgs(argv) {
     verify: false,
     renameOriginals: false,
     renameOnly: false,
+    renameMap: null, // path to a from,to CSV of operator-approved names for non-matching originals.
   };
   const alias = {
     'dry-run': 'dryRun',
@@ -63,6 +65,7 @@ function parseArgs(argv) {
     'new-batch': 'newBatch',
     'rename-originals': 'renameOriginals',
     'rename-only': 'renameOnly',
+    'rename-map': 'renameMap',
   };
   const bools = new Set(['clean', 'dryRun', 'verify', 'newBatch', 'renameOriginals', 'renameOnly']);
   for (let i = 0; i < argv.length; i++) {
@@ -92,6 +95,7 @@ function parseArgs(argv) {
     throw new Error('--quality must be 1-100');
   }
   if (opts.renameOnly) opts.renameOriginals = true; // rename-only implies the rename step
+  if (opts.renameMap) opts.renameOriginals = true;  // a rename map is applied by the rename step
   return opts;
 }
 
@@ -326,29 +330,88 @@ async function verify(outDir, maxEdge, expectedCount, manifestPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Plan the in-place rename of source originals to their canonical UNDERSCORE names. Only files that
-// parse with confidence (ok && !uncertain) are renamed; uncertain names are skipped, never guessed.
+// Load an operator-approved rename map: a CSV with `from,to` columns naming, for each original the
+// parser could not confidently name, the canonical name the operator VERIFIED at the naming gate.
+// The guess happens upstream in the skill and is verified by the operator; this loader and the
+// planner below never guess. They only apply an explicit, verified map, and the planner still
+// re-validates every target is a clean convention name (below) so a fabricated or half-formed
+// target is refused rather than silently renamed. Returns Map(fromBasename -> approvedRawName).
+// ---------------------------------------------------------------------------
+async function loadRenameMap(mapPath) {
+  const text = await readFile(mapPath, 'utf8');
+  const lines = text.split(/\r?\n/).filter((l) => l.length);
+  if (!lines.length) return new Map();
+  const header = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const iFrom = header.indexOf('from');
+  const iTo = header.indexOf('to');
+  if (iFrom === -1 || iTo === -1) {
+    throw new Error(`--rename-map '${mapPath}' needs a header row with 'from' and 'to' columns`);
+  }
+  const map = new Map();
+  for (let i = 1; i < lines.length; i++) {
+    const c = parseCsvLine(lines[i]);
+    const from = (c[iFrom] || '').trim();
+    const to = (c[iTo] || '').trim();
+    if (!from && !to) continue;
+    if (!from || !to) throw new Error(`--rename-map row ${i + 1}: both 'from' and 'to' are required`);
+    if (map.has(from)) throw new Error(`--rename-map lists '${from}' more than once`);
+    map.set(from, to);
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Plan the in-place rename of source originals. Two sources feed the plan:
+//   - auto: a file that parses with confidence (ok && !uncertain) is renamed to its canonical
+//     UNDERSCORE name. Uncertain names are skipped, never guessed.
+//   - approved: an entry in `overrides` (from loadRenameMap) renames a specific original to the
+//     operator-verified name, EVEN when the parser was uncertain about the source. The approved
+//     target is itself normalised and must resolve to a clean, unambiguous convention name; a
+//     target that does not (unknown token, missing field, no index) is refused here, so the verify
+//     gate cannot push a malformed name through. An override wins over the auto name for a file.
 // Collisions and pre-existing targets are skipped with a warning rather than suffixed, because a
 // same-target collision on an original is a real duplicate the operator should look at.
 // ---------------------------------------------------------------------------
-function planRenames(files, existing) {
+function planRenames(files, existing, overrides = new Map()) {
   const plan = [];
   const skips = [];
   const targets = new Set();
+  const fileSet = new Set(files);
+  // An override naming a file not in this input set is almost always a stale or mistyped `from`;
+  // surface it rather than silently ignore it.
+  for (const from of overrides.keys()) {
+    if (!fileSet.has(from)) skips.push(`${from}: listed in --rename-map but not among the input images; ignored`);
+  }
   for (const f of [...files].sort()) {
-    const norm = normalizeName(f);
-    if (!norm.parsed.ok || norm.uncertain) {
-      skips.push(`${f}: uncertain (${norm.warnings.join('; ')})`);
-      continue;
+    let to;
+    let source;
+    let warnings = [];
+    const approved = overrides.get(f);
+    if (approved !== undefined) {
+      const norm = normalizeName(approved);
+      if (norm.uncertain) {
+        skips.push(`${f} -> ${approved}: approved name is not a clean convention name (${norm.warnings.join('; ')}); not renamed`);
+        continue;
+      }
+      to = norm.canonical;
+      source = 'approved';
+    } else {
+      const norm = normalizeName(f);
+      if (!norm.parsed.ok || norm.uncertain) {
+        skips.push(`${f}: uncertain (${norm.warnings.join('; ')})`);
+        continue;
+      }
+      to = norm.canonical;
+      source = 'auto';
+      warnings = norm.warnings;
     }
-    const to = norm.canonical;
     if (to === f) continue; // already canonical
     if (targets.has(to) || (existing.has(to) && to !== f)) {
       skips.push(`${f} -> ${to}: target already exists or is claimed; skipped`);
       continue;
     }
     targets.add(to);
-    plan.push({ from: f, to, warnings: norm.warnings });
+    plan.push({ from: f, to, source, warnings });
   }
   return { plan, skips };
 }
@@ -417,13 +480,20 @@ async function main() {
   for (const s of skipped) console.warn(`WARN: skipping unsupported file: ${s}`);
 
   // --- Optional opt-in: rename source originals to canonical underscore names ---------------
+  // Confident names go to their canonical form automatically; an operator-approved --rename-map
+  // additionally renames non-matching originals to the names verified at the naming gate.
   if (opts.renameOriginals) {
+    const overrides = opts.renameMap ? await loadRenameMap(path.resolve(opts.renameMap)) : new Map();
     const existing = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
-    const { plan, skips } = planRenames(recognized, existing);
-    console.log(`\nRename originals: ${plan.length} to rename, ${skips.length} skipped, in ${inDir}`);
+    const { plan, skips } = planRenames(recognized, existing, overrides);
+    const approvedCount = plan.filter((p) => p.source === 'approved').length;
+    console.log(`\nRename originals: ${plan.length} to rename (${approvedCount} operator-approved), ${skips.length} skipped, in ${inDir}`);
     for (const s of skips) console.warn(`  skip  ${s}`);
-    for (const { from, to, warnings } of plan) {
-      console.log(`  ${from}  ->  ${to}${warnings.length ? '   (' + warnings.join('; ') + ')' : ''}`);
+    for (const { from, to, source, warnings } of plan) {
+      const tag = source === 'approved'
+        ? '   [operator-approved]'
+        : (warnings.length ? '   (' + warnings.join('; ') + ')' : '');
+      console.log(`  ${from}  ->  ${to}${tag}`);
     }
     if (opts.dryRun) {
       console.log('\nDRY RUN: no files renamed. Re-run without --dry-run to apply.');
@@ -541,4 +611,9 @@ async function main() {
   if (ok !== recognized.length) { console.error('Some files were skipped; see manifest notes.'); process.exitCode = 1; }
 }
 
-main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+// Exported for unit testing; the CLI entrypoint below runs only when invoked directly.
+export { planRenames, loadRenameMap };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+}

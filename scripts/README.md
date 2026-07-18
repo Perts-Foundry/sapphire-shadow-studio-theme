@@ -106,6 +106,11 @@ node scripts/process-product-images.mjs --verify
 # 5. (Optional, opt-in) rename the *originals* to their canonical underscore names. Preview first:
 node scripts/process-product-images.mjs --rename-originals --rename-only --dry-run
 node scripts/process-product-images.mjs --rename-originals --rename-only        # apply
+
+# 5b. For originals the parser cannot confidently name, apply an operator-approved from,to map
+#     (each target is re-validated as a clean convention name). Preview, then apply:
+node scripts/process-product-images.mjs --rename-map approved-names.csv --rename-only --dry-run
+node scripts/process-product-images.mjs --rename-map approved-names.csv --rename-only          # apply
 ```
 
 ### Options
@@ -123,6 +128,7 @@ node scripts/process-product-images.mjs --rename-originals --rename-only        
 | `--verify` | off | Validate an existing output folder and manifest; non-zero exit on any failure. |
 | `--rename-originals` | off | Opt-in: rename source files to their canonical **underscore** names in place. Skips any file that did not parse with confidence, writes a reversible `rename-log.csv`, no-op for already-canonical names. |
 | `--rename-only` | off | With `--rename-originals`, do only the rename and skip processing. |
+| `--rename-map <csv>` | none | Apply operator-approved names to originals the parser could not confidently name. A CSV with `from,to` columns; each `to` is normalised and must resolve to a clean convention name (an unknown token, a missing field, or a missing index is refused, never renamed). Implies `--rename-originals`; the map wins over the auto name for a listed file. The verified guess is composed and approved by the operator upstream (the `product-images` skill); the script only applies the explicit map and never guesses. |
 
 Accepted inputs: `.jpg .jpeg .png .tif .tiff`. Anything else (e.g. HEIC) is skipped with a
 warning and logged in the manifest. NTFS alternate-data-stream sidecars (a `name:Zone.Identifier`
