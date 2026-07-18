@@ -2,7 +2,7 @@
 // Batch-process raw product photos into Shopify-upload-ready JPEGs.
 //
 // Reads every image in --input-dir, downscales to a web-friendly size, colour-manages to true
-// sRGB, re-encodes, gives each file its canonical kebab-case name (per scripts/lib/photo-naming.mjs),
+// sRGB, re-encodes, gives each file its canonical underscore name (per scripts/lib/photo-naming.mjs),
 // and writes the results plus a manifest.csv to --out. Originals are only READ, except under the
 // explicit opt-in --rename-originals (see below).
 //
@@ -94,7 +94,7 @@ function parseArgs(argv) {
 // ---------------------------------------------------------------------------
 // Build old->canonical map up front and resolve output-name collisions deterministically so we
 // never silently last-write-wins over a distinct source photo. The canonical OUTPUT name is
-// kebab-case (photo-naming.canonical); the parsed fields ride along for the manifest columns.
+// underscore-separated (photo-naming.canonical); the parsed fields ride along for the manifest columns.
 // ---------------------------------------------------------------------------
 function buildNameMap(files) {
   const used = new Set();
@@ -327,7 +327,7 @@ function planRenames(files, existing) {
       skips.push(`${f}: uncertain (${norm.warnings.join('; ')})`);
       continue;
     }
-    const to = norm.canonicalSource;
+    const to = norm.canonical;
     if (to === f) continue; // already canonical
     if (targets.has(to) || (existing.has(to) && to !== f)) {
       skips.push(`${f} -> ${to}: target already exists or is claimed; skipped`);

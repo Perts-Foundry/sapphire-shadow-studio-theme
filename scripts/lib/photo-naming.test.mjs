@@ -152,16 +152,22 @@ test('parseName warns when a group shot carries a design field', () => {
 });
 
 // --- normalizeName -------------------------------------------------------------------------
-test('normalizeName yields kebab canonical and underscore canonicalSource', () => {
+test('normalizeName yields one underscore-separated canonical name (output === source scheme)', () => {
   const n = normalizeName('lead2_quarter-zip_black_emt_flat-1.jpg');
-  assert.equal(n.canonical, 'lead2-quarter-zip-black-emt-flat-1.jpg');
-  assert.equal(n.canonicalSource, 'lead2_quarter-zip_black_emt_flat-1.jpg');
+  assert.equal(n.canonical, 'lead2_quarter-zip_black_emt_flat-1.jpg');
+  assert.equal(n.uncertain, false);
+  // Field separators are underscores; only multi-word field values keep internal hyphens.
+  assert.equal(n.canonical.split('_').length, 5);
+});
+
+test('normalizeName recovers an all-hyphen source to the underscore canonical', () => {
+  const n = normalizeName('lead2-quarter-zip-black-emt-flat-1.jpg');
+  assert.equal(n.canonical, 'lead2_quarter-zip_black_emt_flat-1.jpg');
   assert.equal(n.uncertain, false);
 });
 
-test('normalizeName falls back to a kebab collapse for an unparseable name', () => {
+test('normalizeName falls back to a hyphen collapse for an unparseable name', () => {
   const n = normalizeName('!!!.jpg');
   assert.equal(n.canonical, 'image.jpg'); // empty collapse guarded to 'image'
-  assert.equal(n.canonicalSource, 'image.jpg');
   assert.equal(n.uncertain, true);
 });

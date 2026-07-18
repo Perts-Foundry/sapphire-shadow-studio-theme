@@ -8,9 +8,11 @@
 //   group shot:  <line>_<garment>_group_<shot>-<index>.jpg   (no colorway, no design)
 //
 // Fields are underscore-separated. A multi-word field value hyphenates internally
-// (crew-sweater, classic-navy). The shot carries a -<index> suffix (flat-1). The canonical
-// OUTPUT filename is fully kebab-case: the parsed fields joined by '-' (the underscores
-// collapse to hyphens), e.g. lead2_quarter-zip_black_emt_flat-1.jpg -> lead2-quarter-zip-black-emt-flat-1.jpg.
+// (crew-sweater, classic-navy). The shot carries a -<index> suffix (flat-1). ONE scheme runs end
+// to end: the canonical name (processed output, uploaded Shopify filename, and --rename-originals
+// target) is the parsed fields re-joined by '_', e.g. LEAD2 quarter-zip black emt flat-1 stays
+// lead2_quarter-zip_black_emt_flat-1.jpg. Underscores keep the field boundaries explicit and the
+// name trivially re-parseable; the internal hyphens of a multi-word field are preserved.
 //
 // line / garment / colorway / shot are closed sets (an unknown token warns). design is an
 // open kebab token (any profession/design; never warns on content). Keep new products on the
@@ -243,29 +245,27 @@ export function parseName(filename) {
 }
 
 /**
- * Canonical filenames for a source filename, plus warnings.
- * Returns { canonical, canonicalSource, warnings, uncertain, parsed }:
- *   - canonical:       kebab-case OUTPUT name (fields joined by '-'), what processing writes and
- *                      what is uploaded; matches the established storefront filename style.
- *   - canonicalSource: underscore SOURCE name (fields joined by '_', internal hyphens kept), what
- *                      `--rename-originals` targets; preserves the field boundaries that keep an
- *                      original parseable.
- * When the name cannot be parsed, both fall back to a plain kebab-collapse of the base name so
- * processing still produces a stable output; such a file is `uncertain` and is never auto-renamed.
+ * The canonical filename for a source filename, plus warnings.
+ * Returns { canonical, warnings, uncertain, parsed }:
+ *   - canonical: the underscore-separated name (parsed fields re-joined by '_', internal hyphens
+ *                kept). This is the ONE name used end to end: the processed output, the uploaded
+ *                Shopify filename, and the `--rename-originals` target. Explicit field boundaries,
+ *                trivially re-parseable.
+ * When the name cannot be parsed, `canonical` falls back to a plain hyphen-collapse of the base
+ * name (there are no fields to separate) so processing still produces a stable output; such a file
+ * is `uncertain` and is never auto-renamed.
  */
 export function normalizeName(filename) {
   const parsed = parseName(filename);
   if (!parsed.ok) {
     const dot = filename.lastIndexOf('.');
     const base = dot === -1 ? filename : filename.slice(0, dot);
-    const kebab = base.toLowerCase().replace(/caffine/g, 'caffeine')
+    const fallback = base.toLowerCase().replace(/caffine/g, 'caffeine')
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'image';
-    const name = `${kebab}.jpg`;
-    return { canonical: name, canonicalSource: name, warnings: parsed.warnings, uncertain: true, parsed };
+    return { canonical: `${fallback}.jpg`, warnings: parsed.warnings, uncertain: true, parsed };
   }
   return {
-    canonical: `${parsed.fields.join('-')}.jpg`,
-    canonicalSource: `${parsed.fields.join('_')}.jpg`,
+    canonical: `${parsed.fields.join('_')}.jpg`,
     warnings: parsed.warnings,
     uncertain: parsed.uncertain,
     parsed,

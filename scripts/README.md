@@ -45,8 +45,10 @@ group shot:  <line>_<garment>_group_<shot>-<index>.jpg
 | shot | `angled`, `closeup`, `flat`, `styled` |
 
 The processor parses these fields, warns (never blocks) on anything that does not match, and emits the
-canonical **output** name in kebab-case (`lead2_quarter-zip_black_emt_flat-1.jpg` ->
-`lead2-quarter-zip-black-emt-flat-1.jpg`). It also resolves each file to its product handle and its
+canonical **output** name in the same underscore-separated form as the source (one scheme end to end,
+including the uploaded Shopify filename): `lead2_quarter-zip_black_emt_flat-1.jpg` stays
+`lead2_quarter-zip_black_emt_flat-1.jpg`, and an all-hyphen source like
+`lead2-quarter-zip-black-emt-flat-1.jpg` is recovered to it. It also resolves each file to its product handle and its
 Admin **Color** value and records them in the manifest, because alt text on this store binds a photo
 to a colour (see `docs/product-media-alt-text.md`). The colorway token maps to the Admin value:
 `black` -> `Black`, `classic-navy` -> `Navy`, `grey-heather` -> `Gray`, `group` -> shared (no value).

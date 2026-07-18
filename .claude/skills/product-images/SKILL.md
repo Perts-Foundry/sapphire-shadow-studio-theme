@@ -36,9 +36,10 @@ The machine-readable vocab, the colorway-to-Admin-colour map, and the product re
 `scripts/lib/photo-naming.mjs`; that module is the source of truth, this list is the human summary.
 `line` huddle / lead2 / shift-fuel. `garment` crew-sweater / quarter-zip / vest. `colorway` black /
 classic-navy / grey-heather / group. `design` an open profession token (rn, cna, emt, ...), optional.
-`shot` angled / closeup / flat / styled. The **output** filename is kebab-case (hyphens); the
-**source** convention keeps underscores between fields. Do not invent tokens; extend the module when a
-genuinely new line / garment / colour / shot ships.
+`shot` angled / closeup / flat / styled. One scheme runs end to end: the processed output and the
+uploaded Shopify filename keep the same underscore-separated form as the source (fields split by `_`,
+multi-word values hyphenated internally). Do not invent tokens; extend the module when a genuinely new
+line / garment / colour / shot ships.
 
 ## Pipeline
 
