@@ -96,8 +96,8 @@ Inter font (`fonts/Inter.ttf`, SIL OFL, license in `fonts/OFL.txt`) is registere
 fontconfig file, because librsvg resolves fonts through fontconfig and ignores `@font-face` embedding.
 
 Output lands in the gitignored `product-images/processed/` (no image binaries enter this public
-repo). The command prints the alt text to set on manual upload. It does **not** upload to Shopify;
-the Admin token is themes-only and the MCP has no media upload, so upload is manual in Shopify Admin.
+repo). The command prints the alt text to set on upload. It does **not** upload to Shopify; upload
+is a separate step in Shopify Admin (or via the Admin API when the app's granted scopes cover it).
 
 Options: `--out <path>` (must be under `product-images/`), `--out-dir <dir>`, `--scale <n>` (default 2).
 

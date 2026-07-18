@@ -140,8 +140,22 @@ visual bucket, opposite rule. The difference is whether the photo exists per col
 
 ## Where alt text is authored
 
-`product-images/processed/manifest.csv` has an `alt` column. Author there first, then paste into
-Admin, so that a re-upload does not silently lose the text.
+`product-images/processed/manifest.csv` has an `alt` column. Author there first, then apply it to
+Admin, so that a re-upload does not silently lose the text. Two things now read that column:
+`scripts/process-product-images.mjs` (its alt-colour guard checks each string against the rule below)
+and `scripts/upload-product-media.mjs`, which sets the alt on the live media via the Admin API. Both,
+and the human-gated pipeline around them, are driven by the `product-images` skill
+(`.claude/skills/product-images/`).
+
+**The reserved colour value is script-owned, but you compose the alt: copy `admin_color` verbatim.**
+The manifest's `admin_color` column already holds the exact Admin Color value for each photo (from
+`scripts/lib/photo-naming.mjs`, honouring the vest's `Black`-only divergence). No code concatenates
+it for you: the alt you write must contain that value verbatim, plus your description. Take the
+colour word from `admin_color`, never re-derive it from the filename. This is the filenames-lie trap
+made mechanical: the colour comes from `admin_color`, never from the file's own colour token. The
+alt-colour guard rejects an alt that names no recognized value, so a prose-only alt is skipped, not
+auto-completed. A group/shared photo has an empty `admin_color` and its alt must name no value at
+all.
 
 Be clear about what that does and does not buy you. `product-images/` is deliberately gitignored,
 binaries and manifest alike, because the CDN is these files' home. The CSV is a local authoring

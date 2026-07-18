@@ -10,6 +10,8 @@
     "shopify": "shopify",
     "theme:check": "shopify theme check",
     "theme:dev": "shopify theme dev",
+    "lib:test": "node --test scripts/lib/*.test.mjs",
+    "images:test": "node --test scripts/process-product-images.test.mjs",
     "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs"
   },
