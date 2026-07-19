@@ -931,13 +931,15 @@ jobs:
           set +x
           set -euo pipefail
           npx shopify theme list --json > themes.json
+          # No updated_at field exists on this output: `theme list --json`
+          # returns only {id, name, processing, createdAtRuntime, role} (per
+          # the installed @shopify/cli's own theme-object formatter);
+          # createdAtRuntime is a boolean session flag, not a timestamp.
           ID=$(jq -r '[.[] | select(.role=="live")][0].id // ""' themes.json)
           NAME=$(jq -r '[.[] | select(.role=="live")][0].name // "unknown"' themes.json)
-          UPDATED=$(jq -r '[.[] | select(.role=="live")][0].updated_at // ""' themes.json)
           {
             echo "live_theme_id=${ID}"
             echo "live_theme_name=${NAME}"
-            echo "live_theme_updated_at=${UPDATED}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Delete preview theme
@@ -1080,7 +1082,6 @@ jobs:
           LIVE_THEME_ID: ${{ env.LIVE_THEME_ID }}
           QUERIED_LIVE_THEME_ID: ${{ steps.live_theme_query.outputs.live_theme_id }}
           LIVE_THEME_NAME: ${{ steps.live_theme_query.outputs.live_theme_name }}
-          LIVE_THEME_UPDATED_AT: ${{ steps.live_theme_query.outputs.live_theme_updated_at }}
           CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
         with:
@@ -1131,7 +1132,6 @@ jobs:
             const liveThemeId = process.env.LIVE_THEME_ID || '';
             const queriedLiveThemeId = process.env.QUERIED_LIVE_THEME_ID || '';
             const liveThemeName = process.env.LIVE_THEME_NAME || '';
-            const liveThemeUpdatedAt = process.env.LIVE_THEME_UPDATED_AT || '';
             // The docs-only report displays liveThemeId (the hardcoded
             // constant this pipeline assumes is live), but the query above
             // independently asked Shopify what is actually live right now.
@@ -1247,8 +1247,8 @@ jobs:
             );
             if (pushSkipped) {
               const liveThemeRow = formatLiveThemeRow
-                ? formatLiveThemeRow({ liveThemeName, liveThemeId, liveThemeUpdatedAt })
-                : `\`${liveThemeName || 'unknown'}\` (ID \`${liveThemeId}\`), last updated \`${liveThemeUpdatedAt || 'unknown'}\``;
+                ? formatLiveThemeRow({ liveThemeName, liveThemeId })
+                : `\`${liveThemeName || 'unknown'}\` (ID \`${liveThemeId}\`)`;
               const lastDeployRow = formatLastDeployRow
                 ? formatLastDeployRow({ lastDeploySha, lastDeployMsg, lastDeployDate })
                 : (lastDeploySha ? `\`${lastDeploySha}\`: ${lastDeployMsg} (${lastDeployDate})` : '_no marker found_');
@@ -1272,7 +1272,7 @@ jobs:
                 if (!renderSmokeMarkdownTable) throw new Error('renderer unavailable');
                 const { summaryLine, markdown } = renderSmokeMarkdownTable(smokeOutput);
                 smokeSection = [
-                  `<details><summary><strong>Smoke test</strong>: ${summaryLine}</summary>`,
+                  `<details open><summary><strong>Smoke test</strong>: ${summaryLine}</summary>`,
                   '',
                   markdown,
                   '',
@@ -1281,7 +1281,7 @@ jobs:
               } catch (e) {
                 core.warning(`Smoke table rendering failed (${e.message}); falling back to raw output.`);
                 smokeSection = [
-                  '<details><summary><strong>Smoke test</strong></summary>',
+                  '<details open><summary><strong>Smoke test</strong></summary>',
                   '',
                   '```',
                   smokeOutput || 'No output captured.',
