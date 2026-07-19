@@ -142,6 +142,34 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── Deploy smoke-test unit tests ───────────────────────────
+      # smoke.mjs is the post-deploy storefront probe run by deploy.yml. It has
+      # no storefront reach until a deploy, and its whole job is to fail a bad
+      # deploy, so its classifier decision table is gated here. The TESTS_RUN
+      # guard below is belt-and-braces: smoke:test names a literal file (a
+      # missing file exits non-zero on its own), but the guard also catches a
+      # future switch to a glob, or a file emptied of its tests, reporting green.
+      - name: Smoke script tests
+        id: smoke-test
+        run: |
+          set +e
+          OUTPUT=$(npm run smoke:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::smoke suite reported ${TESTS_RUN:-0} tests. The path in the smoke:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── actionlint (workflows + composite actions) ─────────────
       - name: actionlint
         id: actionlint
@@ -208,12 +236,13 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -243,12 +272,14 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
           THEME_CHECK_OUTPUT: ${{ steps.theme-check.outputs.output }}
           RECONCILE_OUTPUT: ${{ steps.reconcile.outputs.output }}
           SIZE_CHART_OUTPUT: ${{ steps.size-chart.outputs.output }}
+          SMOKE_TEST_OUTPUT: ${{ steps.smoke-test.outputs.output }}
           ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
           ZIZMOR_OUTPUT: ${{ steps.zizmor.outputs.output }}
           GITLEAKS_OUTPUT: ${{ steps.gitleaks.outputs.output }}
@@ -276,6 +307,7 @@ jobs:
             const themeCheck = process.env.THEME_CHECK_EXIT;
             const reconcile = process.env.RECONCILE_EXIT;
             const sizeChart = process.env.SIZE_CHART_EXIT;
+            const smokeTest = process.env.SMOKE_TEST_EXIT;
             const actionlint = process.env.ACTIONLINT_EXIT;
             const zizmor = process.env.ZIZMOR_EXIT;
             const gitleaks = process.env.GITLEAKS_EXIT;
@@ -283,6 +315,7 @@ jobs:
             const themeCheckOut = sanitize(process.env.THEME_CHECK_OUTPUT) || 'No issues found';
             const reconcileOut = sanitize(process.env.RECONCILE_OUTPUT) || 'No output';
             const sizeChartOut = sanitize(process.env.SIZE_CHART_OUTPUT) || 'No output';
+            const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
             const gitleaksOut = sanitize(process.env.GITLEAKS_OUTPUT) || 'No issues found';
@@ -309,6 +342,7 @@ jobs:
               `| Check | Tool | Result |`,
               `|:------|:-----|:------:|`,
               `| **Size chart** | \`npm run size-chart:test\` | ${status(sizeChart)} |`,
+              `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
               '',
               '### Workflows',
               '',
@@ -345,6 +379,14 @@ jobs:
               '',
               '```',
               sizeChartOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Deploy smoke</strong> (<code>npm run smoke:test</code>)</summary>',
+              '',
+              '```',
+              smokeTestOut,
               '```',
               '',
               '</details>',
@@ -422,6 +464,7 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
@@ -440,6 +483,7 @@ jobs:
           check_exit "theme-check" "$THEME_CHECK_EXIT"
           check_exit "reconcile" "$RECONCILE_EXIT"
           check_exit "size-chart" "$SIZE_CHART_EXIT"
+          check_exit "smoke-test" "$SMOKE_TEST_EXIT"
           check_exit "actionlint" "$ACTIONLINT_EXIT"
           check_exit "zizmor" "$ZIZMOR_EXIT"
           check_exit "gitleaks" "$GITLEAKS_EXIT"
