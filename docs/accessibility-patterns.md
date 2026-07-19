@@ -21,3 +21,4 @@ Match the role / attribute set exactly when implementing one of these widgets. A
 - **Switch**. `<input type="checkbox">` (or `role="switch" aria-checked`). Label describes the function ("Wi-Fi"), not the state ("On"). Provide redundant On / Off visual indicators.
 - **Tab**. Tablist: `role="tablist" aria-label`. Tabs: `role="tab" aria-selected aria-controls="<panelId>"`. Panels: `role="tabpanel" aria-labelledby="<tabId>"`. Left / Right (or Up / Down for vertical) move; Space / Enter activates; Home / End jump to ends.
 - **Tooltip**. Trigger: `<button aria-expanded aria-controls="<tooltipId>">`. Tooltip: `role="tooltip"` with matching `id`. Enter / Space shows; Esc hides. Hover and tap also toggle. Tooltip content is non-interactive and a sibling, not a descendant of the trigger.
+
