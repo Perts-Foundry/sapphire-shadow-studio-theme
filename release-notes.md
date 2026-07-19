@@ -1,5 +1,24 @@
 # Release Notes
 
+## Deploy-report messaging: docs-only close message + smoke markdown table (unreleased)
+
+### What changed
+
+The previous smoke-test redesign (below) shipped the `theme_touched` push-skip mechanic; this pass finishes the reporting UX on both branches of that gate.
+
+- **Docs-only PRs** now get an explicit `:page_facing_up: **Docs-only PR.**` headline instead of the more implicit "Live push skipped" phrasing, plus two new rows: the live theme's current name/`updated_at` (queried read-only from Shopify) and the last commit actually deployed through this pipeline (read from a new git ref, see below). Both lookups are `continue-on-error`; a Shopify API hiccup can never block a docs-only merge from closing, which was the entire point of the original `theme_touched` gate.
+- **`refs/deploy-markers/live`**: a lightweight custom ref (deliberately outside `refs/tags/` so it does not appear on the public repo's Tags page), force-moved to the squash-merge commit SHA whenever a real live deploy succeeds. Guarded by a commit-date comparison, not graph ancestry, before overwriting: squash commits are never ancestors of one another, so `compareCommits` ahead/behind does not hold across squashes, but commit date does. A write that would move the marker backward in time is skipped with a `core.warning` instead of applied.
+- **Smoke output as a markdown table.** New pure module `.github/actions/shopify-theme-push/report-format.mjs` (`report-format.test.mjs`, folded into `npm run smoke:test`) parses `smoke.mjs`'s existing plain-text `path verdict status host theme (reason)` lines into a GitHub-rendered table with pass/warn/fail badges, on both the success report and, for a smoke-triggered failure, the failure report. `smoke.mjs` itself is untouched: this is a text-to-structure re-parse of its existing, hygiene-tested output contract, done in a separate file specifically so the parse can evolve without touching that contract's 50+ existing assertions. Both call sites wrap the render in try/catch and fall back to the original raw-fenced-dump on any import or render failure, so a formatting bug can never suppress the report itself (the failure report in particular is the last line of defense on a broken deploy).
+- **Live theme ID drift check.** The docs-only "Query live theme" step now also captures the live theme's actual `.id`, not just its name/`updated_at`, and the report flags a mismatch against the hardcoded `LIVE_THEME_ID` constant instead of silently pairing freshly-queried data with an unverified assumed ID.
+
+### Trust-boundary note
+
+Rendering the smoke table via `report-format.mjs` means both `github-script` steps that build the sticky comment now dynamically `import()` a file living on the checked-out PR branch, inside the same process that holds this job's `contents:write`/`pull-requests:write` token. On the comment-deploy path specifically (which, unlike the shopify-sync and dependabot auto-deploy paths, has no gate blocking a `.github/`-touching diff), this is a real widening from the prior Shopify-token-only exposure. Accepted under this repo's existing documented threat model (a compromised `contents:write` collaborator can already exfiltrate any secret via a malicious workflow change; see CLAUDE.md's Deploy gate trust delta), not a categorically new hole, but called out explicitly here rather than silently, per `/security-review` finding during this change's review.
+
+### Known limitation
+
+`deploy.yml` triggers on `issue_comment` and `workflow_run`. GitHub resolves the *workflow file* for both event types from the default branch, never a PR head, so none of this was end-to-end testable via a real `deploy` comment on a feature branch pre-merge; the automated test suite plus code review were the actual pre-merge gate, and the first real activation was the first `deploy` comment after this merged to `main`.
+
 ## Deploy smoke-test redesign: node fetch, catalog-wide, locked-and-public (unreleased)
 
 ### Symptom

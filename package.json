@@ -12,7 +12,7 @@
     "theme:dev": "shopify theme dev",
     "lib:test": "node --test scripts/lib/*.test.mjs",
     "images:test": "node --test scripts/process-product-images.test.mjs",
-    "smoke:test": "node --test .github/actions/shopify-theme-push/smoke.test.mjs",
+    "smoke:test": "node --test .github/actions/shopify-theme-push/smoke.test.mjs .github/actions/shopify-theme-push/report-format.test.mjs",
     "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs"
   },
