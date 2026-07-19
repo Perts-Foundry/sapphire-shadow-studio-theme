@@ -34,12 +34,13 @@ inputs:
     default: ""
   smoke-paths:
     description: |
-      Space-separated storefront paths to smoke-test after live push. Default covers
-      the homepage, cart, and all-products collection. Override at the call site to
-      add a stable product handle once one exists (commit it to CLAUDE.md as a
-      permanent fixture before extending the default).
+      Space-separated STRUCTURAL storefront paths to smoke-test after live push
+      (homepage, cart, all-products collection, search). These verify the deploy
+      landed (200 + host + live theme-id). Product pages are NOT listed here; the
+      smoke enumerates every published product from the sitemap and probes each,
+      so the catalog is covered automatically without a maintained handle list.
     required: false
-    default: "/ /cart /collections/all"
+    default: "/ /cart /collections/all /search"
   smoke-base-url:
     description: |
       Canonical storefront origin to smoke-test (scheme + host, no trailing slash),
@@ -49,6 +50,17 @@ inputs:
       primary custom domain that the myshopify URL 301s to; otherwise probes hit
       the redirect and fail. When empty, the legacy no-follow probe of
       `https://${SHOPIFY_FLAG_STORE}` is used.
+    required: false
+    default: ""
+  storefront-password:
+    description: |
+      Storefront password (live mode only; optional). Enables locked-mode
+      content probing: the smoke authenticates the password gate and probes real
+      pages while the store is pre-launch. Sourced from a repo-level SECRET (it
+      grants read access to gated pre-launch content). When absent, the smoke
+      soft-warns and asserts the /password page instead of hard-failing. Delete
+      the secret at public launch; the smoke auto-detects PUBLIC mode with no
+      code change. Passed to smoke.mjs via env only, never on the command line.
     required: false
     default: ""
 
@@ -72,10 +84,15 @@ outputs:
     description: Push exit code (99 = live theme ID assertion failed)
     value: ${{ steps.push.outputs.push_exit_code }}
   smoke-output:
-    description: Smoke test output (live mode only)
+    description: |
+      Smoke test output (live mode only). One "path verdict status host theme-id"
+      line per probe. Contains no secrets, cookies, or headers by construction.
     value: ${{ steps.smoke.outputs.smoke_output }}
   smoke-exit-code:
-    description: Smoke test exit code (live mode only; 0 = all paths returned 200)
+    description: |
+      Smoke test exit code (live mode only). 0 = at least one path verified PASS
+      and no HARD-FAIL (soft-warns tolerated); 1 = a HARD-FAIL, or nothing was
+      verified (e.g. a wholesale 429 wall).
     value: ${{ steps.smoke.outputs.smoke_exit_code }}
   cleanup-status:
     description: |
@@ -356,63 +373,20 @@ runs:
       # composite-action steps in some runner versions.
       if: success() && inputs.mode == 'live'
       shell: bash
+      # All inputs are passed via env (never interpolated into the run: line):
+      # keeps the storefront-password out of argv / process listings and off
+      # zizmor's template-injection radar. Node 22 is guaranteed by the
+      # Setup Shopify CLI step above (setup-shopify-cli sets up Node), so the
+      # built-in fetch the smoke relies on is always present.
       env:
         SHOPIFY_FLAG_STORE: ${{ inputs.shopify-flag-store }}
         SMOKE_PATHS: ${{ inputs.smoke-paths }}
         SMOKE_BASE_URL: ${{ inputs.smoke-base-url }}
+        LIVE_THEME_ID: ${{ inputs.live-theme-id }}
+        STOREFRONT_PASSWORD: ${{ inputs.storefront-password }}
       run: |
         set +x
-        set -uo pipefail
-        EXIT_CODE=0
-        OUTPUT=""
-        # Two probe modes:
-        #   - SMOKE_BASE_URL set: follow redirects (-L) and require BOTH a final
-        #     200 AND that the final URL stays on the configured host. Use this
-        #     when the storefront has a primary custom domain (the myshopify URL
-        #     301s to it).
-        #   - SMOKE_BASE_URL empty: legacy no-redirect probe of the myshopify
-        #     handle. Anything other than 200 fails (a 301 here means a custom
-        #     domain is in play and SMOKE_BASE_URL should be set).
-        # Use -s for quiet, -S for errors-on-stderr, -o /dev/null to discard
-        # body, -w to print metrics. No -f (curl -f exits early on HTTP >= 400
-        # and skips the metric line).
-        if [ -n "$SMOKE_BASE_URL" ]; then
-          EXPECTED_HOST=$(printf '%s' "$SMOKE_BASE_URL" | awk -F/ '{print $3}')
-          for path in $SMOKE_PATHS; do
-            URL="${SMOKE_BASE_URL}${path}"
-            RESULT=$(curl -L --max-time 30 -sS -o /dev/null -w '%{http_code} %{url_effective}' "$URL" 2>/dev/null || echo "000 -")
-            CODE=$(printf '%s' "$RESULT" | awk '{print $1}')
-            FINAL_URL=$(printf '%s' "$RESULT" | awk '{print $2}')
-            FINAL_HOST=$(printf '%s' "$FINAL_URL" | awk -F/ '{print $3}')
-            LINE="${path} -> ${CODE} (final: ${FINAL_URL})"
-            OUTPUT="${OUTPUT}${LINE}"$'\n'
-            if [ "$CODE" != "200" ]; then
-              echo "::error::Smoke test failed: ${path} returned ${CODE} (final: ${FINAL_URL})"
-              EXIT_CODE=1
-            elif [ "$FINAL_HOST" != "$EXPECTED_HOST" ]; then
-              echo "::error::Smoke test failed: ${path} redirected off-host (expected ${EXPECTED_HOST}, got ${FINAL_HOST})"
-              EXIT_CODE=1
-            else
-              echo "OK: ${path} -> 200 (${FINAL_HOST})"
-            fi
-          done
-        else
-          for path in $SMOKE_PATHS; do
-            CODE=$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "https://${SHOPIFY_FLAG_STORE}${path}" 2>/dev/null || echo "000")
-            LINE="${path} -> ${CODE}"
-            OUTPUT="${OUTPUT}${LINE}"$'\n'
-            if [ "$CODE" != "200" ]; then
-              echo "::error::Smoke test failed: ${path} returned ${CODE}"
-              EXIT_CODE=1
-            else
-              echo "OK: ${path} -> 200"
-            fi
-          done
-        fi
-        {
-          echo "smoke_output<<GHEOF"
-          printf '%s' "$OUTPUT"
-          echo "GHEOF"
-          echo "smoke_exit_code=${EXIT_CODE}"
-        } >> "$GITHUB_OUTPUT"
-        exit "$EXIT_CODE"
+        # smoke.mjs writes smoke_output / smoke_exit_code to GITHUB_OUTPUT and
+        # exits non-zero only on a HARD-FAIL (soft-warns exit 0). Its exit code
+        # is the last command's, so it drives this step's success/failure.
+        node "${GITHUB_ACTION_PATH}/smoke.mjs"

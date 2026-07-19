@@ -79,7 +79,7 @@ Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate` | PR opened / synchronize / reopened (same-repo heads) | One sequential job (`validate`) running `theme-check`, `reconcile`, `size-chart`, `actionlint`, `zizmor`, and `gitleaks`, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
+| `validate` | PR opened / synchronize / reopened (same-repo heads) | One sequential job (`validate`) running `theme-check`, `reconcile`, `size-chart`, `smoke` (deploy smoke-test units), `actionlint`, `zizmor`, and `gitleaks`, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
 | `preview` | PR opened / synchronize / closed | Creates a per-PR unpublished theme `pr-<n>-preview`, comments the link, deletes it on close. |
 | `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
 | `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**` | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
@@ -104,14 +104,15 @@ Make admin edits on the `EDIT HERE - Admin Sync` theme (they flow to `shopify-sy
 | Name | Type | Purpose |
 |---|---|---|
 | `SHOPIFY_CLI_THEME_TOKEN` | Repository **secret** | Admin API access token from a Custom App with `read_themes` + `write_themes` (token starts with `shpat_`). Used by the live push. |
+| `STOREFRONT_PASSWORD` | Repository **secret** (optional) | Storefront password. Lets the post-deploy smoke authenticate the password gate and probe real pages while the store is pre-launch. Absent -> the smoke soft-warns and checks the `/password` page instead. **Delete at public launch**; the smoke auto-detects the public store with no code change. |
 | `SHOPIFY_DOMAIN` | Repository **variable** | Canonical storefront host (e.g. `sapphireshadowstudio.com`), no scheme, no trailing slash. The deploy chain prefixes `https://` and uses it as the smoke-test base URL. |
 | `SHOPIFY_FLAG_STORE` | Repository **variable** | The store's internal myshopify handle. **Use the internal handle, not the friendly admin alias** (`sapphire-shadow-studio.myshopify.com`), or Shopify rejects auth with a 401. |
 | `EXPECTED_SYNC_PR_OPENER` | Repository **variable** | Expected GitHub login of the reconcile-PR opener; checked by the auto-deploy gate on the `shopify-sync` path. |
 | `SHOPIFY_SYNC_DEPLOY_KEY` | Repository **secret** | SSH deploy key used only by the `sync` job to reconcile `shopify-sync`. Not in scope of the live-push job. |
 
-The smoke test (run after the live push) follows the myshopify handle's 301 to `SHOPIFY_DOMAIN` and asserts a final 200 on the paths `/ /cart /collections/all` (the default in [`.github/actions/shopify-theme-push/action.yml`](.github/actions/shopify-theme-push/action.yml)).
+The smoke test (run after the live push) is a node-`fetch` probe ([`smoke.mjs`](.github/actions/shopify-theme-push/smoke.mjs)), not curl: Cloudflare bot-management blocklists curl's fingerprint and 429s content routes. It asserts `200` + on-host + the live theme id on the structural routes `/ /cart /collections/all /search`, and probes **every published product** (enumerated from the storefront sitemap) so a deploy that breaks a product's availability fails. A PR that touches no theme files skips the live push and smoke entirely, but still merges. See [CLAUDE.md](CLAUDE.md) for the full behaviour.
 
-**One-time setup.** In Shopify admin: Settings -> Apps and sales channels -> Develop apps -> Create an app. Configure Admin API scopes `read_themes` and `write_themes`, install the app, and reveal the Admin API access token (shown once). Paste it into the repo secret `SHOPIFY_CLI_THEME_TOKEN` (Settings -> Secrets and variables -> Actions). Under the Variables tab, set `SHOPIFY_DOMAIN`, `SHOPIFY_FLAG_STORE`, and `EXPECTED_SYNC_PR_OPENER`. Custom App tokens do not expire on a schedule; rotate by recreating the app. Never echo a token to the terminal or write it to a file.
+**One-time setup.** In Shopify admin: Settings -> Apps and sales channels -> Develop apps -> Create an app. Configure Admin API scopes `read_themes` and `write_themes`, install the app, and reveal the Admin API access token (shown once). Paste it into the repo secret `SHOPIFY_CLI_THEME_TOKEN` (Settings -> Secrets and variables -> Actions). Under the Variables tab, set `SHOPIFY_DOMAIN`, `SHOPIFY_FLAG_STORE`, and `EXPECTED_SYNC_PR_OPENER`. While the store is password-protected, add the repo secret `STOREFRONT_PASSWORD` so the smoke can probe real pages; delete it at public launch. Custom App tokens do not expire on a schedule; rotate by recreating the app. Never echo a token to the terminal or write it to a file.
 
 ## Rollback
 

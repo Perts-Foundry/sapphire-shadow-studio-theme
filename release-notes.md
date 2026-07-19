@@ -1,5 +1,30 @@
 # Release Notes
 
+## Deploy smoke-test redesign: node fetch, catalog-wide, locked-and-public (unreleased)
+
+### Symptom
+
+On PR #56 (docs-only) the live push succeeded but the post-push smoke reported `/ -> 503`, `/cart -> 503`, `/collections/all -> 503` and killed the deploy before squash-merge. It was not the docs change (Shopify ships only the 8 theme directories; `docs/` is never uploaded).
+
+### Root cause (two independent edge layers)
+
+Proven empirically against the live store (`scripts/diagnostics/storefront-probe-node.mjs`):
+
+1. **Cloudflare bot-management** fingerprints the client by JA3/JA4 (TLS ClientHello + HTTP/2) on cacheable content routes (`/`, `/collections/*`, `/search`). `curl`'s fingerprint is blocklisted, yielding a hard `429` (`retry-after: 60`) on every content route, 100% of the time. The old smoke used `curl`, so it never saw a real page; the reported `503`/`429` were edge rejections, not theme errors. node's `fetch` (undici) is not blocklisted. node is not fully immune under a rapid burst (scattered 429s), so the smoke paces and retries on 429.
+2. **Password gate** (pre-launch). Independent of the fingerprint. Cleared by an authenticated `_shopify_essential` session (POST the store password to `/password`, carry the whole cookie jar). Authenticated node fetch returns real `200` content while the store is locked; every rendered response carries `server-timing: ... theme;desc="<live-theme-id>"`.
+
+### Fix
+
+`.github/actions/shopify-theme-push/smoke.mjs` (new, zero-dep, `node --test` unit-tested and gated in `validate`) replaces the curl smoke:
+
+- **node fetch**, auto-detects LOCKED vs PUBLIC, authenticates with the optional `STOREFRONT_PASSWORD` secret when locked, paces + retries on 429, and asserts `200` + on-host + `theme;desc == LIVE_THEME_ID`.
+- **Catalog-wide.** Structural routes (`/ /cart /collections/all /search`) verify the deploy; every published product is enumerated from the sitemap and probed, so a broken product (including an unresolved template suffix) fails the deploy. No maintained handle list (handles are not in the theme repo).
+- **Verdict model.** HARD-FAIL blocks (exit 1); SOFT-WARN (throttle, enumeration skipped, absent/wrong password) proceeds (exit 0) and is surfaced in the report; at least one verified PASS is required to exit 0 so a wholesale 429 wall cannot green a deploy blind. Output is `path verdict status host theme-id` tuples only; the password, cookie jar, and headers are never emitted (the derived session cookie is `::add-mask::`ed).
+- **Path-scoped skip.** The `gate` job computes `theme_touched`; the push+smoke step is guarded on it, so a docs/scripts/`.github`-only PR merges and fast-forwards `shopify-sync` without touching live. Permanent fix for the #56 class. Rename-out of a theme dir is caught via `previous_filename`; file-listing errors fail safe to `true` (push).
+- **Launch.** Delete `STOREFRONT_PASSWORD` at public launch; auto-detect flips to PUBLIC mode with no code change.
+
+Deferred: Shopify Web Bot Auth (native crawler allowlist) would let even curl through, but its signatures expire within 3 months with no auto-renew; reconsider for post-launch uptime monitoring, not the CI primary.
+
 ## CI/CD deploy chain: shopify-sync phantom-orphan force-push via SSH deploy key (unreleased)
 
 PR #21 was the first post-PR-#19 exercise of the auto-deploy chain. It surfaced that the post-merge `Sync main -> shopify-sync` step's phantom-orphan force-with-lease push silently fails on every shopify-sync auto-deploy. The fix swaps that single push from HTTPS+GITHUB_TOKEN to SSH+deploy-key, and folds the step into a new `sync` job to isolate the deploy key from `SHOPIFY_CLI_THEME_TOKEN`. The fast-forward push and the read-only fetch in the same step both stay on HTTPS+GITHUB_TOKEN, since a strict fast-forward to a tip-descendant is not a force push and the `shopify-sync-protection` ruleset's "Block force pushes" rule does not apply.
