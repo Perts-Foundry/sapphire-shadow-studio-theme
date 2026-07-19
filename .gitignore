@@ -12,6 +12,10 @@ npm-debug.log
 # Shopify CLI local state
 .shopify/
 
+# Local diagnostics output. The probe SCRIPT is safe to commit; its LOG may hold
+# storefront session/redirect data, so the log stays local-only.
+/scripts/diagnostics/*.log
+
 # Editor
 .vscode/
 .idea/

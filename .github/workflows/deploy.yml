@@ -105,6 +105,12 @@ jobs:
       base_ref: ${{ steps.resolve.outputs.base_ref }}
       trigger_path: ${{ steps.resolve.outputs.trigger_path }}
       deployer: ${{ steps.resolve.outputs.deployer }}
+      # 'true' if the PR touches any of the 8 theme directories (or renames a
+      # file out of one); 'false' for docs/scripts/.github-only PRs, which then
+      # skip the live push + smoke but still merge and fast-forward shopify-sync.
+      # Fail-safe: defaults to 'true' if file listing errors. Never empty on the
+      # deploy path (theme_scope runs whenever pr_number resolves).
+      theme_touched: ${{ steps.theme_scope.outputs.theme_touched }}
     steps:
       - name: React with eyes
         if: github.event_name == 'issue_comment'
@@ -789,6 +795,46 @@ jobs:
               return;
             }
 
+      # Compute theme_touched for ALL trigger paths (comment / shopify-sync /
+      # dependabot). A custom step-level `if:` strips the implicit success()
+      # check, so success() is stated explicitly to skip this step once a prior
+      # gate step calls core.setFailed. (Even without it the deploy job is
+      # skipped when the gate job fails via the job-level needs-skip, but the
+      # explicit success() keeps the intent local and matches the Smoke step's
+      # convention in action.yml.)
+      - name: Compute theme-file scope
+        id: theme_scope
+        if: success() && steps.resolve.outputs.pr_number != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            // The 8 theme roots Shopify ships. Trailing-slash-anchored so a
+            // top-level file named e.g. `assets` (no dir) or `docs/assets/x`
+            // does NOT false-match; only real theme-dir paths count.
+            const THEME_ROOTS = ['assets/', 'blocks/', 'config/', 'layout/', 'locales/', 'sections/', 'snippets/', 'templates/'];
+            const inTheme = (name) => !!name && THEME_ROOTS.some((root) => name.startsWith(root));
+            let touched = 'true'; // fail-safe default: push unless proven docs-only
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: prNumber, per_page: 100,
+              });
+              // A file counts if its current path is under a theme root, OR it
+              // was renamed OUT of one (previous_filename): renaming
+              // snippets/x.liquid -> docs/x.liquid deletes a live theme file and
+              // must still trigger a push, or live drifts from main undetected.
+              touched = files.some((f) => inTheme(f.filename) || inTheme(f.previous_filename)) ? 'true' : 'false';
+              core.info(`theme_touched=${touched} (${files.length} file(s) in PR #${prNumber})`);
+            } catch (e) {
+              core.warning(`Could not list PR #${prNumber} files (${e.message}); defaulting theme_touched=true (fail-safe push).`);
+              touched = 'true';
+            }
+            core.setOutput('theme_touched', touched);
+
   deploy:
     name: deploy
     needs: gate
@@ -832,6 +878,14 @@ jobs:
 
       - name: Live theme push
         id: push
+        # Skip the entire push+smoke action for a PR that touches no theme
+        # files (docs / scripts / .github only). The action runs both the live
+        # push and the smoke step, so gating here skips both; the merge + sync
+        # steps below still run, so the PR merges and fast-forwards shopify-sync
+        # without touching live. This is the permanent fix for the #56 class
+        # (a docs-only PR false-failing the smoke). A skipped step reports
+        # outcome == 'skipped', which the report step keys on.
+        if: needs.gate.outputs.theme_touched == 'true'
         uses: ./.github/actions/shopify-theme-push
         with:
           mode: live
@@ -842,6 +896,10 @@ jobs:
           # so the action falls back to the legacy myshopify probe instead of
           # silently constructing the malformed URL `https://`.
           smoke-base-url: ${{ vars.SHOPIFY_DOMAIN && format('https://{0}', vars.SHOPIFY_DOMAIN) || '' }}
+          # Optional storefront password: enables locked-mode content probing in
+          # the smoke while the store is pre-launch. Repo SECRET, isolated to
+          # this job. Empty (absent secret) -> smoke soft-warns, not hard-fails.
+          storefront-password: ${{ secrets.STOREFRONT_PASSWORD }}
 
       - name: Delete preview theme
         id: cleanup
@@ -976,7 +1034,9 @@ jobs:
           TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
           DEPLOYER: ${{ needs.gate.outputs.deployer }}
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
+          SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
           THEME_ID: ${{ steps.push.outputs.theme-id }}
           CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
@@ -1012,8 +1072,16 @@ jobs:
             const baseRef = process.env.PR_BASE_REF;
             const triggerPath = process.env.TRIGGER_PATH;
             const deployer = process.env.DEPLOYER;
+            const pushOutcome = process.env.PUSH_OUTCOME || '';
+            const smokeExitCode = process.env.SMOKE_EXIT_CODE || '';
+            // Push+smoke skipped for a docs/scripts-only PR (theme_touched=false).
+            const pushSkipped = pushOutcome === 'skipped';
             const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
             const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
+            // Smoke exited 0 but surfaced at least one SOFT-WARN (throttle,
+            // enumeration skipped, or wrong/absent password). Deploy proceeds;
+            // the report flags it so it is not mistaken for a clean pass.
+            const smokeSoftWarned = !pushSkipped && smokeExitCode === '0' && /SOFT-WARN/.test(smokeOutput);
             const themeId = process.env.THEME_ID || '';
             const cleanupStatus = process.env.CLEANUP_STATUS || '';
             const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
@@ -1039,42 +1107,59 @@ jobs:
               cleanupLine = `:warning: **Preview cleanup warning:** ${cleanupStatus || 'see workflow run for details'}. The preview theme may have leaked; delete it manually with \`npx shopify theme delete --theme <id> --force\`.`;
             }
 
+            const headline = pushSkipped
+              ? ':fast_forward: **Live push skipped:** no theme files changed. The PR was merged and `shopify-sync` fast-forwarded without touching the live theme.'
+              : ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit.';
+
             const body = [
               MARKER,
               `# ${title}`,
               '',
-              ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit.',
+              headline,
+            ];
+            if (smokeSoftWarned) {
+              body.push(
+                '',
+                ':warning: **Smoke soft-warning:** the deploy proceeded, but one or more probes were inconclusive (throttling, product-enumeration skipped, or password fallback). See the Smoke test section below.',
+              );
+            }
+            body.push(
               '',
               '| | |',
               '|:--|:--|',
               `| **Commit** | \`${shortSha}\` |`,
               `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
-              `| **Theme ID** | \`${themeId}\` |`,
+              `| **Theme ID** | ${pushSkipped ? 'n/a (no push)' : '`' + themeId + '`'} |`,
               `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
               `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
               '',
               '---',
               '',
-              '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
-              '',
-              '```',
-              pushOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Smoke test</strong></summary>',
-              '',
-              '```',
-              smokeOutput,
-              '```',
-              '',
-              '</details>',
-              '',
-              '---',
-              '',
-              cleanupLine,
-            ].join('\n');
+            );
+            if (!pushSkipped) {
+              body.push(
+                '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
+                '',
+                '```',
+                pushOutput,
+                '```',
+                '',
+                '</details>',
+                '',
+                '<details><summary><strong>Smoke test</strong></summary>',
+                '',
+                '```',
+                smokeOutput,
+                '```',
+                '',
+                '</details>',
+                '',
+                '---',
+                '',
+              );
+            }
+            body.push(cleanupLine);
+            const bodyText = body.join('\n');
 
             // Upsert sticky comment. github.paginate handles PRs with >100
             // comments (auto-reconcile PRs that accumulate daily-cron stale
@@ -1089,12 +1174,12 @@ jobs:
             const [keep, ...dupes] = existing;
             if (keep) {
               await withRetry(
-                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body }),
+                () => github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body: bodyText }),
                 { attempts: 3, delayMs: 2000, label: 'Update deploy comment' }
               );
             } else {
               await withRetry(
-                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body }),
+                () => github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: bodyText }),
                 { attempts: 3, delayMs: 2000, label: 'Post deploy comment' }
               );
             }
@@ -1255,6 +1340,7 @@ jobs:
           PR_REF: ${{ needs.gate.outputs.ref }}
           TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
           PUSH_EXIT_CODE: ${{ steps.push.outputs.push-exit-code }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
           PUSH_OUTPUT: ${{ steps.push.outputs.push-output }}
           SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
@@ -1294,9 +1380,15 @@ jobs:
             const shortSha = process.env.PR_SHORT_SHA;
             const ref = process.env.PR_REF;
             const triggerPath = process.env.TRIGGER_PATH;
-            const pushExit = process.env.PUSH_EXIT_CODE || '';
+            // When the push+smoke step was SKIPPED (docs-only PR,
+            // theme_touched=false), its exit outputs are empty. Treat them as
+            // success so failure attribution falls through to the merge /
+            // post-merge branches instead of misreporting "Pre-deploy Checks"
+            // (empty pushExit would otherwise match the first branch).
+            const pushSkipped = (process.env.PUSH_OUTCOME || '') === 'skipped';
+            const pushExit = pushSkipped ? '0' : (process.env.PUSH_EXIT_CODE || '');
             const pushOutput = process.env.PUSH_OUTPUT || '';
-            const smokeExit = process.env.SMOKE_EXIT_CODE || '';
+            const smokeExit = pushSkipped ? '0' : (process.env.SMOKE_EXIT_CODE || '');
             const smokeOutput = process.env.SMOKE_OUTPUT || '';
             const merged = process.env.MERGED === 'true';
             const mergeError = process.env.MERGE_ERROR || '';
