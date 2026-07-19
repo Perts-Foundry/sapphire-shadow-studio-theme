@@ -113,19 +113,13 @@ test('formatLiveThemeRow: all fields populated', () => {
   const row = formatLiveThemeRow({
     liveThemeName: 'Live deployed from GitHub PRs',
     liveThemeId: THEME,
-    liveThemeUpdatedAt: '2026-07-15T10:22:03Z',
   });
-  assert.equal(row, '`Live deployed from GitHub PRs` (ID `181702754604`), last updated `2026-07-15T10:22:03Z`');
+  assert.equal(row, '`Live deployed from GitHub PRs` (ID `181702754604`)');
 });
 
-test('formatLiveThemeRow: name and updated_at missing falls back gracefully', () => {
+test('formatLiveThemeRow: name missing falls back gracefully', () => {
   const row = formatLiveThemeRow({ liveThemeId: THEME });
-  assert.equal(row, 'unknown (ID `181702754604`), last updated `unknown`');
-});
-
-test('formatLiveThemeRow: mixed (name present, updated_at missing)', () => {
-  const row = formatLiveThemeRow({ liveThemeName: 'Live deployed from GitHub PRs', liveThemeId: THEME, liveThemeUpdatedAt: '' });
-  assert.equal(row, '`Live deployed from GitHub PRs` (ID `181702754604`), last updated `unknown`');
+  assert.equal(row, 'unknown (ID `181702754604`)');
 });
 
 test('formatLastDeployRow: all fields populated', () => {
@@ -192,9 +186,8 @@ test('formatLiveThemeRow: a pipe or backtick in the (Admin-editable) theme name 
   const row = formatLiveThemeRow({
     liveThemeName: 'Live | theme `special`',
     liveThemeId: THEME,
-    liveThemeUpdatedAt: '2026-07-15T10:22:03Z',
   });
-  assert.equal(row, '`Live \\| theme \\`special\\`` (ID `181702754604`), last updated `2026-07-15T10:22:03Z`');
+  assert.equal(row, '`Live \\| theme \\`special\\`` (ID `181702754604`)');
 });
 
 test('formatLastDeployRow: a pipe or backtick in the (PR-title-derived) commit message is escaped, not left to corrupt the row', () => {

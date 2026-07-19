@@ -75,13 +75,17 @@ export function renderSmokeMarkdownTable(smokeOutput) {
 
 /**
  * Render the "Live theme (unchanged)" row for the docs-only deploy report.
- * @param {{liveThemeName?: string, liveThemeId: string, liveThemeUpdatedAt?: string}} o
+ * No updated_at field: `shopify theme list --json` returns only
+ * {id, name, processing, createdAtRuntime, role} (verified against the
+ * installed @shopify/cli's own theme-object formatter); createdAtRuntime is
+ * a boolean session flag, not a timestamp, so there is no real "last
+ * updated" data this pipeline can honestly show here.
+ * @param {{liveThemeName?: string, liveThemeId: string}} o
  * @returns {string}
  */
-export function formatLiveThemeRow({ liveThemeName, liveThemeId, liveThemeUpdatedAt }) {
+export function formatLiveThemeRow({ liveThemeName, liveThemeId }) {
   const name = liveThemeName ? `\`${escapeCell(liveThemeName)}\`` : 'unknown';
-  const updated = liveThemeUpdatedAt ? escapeCell(liveThemeUpdatedAt) : 'unknown';
-  return `${name} (ID \`${escapeCell(liveThemeId)}\`), last updated \`${updated}\``;
+  return `${name} (ID \`${escapeCell(liveThemeId)}\`)`;
 }
 
 /**
