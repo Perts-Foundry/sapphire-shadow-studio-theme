@@ -901,6 +901,45 @@ jobs:
           # this job. Empty (absent secret) -> smoke soft-warns, not hard-fails.
           storefront-password: ${{ secrets.STOREFRONT_PASSWORD }}
 
+      - name: Setup Shopify CLI (docs-only)
+        # Docs-only counterpart to the push above: no theme files changed, so
+        # there is nothing to push, but the deploy report still shows what's
+        # currently live. Read-only (`theme list`), reuses the token already
+        # scoped to this job; continue-on-error so a Shopify API hiccup can
+        # never block a docs-only merge from closing.
+        id: live_theme_info
+        if: success() && needs.gate.outputs.theme_touched == 'false'
+        continue-on-error: true
+        uses: ./.github/actions/setup-shopify-cli
+
+      - name: Query live theme
+        id: live_theme_query
+        # Chained on the setup step's own success so a CLI-setup failure
+        # doesn't also produce an uncorrelated failed `npx shopify` log entry
+        # underneath it; both are continue-on-error, so the net effect is the
+        # same either way (comment falls back to "unknown").
+        if: success() && needs.gate.outputs.theme_touched == 'false' && steps.live_theme_info.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          SHOPIFY_FLAG_STORE: ${{ vars.SHOPIFY_FLAG_STORE }}
+          SHOPIFY_CLI_TTY: "0"
+          CI: "1"
+          SHOPIFY_FLAG_NO_COLOR: "true"
+        run: |
+          set +x
+          set -euo pipefail
+          npx shopify theme list --json > themes.json
+          ID=$(jq -r '[.[] | select(.role=="live")][0].id // ""' themes.json)
+          NAME=$(jq -r '[.[] | select(.role=="live")][0].name // "unknown"' themes.json)
+          UPDATED=$(jq -r '[.[] | select(.role=="live")][0].updated_at // ""' themes.json)
+          {
+            echo "live_theme_id=${ID}"
+            echo "live_theme_name=${NAME}"
+            echo "live_theme_updated_at=${UPDATED}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Delete preview theme
         id: cleanup
         # Gated on live push success (not merge success): the preview becomes
@@ -1038,10 +1077,16 @@ jobs:
           SMOKE_OUTPUT: ${{ steps.push.outputs.smoke-output }}
           SMOKE_EXIT_CODE: ${{ steps.push.outputs.smoke-exit-code }}
           THEME_ID: ${{ steps.push.outputs.theme-id }}
+          LIVE_THEME_ID: ${{ env.LIVE_THEME_ID }}
+          QUERIED_LIVE_THEME_ID: ${{ steps.live_theme_query.outputs.live_theme_id }}
+          LIVE_THEME_NAME: ${{ steps.live_theme_query.outputs.live_theme_name }}
+          LIVE_THEME_UPDATED_AT: ${{ steps.live_theme_query.outputs.live_theme_updated_at }}
           CLEANUP_STATUS: ${{ steps.cleanup.outputs.cleanup-status }}
           CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
         with:
           script: |
+            const { pathToFileURL } = require('node:url');
+            const path = require('node:path');
             const RETRYABLE = new Set([500, 502, 503, 504]);
             const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
             const isTransient = (err) => {
@@ -1077,15 +1122,79 @@ jobs:
             // Push+smoke skipped for a docs/scripts-only PR (theme_touched=false).
             const pushSkipped = pushOutcome === 'skipped';
             const pushOutput = process.env.PUSH_OUTPUT || 'No output captured.';
-            const smokeOutput = process.env.SMOKE_OUTPUT || 'No output captured.';
+            const smokeOutput = process.env.SMOKE_OUTPUT || '';
             // Smoke exited 0 but surfaced at least one SOFT-WARN (throttle,
             // enumeration skipped, or wrong/absent password). Deploy proceeds;
             // the report flags it so it is not mistaken for a clean pass.
             const smokeSoftWarned = !pushSkipped && smokeExitCode === '0' && /SOFT-WARN/.test(smokeOutput);
             const themeId = process.env.THEME_ID || '';
+            const liveThemeId = process.env.LIVE_THEME_ID || '';
+            const queriedLiveThemeId = process.env.QUERIED_LIVE_THEME_ID || '';
+            const liveThemeName = process.env.LIVE_THEME_NAME || '';
+            const liveThemeUpdatedAt = process.env.LIVE_THEME_UPDATED_AT || '';
+            // The docs-only report displays liveThemeId (the hardcoded
+            // constant this pipeline assumes is live), but the query above
+            // independently asked Shopify what is actually live right now.
+            // If they disagree, that's the out-of-band-change scenario this
+            // repo's docs call out ("no automated drift detection; live =
+            // main is operator discipline") actually happening; say so
+            // instead of silently showing the assumed ID next to real data.
+            const liveThemeIdDrift = pushSkipped && queriedLiveThemeId && queriedLiveThemeId !== liveThemeId;
             const cleanupStatus = process.env.CLEANUP_STATUS || '';
             const cleanupOutcome = process.env.CLEANUP_OUTCOME || '';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // Dynamically import the report-formatting helpers from the
+            // checked-out (trusted) SHA, not main's HEAD. Wrapped so an
+            // import failure or an unanticipated render exception can never
+            // suppress this report; on failure everything falls back to the
+            // pre-existing raw-text rendering.
+            //
+            // Trust-boundary note: "trusted" above means the gate/signed-
+            // commit/merge-base chain verified this SHA's permissions and
+            // (for auto-deploy paths) bot identity, NOT that it was vetted
+            // for .github/-directory tampering the way the shopify-sync and
+            // dependabot paths explicitly are. This import pulls PR-branch
+            // content (report-format.mjs) into execution inside the same
+            // github-script process that holds this job's contents:write /
+            // pull-requests:write token, for the comment-deploy path too.
+            // Accepted under this repo's existing threat model ("a
+            // compromised contents:write collaborator... could already
+            // exfiltrate any secret via a malicious workflow change"; see
+            // CLAUDE.md's Deploy gate trust delta), not a categorically new
+            // hole, but it is a real, deliberate widening from the prior
+            // Shopify-token-only exposure on this specific path.
+            let renderSmokeMarkdownTable, formatLiveThemeRow, formatLastDeployRow;
+            try {
+              const mod = await import(
+                pathToFileURL(path.resolve(process.env.GITHUB_WORKSPACE, '.github/actions/shopify-theme-push/report-format.mjs')).href
+              );
+              ({ renderSmokeMarkdownTable, formatLiveThemeRow, formatLastDeployRow } = mod);
+            } catch (e) {
+              core.warning(`report-format.mjs import failed (${e.message}); falling back to raw output.`);
+            }
+
+            // Last-actually-deployed marker (docs-only path only). A 404 is
+            // the expected "no marker yet" case (pre-feature, or the very
+            // first-ever deploy was docs-only) and stays silent; anything
+            // else is a real problem and should not look identical to that.
+            let lastDeploySha = '', lastDeployMsg = '', lastDeployDate = '';
+            if (pushSkipped) {
+              try {
+                const { data: markerRef } = await github.rest.git.getRef({ owner, repo, ref: 'deploy-markers/live' });
+                const { data: commit } = await github.rest.repos.getCommit({ owner, repo, ref: markerRef.object.sha });
+                lastDeploySha = commit.sha.substring(0, 7);
+                lastDeployMsg = (commit.commit.message || '').split('\n')[0];
+                // committer.date, not author.date: the marker's own write
+                // guard (Record live-deploy marker) orders by committer.date
+                // (the API-set squash-merge time, monotonic across deploys),
+                // so the displayed date must match what actually gated the
+                // write, not the original PR commit's authoring time.
+                lastDeployDate = commit.commit.committer?.date || '';
+              } catch (e) {
+                if (e.status !== 404) core.warning(`Could not read live-deploy marker: ${e.message}`);
+              }
+            }
 
             const titleByPath = {
               'comment': 'Deployment Report',
@@ -1108,7 +1217,7 @@ jobs:
             }
 
             const headline = pushSkipped
-              ? ':fast_forward: **Live push skipped:** no theme files changed. The PR was merged and `shopify-sync` fast-forwarded without touching the live theme.'
+              ? ':page_facing_up: **Docs-only PR.** No theme files changed, so the live theme was not touched. This PR was merged and `shopify-sync` fast-forwarded without a deploy.'
               : ':white_check_mark: **Live theme deployed.** Storefront is now serving this commit.';
 
             const body = [
@@ -1123,13 +1232,34 @@ jobs:
                 ':warning: **Smoke soft-warning:** the deploy proceeded, but one or more probes were inconclusive (throttling, product-enumeration skipped, or password fallback). See the Smoke test section below.',
               );
             }
+            if (liveThemeIdDrift) {
+              body.push(
+                '',
+                `:warning: **Live theme ID drift detected:** this pipeline assumes \`${liveThemeId}\`, but Shopify currently reports \`${queriedLiveThemeId}\` as live. The live theme may have changed out-of-band; investigate before trusting this report's "unchanged" framing.`,
+              );
+            }
             body.push(
               '',
               '| | |',
               '|:--|:--|',
               `| **Commit** | \`${shortSha}\` |`,
               `| **Branch** | \`${ref}\` -> \`${baseRef}\` |`,
-              `| **Theme ID** | ${pushSkipped ? 'n/a (no push)' : '`' + themeId + '`'} |`,
+            );
+            if (pushSkipped) {
+              const liveThemeRow = formatLiveThemeRow
+                ? formatLiveThemeRow({ liveThemeName, liveThemeId, liveThemeUpdatedAt })
+                : `\`${liveThemeName || 'unknown'}\` (ID \`${liveThemeId}\`), last updated \`${liveThemeUpdatedAt || 'unknown'}\``;
+              const lastDeployRow = formatLastDeployRow
+                ? formatLastDeployRow({ lastDeploySha, lastDeployMsg, lastDeployDate })
+                : (lastDeploySha ? `\`${lastDeploySha}\`: ${lastDeployMsg} (${lastDeployDate})` : '_no marker found_');
+              body.push(
+                `| **Live theme (unchanged)** | ${liveThemeRow} |`,
+                `| **Last live deploy (this pipeline)** | ${lastDeployRow} |`,
+              );
+            } else {
+              body.push(`| **Theme ID** | \`${themeId}\` |`);
+            }
+            body.push(
               `| **Deployed by** | ${deployer.startsWith('@') ? deployer : (triggerPath === 'comment' ? '@' + deployer : deployer)} |`,
               `| **Workflow run** | [#${context.runNumber}](${runUrl}) |`,
               '',
@@ -1137,6 +1267,29 @@ jobs:
               '',
             );
             if (!pushSkipped) {
+              let smokeSection;
+              try {
+                if (!renderSmokeMarkdownTable) throw new Error('renderer unavailable');
+                const { summaryLine, markdown } = renderSmokeMarkdownTable(smokeOutput);
+                smokeSection = [
+                  `<details><summary><strong>Smoke test</strong>: ${summaryLine}</summary>`,
+                  '',
+                  markdown,
+                  '',
+                  '</details>',
+                ];
+              } catch (e) {
+                core.warning(`Smoke table rendering failed (${e.message}); falling back to raw output.`);
+                smokeSection = [
+                  '<details><summary><strong>Smoke test</strong></summary>',
+                  '',
+                  '```',
+                  smokeOutput || 'No output captured.',
+                  '```',
+                  '',
+                  '</details>',
+                ];
+              }
               body.push(
                 '<details><summary><strong>Push output</strong> (last 30 lines)</summary>',
                 '',
@@ -1146,13 +1299,7 @@ jobs:
                 '',
                 '</details>',
                 '',
-                '<details><summary><strong>Smoke test</strong></summary>',
-                '',
-                '```',
-                smokeOutput,
-                '```',
-                '',
-                '</details>',
+                ...smokeSection,
                 '',
                 '---',
                 '',
@@ -1313,6 +1460,65 @@ jobs:
               core.setFailed(mergeError);
             }
 
+      - name: Record live-deploy marker
+        # Force-moves refs/deploy-markers/live (deliberately outside
+        # refs/tags/ so it does not clutter the public repo's Tags UI) to the
+        # squash-merge commit whenever a REAL live deploy just succeeded.
+        # This is what lets a later docs-only PR's report answer "what was
+        # last actually deployed" without a new API round-trip. Bookkeeping
+        # metadata only: continue-on-error, never allowed to fail a deploy.
+        if: success() && steps.push.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEPLOYED_SHA: ${{ steps.merge.outputs.deployed_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const deployedSha = process.env.DEPLOYED_SHA;
+            if (!deployedSha) {
+              core.warning('Record live-deploy marker: no deployed_sha available; skipping.');
+              return;
+            }
+            try {
+              let current = null;
+              try {
+                const { data } = await github.rest.git.getRef({ owner, repo, ref: 'deploy-markers/live' });
+                current = data;
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+              let shouldWrite = true;
+              if (current) {
+                // Timestamp guard, not graph ancestry: squash commits are
+                // never ancestors of each other, so compareCommits'
+                // ahead/behind does not hold across squashes. Commit date is
+                // the ordering signal that survives that. Skip-and-warn
+                // rather than blindly force-overwriting if the new commit
+                // is not actually newer than what is already marked.
+                const [{ data: currentCommit }, { data: newCommit }] = await Promise.all([
+                  github.rest.repos.getCommit({ owner, repo, ref: current.object.sha }),
+                  github.rest.repos.getCommit({ owner, repo, ref: deployedSha }),
+                ]);
+                const currentDate = new Date(currentCommit.commit.committer.date);
+                const newDate = new Date(newCommit.commit.committer.date);
+                if (newDate <= currentDate) {
+                  shouldWrite = false;
+                  core.warning(`Skipping live-deploy marker update: ${deployedSha.substring(0,7)} (${newDate.toISOString()}) is not newer than the current marker ${current.object.sha.substring(0,7)} (${currentDate.toISOString()}).`);
+                }
+              }
+              if (shouldWrite) {
+                if (current) {
+                  await github.rest.git.updateRef({ owner, repo, ref: 'deploy-markers/live', sha: deployedSha, force: true });
+                } else {
+                  await github.rest.git.createRef({ owner, repo, ref: 'refs/deploy-markers/live', sha: deployedSha });
+                }
+              }
+            } catch (e) {
+              core.warning(`Could not update live-deploy marker: ${e.message}`);
+            }
+
       - name: React with -1
         # Fires for any failure in the deploy job, including the merge step's
         # core.setFailed on merge failure. The sync job is `needs: deploy`,
@@ -1352,6 +1558,8 @@ jobs:
           MERGE_ERROR: ${{ steps.merge.outputs.merge_error }}
         with:
           script: |
+            const { pathToFileURL } = require('node:url');
+            const path = require('node:path');
             const RETRYABLE = new Set([500, 502, 503, 504]);
             const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
             const isTransient = (err) => {
@@ -1419,7 +1627,10 @@ jobs:
               errorDetail = pushOutput || 'Push exited non-zero. See the workflow run.';
             } else if (smokeExit !== '0') {
               failStage = 'Smoke test (live theme is currently serving this SHA)';
-              errorDetail = `${smokeOutput || 'A storefront path returned non-200.'}\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Either fix and re-deploy, or roll back per the procedure in README.md (revert PR or break-glass \`shopify theme push --live\`).`;
+              // Raw smokeOutput no longer embedded here: rendered as its own
+              // table below (see smokeSection) so the offending path is easy
+              // to spot instead of buried in a wall of text.
+              errorDetail = `One or more storefront paths failed verification. See the Smoke test table below.\n\nThe push succeeded, so the storefront is now on \`${shortSha}\`. Either fix and re-deploy, or roll back per the procedure in README.md (revert PR or break-glass \`shopify theme push --live\`).`;
             } else if (mergeError && headDrifted) {
               // mergeError-present guard: distinguishes "merge step ran and
               // failed" from "merge step never ran" (e.g. a future reorder
@@ -1443,6 +1654,40 @@ jobs:
               ? ':warning: Fix the issue, push a new commit, wait for validation to pass, then comment `deploy` to retry.'
               : ':warning: Investigate the failure. Auto-deploy will retry on the next Validate cycle once the underlying issue is resolved; manual `deploy` comment remains available as an escape hatch.';
 
+            const isSmokeFailure = failStage === 'Smoke test (live theme is currently serving this SHA)';
+            let smokeTableSection = [];
+            if (isSmokeFailure) {
+              // Same dynamic-import trust-boundary note as "Post deploy
+              // report" above: this pulls PR-branch content into a step
+              // holding this job's write token. See that step's comment.
+              try {
+                const { renderSmokeMarkdownTable } = await import(
+                  pathToFileURL(path.resolve(process.env.GITHUB_WORKSPACE, '.github/actions/shopify-theme-push/report-format.mjs')).href
+                );
+                const { summaryLine, markdown } = renderSmokeMarkdownTable(smokeOutput);
+                smokeTableSection = [
+                  '',
+                  `<details open><summary><strong>Smoke test</strong>: ${summaryLine}</summary>`,
+                  '',
+                  markdown,
+                  '',
+                  '</details>',
+                ];
+              } catch (e) {
+                core.warning(`Smoke table rendering failed (${e.message}); falling back to raw output.`);
+                smokeTableSection = [
+                  '',
+                  '<details open><summary><strong>Smoke test</strong></summary>',
+                  '',
+                  '```',
+                  smokeOutput || 'No output captured.',
+                  '```',
+                  '',
+                  '</details>',
+                ];
+              }
+            }
+
             const body = [
               MARKER,
               `# ${title}`,
@@ -1465,6 +1710,7 @@ jobs:
               '```',
               '',
               '</details>',
+              ...smokeTableSection,
               '',
               '---',
               '',
