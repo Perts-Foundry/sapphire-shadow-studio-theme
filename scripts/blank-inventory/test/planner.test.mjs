@@ -105,8 +105,9 @@ test('planGroup refuses an empty group', () => {
 // --- idempotency keys -------------------------------------------------------
 
 test('the key is STABLE across retries of the same logical write', () => {
-  // A fresh randomUUID() per attempt is the bug this test exists to catch: it would let a retry
-  // stack a second adjustment instead of collapsing into the first.
+  // Not a safety property (live testing showed a same-key repeat is NOT deduplicated; CAS is what
+  // catches a retry). This pins reproducibility: the same logical write always carries the same
+  // identity in the artifact and in the request, so a plan can be re-derived and compared.
   const parts = { planId: 'plan-a', blankId: 'B', target: 12, mode: MODE_ABSOLUTE };
   assert.equal(derivedIdempotencyKey(parts), derivedIdempotencyKey({ ...parts }));
 });
@@ -114,7 +115,7 @@ test('the key is STABLE across retries of the same logical write', () => {
 test('the key is DISTINCT across groups within one plan', () => {
   const a = derivedIdempotencyKey({ planId: 'plan-a', blankId: 'B1', target: 12, mode: MODE_ABSOLUTE });
   const b = derivedIdempotencyKey({ planId: 'plan-a', blankId: 'B2', target: 12, mode: MODE_ABSOLUTE });
-  assert.notEqual(a, b, 'a collision would silently no-op a legitimate write');
+  assert.notEqual(a, b, 'a collision could silently swallow a legitimate write if a dedup window did apply');
 });
 
 test('the key is DISTINCT for the same group across two plans', () => {

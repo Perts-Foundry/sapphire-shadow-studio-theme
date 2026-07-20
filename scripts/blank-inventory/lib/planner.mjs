@@ -22,14 +22,19 @@ export const SKIP_NO_CHANGE = 'zero-delta';
 /**
  * Derive a stable idempotency key.
  *
- * Stability across retries is the point: the Admin API requires `@idempotent(key: ...)` on the
- * inventory mutations, so a key derived from the plan collapses a retried or double-invoked apply
- * into one write. A fresh randomUUID() per attempt would throw that away and let a retry stack a
- * second adjustment on top of the first.
+ * The Admin API REQUIRES `@idempotent(key: ...)` on the inventory mutations, so some key must be
+ * sent. Deriving it from the plan rather than randomising per attempt keeps a plan reproducible:
+ * the same logical write always carries the same identity, in the artifact and in the request.
  *
- * Distinctness matters just as much in the other direction: two different groups, or the same group
- * across two different plans, must never collide, or a legitimate later write is silently deduped
- * into a no-op.
+ * DO NOT treat key collapse as a safety property. Tested live: re-issuing a byte-identical mutation
+ * with the same key about two minutes later was NOT deduplicated. It was processed as a new call
+ * and stopped by compare-and-swap (`CHANGE_FROM_QUANTITY_STALE`). Whatever dedup window Shopify
+ * applies did not cover that gap, so **compare-and-swap is what actually prevents a double-apply**;
+ * the key is for reproducibility, not protection.
+ *
+ * Distinctness still matters in the other direction: two different groups, or the same group across
+ * two different plans, must never collide, in case a dedup window does apply and silently swallows
+ * a legitimate write.
  *
  * Formatted as a UUID because the directive's contract expects that shape.
  *

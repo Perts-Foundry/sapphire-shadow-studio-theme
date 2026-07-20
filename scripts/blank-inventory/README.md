@@ -87,9 +87,12 @@ the module headers; the short version:
    group sweeps in whatever is tagged at that moment, including the Flow's own self-retriggering
    cascade. Backfilling mid-cascade gives nondeterministic partial convergence.
 
-4. **Compare-and-swap on every write, with a derived idempotency key.** `@idempotent(key: ...)` is
-   required by the API; the key is derived from the plan artifact so a retried apply collapses into
-   one write instead of stacking a second adjustment.
+4. **Compare-and-swap on every write.** This is what makes a retry safe: an already-applied row's
+   baseline no longer matches, so the repeat is refused rather than applied twice. The API also
+   requires an `@idempotent(key: ...)` on both inventory mutations, and the key is derived from the
+   plan artifact to keep a plan reproducible, but **key collapse is not a safety property here**:
+   tested live, an identical repeat about two minutes later was processed as a new call and stopped
+   by CAS, not deduplicated.
 
 ## The untag interlock
 

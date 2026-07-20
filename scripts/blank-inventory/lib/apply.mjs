@@ -6,7 +6,9 @@
 // Three properties this loop must hold, all of them about what happens when things go wrong:
 //
 //   - PER-ROW CONTINUE-ON-ERROR. One group's failure never aborts the rest. A count sheet can span
-//     many groups and a single stale baseline is not a reason to abandon the others.
+//     many groups and a single stale baseline is not a reason to abandon the others. A re-run is
+//     made safe by compare-and-swap: an already-applied row's baseline no longer matches, so the
+//     write is refused rather than applied twice.
 //   - INCREMENTAL, ATOMIC RECEIPTS. The receipt is persisted after every row, so a crash leaves a
 //     parseable record of exactly what was and was not done. A half-applied run must never look
 //     finished.

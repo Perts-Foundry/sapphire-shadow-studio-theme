@@ -108,8 +108,9 @@ touches a blank shared by N variants) does at most N-1 writes.
 
 ## Measured behaviour
 
-Established by testing against the live store on 2026-07-19, on one blank group, restored
-byte-for-byte afterwards. These numbers and rules are what `scripts/blank-inventory/` is built on.
+Established by testing against the live store on 2026-07-19 and 2026-07-20, on one blank group,
+restored byte-for-byte afterwards. These numbers and rules are what `scripts/blank-inventory/` is
+built on. Settle time was measured twice end to end through the tooling: 89s and 101s.
 
 - **Settle time is 80 to 90 seconds** from the triggering write to every sibling agreeing.
 - **Propagation is NOT atomic.** A mid-cascade read legitimately shows some siblings updated and some
@@ -129,8 +130,12 @@ byte-for-byte afterwards. These numbers and rules are what `scripts/blank-invent
   settling gets picked up without a seed write (observed: converged in 30s). This is a race, not a
   mechanism: do not rely on it, and quiesce before tagging so the outcome is deterministic.
 - **`@idempotent(key: "<uuid>")` is required** on `inventorySetQuantities` and
-  `inventoryAdjustQuantities` at API `2026-07`. Omitting it fails the call outright. Derive the key
-  from the work being done rather than randomising per attempt, so a retry collapses into one write.
+  `inventoryAdjustQuantities` at API `2026-07`. Omitting it fails the call outright. Deriving the key
+  from the work being done (rather than randomising per attempt) keeps a plan reproducible, but do
+  **not** rely on it to make a retry safe: an identical repeat with the same key roughly two minutes
+  later was processed as a NEW call and stopped by compare-and-swap, not deduplicated. Whatever
+  dedup window applies did not cover that gap. Compare-and-swap is the actual protection against a
+  double-apply.
 - An adjustment applies its delta to **both** `available` and `on_hand`, and `quantityAfterChange`
   comes back `null`, so the resulting quantity must be re-read rather than taken from the response.
 

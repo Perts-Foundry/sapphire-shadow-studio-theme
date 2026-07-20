@@ -35,7 +35,9 @@ Each was established by testing against the live store. Do not work around any o
 3. **Quiesce before backfilling.** Any inventory event in a group sweeps in whatever is tagged at
    that moment, including the Flow's own cascade. The tool waits for stillness; let it.
 4. **Every write is compare-and-swap.** A stale baseline fails that row rather than silently
-   reverting a customer's order.
+   reverting a customer's order. CAS is also what makes a retry safe: an already-applied row is
+   refused because its baseline has moved. The API's required `@idempotent` key is for
+   reproducibility, not protection, and does not reliably collapse a repeat.
 
 ## Pipeline
 

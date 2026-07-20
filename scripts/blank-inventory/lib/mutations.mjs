@@ -2,9 +2,12 @@
 //
 // `@idempotent(key: ...)` is REQUIRED on both inventory mutations at API 2026-07. Omitting it fails
 // the call outright ("The @idempotent directive is required for this mutation but was not
-// provided"). Confirmed by schema introspection and live mutations against the store. The key is
-// derived from the plan artifact, never randomised per attempt, so a retried apply collapses into
-// one write instead of stacking a second adjustment. See lib/planner.mjs.
+// provided"). Confirmed by schema introspection and live mutations against the store.
+//
+// The key is derived from the plan artifact rather than randomised per attempt, which keeps a plan
+// reproducible. It is NOT what makes a retry safe: an identical repeat with the same key roughly two
+// minutes later was processed as a new call and caught by compare-and-swap, not deduplicated. CAS is
+// the real guard. See lib/planner.mjs.
 //
 // `referenceDocumentUri` tags these adjustments as skill-authored in the inventory history, which
 // is what separates them from the Flow's own `flow://blank-inventory-sync` writes.
