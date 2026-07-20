@@ -71,7 +71,7 @@ Two paths **auto-deploy** after Validate passes, with no comment needed: the sin
 
 > **Cost and side effects.** Commenting `deploy` mutates the live, customer-facing storefront and (on success) squash-merges the PR into `main`. There is no staging gate between `deploy` and customers seeing the change; the preview theme and Validate are the review surface.
 
-The deploy gate is deliberately layered: a collaborator check on the comment author, a re-verification that Validate is green on the exact HEAD SHA, a signed-commit / PR-opener-identity check on the auto-deploy paths, and a draft-PR escape hatch that halts auto-deploy. The Shopify token is scoped only to the job that pushes to live, never to the gate job. The full rationale (attack surface and mitigations) lives in [`release-notes.md`](release-notes.md); the trust delta and known compensations live in [`CLAUDE.md`](CLAUDE.md).
+The deploy gate is deliberately layered: a collaborator check on the comment author, a re-verification that Validate is green on the exact HEAD SHA, a signed-commit / PR-opener-identity check on the auto-deploy paths, and a draft-PR escape hatch that halts auto-deploy. The Shopify token is scoped only to the job that pushes to live, never to the gate job. The full rationale (attack surface and mitigations) lives in [`release-notes.md`](release-notes.md); the trust delta summary is in [`CLAUDE.md`](CLAUDE.md), full gate mechanics and known compensations in [`docs/deploy-gate-reference.md`](docs/deploy-gate-reference.md).
 
 ## Workflows
 
@@ -86,7 +86,7 @@ Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 
 Dependabot keeps GitHub Actions and npm dependencies current weekly (Monday 13:00 UTC), grouped into one PR per ecosystem ([`.github/dependabot.yml`](.github/dependabot.yml)).
 
-For the internals of the gate (HEAD-SHA re-verification, signed-commit logic, phantom-orphan cleanup, CI-self-modification guard), read [`release-notes.md`](release-notes.md) and [`CLAUDE.md`](CLAUDE.md) rather than re-deriving them from the YAML.
+For the internals of the gate (HEAD-SHA re-verification, signed-commit logic, phantom-orphan cleanup, CI-self-modification guard), read [`release-notes.md`](release-notes.md) and [`docs/deploy-gate-reference.md`](docs/deploy-gate-reference.md) rather than re-deriving them from the YAML.
 
 ## Branches and themes
 
@@ -110,7 +110,7 @@ Make admin edits on the `EDIT HERE - Admin Sync` theme (they flow to `shopify-sy
 | `EXPECTED_SYNC_PR_OPENER` | Repository **variable** | Expected GitHub login of the reconcile-PR opener; checked by the auto-deploy gate on the `shopify-sync` path. |
 | `SHOPIFY_SYNC_DEPLOY_KEY` | Repository **secret** | SSH deploy key used only by the `sync` job to reconcile `shopify-sync`. Not in scope of the live-push job. |
 
-The smoke test (run after the live push) is a node-`fetch` probe ([`smoke.mjs`](.github/actions/shopify-theme-push/smoke.mjs)), not curl: Cloudflare bot-management blocklists curl's fingerprint and 429s content routes. It asserts `200` + on-host + the live theme id on the structural routes `/ /cart /collections/all /search`, and probes **every published product** (enumerated from the storefront sitemap) so a deploy that breaks a product's availability fails. The deploy-report sticky comment renders the per-path results as a markdown table, not a raw log dump, on both the success and failure report. See [CLAUDE.md](CLAUDE.md) for the full behaviour.
+The smoke test (run after the live push) is a node-`fetch` probe ([`smoke.mjs`](.github/actions/shopify-theme-push/smoke.mjs)), not curl: Cloudflare bot-management blocklists curl's fingerprint and 429s content routes. It asserts `200` + on-host + the live theme id on the structural routes `/ /cart /collections/all /search`, and probes **every published product** (enumerated from the storefront sitemap) so a deploy that breaks a product's availability fails. The deploy-report sticky comment renders the per-path results as a markdown table, not a raw log dump, on both the success and failure report. See [`docs/smoke-test-reference.md`](docs/smoke-test-reference.md) for the full behaviour.
 
 A PR that touches no theme files skips the live push and smoke entirely, but still merges. Its deploy report instead queries the live theme's name and ID from Shopify (read-only, `theme list`; flags a mismatch against the pipeline's assumed live theme ID) and reads back a lightweight custom git ref, `refs/deploy-markers/live` (deliberately outside `refs/tags/` so it does not clutter the Tags UI), which the deploy job force-moves to the squash-merge commit after every real live deploy. Both lookups are `continue-on-error`; a Shopify API hiccup can never block a docs-only PR from closing.
 
@@ -182,9 +182,12 @@ Before opening a PR, run `theme dev` and `theme check` locally, and follow the c
 
 | Doc | Covers |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Theme conventions, component framework, accessibility, and the deploy-gate trust delta and known compensations |
+| [`CLAUDE.md`](CLAUDE.md) | Theme conventions, component framework, accessibility, and the deploy-gate trust delta summary |
 | [`release-notes.md`](release-notes.md) | Full CI/CD design rationale (attack surface, mitigations) and history |
 | [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md) | Component-specific accessibility patterns used across the theme |
+| [`docs/deploy-gate-reference.md`](docs/deploy-gate-reference.md) | Full mechanical breakdown of the four auto-deploy gates in `deploy.yml` |
+| [`docs/smoke-test-reference.md`](docs/smoke-test-reference.md) | Full post-deploy smoke-test behavioral contract (HARD-FAIL/SOFT-WARN, locked-vs-public) |
+| [`docs/shopify-mcp-notes.md`](docs/shopify-mcp-notes.md) | Known gaps in the Shopify MCP servers (scopes, media upload, `templateSuffix`, Flow) |
 | [`docs/product-media-alt-text.md`](docs/product-media-alt-text.md) | How product alt text drives the colour gallery filter; the only record of that contract |
 | [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md) | Triaged, non-actionable theme-check findings |
 | [`LICENSE.md`](LICENSE.md) | Full license terms |
