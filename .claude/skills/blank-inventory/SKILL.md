@@ -49,8 +49,10 @@ ignored the body would write one garment's count into another garment's pool.
 No Shopify field carries the body, so the tool **infers** it per product and the operator **approves**
 the guess at a gate. This is the one thing that must exist before any other command runs.
 
-- `bodies --stage propose` reads the catalogue (no writes) and infers a body per product from its
-  handle and title, with a confidence marker.
+- `bodies --stage propose` reads the catalogue (no Shopify writes) and infers a body per product from
+  its handle and title, with a confidence marker. Like backfill's propose, it writes a proposal file
+  (holding every product's inferred body) to the working directory, so it is Shopify-write-free but
+  not read-only; never describe it as such.
 - **STOP: approve the body map.** Present every row: product, proposed body, and what it was inferred
   from. The judgement the operator must make, because no data can confirm it: **products proposed as
   the same body must be the same physical blank.** Two crewnecks from different suppliers are two

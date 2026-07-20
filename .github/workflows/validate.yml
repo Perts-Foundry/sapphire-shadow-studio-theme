@@ -184,6 +184,21 @@ jobs:
           OUTPUT=$(npm run blank-inventory:guard 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
+
+          # Fail-closed floor. On a clean run the guard prints "scanned N file(s)" and exits 0. If
+          # `git ls-files` ever returned nothing (wrong CWD, an odd checkout, a future refactor of
+          # trackedFiles()), it would pass green having scanned nothing, the exact fail-open mode a
+          # leak detector must not have. Assert it actually looked at files, in the same spirit as the
+          # TESTS_RUN guards on the suites above. Only checked on a clean exit: a real finding already
+          # exits non-zero and prints no "scanned" line.
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            FILES_SCANNED=$(printf '%s\n' "$OUTPUT" | grep -oE 'scanned [0-9]+' | tail -1 | grep -oE '[0-9]+')
+            if [ "${FILES_SCANNED:-0}" -lt 1 ]; then
+              echo "::error::blank-id guard scanned ${FILES_SCANNED:-0} files. It has probably run from the wrong directory or git ls-files returned nothing, so it cannot be trusted to have covered the repo."
+              EXIT_CODE=1
+            fi
+          fi
+
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"

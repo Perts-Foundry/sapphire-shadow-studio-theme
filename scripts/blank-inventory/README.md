@@ -26,7 +26,8 @@ other command.
 ## Commands
 
 ```bash
-# Propose a body per product (read-only), then approve the hashed map. Run this FIRST; every other
+# Propose a body per product (no Shopify writes; writes a proposal file), then approve the hashed
+# map. Run this FIRST; every other
 # command refuses without it. A product added later is refused on writes until you re-propose.
 node scripts/blank-inventory/blank-inventory.mjs bodies --stage propose
 node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # after editing the proposal

@@ -69,6 +69,13 @@ test('an empty axis cell is refused rather than defaulted', () => {
   assert.throws(() => parseInput(bcs(',Black,M,14'), { mode: MODE_ABSOLUTE }), /body is empty/);
 });
 
+test('an empty VALUE cell is refused, never coerced to zero', () => {
+  // "blank cell means zero" is a transcription-layer convention applied upstream, NOT a parser
+  // behaviour. If the parser silently read an empty value as 0, a stray empty cell in a CSV would
+  // zero a live group and the suite would stay green. Pin that the parser refuses it instead.
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,'), { mode: MODE_ABSOLUTE }), /[Ee]mpty value cell/);
+});
+
 // --- values and modes -------------------------------------------------------
 
 test('absolute mode parses body,color,size,value rows', () => {

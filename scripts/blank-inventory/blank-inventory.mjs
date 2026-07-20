@@ -20,6 +20,7 @@ import { readFile, writeFile, unlink, readdir } from 'node:fs/promises';
 import { existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
 import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
@@ -90,13 +91,15 @@ const heading = (s) => console.log(`\n${s}\n${'-'.repeat(s.length)}`);
  * @param {string} flag
  * @param {unknown} raw
  * @param {number} fallback
+ * @param {(msg: string) => never} [onInvalid] - how to reject; defaults to the process-exiting `fail`.
+ *   Injectable so a unit test can assert the refusal without tearing down the process.
  * @returns {number}
  */
-function numericOpt(flag, raw, fallback) {
+function numericOpt(flag, raw, fallback, onInvalid = fail) {
   if (raw === undefined) return fallback;
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
   if (!Number.isFinite(n)) {
-    fail(`${flag} needs a number, got ${JSON.stringify(raw)}. It is never defaulted: the value ends up in a live write.`);
+    onInvalid(`${flag} needs a number, got ${JSON.stringify(raw)}. It is never defaulted: the value ends up in a live write.`);
   }
   return n;
 }
@@ -851,4 +854,15 @@ async function main() {
   else await run(opts);
 }
 
-main().catch((err) => fail(err.message));
+// Run as a script, but stay importable by the unit tests. import.meta.url is percent-encoded, so
+// compare it against pathToFileURL(argv[1]) rather than a hand-built file:// string (the same
+// entry-point subtlety documented in check-no-real-blank-ids.mjs). Guarding the dereference keeps
+// the module importable under `import()`, where argv[1] is undefined.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => fail(err.message));
+}
+
+// Exported for unit tests. These three assemble a live write from parsed flags, so they are the
+// paths where an untested branch would corrupt real stock: parseArgs (flag parsing), numericOpt
+// (the "bare --quantity becomes 1" guard), and makeWriter (the plan-row -> mutation translator).
+export { parseArgs, numericOpt, makeWriter };
