@@ -54,6 +54,24 @@ export function derivedIdempotencyKey({ planId, blankId, target, mode }) {
 }
 
 /**
+ * Order two variant ids by raw code point.
+ *
+ * NOT localeCompare. This ordering decides which variant a plan writes to, and apply's drift check
+ * re-derives it and refuses the row if it disagrees with the artifact. localeCompare is
+ * locale-and-ICU-dependent, so plan and apply could order the same two ids differently (different
+ * LANG, a different node build) and turn a healthy run into a "target moved" refusal. A code-point
+ * comparison is fixed by the language spec.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+export function compareIds(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
  * Choose the member to write to: the lowest variant id among those whose quantity differs from the
  * target. Deterministic so the same plan always names the same variant and is reproducible.
  *
@@ -64,7 +82,7 @@ export function derivedIdempotencyKey({ planId, blankId, target, mode }) {
 export function selectWriteTarget(members, target) {
   const mismatched = members.filter((m) => m.quantity !== target);
   if (!mismatched.length) return null;
-  return mismatched.reduce((lowest, m) => (m.id.localeCompare(lowest.id) < 0 ? m : lowest));
+  return mismatched.reduce((lowest, m) => (compareIds(m.id, lowest.id) < 0 ? m : lowest));
 }
 
 /**

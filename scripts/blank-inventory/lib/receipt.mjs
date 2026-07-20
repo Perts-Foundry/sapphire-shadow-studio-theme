@@ -84,7 +84,15 @@ export function createArtifact({ plans, skipped = [], mode, planId = randomUUID(
 }
 
 /**
- * Reject a tampered or hand-edited artifact.
+ * Reject an artifact that no longer matches the plan that produced it.
+ *
+ * Scope, so this is not mistaken for more than it is: the hash is unkeyed and computed from the
+ * artifact's own fields, so anyone who edits the file can recompute it. This catches an ACCIDENTAL
+ * edit (a tweaked quantity, a hand-patched write target) between approval and apply. It is not a
+ * tamper-proofing control against someone with write access to the working directory, who could
+ * equally just author a fresh artifact. The operator approval STOP is what authorises a plan; this
+ * checks the bytes did not drift after it.
+ *
  * @param {object} artifact
  * @returns {object} the artifact
  */

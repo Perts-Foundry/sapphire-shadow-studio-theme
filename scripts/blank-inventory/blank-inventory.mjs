@@ -74,6 +74,27 @@ const fail = (msg) => {
 
 const heading = (s) => console.log(`\n${s}\n${'-'.repeat(s.length)}`);
 
+/**
+ * Read a numeric flag, or refuse.
+ *
+ * parseArgs gives a bare `--flag` the value `true`, and Number(true) is 1. For `--quantity` that
+ * turns a fat-fingered flag into a silent "set every untagged variant to 1" instead of an error, and
+ * a typo'd value into NaN. Neither may reach a write.
+ *
+ * @param {string} flag
+ * @param {unknown} raw
+ * @param {number} fallback
+ * @returns {number}
+ */
+function numericOpt(flag, raw, fallback) {
+  if (raw === undefined) return fallback;
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) {
+    fail(`${flag} needs a number, got ${JSON.stringify(raw)}. It is never defaulted: the value ends up in a live write.`);
+  }
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // A pidfile lock. Two concurrent applies against the same groups would interleave writes and race
 // the Flow's cascade against each other.
@@ -363,7 +384,7 @@ async function cmdVerify(opts) {
         now: () => Date.now(),
         sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       },
-      { timeoutMs: Number(opts.timeoutMs ?? 300_000) }
+      { timeoutMs: numericOpt('--timeout-ms', opts.timeoutMs, 300_000) }
     );
     results.push({ blankId, ...res });
     console.log(`  ${res.verdict.toUpperCase().padEnd(10)} ${blankId}  target ${target}  after ${Math.round(res.elapsedMs / 1000)}s`);
@@ -506,8 +527,13 @@ async function cmdBackfill(opts) {
 async function cmdUntag(opts) {
   const ids = opts.variant ?? [];
   if (!ids.length) fail('untag needs at least one --variant <gid://shopify/ProductVariant/...>.');
+  // Validate the flags before the catalogue read, so a bad --quantity costs nothing and cannot be
+  // discovered after the lock is held.
+  const quantity = numericOpt('--quantity', opts.quantity, 0);
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    fail(`--quantity must be a whole number of units, zero or more; got ${quantity}.`);
+  }
   const store = await loadStore({ requireWrite: true });
-  const quantity = Number(opts.quantity ?? 0);
 
   const targets = store.variants.filter((v) => ids.includes(v.id));
   if (targets.length !== ids.length) {

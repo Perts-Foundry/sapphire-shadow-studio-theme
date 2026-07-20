@@ -7,6 +7,8 @@
 //
 // Pure module: no network, no client. Feed it normalised variants from catalogue.mjs.
 
+import { compareIds } from './planner.mjs';
+
 /** A group state that looks like drift but is expected and harmless. */
 export const AWAITING_SEED = 'awaiting-seed';
 export const CONVERGED = 'converged';
@@ -154,7 +156,8 @@ export function buildGroups(variants) {
     groups.get(v.blankId).push(v);
   }
   for (const members of groups.values()) {
-    members.sort((a, b) => a.id.localeCompare(b.id));
+    // Same code-point ordering the planner uses to pick a write target, for the same reason.
+    members.sort((a, b) => compareIds(a.id, b.id));
   }
   return groups;
 }

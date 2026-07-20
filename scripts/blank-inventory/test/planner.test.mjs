@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   selectWriteTarget,
+  compareIds,
   groupQuantity,
   planGroup,
   planAll,
@@ -43,6 +44,20 @@ test('selectWriteTarget tie-break stays deterministic when id digit-lengths diff
   const chosen = selectWriteTarget(members, 12);
   assert.equal(chosen.id, 'gid://shopify/ProductVariant/41');
   for (let i = 0; i < 3; i++) assert.equal(selectWriteTarget(members, 12).id, chosen.id);
+});
+
+test('compareIds orders by code point, independently of locale', () => {
+  // Plan and apply both derive the write target from this ordering, and apply REFUSES the row when
+  // its answer differs from the artifact's. A locale-sensitive comparison could therefore turn a
+  // healthy run into a "target moved" refusal purely because LANG differs between the two commands.
+  // These pairs are ones a collation table is free to order differently from raw code points.
+  assert.equal(compareIds('a', 'B'), 1); // code point: uppercase first. Most locales say otherwise.
+  assert.equal(compareIds('a-b', 'a/b'), -1); // punctuation, commonly ignorable in collation
+  assert.equal(compareIds('x', 'x'), 0);
+  // Antisymmetric, so Array#sort cannot produce an unstable result.
+  for (const [a, b] of [['a', 'B'], ['a-b', 'a/b'], ['41', '410']]) {
+    assert.equal(compareIds(a, b), -compareIds(b, a));
+  }
 });
 
 test('groupQuantity refuses an unconverged group rather than guessing which value is real', () => {

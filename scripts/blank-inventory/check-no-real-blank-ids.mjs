@@ -16,6 +16,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const SIZES = 'XS|S|M|L|XL|2XL|3XL|4XL';
 const BLANK_ID_SHAPE = new RegExp(String.raw`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}_(?:${SIZES})\b`, 'g');
@@ -92,4 +93,8 @@ function main() {
   process.exit(1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// pathToFileURL, not a `file://` template. import.meta.url percent-encodes spaces and non-ASCII
+// characters, so a hand-built string silently fails to match on a checkout path containing either,
+// main() never runs, and the guard exits 0 having scanned nothing. A leak detector that fails open
+// is worse than none, so the comparison has to be exact.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
