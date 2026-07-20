@@ -35,6 +35,16 @@ test('selectWriteTarget breaks ties on the lowest variant id, deterministically'
   }
 });
 
+test('selectWriteTarget tie-break stays deterministic when id digit-lengths differ', () => {
+  // The contract is determinism, not numeric minimality: the comparison is lexicographic on the
+  // full gid string, so '...41' sorts before '...410'. Pinned so a future refactor cannot quietly
+  // change which variant a reproducible plan names.
+  const members = [member(410, 0), member(41, 0), member(5, 12)];
+  const chosen = selectWriteTarget(members, 12);
+  assert.equal(chosen.id, 'gid://shopify/ProductVariant/41');
+  for (let i = 0; i < 3; i++) assert.equal(selectWriteTarget(members, 12).id, chosen.id);
+});
+
 test('groupQuantity refuses an unconverged group rather than guessing which value is real', () => {
   assert.throws(() => groupQuantity([member(1, 11), member(2, 0)]), /not converged/);
 });
@@ -149,10 +159,10 @@ test('planAll refuses a blank with no tagged variants on the store', () => {
   const variants = groupSlice({ taggedQty: [11], untagged: 0 });
   const { vocab } = learnVocab(variants);
   const groups = buildGroups(variants);
-  const rows = [{ blankId: 'NOT_A_LIVE_BLANK_M', value: 1, line: 7 }];
+  const rows = [{ blankId: 'SAMPLE_ACME_FLEECE_9999_M', value: 1, line: 7 }];
   assert.throws(
     () => planAll({ rows, groups, vocab, mode: MODE_ABSOLUTE, planId: 'p1', resolveBlank }),
-    /Line 7: blank "NOT_A_LIVE_BLANK_M" has no tagged variants/
+    /Line 7: blank "SAMPLE_ACME_FLEECE_9999_M" has no tagged variants/
   );
 });
 
@@ -164,5 +174,23 @@ test('planAll attributes a failure to its input line', () => {
   assert.throws(
     () => planAll({ rows, groups, vocab, mode: MODE_DELTA, planId: 'p1', resolveBlank }),
     /Line 4: .*Negative stock is refused/s
+  );
+});
+
+test('planAll refuses two rows that RESOLVE to the same blank', () => {
+  // input.mjs already refuses a literal duplicate, but two different Color+Size spellings can
+  // resolve to one blank. Both rows would be computed against the same starting quantity and only
+  // the first would be recorded in the receipt, so the second write would vanish from the record.
+  const variants = groupSlice({ color: 'Grey Heather', size: '2XL', taggedQty: [11, 11], untagged: 0 });
+  const { vocab } = learnVocab(variants);
+  const groups = buildGroups(variants);
+  const blankId = blankIdFor('Grey Heather', '2XL');
+  const rows = [
+    { color: 'Grey Heather', size: '2XL', value: 14, line: 1 },
+    { blankId, value: 9, line: 2 },
+  ];
+  assert.throws(
+    () => planAll({ rows, groups, vocab, mode: MODE_ABSOLUTE, planId: 'p1', resolveBlank }),
+    /Line 2: resolves to blank .* which line 1 already targets/
   );
 });

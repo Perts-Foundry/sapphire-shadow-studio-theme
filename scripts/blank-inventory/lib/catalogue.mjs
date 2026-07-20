@@ -157,6 +157,22 @@ export async function readCatalogue({ fetchProductsPage, fetchVariantsPage, fetc
 }
 
 /**
+ * A per-call group reader.
+ *
+ * This MUST re-read on every invocation. `applyPlan`'s drift check exists to catch the store moving
+ * *during* a multi-group run, so serving every row from one snapshot taken before row 1 silently
+ * defeats it: an order landing on group 40's variant while rows 1 to 39 are still being written
+ * would not be seen. Compare-and-swap still backstops a changed baseline, but the
+ * "correct write target moved to a different variant" case has no other guard.
+ *
+ * @param {() => Promise<Map<string, object[]>>} loadGroups - performs a fresh catalogue read
+ * @returns {(blankId: string) => Promise<object[]>}
+ */
+export function createGroupReader(loadGroups) {
+  return async (blankId) => (await loadGroups()).get(blankId) ?? [];
+}
+
+/**
  * Bind the queries above to a live Admin client.
  * @param {import('./admin.mjs').AdminClient} client
  * @returns {{fetchProductsPage: Function, fetchVariantsPage: Function, fetchLocations: Function}}

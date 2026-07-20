@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paginate, normaliseVariant, assertVariantShape, readCatalogue } from '../lib/catalogue.mjs';
+import { paginate, normaliseVariant, assertVariantShape, readCatalogue, createGroupReader } from '../lib/catalogue.mjs';
 
 /** Build a canned Relay connection page source. */
 function pager(pages) {
@@ -100,4 +100,26 @@ test('readCatalogue returns normalised variants when the counts agree', async ()
   assert.equal(products.length, 1);
   assert.equal(variants.length, 1);
   assert.equal(variants[0].blankId, 'GREY_ACME_FLEECE_0001_2XL');
+});
+
+test('createGroupReader performs an INDEPENDENT read per call, never a cached snapshot', async () => {
+  // apply's drift check only works if it sees the store as it is at the moment of each write.
+  // Serving every row from one snapshot taken before the run silently disables it, which is exactly
+  // the bug this test exists to catch.
+  let reads = 0;
+  const readGroup = createGroupReader(async () => {
+    reads++;
+    return new Map([['B', [{ id: 'v1', quantity: reads }]]]);
+  });
+
+  const first = await readGroup('B');
+  const second = await readGroup('B');
+  assert.equal(reads, 2, 'two invocations must trigger two reads');
+  assert.equal(first[0].quantity, 1);
+  assert.equal(second[0].quantity, 2, 'the second call must observe the newer state');
+});
+
+test('createGroupReader returns an empty group for an unknown blank', async () => {
+  const readGroup = createGroupReader(async () => new Map());
+  assert.deepEqual(await readGroup('missing'), []);
 });

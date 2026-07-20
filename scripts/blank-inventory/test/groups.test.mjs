@@ -57,10 +57,12 @@ test('conventionWarnings flags a blank id that does not end with its own size', 
 });
 
 test('conventionWarnings flags a minority colour prefix as a likely typo', () => {
+  // GREY vs GRAY is a real-world confusion and keeps both tokens inside the synthetic vocabulary
+  // that check-no-real-blank-ids.mjs allows, so this fixture cannot trip the leak guard.
   const vs = [
-    variant({ color: 'Black', size: 'M', blankId: 'BLACK_ACME_FLEECE_0001_M' }),
-    variant({ color: 'Black', size: 'M', blankId: 'BLACK_ACME_FLEECE_0001_M' }),
-    variant({ color: 'Black', size: 'M', blankId: 'BLCAK_ACME_FLEECE_0001_M' }),
+    variant({ color: 'Grey Heather', size: 'M', blankId: 'GREY_ACME_FLEECE_0001_M' }),
+    variant({ color: 'Grey Heather', size: 'M', blankId: 'GREY_ACME_FLEECE_0001_M' }),
+    variant({ color: 'Grey Heather', size: 'M', blankId: 'GRAY_ACME_FLEECE_0001_M' }),
   ];
   const warnings = conventionWarnings(vs);
   const typos = warnings.filter((w) => w.kind === 'color-prefix');

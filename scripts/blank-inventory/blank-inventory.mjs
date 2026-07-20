@@ -21,7 +21,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
-import { readCatalogue, liveFetchers } from './lib/catalogue.mjs';
+import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
 import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
@@ -293,6 +293,9 @@ async function cmdApply(opts) {
   const artifact = verifyArtifact(await readJson(opts.plan));
   const store = await loadStore({ requireWrite: true });
   const byBlank = (blankId) => store.groups.get(blankId) ?? [];
+  // Fresh read per row, NOT the snapshot above. The drift check only works if it sees the store as
+  // it is at the moment of each write; a cached snapshot silently disables it.
+  const readGroupLive = createGroupReader(async () => (await loadStore({ requireWrite: false })).groups);
 
   const receiptPath = opts.receipt ?? path.join(WORK_DIR, `receipt-${artifact.planId}.json`);
   let receipt;
@@ -321,7 +324,7 @@ async function cmdApply(opts) {
   const result = await applyPlan({
     artifact,
     receipt,
-    readGroup: async (blankId) => byBlank(blankId),
+    readGroup: readGroupLive,
     write: makeWriter(store.client, store.locationId),
     persist: (r) => writeJsonAtomic(receiptPath, r),
     only: opts.resume ? pendingBlankIds(receipt) : null,
@@ -483,7 +486,7 @@ async function cmdBackfill(opts) {
     const result = await applyPlan({
       artifact,
       receipt,
-      readGroup: async (blankId) => store.groups.get(blankId) ?? [],
+      readGroup: createGroupReader(async () => (await loadStore({ requireWrite: false })).groups),
       write: makeWriter(store.client, store.locationId),
       persist: (r) => writeJsonAtomic(receiptPath, r),
       onRow: (e) => console.log(`  ${e.status.toUpperCase().padEnd(13)} ${e.blankId}${e.detail ? `  ${e.detail}` : ''}`),
@@ -512,7 +515,16 @@ async function cmdUntag(opts) {
   }
 
   heading(`Untag ${targets.length} variant(s), then set quantity ${quantity}`);
-  for (const v of targets) console.log(`  ${v.productHandle} | ${v.title}  (blank ${v.blankId ?? 'none'}, qty ${v.quantity})`);
+  for (const v of targets) {
+    console.log(`  ${v.productHandle} | ${v.title}  (blank ${v.blankId ?? 'none'}, qty ${v.quantity})`);
+    // Removing a tag changes group membership for everyone else in that group, so show them.
+    const siblings = (store.groups.get(v.blankId) ?? []).filter((m) => m.id !== v.id);
+    if (siblings.length) {
+      console.log(`      leaves a group of ${siblings.length} other member(s):`);
+      for (const s of siblings.slice(0, 5)) console.log(`        ${s.productHandle} | ${s.title} (qty ${s.quantity})`);
+      if (siblings.length > 5) console.log(`        ... and ${siblings.length - 5} more`);
+    }
+  }
   console.log(
     `\nOrder matters: the metafield is deleted FIRST and the deletion is confirmed by a re-read ` +
       `before any quantity write. Zeroing a still-tagged variant would propagate 0 across its whole ` +

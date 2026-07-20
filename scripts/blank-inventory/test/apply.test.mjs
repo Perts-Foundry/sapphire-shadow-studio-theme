@@ -233,3 +233,27 @@ test('an already-converged group is a reported SKIP, not a wasted write', async 
   assert.equal(writes.length, 0);
   assert.equal(res.receipt.rows[0].status, ROW_SKIPPED);
 });
+
+test('a group excluded by `only` is not read, not written, and its receipt row is untouched', async () => {
+  const artifact = artifactOf(['B1', 'B2']);
+  const reads = [];
+  const writes = [];
+  const receipt = createReceipt(artifact);
+  await applyPlan({
+    artifact,
+    receipt,
+    readGroup: async (blankId) => {
+      reads.push(blankId);
+      return asPlanned();
+    },
+    write: async (g) => {
+      writes.push(g.blankId);
+      return { ok: true, noop: false };
+    },
+    persist: async () => {},
+    only: ['B2'],
+  });
+  assert.deepEqual(reads, ['B2']);
+  assert.deepEqual(writes, ['B2']);
+  assert.equal(receipt.rows[0].status, ROW_NOT_ATTEMPTED, 'B1 must be left exactly as it was');
+});

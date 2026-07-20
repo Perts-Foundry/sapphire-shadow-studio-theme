@@ -26,8 +26,9 @@ node scripts/blank-inventory/blank-inventory.mjs plan --input counts.csv --mode 
 # Execute an APPROVED artifact. --dry-run prints the writes without making them.
 node scripts/blank-inventory/blank-inventory.mjs apply --plan .blank-inventory/plan-<id>.json
 
-# Poll the affected groups until the Flow settles.
-node scripts/blank-inventory/blank-inventory.mjs verify --receipt .blank-inventory/receipt-<id>.json
+# Poll the affected groups until the Flow settles. --timeout-ms overrides the 300000ms default
+# (stale is reported at 3 minutes; polling continues to 5).
+node scripts/blank-inventory/blank-inventory.mjs verify --receipt .blank-inventory/receipt-<id>.json [--timeout-ms 300000]
 
 # Tag untagged variants, then seed them so the Flow propagates. Two separate approvals.
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose

@@ -171,8 +171,11 @@ quantities or metafields in Admin, which has none of these guards.
 - **Siblings are not updating at all.** Open the flow's run log and look at the "Send Admin API
   request" step output. A non-empty `userErrors`, or an invalid-field error, means the mutation
   shape drifted from the live schema. The original v1 of this flow failed exactly this way: it sent
-  `changeFromQuantity`, which is not a field on this store's `InventoryQuantityInput`, so every
-  write errored and nothing propagated. Confirm the blob matches the shape above.
+  `changeFromQuantity`, which **Flow's own action does not accept**, so every write errored and
+  nothing propagated. Confirm the blob matches the shape above. Note the scoping: `changeFromQuantity`
+  **is** a valid field on the direct Admin API (see the write-step section above); it is Flow's
+  restricted action that rejects it. Do not generalise this v1 failure into a claim about the store's
+  schema.
 - **Runaway or escalating runs.** Check that the third guard clause
   (`inventoryQuantity != inventoryQuantity`) is present on the sibling condition. Its absence is
   what turns one change into a wave of self-triggering writes.
