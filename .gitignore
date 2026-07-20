@@ -22,7 +22,11 @@ npm-debug.log
 
 # blank-inventory working directory: plan artifacts and apply receipts. These reference live
 # variant ids and real blank ids (which embed supplier data), so they stay local-only.
-/.blank-inventory/
+# The tool now defaults this directory OUTSIDE the repo (see scripts/blank-inventory/lib/workdir.mjs),
+# so nothing should match here at all. Deliberately UNANCHORED as a backstop: the previous
+# root-anchored form missed `scripts/blank-inventory/.blank-inventory/`, which an older cwd-relative
+# run created and left untracked-but-stageable in this public repo.
+.blank-inventory/
 
 # Product image processing: raw + processed binaries + manifest never enter the repo
 # (Shopify's CDN is their home). Anchored to the repo root so it ignores only the top-level

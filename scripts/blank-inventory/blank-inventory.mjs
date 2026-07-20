@@ -30,8 +30,10 @@ import { applyPlan } from './lib/apply.mjs';
 import { planBackfill, planSeed, untagVariants } from './lib/backfill.mjs';
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
+import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 
-const WORK_DIR = process.env.BLANK_INVENTORY_DIR ?? '.blank-inventory';
+// Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
+const WORK_DIR = resolveWorkDir();
 const LOCK_FILE = path.join(WORK_DIR, '.lock');
 
 // ---------------------------------------------------------------------------
@@ -602,8 +604,36 @@ blank-inventory: shared-blank stock and metafield tooling.
   untag    --variant <gid> [--variant <gid>] [--quantity 0] [--dry-run]
 
 Env: MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
-Working directory: ${WORK_DIR} (gitignored).
+     BLANK_INVENTORY_DIR overrides the working directory.
+Working directory: ${WORK_DIR}
+     (outside the repo by default: artifacts hold real blank ids, and this repo is public)
 `;
+
+/**
+ * Refuse to write while a stray cwd-relative working directory is still present.
+ *
+ * A leftover `.blank-inventory/` from the old cwd-relative behaviour is both invisible to this run
+ * and, if it sits inside the checkout, live supplier data in a public repo. Warn on every command
+ * and block the write paths until the operator clears it.
+ *
+ * @param {string} command
+ * @param {boolean} isWrite
+ */
+function assertNoOrphanWorkDir(command, isWrite) {
+  const orphan = findOrphanWorkDir(process.cwd(), WORK_DIR);
+  if (!orphan || !existsSync(orphan)) return;
+  console.error(
+    `\nWARNING: a stray ${WORK_DIR_BASENAME}/ exists at\n  ${orphan}\n` +
+      `but this run uses\n  ${WORK_DIR}\n` +
+      `It was probably written by an older version that resolved the working directory from the ` +
+      `current directory. Its artifacts are invisible here, and if it is inside the repository it ` +
+      `holds real blank ids in a public checkout. Move it somewhere private (do not delete it: it ` +
+      `may be the only record of a previous tagging state), then re-run.\n`
+  );
+  if (isWrite) {
+    fail(`Refusing to run "${command}" while a stray working directory is present. See the warning above.`);
+  }
+}
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
@@ -621,7 +651,9 @@ async function main() {
     console.log(USAGE);
     process.exit(opts.command ? 1 : 0);
   }
-  if (writeCommands.has(opts.command) && !opts.dryRun) await withLock(() => run(opts));
+  const isWrite = writeCommands.has(opts.command) && !opts.dryRun;
+  assertNoOrphanWorkDir(opts.command, isWrite);
+  if (isWrite) await withLock(() => run(opts));
   else await run(opts);
 }
 

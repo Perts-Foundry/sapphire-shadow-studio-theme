@@ -35,7 +35,15 @@ const ALLOWED_SEGMENTS = new Set([
 const SIZE_SET = new Set(SIZES.split('|'));
 
 // Binary and vendored paths that are never prose.
-const SKIP = /(^|\/)(node_modules|\.git|product-images|\.blank-inventory)\//;
+//
+// `.blank-inventory` is deliberately NOT skipped. It used to be, matching at any path depth, which
+// meant the one directory guaranteed to contain real blank ids was the one directory the guard
+// refused to look at. A cwd-relative run created `scripts/blank-inventory/.blank-inventory/`, and
+// passing that artifact to the guard explicitly reported "scanned 0 file(s), no real blank ids
+// found". The working directory now lives outside the repo entirely (lib/workdir.mjs), so no
+// in-repo path is legitimate and there is nothing here to exempt. A leak detector that fails open
+// on its highest-risk input is worse than none.
+const SKIP = /(^|\/)(node_modules|\.git|product-images)\//;
 const BINARY = /\.(png|jpe?g|gif|webp|avif|ico|ttf|otf|woff2?|zip|pdf|mp4|webm)$/i;
 
 function trackedFiles() {
@@ -97,4 +105,8 @@ function main() {
 // characters, so a hand-built string silently fails to match on a checkout path containing either,
 // main() never runs, and the guard exits 0 having scanned nothing. A leak detector that fails open
 // is worse than none, so the comparison has to be exact.
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+//
+// argv[1] is undefined under `import()` (no entry script), which threw and made the module
+// unimportable, so the tests below could not exercise it. Guard the dereference rather than the
+// comparison: an unimportable guard cannot be unit-tested at all.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
