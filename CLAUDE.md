@@ -4,41 +4,38 @@ Guidance for Claude Code working in this repo. The repo is a custom Shopify them
 
 ## Sensitive Content
 
-This repository is **public**. Real personal contact metadata, internal strategy / legal advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy that already appears on the storefront (founder narrative, About / FAQ pages, photography filenames that don't expose personal identifiers) is intentional and fine to commit. The repo was deleted-and-recreated once already to scrub embedded metadata; do not reintroduce it.
+This repository is **public**: personal contact metadata, internal strategy/legal-advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy already on the storefront (founder narrative, About/FAQ pages, photography filenames without personal identifiers) is fine to commit. The repo was deleted-and-recreated once to scrub embedded metadata; do not reintroduce it.
 
 The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch personal emails, addresses, or merchant-keyed prose; the author's responsibility per the checklist below.
 
 ### What is sensitive (do not commit)
 
-- **Personal contact metadata**: personal email addresses (Gmail, iCloud, etc.), personal phone numbers, full home / fulfilment addresses, personal social handles. The brand identifies itself via the public storefront; individual operators do not need to.
-- **Commit-author email**: local `git config user.email` must be `seth@pertsfoundry.com` or the GitHub no-reply form. Personal Gmail in `Author:` lines is a commit-metadata leak that **no diff will ever show**, so it slips through every other check.
-- **Dev-machine identifiers**: absolute filesystem paths with a username (`/Users/Seth/...`, `/c/Users/Seth/...`, `/mnt/c/Users/Seth/...`, `~/repos/...`). Use placeholders in docs (`<screenshots-dir>`, `<repo-root>`); the user's private global `~/.claude/CLAUDE.md` holds the real path.
-- **Internal advisory / strategy docs**: legal-exposure analyses, ADA-risk playbooks, insurance posture notes, settlement-range guidance, demand-letter response checklists, tax / accounting research. These belong in a private notes location (1Password, private gist, `~/notes/`), never in `docs/` of a public theme repo.
-- **Operating location below state level**: city, county, ZIP, or any detail that could pinpoint a home-based operation. Brand-level state-or-larger framing in storefront copy is fine; legal-exposure framing tied to a specific jurisdiction is not.
-- **Tokens of any kind**: `SHOPIFY_CLI_THEME_TOKEN`, GitHub PATs, Shopify Admin API tokens, third-party app keys (Judge.me, Klaviyo, etc.), AI keys. CI references `${{ secrets.* }}` only.
-- **Real customer / order / financial data**, even truncated. Use synthetic fixtures (`Test Customer`, `order-id-12345`, `Acme Corp`).
-- **Pre-publish drafts** that name real third parties (vendors, suppliers, partners) outside what's already on the storefront.
+- **Personal contact metadata**: personal emails (Gmail, iCloud, etc.), phone numbers, home/fulfilment addresses, personal social handles; the storefront speaks for the brand, not the operator.
+- **Commit-author email**: `git config user.email` must be `seth@pertsfoundry.com` or the GitHub no-reply form; Gmail here is a metadata leak **no diff ever shows**.
+- **Dev-machine identifiers**: absolute paths with a username (`/Users/Seth/...`, `/c/Users/Seth/...`, `/mnt/c/Users/Seth/...`, `~/repos/...`); use placeholders (`<screenshots-dir>`, `<repo-root>`) instead.
+- **Internal advisory / strategy docs**: legal-exposure analyses, ADA-risk playbooks, insurance notes, settlement guidance, demand-letter checklists, tax/accounting research; private notes location only, never `docs/` here.
+- **Operating location below state level**: city, county, ZIP, anything that could pinpoint a home-based operation; state-or-larger brand framing is fine, jurisdiction-tied legal framing is not.
+- **Tokens of any kind**: `SHOPIFY_CLI_THEME_TOKEN`, GitHub PATs, Shopify Admin API tokens, third-party app keys, AI keys. CI references `${{ secrets.* }}` only.
+- **Real customer / order / financial data**, even truncated. Use synthetic fixtures (`Test Customer`, `order-id-12345`).
+- **Pre-publish drafts** naming real third parties outside what's already on the storefront.
 
 ### What is NOT sensitive (and is fine to commit)
 
-- Founder narrative and brand voice: anything already on the storefront's About / FAQ page (first names, husband-and-wife framing, prior-career mentions, pet references). Image filenames encoding pet names (`Kitkat-Rory.jpg`) are fine when the same names appear in visible copy.
-- The brand name "Sapphire Shadow Studio" and the public store handle `sapphire-shadow-studio`.
-- The live theme numeric ID and `*.myshopify.com` / custom storefront domain; public on every storefront page render.
-- App-embed install UUIDs (Shopify Inbox, Judge.me, etc.); observable in any browser DOM inspection.
-- Public Shopify policies content under `/policies/...`.
-- State-level location framing in storefront copy (not in legal / strategy context).
-- Synthetic test fixtures.
-- The `EXPECTED_SYNC_PR_OPENER` repo variable's value (a GitHub login). The opener identity is necessarily public surface (visible on every PR the PAT opens, the contributors page); storing it as a secret would not protect it.
-- The `SHOPIFY_SYNC_DEPLOY_KEY` deploy key's public-key fingerprint / title (admin-only `/settings/keys` page), its numeric ID, and the matching bypass-actor `actor_id` on `shopify-sync-protection`. Admin-observable identifiers, not authentication material.
+- Founder narrative and brand voice already on the storefront's About/FAQ page (first names, husband-and-wife framing, prior-career mentions, pet references); pet-name image filenames (`Kitkat-Rory.jpg`) are fine when those names appear in visible copy.
+- The brand name "Sapphire Shadow Studio", the public store handle, the live theme numeric ID, and the storefront domain: all public on every page render.
+- App-embed install UUIDs and public `/policies/...` content: observable to any storefront visitor.
+- State-level location framing in storefront copy (not legal/strategy context), and synthetic test fixtures.
+- `EXPECTED_SYNC_PR_OPENER`'s value (a GitHub login): already public via every PR the PAT opens and the contributors page.
+- `SHOPIFY_SYNC_DEPLOY_KEY`'s public-key fingerprint/title, numeric ID, and matching bypass-actor `actor_id`: admin-observable identifiers, not authentication material.
 
 ### Pre-push checklist
 
 Before every `git push`, every `gh pr create`, every `gh pr comment`, and every `gh issue create`:
 
 1. **Scan the full branch diff** (`git diff origin/main..HEAD`) and **every commit message** (`git log origin/main..HEAD --format=%B`) for: personal emails, personal phone, machine paths, tokens, merchant-keyed strategy framing, sub-state location detail.
-2. **Scan the rendered PR / issue / comment body** for the same categories. Content typed into `gh pr create --body` does not pass through the diff scan and is not covered by Gitleaks.
+2. **Scan the rendered PR / issue / comment body** for the same categories; `gh ... --body` text skips both the diff scan and Gitleaks.
 3. **Verify the `secret-scan` CI check is green** on the latest PR run. Red means stop and triage, not "rebase past it."
-4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form. Gmail in author metadata is the "no diff will ever show" leak from the bullet list above and slips through every other check.
+4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form; Gmail in author metadata is the leak no diff ever shows (see Commit-author email above).
 5. If anything sensitive is found:
    - **Pre-push (history not yet on remote)**: rewrite locally with `git rebase -i` or `git commit --amend`. Replace with neutral descriptors. Re-run all checks before pushing.
    - **Already on remote**: stop. Surface to the user before any further action. Force-pushing rewritten history to a public repo is a visible event that warrants explicit consent. For a confirmed token, treat as compromised and rotate in addition to (not instead of) history rewrite.
@@ -62,88 +59,44 @@ Browser-driven testing of the storefront or a PR preview theme uses the chrome-d
 
 - **Password-protected storefront.** The storefront (custom domain and `*.myshopify.com`) is password-protected, so anonymous requests (WebFetch, curl, a plain `?preview_theme_id=` link) get a 401 or the password page. To view a PR preview theme, open the store's admin themes page (`https://admin.shopify.com/store/sapphire-shadow-studio/themes`), open the draft theme's "more theme actions" menu, and use its **Preview** link. That link carries a `key=` param that sets the password-bypass cookie for the whole browser session; curl does not pick the bypass up.
 - **hCaptcha blocks automated form submits.** Shopify's invisible hCaptcha will not complete for storefront form submissions from the automation-flagged MCP browser, so full contact-form round trips must be verified manually.
-- **Shopify admin login loops in the MCP browser.** accounts.shopify.com silently rejects the chrome-devtools MCP's automation-flagged Chrome (POST `/lookup` goes out with `origin: null`, the server 302s back to the form with a fresh `verify=` param, and "Continue with email" loops forever). Workaround: kill the MCP-launched Chrome, relaunch the same binary manually with the same `--user-data-dir` (`~/.cache/chrome-devtools-mcp/chrome-profile`) but no automation flags, log in there, then close it; the next MCP call relaunches the browser and the session cookies carry over. The profile is persistent, so login survives MCP restarts until the session expires.
-
-## Project overview
-
-Custom Shopify theme based on **Horizon** (Shopify's flagship); server-rendered Liquid + theme blocks + progressive enhancement. Private, single-merchant theme, not a Shopify Theme Store submission. The repo is **standalone, not a GitHub fork** of `Shopify/horizon`; attribution and upstream-merge mechanics in `LICENSE.md` and `README.md`.
+- **Shopify admin login loops in the MCP browser.** accounts.shopify.com silently rejects the chrome-devtools MCP's automation-flagged Chrome, looping "Continue with email" forever. Workaround: kill the MCP-launched Chrome, relaunch the same binary manually with the same `--user-data-dir` (`~/.cache/chrome-devtools-mcp/chrome-profile`) but no automation flags, log in there, then close it; the next MCP call relaunches the browser and the session cookies carry over until the profile's login expires.
 
 ## Workflow
 
-PR-based deploy model. Direct edits to `main` and to the live theme are not part of the workflow. `README.md` documents the workflow tables (`validate` / `preview` / `deploy` / `sync`, branches, secrets); this section holds Claude-specific do/don't, the auto-deploy gates, and the deploy-gate trust delta.
+README documents the workflow surface (`validate` / `preview` / `deploy` / `sync` tables, branches, secrets, "How shipping works"). This section is Claude-specific additions only: steps not in README, and the auto-deploy gate internals.
 
 ### Code changes
 
-1. `git switch -c <feature-branch> origin/main`.
-2. Local dev: `npm ci && npx shopify theme dev`. The dev server uses an unpublished on-the-fly theme; storefront edits don't touch live or `shopify-sync`.
-3. Before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every Liquid file you changed. It catches schema / filter / tag errors locally and earlier than the CI `theme-check` step; it complements that job, it does not replace it.
-4. Open a PR. Validate runs `theme-check`, `reconcile`, `size-chart`, `blank-inventory`, `blank-id-guard`, `smoke`, `actionlint`, `zizmor --pedantic`, `gitleaks` as one sequential job (most are `npm run` steps; see `validate.yml`). Single required check on `main`: `validate / validate`. To re-run, push a new commit (no comment trigger).
-5. Local actionlint with the same shellcheck excludes CI uses: `SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint` (see the `env:` block on `validate.yml`'s `actionlint` step, which documents why each code is a false positive here).
-6. If `reconcile` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
-7. Comment `deploy` on the PR. `deploy.yml` handles live push, smoke, preview cleanup, squash-merge, and `shopify-sync` fast-forward. On step failure a sticky failure report overwrites the deploy report and the PR stays open.
+Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
 
 ### Admin-side edits
 
-All theme-customizer / code-editor edits **must** be made on the unpublished `EDIT HERE - Admin Sync` theme (connected to `shopify-sync` via the Shopify GitHub Integration), NEVER on live. Admin edits auto-commit to `shopify-sync` via `shopify[bot]`. `sync.yml` opens or refreshes the single reconcile PR (`head: shopify-sync, base: main`) on each push, plus a 13:00 UTC daily safety-net cron. After Validate succeeds, `deploy.yml`'s `workflow_run` arm auto-deploys.
+Admin Customize/Code edits go on the `EDIT HERE - Admin Sync` theme, never live (README's "Branches and themes" covers the shopify-sync mechanics). Claude-specific: auto-deploy on the reconcile PR halts with a sticky skip-comment on signed-commit-identity failure, PR-opener mismatch, HEAD drift, stale base, missing-main-commits, or an out-of-scope diff (touches `.github/` or `layout/theme.liquid`, or exceeds a LOC threshold defined in `deploy.yml`'s `gate` job). A hand-opened shopify-sync PR by anyone other than the configured PAT owner fails the PR-opener check and must be deployed via `deploy` comment.
 
-Auto-deploy halts with a sticky skip-comment on: signed-commit-identity failure, PR-opener mismatch, HEAD drift, stale base, missing-main-commits, or out-of-scope diff (touches `.github/` or `layout/theme.liquid`, or exceeds 1000 LOC). A hand-opened shopify-sync PR by anyone other than the configured PAT owner fails the PR-opener check and must be deployed via `deploy` comment.
+**Escape hatch**: mark the auto-reconcile PR as a draft (`gh pr ready --undo <n>`); auto-deploy skips drafts. Convert back to ready-for-review to resume.
 
-**Escape hatch**: mark the auto-reconcile PR as a draft (`gh pr ready --undo <n>`); auto-deploy skips drafts. Convert back to ready-for-review to resume. The `shopify-sync` branch is never deleted on merge.
+### Live theme and preview cleanup
 
-To inspect what is currently live without altering the working tree: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`. **Never** pull live into the working tree.
-
-### Live theme
-
-Live theme is `#181702754604`. **Disconnected** from GitHub; only `deploy.yml` writes to it. Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme. There is no automated drift detection; "live = main" is operator discipline.
-
-### Preview-theme cleanup
-
-`pr-N-preview` themes are deleted inline by the deploy workflows on merge and by `preview.yml::cleanup` on PR close. No scheduled sweep. If cleanup silently fails (deploy chain has `continue-on-error: true`) or skips (concurrency / runner outage), the orphan persists. The signal: `:warning: **Preview cleanup warning**` line in the deploy-report comment's `cleanup_status` row. Manual recovery (with `SHOPIFY_CLI_THEME_TOKEN` set):
-
-```bash
-# List orphans
-npx shopify theme list -s sapphire-shadow-studio --json \
-  | jq -r '.[] | select(.name | test("^pr-[0-9]+-preview$")) | "\(.id)\t\(.name)"'
-
-# Delete a specific orphan
-npx shopify theme delete --theme <id> --force
-```
+Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme (README's "Branches and themes" table has the theme ID and disconnected-from-GitHub details). Orphaned `pr-N-preview` themes have no scheduled sweep; the failure signal is `:warning: **Preview cleanup warning**` in the deploy-report comment, and README's Troubleshooting table has the recovery commands.
 
 ### Smoke test (node fetch; catalog-wide)
 
-The post-deploy smoke is `.github/actions/shopify-theme-push/smoke.mjs` (unit-tested by `smoke.test.mjs`, gated in the required `validate` job via `npm run smoke:test`). It replaced the old curl smoke.
-
-- **Why node, not curl.** Cloudflare bot-management blocklists curl's TLS/HTTP2 fingerprint and returns a hard `429` on content routes (this is what false-failed PR #56 as `503`/`429`, not the docs change). node's `fetch` (undici) is not blocklisted. Do not reintroduce a curl probe of content routes. The empirical proof lives in `scripts/diagnostics/storefront-probe-node.mjs` (operator diagnostic; its `.log` is gitignored). Full root cause in `release-notes.md`.
-- **What it asserts.** Per path: HTTP `200` + final host == expected host + `server-timing: theme;desc="<LIVE_THEME_ID>"`. Structural routes (`smoke-paths` default `/ /cart /collections/all /search`) verify the deploy landed.
-- **Catalog coverage, no maintained list.** Product handles are not in this repo (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke enumerates **every published product from the sitemap** (`/sitemap.xml` -> `sitemap_products_*.xml`) and probes each. A product `404` is a HARD-FAIL ("product unavailable"), which also catches a broken/removed template suffix. Do not "optimise" this back to a single hardcoded fixture. Caps: `SMOKE_MAX_PRODUCTS` (default 200), `SMOKE_MAX_SECONDS` (default 240; exhausting it soft-warns the remainder, never blocks).
-- **Locked vs public.** The store is password-protected pre-launch. When `STOREFRONT_PASSWORD` (repo **secret**, isolated to the `deploy` job's push step) is set, the smoke authenticates the password gate and probes real pages while locked. A password that the gate **refuses** (wrong / rotated secret) is a HARD-FAIL, so a stale secret cannot silently drop coverage on unattended auto-deploys. A **transient** auth failure (throttle / network) is a loud SOFT-WARN plus the `/password`+theme-id fallback. An **absent** secret skips auth entirely and takes the same `/password` fallback (PASS if that page is on-theme). **Delete the secret at public launch**; the smoke auto-detects PUBLIC mode with no code change.
-- **Verdicts.** HARD-FAIL -> exit 1, blocks the deploy (sticky failure, PR stays open). SOFT-WARN (throttle, enumeration skipped, password fallback) -> exit 0, deploy proceeds, surfaced in the report. On the content-probe path at least one verified PASS is required to exit 0, so a wholesale `429` wall cannot green a deploy blind (the locked no-secret `/password` fallback is exempt: a rendered page greens with reduced coverage). Output is `path verdict status host theme-id` tuples only: never the password, cookie jar, `Set-Cookie`/`Cookie` headers, or bodies.
-- **Docs-only PRs skip the push entirely.** The `gate` job computes `theme_touched` (any of the 8 theme dirs, or a rename out of one; fail-safe `true` on listing error); the `deploy` job's "Live theme push" step (which runs both push and smoke) is guarded on it, so a docs/scripts/`.github`-only PR merges and fast-forwards `shopify-sync` without touching live. This is the permanent #56 fix.
-- **Pre-flight before first deploy.** Run `SMOKE_BASE_URL='https://<domain>' LIVE_THEME_ID='<live-theme-id>' STOREFRONT_PASSWORD='...' node .github/actions/shopify-theme-push/smoke.mjs --dry-run` against live once (all three env vars are required or the script exits 1); confirm LOCKED-mode PASS with the theme-id match (it is the only check that the live `server-timing` format and the password-POST cookie behaviour hold). Whether the gated sitemap is reachable is confirmed here too; if it is not, enumerate products via the Admin API by hand (there is no automatic Admin-API fallback in `smoke.mjs`; on an unreachable sitemap it soft-warns and probes structural routes only).
+The post-deploy smoke (`.github/actions/shopify-theme-push/smoke.mjs`) probes every published product from the sitemap, not a fixed handle list, so a broken template or missing product HARD-FAILs the deploy. It's node `fetch`, not curl: Cloudflare bot-management blocklists curl's fingerprint, so do not reintroduce a curl probe. Full behavior (HARD-FAIL vs SOFT-WARN semantics, locked-vs-public password handling, pre-flight dry-run): `docs/smoke-test-reference.md`.
 
 ### Deploy gate trust delta
 
-The deploy chain has **no GitHub Environment binding**. `SHOPIFY_CLI_THEME_TOKEN` and `STOREFRONT_PASSWORD` are repo-level secrets; `SHOPIFY_DOMAIN` / `SHOPIFY_FLAG_STORE` / `EXPECTED_SYNC_PR_OPENER` are repo-level variables. `deploy.yml` is a three-job pipeline: `gate` (no token; computes the gates below, plus `theme_touched`), `deploy` (Shopify token + storefront password, no deploy key; `needs: gate`; live push + smoke + squash-merge), and `sync` (deploy key, no Shopify token; `needs: deploy`; reconciles `shopify-sync`). Each secret is isolated to one job's bash; `STOREFRONT_PASSWORD` is wired only into the push step's smoke and is read by `smoke.mjs` from env, never argv.
+`deploy.yml` is a three-job pipeline with no GitHub Environment binding: `gate` (no token; computes the four gates below), `deploy` (Shopify token + storefront password, no deploy key; live push + smoke + squash-merge), `sync` (deploy key, no Shopify token; reconciles `shopify-sync`). Each secret is isolated to one job.
 
-Four computed gates govern auto-deploy. Full attack/mitigation chains, alternatives considered, and historical bugs are in `release-notes.md`; the load-bearing rules that must survive future refactors are inlined here.
+Four gates govern auto-deploy; do not weaken these in a refactor:
 
-1. **Collaborator permission** (comment path). `gate` calls `getCollaboratorPermissionLevel` on the comment author and proceeds only for `admin` / `write`. Workflow-level `if` pre-filters by `author_association` and asserts `github.event.issue.pull_request`.
+1. **Collaborator permission** (comment path): only `admin`/`write` collaborators may trigger a deploy comment.
+2. **Validate-on-HEAD-SHA** (all paths): Validate must be green on the exact trusted SHA. Do not drop the `compareCommits.status === 'identical'` check as "redundant" with SHA equality: it is commit-object equality, not tree equality, so it independently catches same-tree amends/cherry-picks and different-tree force-pushes that SHA equality alone would miss.
+3. **Signed-commit gate** (workflow_run paths): author identity + signature verification + PR-opener identity. Do not add strict equality on `commit.committer.login`: a legitimate `web-flow` committer (web-UI edits, Update-branch/Rebase, `@dependabot rebase`) is not a security signal, and that check was a prior false-positive regression.
+4. **Defence-in-depth merge-base assertion** (workflow_run paths): PR head must not be behind `main` at merge time.
 
-2. **Validate-on-HEAD-SHA** (all paths). Comment path: `listWorkflowRuns` filtered by `validate.yml`, `head_sha`, **and** `event: 'pull_request'` (the event filter blocks a future `push` / `workflow_dispatch` trigger on validate.yml from masquerading as proof). Workflow_run paths: re-fetch the triggering Validate run via `getWorkflowRun`, assert `conclusion: success`, thread the returned `head_sha` as `trustedSha` through every downstream API call. HEAD-drift is first asserted via `pr.head.sha === trustedSha`; `compareCommits.status === 'identical'` is **defence in depth** on top of that.
-   - **Do not "simplify" the `compareCommits` check away** as redundant with the SHA equality. The comparison is commit-object equality, **not** tree equality; same-tree amends, cherry-picks, and different-tree force-pushes all return `diverged`, not `identical`. The check was added explicitly so a future refactor wouldn't remove a load-bearing guardrail on a wrong premise; `release-notes.md` documents this.
-   - For workflow_run paths, Validate is **advisory** (a malicious PR head could rewrite `validate.yml` to pass falsely). The actual integrity boundary for auto-deploys is the signed-commit gate below.
+**Deploy-key bypass-row scope**: `SHOPIFY_SYNC_DEPLOY_KEY` has full repo push capability; the `Deploy keys` bypass-actor row on `shopify-sync-protection` scopes it to that one branch. Do NOT add it as a bypass actor on any ruleset protecting `main`.
 
-3. **Signed-commit gate** (workflow_run paths). Assert `verification.verified === true`, `commit.author.login === expectedBot` (`shopify[bot]` for shopify-sync; `dependabot[bot]` for dependabot), and `pull_request.user.login === expectedPrOpener` (shopify-sync: `vars.EXPECTED_SYNC_PR_OPENER` at runtime, the PAT owner; dependabot: the `dependabot[bot]` constant).
-   - **`commit.committer.login` may be `expectedBot` OR `web-flow` and is informational, not a security signal.** Anyone with `contents: write` can produce a `web-flow` committer via web-UI edits, the Update-branch / Rebase buttons, `PUT /contents/{path}`, or `@dependabot rebase` / `@dependabot recreate`. Strict equality on committer was the source of a prior false-positive regression (see `release-notes.md`); do not re-introduce it.
-   - Integrity boundary: author identity + signature verification + PR-opener identity. Git-commit-header fields are forgeable and not consulted. Trust delta for the post-PAT PR-opener (now a PAT-exfiltrable login): bounded by signed-commit-identity above and by gate 4 below; full chain in `release-notes.md`.
-
-4. **Defence-in-depth merge-base assertion** (workflow_run paths). `repos.compareCommits(base: main_tip, head: trustedSha).behind_by === 0`. Catches "PR head was missing main commits at PR creation time"; independent of the base-staleness check in gate 2. For shopify-sync, blocks the misleading-revert PR scenario and the PAT-exfil stale-PR replay (independently of `sync.yml`'s own merge-base prevention guard at the create-PR call site). For dependabot, no-op in the normal flow; belt-and-braces.
-
-All four gates assume workflow files are correct. A compromised `contents: write` collaborator who can land any PR bypasses all of them and could already exfiltrate any secret via a malicious workflow change; the PAT and deploy key do not enlarge this surface.
-
-**Deploy-key bypass-row scope.** `SHOPIFY_SYNC_DEPLOY_KEY` has full repo push capability across all refs (deploy keys are repo-scoped by GitHub design). The `Deploy keys` bypass-actor row on ruleset `shopify-sync-protection` is what scopes its bypass authority to that one branch. **Do NOT add the deploy key as a bypass actor on any ruleset protecting `main`.** Bypass authority is decoupled from human role membership.
-
-**Known compensations** (deferred): a preview-only Shopify token; a long-lived `auto-deploy-audit` issue for forensics beyond 90-day log retention.
+Full mechanics (per-gate API calls, integrity-boundary reasoning, known compensations): `docs/deploy-gate-reference.md`. Design rationale, alternatives considered, and incident history: `release-notes.md`.
 
 ### Secrets vs variables policy
 
@@ -172,13 +125,7 @@ npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodel
 
 ## Shopify MCP tools and limits
 
-Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Known gaps, so a task isn't misrouted through the MCP:
-
-- **Admin API access depends on the app's currently-granted scopes, which change; do not assume a fixed set.** Whenever you make or plan a change that relies on an Admin API capability (a write, a new resource type, a media upload), verify the app actually holds the scopes it needs rather than trusting any value recorded here. Get an Admin API token by exchanging `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` (`POST https://${MYSHOPIFY_DOMAIN}/admin/oauth/access_token`, `grant_type=client_credentials`) and list what it grants with `GET /admin/oauth/access_scopes.json`. The `shopify` Admin MCP also registers write tools (`create-product`, `manage-product-variants`, `update-product`) and they are callable; whether a given call succeeds is governed by the granted scopes, so check the scopes before relying on it. Prefer the token for reads the MCP truncates (e.g. `get-product-by-id` caps variants at 20 and cannot enumerate a full option set). Never commit the token or the exchange script.
-- **Media / image upload is not an MCP tool.** The MCP exposes no media or file upload tool, so theme imagery ships through the `assets/` directory. Product / media imagery goes through the Admin UI or the Admin GraphQL API (staged upload, then `fileCreate` / product media mutations), which the exchanged token can drive when the granted scopes cover it; verify the scopes per the bullet above before relying on that path.
-- **No `templateSuffix`.** It is on neither `create-product` nor `update-product`, and the MCP does not return it on reads. Assigning a product's theme template is an Admin UI step, and a product whose suffix does not resolve has nothing behind it: this theme ships no default `templates/product.json`.
-- **Shopify Flow is unreachable.** No MCP tool reads or writes Flow. A `.flow-export` file cannot be round-tripped through the MCP; Flow automations are inspected and edited only in the Admin Flow app. Do not attempt to reconstruct or diff Flow state from the MCP.
-- **`validate_theme_codeblocks`** (shopify-dev MCP) is the local Liquid validator invoked in the Code-changes workflow above; prefer it over guessing whether a schema / filter / tag is valid.
+Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Admin API scopes change over time; verify a scope before relying on a write capability rather than assuming a fixed set. Full gap list (no media upload, no `templateSuffix`, Flow unreachable, the OAuth token-exchange command for scope-checking and MCP-truncated reads): `docs/shopify-mcp-notes.md`. `validate_theme_codeblocks` (shopify-dev MCP) is the local Liquid validator invoked in the Code-changes workflow above; prefer it over guessing whether a schema / filter / tag is valid.
 
 ## Shopify best practices
 
@@ -188,14 +135,7 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 ### Directory structure
 
-- **layout/**: base templates (`theme.liquid`, `password.liquid`).
-- **templates/**: JSON templates; root must include `order` array + `sections` map. Alternates use dot-suffix (`product.alternate.json`). Page alternates use one of three patterns: keep `main` enabled and append sections (Contact pattern), disable `main` and use a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit.
-- **sections/**: page sections with `{% schema %}`.
-- **blocks/**: reusable theme blocks; nestable.
-- **snippets/**: Liquid partials rendered with `{% render %}`.
-- **assets/**: CSS, JS, static files. **Flat directory** (no subdirs). **No build step**: files ship as-is. Reference via `{{ 'filename' | asset_url }}`; inline icons via `{{ 'icon.svg' | inline_asset_content }}`.
-- **locales/**: `en.default.json` is canonical.
-- **config/**: `settings_schema.json`, `settings_data.json`.
+README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
 
 ### Component framework
 
@@ -254,20 +194,13 @@ When the inspector is active, deactivate fixed-position elements (sticky headers
 {% endschema %}
 ```
 
-### Static vs dynamic invocations
+### Block-nesting gotchas
 
-- **Static** (locked into schema): `{% content_for 'block', type: 'text', id: 'unique-id' %}`. May pre-set defaults via `settings: { ... }` on the call site.
-- **Dynamic** (merchant adds via editor): `{% content_for 'blocks' %}`.
+Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks": [...]`, `"tag": null`) are standard Shopify theme-block features; look them up via `validate_theme_codeblocks` or the shopify-dev MCP rather than trusting a memorised summary. Two project-specific gotchas that aren't in Shopify's docs:
 
-**Critical**: only ONE `{% content_for 'blocks' %}` per file. If you need the same dynamic-block region in multiple places, **capture** it once into a variable and emit the variable.
-
-**A block cannot read another block's settings.** When two blocks must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`, read by both the variant picker and the acknowledgement block). Duplicating the setting on each block gives two sources of truth that drift apart silently.
-
-### Schema targeting
-
-- Restrict nesting via `"blocks": [...]`. Use `{ "type": "@theme" }` for any theme block, `{ "type": "@app" }` for app blocks, or specific names.
-- `"tag": null` removes the auto-wrapping element; emit `{{ block.shopify_attributes }}` on your own root.
-- **NEVER edit `{% schema %}` directly** when schemas are generated from source; modify the source and regenerate.
+- **Only ONE `{% content_for 'blocks' %}` per file.** Need the same dynamic-block region in multiple places? **Capture** it once into a variable and emit the variable.
+- **A block cannot read another block's settings.** When two blocks must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`, read by both the variant picker and the acknowledgement block); duplicating the setting on each block gives two sources of truth that drift apart silently.
+- **NEVER edit `{% schema %}` directly** when it's generated from source (e.g. by `scripts/size-chart/`); modify the source and regenerate.
 
 ## Coding standards
 
