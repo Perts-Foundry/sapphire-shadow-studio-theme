@@ -63,10 +63,17 @@ Trigger: **Inventory quantity changed**. On every change, in order:
 
 ### The write step (exact shape)
 
-The live store's Admin API (`InventorySetQuantitiesInput`) takes only `name`, `reason`,
-`referenceDocumentUri`, and `quantities`; each quantity is `{ inventoryItemId, locationId,
-quantity }`. There is **no** compare-and-swap on this store's schema (no `compareQuantity`, no
-`ignoreCompareQuantity`, and no `changeFromQuantity`), so the call simply sets the absolute value.
+The Flow's own "Send Admin API request" action takes only `name`, `reason`, `referenceDocumentUri`,
+and `quantities`; each quantity is `{ inventoryItemId, locationId, quantity }`, so the call it makes
+simply sets the absolute value with no compare-and-swap.
+
+**Scope that claim to the Flow action; it is not a property of the store.** An earlier version of
+this document said this store's schema had no compare-and-swap at all. That is wrong, and it was
+proven wrong against the live store: on the direct Admin API at `2026-07`,
+`InventoryQuantityInput` **does** expose `changeFromQuantity`, and sending a stale value returns
+`CHANGE_FROM_QUANTITY_STALE` with the quantity unchanged. `inventoryAdjustQuantities` /
+`InventoryChangeInput` likewise expose an atomic `delta` plus `changeFromQuantity`. The
+`blank-inventory` tooling relies on both. Do not re-derive the old claim from the Flow blob below.
 
 ```json
 {
@@ -99,6 +106,53 @@ of redundant writes. With the guard, a re-triggered run finds all siblings alrea
 nothing, and the propagation settles in a single wave. It also means the common case (a change that
 touches a blank shared by N variants) does at most N-1 writes.
 
+## Measured behaviour
+
+Established by testing against the live store on 2026-07-19 and 2026-07-20, on one blank group,
+restored byte-for-byte afterwards. These numbers and rules are what `scripts/blank-inventory/` is
+built on. Settle time was measured twice end to end through the tooling: 89s and 101s.
+
+- **Settle time is 80 to 90 seconds** from the triggering write to every sibling agreeing.
+- **Propagation is NOT atomic.** A mid-cascade read legitimately shows some siblings updated and some
+  not (observed `12,12,11,11,11,11,11,11` at t+78s of a 90s settle). Anything checking convergence
+  must poll to a verdict, never sample once, or it will report drift on a healthy group.
+- **A no-op write fires nothing.** Writing a variant's current value succeeds but returns
+  `inventoryAdjustmentGroup: null`, produces no inventory-changed event, and therefore never runs the
+  Flow. Consequence: a change must be written to a variant whose quantity actually **differs** from
+  the target, or the stale siblings are never reached. That `null` is also a useful machine-readable
+  "nothing happened" signal.
+- **Tagging a variant is inert.** `metafieldsSet` fires no inventory event, so on a quiet group a
+  newly tagged variant stays at its current quantity indefinitely (observed: 150s at 0 while its
+  siblings held 12). Adding the metafield is therefore never enough on its own; something must write
+  an inventory change afterwards to seed it.
+- **But a cascade in flight sweeps in new tags.** Each sibling write re-fires the trigger, and every
+  re-triggered run re-scans the whole catalogue, so a variant tagged while a cascade is still
+  settling gets picked up without a seed write (observed: converged in 30s). This is a race, not a
+  mechanism: do not rely on it, and quiesce before tagging so the outcome is deterministic.
+- **`@idempotent(key: "<uuid>")` is required** on `inventorySetQuantities` and
+  `inventoryAdjustQuantities` at API `2026-07`. Omitting it fails the call outright. Deriving the key
+  from the work being done (rather than randomising per attempt) keeps a plan reproducible, but do
+  **not** rely on it to make a retry safe: an identical repeat with the same key roughly two minutes
+  later was processed as a NEW call and stopped by compare-and-swap, not deduplicated. Whatever
+  dedup window applies did not cover that gap. Compare-and-swap is the actual protection against a
+  double-apply.
+- An adjustment applies its delta to **both** `available` and `on_hand`, and `quantityAfterChange`
+  comes back `null`, so the resulting quantity must be re-read rather than taken from the response.
+
+### Untagging order is destructive if reversed
+
+To remove a variant from a group, **delete the metafield first**, confirm the deletion with a
+re-read, and only then change its quantity. Zeroing a variant that is still tagged fires the trigger
+and propagates 0 across the entire blank group, wiping real stock on every sibling. The
+`untag` command in `scripts/blank-inventory/` enforces this interlock; doing it by hand in Admin does
+not, so use the tool.
+
+## Tooling
+
+`scripts/blank-inventory/` implements all of the above (see its README), and the `blank-inventory`
+Claude skill drives it with the operator approval gates. Use it in preference to hand-editing
+quantities or metafields in Admin, which has none of these guards.
+
 ## Assumptions and limitations
 
 - **Single location only.** The `locationId` loop concatenates every inventory level's location id
@@ -122,8 +176,11 @@ touches a blank shared by N variants) does at most N-1 writes.
 - **Siblings are not updating at all.** Open the flow's run log and look at the "Send Admin API
   request" step output. A non-empty `userErrors`, or an invalid-field error, means the mutation
   shape drifted from the live schema. The original v1 of this flow failed exactly this way: it sent
-  `changeFromQuantity`, which is not a field on this store's `InventoryQuantityInput`, so every
-  write errored and nothing propagated. Confirm the blob matches the shape above.
+  `changeFromQuantity`, which **Flow's own action does not accept**, so every write errored and
+  nothing propagated. Confirm the blob matches the shape above. Note the scoping: `changeFromQuantity`
+  **is** a valid field on the direct Admin API (see the write-step section above); it is Flow's
+  restricted action that rejects it. Do not generalise this v1 failure into a claim about the store's
+  schema.
 - **Runaway or escalating runs.** Check that the third guard clause
   (`inventoryQuantity != inventoryQuantity`) is present on the sibling condition. Its absence is
   what turns one change into a wave of self-triggering writes.

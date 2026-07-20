@@ -77,7 +77,7 @@ PR-based deploy model. Direct edits to `main` and to the live theme are not part
 1. `git switch -c <feature-branch> origin/main`.
 2. Local dev: `npm ci && npx shopify theme dev`. The dev server uses an unpublished on-the-fly theme; storefront edits don't touch live or `shopify-sync`.
 3. Before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every Liquid file you changed. It catches schema / filter / tag errors locally and earlier than the CI `theme-check` step; it complements that job, it does not replace it.
-4. Open a PR. Validate runs `theme-check`, `reconcile`, `size-chart` (`npm run size-chart:test`), `smoke` (`npm run smoke:test`), `actionlint`, `zizmor --pedantic`, `gitleaks` as one sequential job. Single required check on `main`: `validate / validate`. To re-run, push a new commit (no comment trigger).
+4. Open a PR. Validate runs `theme-check`, `reconcile`, `size-chart`, `blank-inventory`, `blank-id-guard`, `smoke`, `actionlint`, `zizmor --pedantic`, `gitleaks` as one sequential job (most are `npm run` steps; see `validate.yml`). Single required check on `main`: `validate / validate`. To re-run, push a new commit (no comment trigger).
 5. Local actionlint with the same shellcheck excludes CI uses: `SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint` (see the `env:` block on `validate.yml`'s `actionlint` step, which documents why each code is a false positive here).
 6. If `reconcile` fails, run the snippet it posts: `git fetch origin && git merge origin/shopify-sync && git push`.
 7. Comment `deploy` on the PR. `deploy.yml` handles live push, smoke, preview cleanup, squash-merge, and `shopify-sync` fast-forward. On step failure a sticky failure report overwrites the deploy report and the PR stays open.
@@ -154,7 +154,7 @@ GitHub Actions auto-redacts `secrets.*` in logs (`***`); `vars.*` is plaintext. 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific triggers:
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. The `scripts/size-chart/` tooling does have a `node --test` suite (`npm run size-chart:test`); run test-engineer when that tooling changes.
+- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. `scripts/size-chart/` and `scripts/blank-inventory/` do have `node --test` suites; run test-engineer when either changes. `blank-inventory/` writes to live inventory, so it is the higher-risk of the two.
 - **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.

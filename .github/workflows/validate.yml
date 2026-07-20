@@ -142,6 +142,70 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── blank-inventory tooling tests ──────────────────────────
+      # `scripts/blank-inventory/` writes to LIVE inventory, so its decision logic
+      # (which variant to write, when to refuse, how a partial run is recorded) is
+      # gated here. The suite is unit-only and never touches the network or the
+      # store; the live end-to-end checks are operator-invoked by hand and are
+      # deliberately not wired into any npm script this job runs.
+      - name: Blank inventory tests
+        id: blank-inventory
+        run: |
+          set +e
+          OUTPUT=$(npm run blank-inventory:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Same "green on zero tests" guard as the size-chart step above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::blank-inventory suite reported ${TESTS_RUN:-0} tests. The glob in the blank-inventory:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Blank-id leak guard ────────────────────────────────────
+      # Blank ids embed the supplier name and style number, which are sensitive for
+      # this public repo. Gitleaks matches token-shaped strings and does not catch
+      # merchant-keyed prose, so this structural check runs alongside it on every PR.
+      # It names no supplier itself: it flags blank-id-shaped tokens whose segments
+      # fall outside the synthetic test vocabulary.
+      - name: Blank id guard
+        id: blank-id-guard
+        run: |
+          set +e
+          OUTPUT=$(npm run blank-inventory:guard 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Fail-closed floor. On a clean run the guard prints "scanned N file(s)" and exits 0. If
+          # `git ls-files` ever returned nothing (wrong CWD, an odd checkout, a future refactor of
+          # trackedFiles()), it would pass green having scanned nothing, the exact fail-open mode a
+          # leak detector must not have. Assert it actually looked at files, in the same spirit as the
+          # TESTS_RUN guards on the suites above. Only checked on a clean exit: a real finding already
+          # exits non-zero and prints no "scanned" line.
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            FILES_SCANNED=$(printf '%s\n' "$OUTPUT" | grep -oE 'scanned [0-9]+' | tail -1 | grep -oE '[0-9]+')
+            if [ "${FILES_SCANNED:-0}" -lt 1 ]; then
+              echo "::error::blank-id guard scanned ${FILES_SCANNED:-0} files. It has probably run from the wrong directory or git ls-files returned nothing, so it cannot be trusted to have covered the repo."
+              EXIT_CODE=1
+            fi
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Deploy smoke-test unit tests ───────────────────────────
       # smoke.mjs is the post-deploy storefront probe run by deploy.yml. It has
       # no storefront reach until a deploy, and its whole job is to fail a bad
@@ -236,13 +300,15 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
+          BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$BLANK_INVENTORY_EXIT" "$BLANK_ID_GUARD_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -272,6 +338,8 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
+          BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
@@ -279,6 +347,8 @@ jobs:
           THEME_CHECK_OUTPUT: ${{ steps.theme-check.outputs.output }}
           RECONCILE_OUTPUT: ${{ steps.reconcile.outputs.output }}
           SIZE_CHART_OUTPUT: ${{ steps.size-chart.outputs.output }}
+          BLANK_INVENTORY_OUTPUT: ${{ steps.blank-inventory.outputs.output }}
+          BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
           SMOKE_TEST_OUTPUT: ${{ steps.smoke-test.outputs.output }}
           ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
           ZIZMOR_OUTPUT: ${{ steps.zizmor.outputs.output }}
@@ -307,6 +377,8 @@ jobs:
             const themeCheck = process.env.THEME_CHECK_EXIT;
             const reconcile = process.env.RECONCILE_EXIT;
             const sizeChart = process.env.SIZE_CHART_EXIT;
+            const blankInventory = process.env.BLANK_INVENTORY_EXIT;
+            const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const smokeTest = process.env.SMOKE_TEST_EXIT;
             const actionlint = process.env.ACTIONLINT_EXIT;
             const zizmor = process.env.ZIZMOR_EXIT;
@@ -315,6 +387,8 @@ jobs:
             const themeCheckOut = sanitize(process.env.THEME_CHECK_OUTPUT) || 'No issues found';
             const reconcileOut = sanitize(process.env.RECONCILE_OUTPUT) || 'No output';
             const sizeChartOut = sanitize(process.env.SIZE_CHART_OUTPUT) || 'No output';
+            const blankInventoryOut = sanitize(process.env.BLANK_INVENTORY_OUTPUT) || 'No output';
+            const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
@@ -342,6 +416,8 @@ jobs:
               `| Check | Tool | Result |`,
               `|:------|:-----|:------:|`,
               `| **Size chart** | \`npm run size-chart:test\` | ${status(sizeChart)} |`,
+              `| **Blank inventory** | \`npm run blank-inventory:test\` | ${status(blankInventory)} |`,
+              `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
               `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
               '',
               '### Workflows',
@@ -379,6 +455,22 @@ jobs:
               '',
               '```',
               sizeChartOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Blank inventory</strong> (<code>npm run blank-inventory:test</code>)</summary>',
+              '',
+              '```',
+              blankInventoryOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Blank id guard</strong> (<code>npm run blank-inventory:guard</code>)</summary>',
+              '',
+              '```',
+              blankIdGuardOut,
               '```',
               '',
               '</details>',
@@ -464,6 +556,8 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
+          BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
@@ -483,6 +577,8 @@ jobs:
           check_exit "theme-check" "$THEME_CHECK_EXIT"
           check_exit "reconcile" "$RECONCILE_EXIT"
           check_exit "size-chart" "$SIZE_CHART_EXIT"
+          check_exit "blank-inventory" "$BLANK_INVENTORY_EXIT"
+          check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "smoke-test" "$SMOKE_TEST_EXIT"
           check_exit "actionlint" "$ACTIONLINT_EXIT"
           check_exit "zizmor" "$ZIZMOR_EXIT"

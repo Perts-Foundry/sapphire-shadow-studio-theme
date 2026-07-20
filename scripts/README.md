@@ -11,6 +11,9 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   by both scripts. One source of truth.
 - `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
   a per-blank profile. See [`size-chart/README.md`](size-chart/README.md).
+- `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
+  metafield, cooperating with the inventory-sync Flow. Writes to the **live store**, through gated
+  plan artifacts. See [`blank-inventory/README.md`](blank-inventory/README.md).
 
 The `product-images` Claude skill (`.claude/skills/product-images/`) drives the whole pipeline end to
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it
