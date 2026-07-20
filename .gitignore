@@ -20,6 +20,10 @@ npm-debug.log
 .vscode/
 .idea/
 
+# blank-inventory working directory: plan artifacts and apply receipts. These reference live
+# variant ids and real blank ids (which embed supplier data), so they stay local-only.
+/.blank-inventory/
+
 # Product image processing: raw + processed binaries + manifest never enter the repo
 # (Shopify's CDN is their home). Anchored to the repo root so it ignores only the top-level
 # image folder, not the like-named `.claude/skills/product-images/` skill or theme assets/.
