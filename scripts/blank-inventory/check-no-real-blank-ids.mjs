@@ -21,15 +21,30 @@ import { pathToFileURL } from 'node:url';
 const SIZES = 'XS|S|M|L|XL|2XL|3XL|4XL';
 const BLANK_ID_SHAPE = new RegExp(String.raw`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}_(?:${SIZES})\b`, 'g');
 
-// Segments that are known-synthetic (test fixtures) or generic. Anything else in a blank-id-shaped
-// token is treated as a real supplier or style leak. Deliberately does NOT list the real tokens.
+// THE POSITIVE-DETECTION RULE, stated before the allowlist because every future edit to the list
+// depends on it:
+//
+//   Numeric segments are already exempt (`/^\d+$/` below), so a style NUMBER is invisible to this
+//   guard. Detection therefore rests ENTIRELY on supplier NAME tokens: a real id fails because it
+//   carries a word that is not in this list. Widening the list is safe if and only if every token
+//   added is one that could never be a supplier's name. Garment, colour and size words qualify.
+//   A token that reads like a company or brand does not, and must never be added, whatever
+//   convenience it buys.
+//
+// Deliberately does NOT list the real tokens.
 const ALLOWED_SEGMENTS = new Set([
   // colour words used by the fixtures and by the live option values
-  'BLACK', 'GREY', 'GRAY', 'NAVY', 'WHITE',
+  'BLACK', 'GREY', 'GRAY', 'NAVY', 'WHITE', 'HEATHER', 'CLASSIC',
   // the synthetic vendor + garment vocabulary in test/fixtures.mjs
   'ACME', 'FLEECE', 'BLANKA', 'BLANKB', 'EXAMPLE', 'SAMPLE', 'TEST', 'FAKE',
+  // garment body words. These name a KIND of clothing, never a maker of it, so they cannot
+  // encode the supplier the guard exists to keep out.
+  'CREWNECK', 'CREW', 'QUARTERZIP', 'QTRZIP', 'HALFZIP', 'ZIP', 'PULLOVER', 'HOODIE',
+  'SWEATSHIRT', 'TEE', 'TSHIRT', 'TANK', 'VEST', 'JACKET', 'LONGSLEEVE', 'SLEEVE',
+  // fit qualifiers
+  'WOMENS', 'MENS', 'UNISEX', 'YOUTH',
   // structural placeholders that may appear in docs
-  'COLOR', 'COLOUR', 'BLANK', 'SIZE', 'SUPPLIER', 'STYLE',
+  'COLOR', 'COLOUR', 'BLANK', 'SIZE', 'SUPPLIER', 'STYLE', 'BODY',
 ]);
 
 const SIZE_SET = new Set(SIZES.split('|'));

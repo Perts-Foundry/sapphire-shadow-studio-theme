@@ -138,19 +138,102 @@ export function crossCheckMode(source, mode) {
   return { ok: problems.length === 0, problems };
 }
 
+/** Input layouts. There is no third: a shape is declared, never inferred. */
+export const FORMAT_BLANK = 'blank';
+export const FORMAT_BCS = 'body-color-size';
+export const FORMATS = [FORMAT_BLANK, FORMAT_BCS];
+
+/** Positional columns per format. `raw` is optional and always last. */
+const COLUMNS = {
+  [FORMAT_BLANK]: ['blank', 'value', 'raw'],
+  [FORMAT_BCS]: ['body', 'color', 'size', 'value', 'raw'],
+};
+const REQUIRED_COLUMNS = {
+  [FORMAT_BLANK]: ['blank', 'value'],
+  [FORMAT_BCS]: ['body', 'color', 'size', 'value'],
+};
+
+/** Header spellings mapped to canonical column names. */
+const HEADER_ALIASES = new Map([
+  ['blank', 'blank'], ['blankid', 'blank'], ['blank_id', 'blank'], ['sku', 'blank'],
+  ['body', 'body'], ['garment', 'body'],
+  ['color', 'color'], ['colour', 'color'],
+  ['size', 'size'],
+  ['value', 'value'], ['qty', 'value'], ['quantity', 'value'], ['count', 'value'], ['delta', 'value'],
+  ['raw', 'raw'], ['as_written', 'raw'], ['aswritten', 'raw'],
+]);
+
+const canonicalHeader = (cell) => HEADER_ALIASES.get(String(cell).trim().toLowerCase().replace(/[\s-]+/g, '_')) ?? null;
+
+/**
+ * Work out the column layout, from a header row or from a declared format.
+ *
+ * NEVER from the number of cells. Arity inference is why the transcription format could not express
+ * the source: a three-column sheet silently became "color,size,value", so there was nowhere to put
+ * the body or the token as written, and a mis-shaped row was read as a different valid shape rather
+ * than refused.
+ *
+ * @param {string[]} first - the first parsed line
+ * @param {string|undefined} format
+ * @returns {{columns: Array<string|null>, format: string, hasHeader: boolean, headers: string[]}}
+ */
+export function resolveLayout(first, format) {
+  const mapped = first.map(canonicalHeader);
+  const hasHeader = mapped.every((m) => m !== null);
+
+  if (hasHeader) {
+    const named = new Set(mapped);
+    const detected = named.has('blank') ? FORMAT_BLANK : FORMAT_BCS;
+    if (format && format !== detected) {
+      throw new Error(
+        `--format ${format} was declared but the header row describes ${detected} ` +
+          `(${first.join(', ')}). The file and the flag disagree; fix one rather than letting the ` +
+          `tool pick.`
+      );
+    }
+    const missing = REQUIRED_COLUMNS[detected].filter((c) => !named.has(c));
+    if (missing.length) {
+      throw new Error(
+        `Header row is missing required column(s): ${missing.join(', ')}. Expected ` +
+          `${COLUMNS[detected].join(',')} (raw optional).`
+      );
+    }
+    return { columns: mapped, format: detected, hasHeader: true, headers: first };
+  }
+
+  if (!format) {
+    throw new Error(
+      `Input has no recognisable header row, so its shape cannot be determined. Add a header ` +
+        `(${COLUMNS[FORMAT_BCS].join(',')}) or pass --format ${FORMATS.join('|')}. The shape is ` +
+        `never guessed from the column count: two different layouts with the same number of columns ` +
+        `mean opposite things.`
+    );
+  }
+  if (!FORMATS.includes(format)) {
+    throw new Error(`--format must be one of ${FORMATS.join(' | ')}.`);
+  }
+  return { columns: COLUMNS[format], format, hasHeader: false, headers: [] };
+}
+
 /**
  * Parse the adjustments CSV.
  *
- * Accepted shapes (a header row is optional and detected):
- *   blank,value
- *   color,size,value
+ * Canonical shape, and the one the transcription workflow writes:
+ *   body,color,size,value,raw
+ * Also accepted, for adjusting groups already identified by their blank id:
+ *   blank,value,raw
+ *
+ * `raw` carries the token exactly as it appears on the source, so the confirmation table shown at
+ * the approval gate is generated FROM THE FILE rather than re-rendered from memory. A gate that
+ * confirms something other than the planned bytes confirms nothing.
  *
  * @param {string} text
  * @param {object} opts
  * @param {string} opts.mode
- * @returns {{rows: Array<object>, headers: string[], mode: string}}
+ * @param {string} [opts.format]
+ * @returns {{rows: Array<object>, headers: string[], mode: string, format: string}}
  */
-export function parseInput(text, { mode }) {
+export function parseInput(text, { mode, format }) {
   if (!MODES.includes(mode)) {
     throw new Error(`--mode must be one of ${MODES.join(' | ')} (no default, no inference).`);
   }
@@ -161,10 +244,10 @@ export function parseInput(text, { mode }) {
     .filter((l) => l !== '' && !l.startsWith('#'));
   if (!lines.length) throw new Error('Input is empty.');
 
-  const first = parseCsvLine(lines[0]);
-  const looksLikeHeader = first.some((c) => /[a-z]/i.test(c) && !/^\d+$/.test(c)) && /blank|colou?r|size|value|qty|quantity|count|delta/i.test(first.join(' '));
-  const headers = looksLikeHeader ? first : [];
-  const body = looksLikeHeader ? lines.slice(1) : lines;
+  const layout = resolveLayout(parseCsvLine(lines[0]), format);
+  const { columns } = layout;
+  const body = layout.hasHeader ? lines.slice(1) : lines;
+  const headers = layout.headers;
 
   if (!body.length) throw new Error('Input has a header but no rows.');
 
@@ -174,18 +257,32 @@ export function parseInput(text, { mode }) {
 
   body.forEach((line, i) => {
     const cells = parseCsvLine(line);
-    const lineNo = (looksLikeHeader ? 2 : 1) + i;
-    let key;
-    let rawValue;
+    const lineNo = (layout.hasHeader ? 2 : 1) + i;
 
-    if (cells.length === 2) {
-      key = { blankId: cells[0] };
-      rawValue = cells[1];
-    } else if (cells.length === 3) {
-      key = { color: cells[0], size: cells[1] };
-      rawValue = cells[2];
-    } else {
-      throw new Error(`Line ${lineNo}: expected "blank,value" or "color,size,value", got ${cells.length} cells.`);
+    const required = REQUIRED_COLUMNS[layout.format];
+    if (cells.length < required.length || cells.length > columns.length) {
+      throw new Error(
+        `Line ${lineNo}: expected ${required.length} to ${columns.length} cells for format ` +
+          `${layout.format} (${columns.filter(Boolean).join(',')}), got ${cells.length}.`
+      );
+    }
+
+    const cell = (name) => {
+      const at = columns.indexOf(name);
+      return at === -1 ? undefined : cells[at];
+    };
+
+    const key =
+      layout.format === FORMAT_BLANK
+        ? { blankId: cell('blank') }
+        : { body: cell('body'), color: cell('color'), size: cell('size') };
+    const rawValue = cell('value');
+    const asWritten = cell('raw');
+
+    for (const [axis, value] of Object.entries(key)) {
+      if (!String(value ?? '').trim()) {
+        throw new Error(`Line ${lineNo}: ${axis} is empty. Every axis is required; none is defaulted.`);
+      }
     }
 
     let parsed;
@@ -212,18 +309,26 @@ export function parseInput(text, { mode }) {
       throw new Error(`Line ${lineNo}: absolute quantity cannot be negative.`);
     }
 
-    const dedupeKey = key.blankId ? `blank:${key.blankId}` : `cs:${key.color}|${key.size}`;
+    const label = key.blankId ?? `${key.body} / ${key.color} / ${key.size}`;
+    const dedupeKey = key.blankId ? `blank:${key.blankId}` : `bcs:${key.body}|${key.color}|${key.size}`;
     if (seen.has(dedupeKey)) {
       throw new Error(
-        `Line ${lineNo}: duplicate entry for ${key.blankId ?? `${key.color} / ${key.size}`} ` +
-          `(first seen on line ${seen.get(dedupeKey)}). Duplicates are refused rather than summed ` +
-          `or last-wins: a double-counted row and a running total look identical here.`
+        `Line ${lineNo}: duplicate entry for ${label} (first seen on line ${seen.get(dedupeKey)}). ` +
+          `Duplicates are refused rather than summed or last-wins: a double-counted row and a ` +
+          `running total look identical here.`
       );
     }
     seen.set(dedupeKey, lineNo);
 
     rawValues.push(rawValue);
-    rows.push({ ...key, rawValue, value: parsed.value, signed: parsed.signed, line: lineNo });
+    rows.push({
+      ...key,
+      rawValue,
+      asWritten: asWritten ?? null,
+      value: parsed.value,
+      signed: parsed.signed,
+      line: lineNo,
+    });
   });
 
   const check = crossCheckMode({ headers, rawValues, text }, mode);
@@ -231,5 +336,5 @@ export function parseInput(text, { mode }) {
     throw new Error(`Mode cross-check failed:\n  - ${check.problems.join('\n  - ')}`);
   }
 
-  return { rows, headers, mode };
+  return { rows, headers, mode, format: layout.format };
 }

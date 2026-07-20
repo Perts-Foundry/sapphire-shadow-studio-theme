@@ -19,7 +19,10 @@ export const ROW_FAILED = 'failed';
 export const ROW_NOT_ATTEMPTED = 'not-attempted';
 export const ROW_SKIPPED = 'skipped';
 
-export const ARTIFACT_VERSION = 1;
+// 2: the vocabulary key gained the garment body axis. A version-1 artifact was planned against a
+// colour+size key that could not distinguish two garments, so verifyArtifact refuses it outright
+// rather than executing a plan whose grouping no longer means what it meant when it was approved.
+export const ARTIFACT_VERSION = 2;
 
 /** Fields that define an artifact's identity. Order matters for a stable hash. */
 function canonicalPayload(artifact) {

@@ -15,12 +15,56 @@ export const CONVERGED = 'converged';
 export const DRIFT = 'drift';
 
 /**
- * Key a variant by the physical blank it should draw from.
- * @param {{color: string|null, size: string|null}} v
+ * The vocabulary key separator. A token containing it is refused rather than escaped: two axes
+ * bleeding into one key resolves the wrong blank id, and a silent collision here moves real stock.
+ */
+const SEP = '|';
+
+/**
+ * Normalise one axis value for keying.
+ *
+ * All three axes get the SAME rules, which is the point: body was added last and must not acquire
+ * its own casing or whitespace behaviour. Normalisation can only MERGE keys, never split them, and a
+ * merged key holding two different blank ids surfaces as a conflict (refused) rather than as a
+ * silent pick. That is the safe direction.
+ *
+ * @param {string|null|undefined} value
+ * @param {string} axis - for the error message
+ * @returns {string}
+ */
+export function normaliseAxis(value, axis) {
+  const raw = String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (raw.includes(SEP)) {
+    throw new Error(
+      `${axis} value ${JSON.stringify(raw)} contains the key separator "${SEP}". This tool refuses ` +
+        `to escape it: a key collision between two axes would resolve a variant to the wrong blank ` +
+        `and move stock on the wrong garment. Rename the option value in Admin.`
+    );
+  }
+  return raw.toLowerCase();
+}
+
+/**
+ * Key a variant by the physical blank it should draw from: garment body, colour and size.
+ *
+ * BODY IS MANDATORY AND HAS NO DEFAULT. The original key was colour+size alone, which assumed one
+ * physical garment per colour+size. On a catalogue with a crewneck, a quarter-zip and a vest that
+ * assumption collapsed three stock pools into one. A missing body throws rather than falling back,
+ * because the fallback IS the bug.
+ *
+ * @param {{body: string|null, color: string|null, size: string|null}} v
  * @returns {string}
  */
 export function vocabKey(v) {
-  return `${v.color ?? ''}|${v.size ?? ''}`;
+  const body = normaliseAxis(v.body, 'Body');
+  if (!body) {
+    throw new Error(
+      `Cannot key a variant with no garment body. Body is never defaulted: two products on ` +
+        `different bodies do not share stock, and treating them as one pool is what this axis ` +
+        `exists to prevent. Run "bodies --stage propose".`
+    );
+  }
+  return [body, normaliseAxis(v.color, 'Color'), normaliseAxis(v.size, 'Size')].join(SEP);
 }
 
 /**
@@ -38,20 +82,32 @@ export function blankPrefix(blankId, size) {
 }
 
 /**
- * Learn Color+Size -> blankId from the variants that already carry a value.
+ * Learn Body+Color+Size -> blankId from the variants that already carry a value.
  *
- * A (Color, Size) with no precedent is absent from the vocab, and resolveBlank refuses it.
- * A (Color, Size) with conflicting precedents is recorded as a conflict and also refused: guessing
- * which of two live values is correct is exactly the decision a tool must not make.
+ * A key with no precedent is absent from the vocab, and resolveBlank refuses it.
+ * A key with conflicting precedents is recorded as a conflict and also refused: guessing which of
+ * two live values is correct is exactly the decision a tool must not make.
+ *
+ * Because the key now carries the body, two products on DIFFERENT bodies sharing a colour and size
+ * are no longer a conflict. They are the normal case, and under the old key they poisoned the entry
+ * for both. Only two ids for one body+colour+size is a genuine contradiction.
+ *
+ * A tagged variant with no body is excluded from the vocabulary and reported, rather than throwing:
+ * read commands must still be able to produce a report when the body map is missing or stale.
  *
  * @param {object[]} variants
- * @returns {{vocab: Map<string, string>, conflicts: Array<{key: string, values: string[]}>}}
+ * @returns {{vocab: Map<string, string>, conflicts: Array<{key: string, values: string[]}>, unbodied: object[]}}
  */
 export function learnVocab(variants) {
   /** @type {Map<string, Set<string>>} */
   const seen = new Map();
+  const unbodied = [];
   for (const v of variants) {
     if (!v.blankId) continue;
+    if (!v.body) {
+      unbodied.push(v);
+      continue;
+    }
     const key = vocabKey(v);
     if (!seen.has(key)) seen.set(key, new Set());
     seen.get(key).add(v.blankId);
@@ -62,24 +118,26 @@ export function learnVocab(variants) {
     if (values.size === 1) vocab.set(key, [...values][0]);
     else conflicts.push({ key, values: [...values].sort() });
   }
-  return { vocab, conflicts };
+  return { vocab, conflicts, unbodied };
 }
 
 /**
- * Resolve the blank id for a (Color, Size), or refuse.
+ * Resolve the blank id for a body+colour+size, or refuse.
+ *
+ * Takes an object, not positional arguments. Three same-typed strings in a row invite a silent
+ * transposition, and a transposed lookup here resolves to the wrong garment's stock.
+ *
  * @param {Map<string, string>} vocab
- * @param {string} color
- * @param {string} size
+ * @param {{body: string, color: string, size: string}} axes
  * @returns {string}
  */
-export function resolveBlank(vocab, color, size) {
-  const key = vocabKey({ color, size });
-  const found = vocab.get(key);
+export function resolveBlank(vocab, { body, color, size }) {
+  const found = vocab.get(vocabKey({ body, color, size }));
   if (!found) {
     throw new Error(
-      `No blank precedent for "${color} / ${size}". This tool only reuses blank ids that already ` +
-        `exist on the store; it never invents one. Tag one variant of this colour and size in ` +
-        `Admin first, then re-run.`
+      `No blank precedent for "${body} / ${color} / ${size}". This tool only reuses blank ids that ` +
+        `already exist on the store; it never invents one. Tag one variant of this body, colour and ` +
+        `size in Admin first (or use "backfill --blank"), then re-run.`
     );
   }
   return found;
@@ -88,9 +146,19 @@ export function resolveBlank(vocab, color, size) {
 /**
  * Structural validation of the blank ids currently live.
  *
- * Deliberately encodes no supplier token. Two checks, both derivable from the data:
+ * Deliberately encodes no supplier token. Three checks, all derivable from the data:
  *   1. every blank id ends with its own variant's Size, so a value pasted onto the wrong size shows up;
- *   2. every variant of one Color shares one prefix, so a typo'd colour token shows up.
+ *   2. every variant of one Color AND Body shares one prefix, so a typo'd colour token shows up;
+ *   3. no blank id is held by variants of two different bodies.
+ *
+ * Check 2 is keyed on colour AND body. Keyed on colour alone it fires on every correctly-modelled
+ * multi-garment catalogue, since a crewneck and a vest in the same colour draw on different blanks
+ * and so legitimately carry different prefixes. A warning that is always on is one nobody reads.
+ *
+ * Check 3 is the cross-check between the approved body map and what is actually tagged live. Two
+ * bodies sharing one blank id means two different physical garments drawing from one stock pool:
+ * selling one silently decrements the other. This is the pre-migration state of the store, so it is
+ * expected to fire until the re-tagging migration completes.
  *
  * Returns warnings, not errors. The metafield definition has no validation, so a bad value can
  * already be live; the operator needs to see it rather than have the tool refuse to start.
@@ -101,10 +169,18 @@ export function resolveBlank(vocab, color, size) {
 export function conventionWarnings(variants) {
   const warnings = [];
   /** @type {Map<string, Map<string, string[]>>} */
-  const prefixesByColor = new Map();
+  const prefixesByColorBody = new Map();
+  /** @type {Map<string, Set<string>>} */
+  const bodiesByBlank = new Map();
 
   for (const v of variants) {
     if (!v.blankId) continue;
+
+    if (v.body) {
+      if (!bodiesByBlank.has(v.blankId)) bodiesByBlank.set(v.blankId, new Set());
+      bodiesByBlank.get(v.blankId).add(v.body);
+    }
+
     const prefix = blankPrefix(v.blankId, v.size);
     if (prefix === null) {
       warnings.push({
@@ -114,14 +190,15 @@ export function conventionWarnings(variants) {
       });
       continue;
     }
-    const color = v.color ?? '(none)';
-    if (!prefixesByColor.has(color)) prefixesByColor.set(color, new Map());
-    const byPrefix = prefixesByColor.get(color);
+    // Body participates in the key. Without it, every multi-garment catalogue looks like a typo.
+    const label = `${v.color ?? '(none)'} / ${v.body ?? '(no body)'}`;
+    if (!prefixesByColorBody.has(label)) prefixesByColorBody.set(label, new Map());
+    const byPrefix = prefixesByColorBody.get(label);
     if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
     byPrefix.get(prefix).push(v.id);
   }
 
-  for (const [color, byPrefix] of prefixesByColor) {
+  for (const [label, byPrefix] of prefixesByColorBody) {
     if (byPrefix.size <= 1) continue;
     const sorted = [...byPrefix.entries()].sort((a, b) => b[1].length - a[1].length);
     const [, majorityIds] = sorted[0];
@@ -131,11 +208,24 @@ export function conventionWarnings(variants) {
           kind: 'color-prefix',
           variantId: id,
           message:
-            `Colour "${color}" uses ${byPrefix.size} different blank prefixes; this variant is in ` +
-            `the minority group (${ids.length} vs ${majorityIds.length}). Likely a typo.`,
+            `"${label}" uses ${byPrefix.size} different blank prefixes; this variant is in the ` +
+            `minority group (${ids.length} vs ${majorityIds.length}). Likely a typo.`,
         });
       }
     }
+  }
+
+  for (const [blankId, bodies] of bodiesByBlank) {
+    if (bodies.size <= 1) continue;
+    warnings.push({
+      kind: 'body-span',
+      variantId: null,
+      blankId,
+      message:
+        `One blank id is held by ${bodies.size} different bodies (${[...bodies].sort().join(', ')}). ` +
+        `Those garments share no physical stock, so selling one silently decrements the others. ` +
+        `Re-tag them onto separate blanks.`,
+    });
   }
 
   return warnings;

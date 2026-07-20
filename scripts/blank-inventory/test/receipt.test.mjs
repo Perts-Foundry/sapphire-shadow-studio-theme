@@ -61,6 +61,16 @@ test('verifyArtifact rejects an unknown version', () => {
   assert.throws(() => verifyArtifact(artifact), /Unsupported plan artifact/);
 });
 
+test('verifyArtifact rejects a version-1 artifact specifically', () => {
+  // Not covered by the "unknown version" case above: 1 is the version that actually exists on disk
+  // from before the vocabulary gained the body axis. Such a plan was grouped on colour+size, which
+  // could not tell two garments apart, so executing it would write one garment's count to another's
+  // pool. It must be refused outright rather than migrated.
+  const artifact = artifactOf([plan()]);
+  artifact.version = 1;
+  assert.throws(() => verifyArtifact(artifact), /Unsupported plan artifact/);
+});
+
 test('the hash ignores member id ordering but not membership', () => {
   const a = artifactOf([plan({ blankId: 'B' })]);
   const b = artifactOf([plan({ blankId: 'B' })]);

@@ -16,16 +16,31 @@
 //      a catalogue-wide stock wipe.
 
 import { selectWriteTarget, derivedIdempotencyKey } from './planner.mjs';
-import { vocabKey } from './groups.mjs';
+import { vocabKey, blankPrefix } from './groups.mjs';
 import { MODE_ABSOLUTE } from './input.mjs';
+
+/**
+ * How many variants one `--blank` bootstrap may tag before demanding an explicit override.
+ *
+ * The bootstrap mints a NEW id, so unlike a vocab-resolved backfill it has no precedent to check the
+ * operator against. A fat-fingered filter that matched the whole catalogue would fold every garment
+ * into one new pool. The cap is deliberately small: a normal mint is one colour+size slice of one
+ * product, which is one variant.
+ */
+export const BLANK_BOOTSTRAP_CAP = 6;
 
 /**
  * Work out which untagged variants can be tagged, and which cannot.
  *
+ * A variant that cannot be keyed is REPORTED, never skipped. It used to be dropped silently when it
+ * lacked a colour or a size, so the proposal's counts did not add up to the tracked population and
+ * nothing said why. Silence about a variant the tool cannot handle is indistinguishable from the
+ * variant not existing.
+ *
  * @param {object} params
- * @param {object[]} params.variants - the whole catalogue, normalised
+ * @param {object[]} params.variants - the whole catalogue, normalised, with `body` attached
  * @param {Map<string, string>} params.vocab
- * @param {object} [params.filter] - optional {color, size, productHandle} narrowing
+ * @param {object} [params.filter] - optional {body, color, size, productHandle} narrowing
  * @returns {{tags: object[], unresolvable: object[]}}
  */
 export function planBackfill({ variants, vocab, filter = {} }) {
@@ -35,20 +50,37 @@ export function planBackfill({ variants, vocab, filter = {} }) {
   for (const v of variants) {
     if (v.blankId) continue;
     if (v.tracked === false) continue; // gift cards and other untracked items are not blanks
+    if (filter.body && v.body !== filter.body) continue;
     if (filter.color && v.color !== filter.color) continue;
     if (filter.size && v.size !== filter.size) continue;
     if (filter.productHandle && v.productHandle !== filter.productHandle) continue;
-    if (!v.color || !v.size) continue;
+
+    const missing = ['body', 'color', 'size'].filter((axis) => !v[axis]);
+    if (missing.length) {
+      unresolvable.push({
+        variant: v,
+        reason:
+          `cannot be keyed: no ${missing.join(', ')}. ` +
+          (missing.includes('body')
+            ? 'Run "bodies --stage propose" so this product has an approved body.'
+            : 'A variant with no colour or size has no blank to draw from; check its options in Admin.'),
+      });
+      continue;
+    }
 
     const blankId = vocab.get(vocabKey(v));
     if (!blankId) {
-      unresolvable.push({ variant: v, reason: `no blank precedent for "${v.color} / ${v.size}"` });
+      unresolvable.push({
+        variant: v,
+        reason: `no blank precedent for "${v.body} / ${v.color} / ${v.size}"`,
+      });
       continue;
     }
     tags.push({
       variantId: v.id,
       blankId,
       label: `${v.productHandle} | ${v.title}`,
+      body: v.body,
       color: v.color,
       size: v.size,
       quantity: v.quantity,
@@ -56,6 +88,139 @@ export function planBackfill({ variants, vocab, filter = {} }) {
   }
 
   return { tags, unresolvable };
+}
+
+/**
+ * Mint a NEW blank id and plan tagging a scoped set of untagged variants with it.
+ *
+ * This is the bootstrap escape hatch. resolveBlank refuses any id with no precedent, by design, so
+ * without this there is no way to introduce the first variant of a new blank family through the
+ * tool: the operator had to open Admin and tag one by hand (finding 13), and the only hint that the
+ * hatch was needed lived in an error string (finding 14).
+ *
+ * It is deliberately narrow and loud, because minting has no precedent to validate against:
+ *   - it refuses without a `--product` scope; a blank id belongs to one product's variants;
+ *   - it only tags a variant whose own size the id ends with, so every tagged variant ends up with
+ *     an id ending in its own size (the size-suffix convention holds). The size is taken from the
+ *     matching variant, not string-sliced off the id, because a trailing "_0001" is a style number,
+ *     not a size, and only the live variant can say which token is which;
+ *   - it caps how many variants one call may tag and demands an explicit override past the cap;
+ *   - the selected variants must all hold ONE quantity, and if the id already names a family on the
+ *     store, that quantity must equal the family's. Joining a variant that holds different stock
+ *     would let the next seed silently overwrite it.
+ *
+ * It does NOT seed. A freshly minted family has no established quantity to propagate; the operator
+ * sets its level afterwards with `plan --input`, which can now resolve the id because it has members.
+ *
+ * @param {object} params
+ * @param {object[]} params.variants - the whole catalogue, normalised, with `body` attached
+ * @param {string} params.blankId - the full new id, ending in a size token
+ * @param {object} params.filter - {productHandle (required), color?, size?, body?}
+ * @param {Map<string, object[]>} [params.existingGroups] - live groups, to detect an existing family
+ * @param {number} [params.cap]
+ * @param {boolean} [params.allowOverCap]
+ * @returns {{blankId: string, isNew: boolean, size: string, quantity: number, tags: object[]}}
+ */
+export function planBlankBootstrap({
+  variants,
+  blankId,
+  filter = {},
+  existingGroups = new Map(),
+  cap = BLANK_BOOTSTRAP_CAP,
+  allowOverCap = false,
+}) {
+  const id = String(blankId ?? '').trim();
+  if (!id) throw new Error('--blank needs a blank id, e.g. --blank BLACK_CREWNECK_0001_M.');
+  if (!filter.productHandle) {
+    throw new Error(
+      '--blank requires --product. Minting a new blank id is scoped to one product deliberately: an ' +
+        'unscoped mint could fold unrelated garments into a single new stock pool.'
+    );
+  }
+
+  // Which size does this id serve? Not string-derived from the id (the trailing segment could be a
+  // style number as easily as a size), but taken from whichever variant's own size the id actually
+  // ends with. That reuses the size-suffix convention as the discriminator and needs no size list.
+  const candidates = variants.filter(
+    (v) =>
+      !v.blankId &&
+      v.tracked !== false &&
+      v.productHandle === filter.productHandle &&
+      (!filter.color || v.color === filter.color) &&
+      (!filter.size || v.size === filter.size) &&
+      (!filter.body || v.body === filter.body)
+  );
+  if (!candidates.length) {
+    throw new Error(
+      `No untagged, tracked variant of "${filter.productHandle}"` +
+        `${filter.color ? ` in ${filter.color}` : ''}${filter.size ? ` at ${filter.size}` : ''} matches. ` +
+        `Nothing to tag; check the filter, or the variant may already carry a blank id.`
+    );
+  }
+
+  const selected = candidates.filter((v) => blankPrefix(id, v.size) !== null);
+  if (!selected.length) {
+    const sizes = [...new Set(candidates.map((v) => v.size))].sort().join(', ');
+    throw new Error(
+      `--blank id "${id}" does not end with the size of any matching variant (sizes present: ${sizes}). ` +
+        `A blank id must end with its variant's size token, e.g. _M or _2XL; without a matching size ` +
+        `the id is malformed for these variants.`
+    );
+  }
+  const size = selected[0].size;
+
+  if (selected.length > cap && !allowOverCap) {
+    throw new Error(
+      `This would tag ${selected.length} variant(s), over the bootstrap cap of ${cap}. A mint is ` +
+        `normally one variant; ${selected.length} suggests too broad a filter. If it is intended, ` +
+        `re-run with --allow-over-cap.`
+    );
+  }
+
+  const quantities = [...new Set(selected.map((v) => v.quantity))];
+  if (quantities.length !== 1) {
+    throw new Error(
+      `Selected variants disagree on current quantity (${quantities.sort((a, b) => a - b).join(', ')}). ` +
+        `They are about to share one pool, so a single starting value must be unambiguous. Level them ` +
+        `first, or narrow the filter.`
+    );
+  }
+  const quantity = quantities[0];
+
+  const existing = existingGroups.get(id) ?? [];
+  const isNew = existing.length === 0;
+  if (existing.length) {
+    const fam = [...new Set(existing.map((m) => m.quantity))];
+    if (fam.length !== 1) {
+      throw new Error(
+        `Blank "${id}" already exists but is not converged (${fam.sort((a, b) => a - b).join(', ')}). ` +
+          `Resolve that before joining variants to it.`
+      );
+    }
+    if (fam[0] !== quantity) {
+      throw new Error(
+        `Refusing to join: the selected variant(s) hold ${quantity} but family "${id}" holds ${fam[0]}. ` +
+          `Tagging would let the next seed overwrite real stock. Use "backfill --stage propose" for a ` +
+          `normal at-zero backfill, or level the variant first.`
+      );
+    }
+  }
+
+  return {
+    blankId: id,
+    isNew,
+    size,
+    quantity,
+    tags: selected.map((v) => ({
+      variantId: v.id,
+      blankId: id,
+      label: `${v.productHandle} | ${v.title}`,
+      body: v.body,
+      color: v.color,
+      size: v.size,
+      quantity: v.quantity,
+    })),
+  };
 }
 
 /**

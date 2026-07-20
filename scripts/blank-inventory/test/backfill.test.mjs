@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planBackfill, planSeed, untagVariants } from '../lib/backfill.mjs';
-import { learnVocab } from '../lib/groups.mjs';
+import { planBackfill, planBlankBootstrap, planSeed, untagVariants, BLANK_BOOTSTRAP_CAP } from '../lib/backfill.mjs';
+import { learnVocab, buildGroups } from '../lib/groups.mjs';
 import { batch } from '../lib/mutations.mjs';
 import { variant, groupSlice, blankIdFor, resetSeq } from './fixtures.mjs';
 
@@ -12,28 +12,60 @@ test('planBackfill proposes a tag for every untagged variant with a precedent', 
   const { tags, unresolvable } = planBackfill({ variants, vocab });
   assert.equal(tags.length, 3);
   assert.equal(unresolvable.length, 0);
-  assert.equal(tags[0].blankId, blankIdFor('Grey Heather', '2XL'));
+  assert.equal(tags[0].blankId, blankIdFor('crewneck', 'Grey Heather', '2XL'));
 });
 
 test('planBackfill reports a variant with no precedent instead of inventing one', () => {
   const variants = [
     ...groupSlice({ color: 'Grey Heather', size: '2XL', taggedQty: [11], untagged: 0 }),
-    variant({ color: 'Black', size: 'XS', blankId: null, quantity: 0 }),
+    variant({ body: 'crewneck', color: 'Black', size: 'XS', blankId: null, quantity: 0 }),
   ];
   const { vocab } = learnVocab(variants);
   const { tags, unresolvable } = planBackfill({ variants, vocab });
   assert.equal(tags.length, 0);
   assert.equal(unresolvable.length, 1);
-  assert.match(unresolvable[0].reason, /no blank precedent for "Black \/ XS"/);
+  assert.match(unresolvable[0].reason, /no blank precedent for "crewneck \/ Black \/ XS"/);
+});
+
+test('a precedent on one body does NOT resolve the same colour+size on another', () => {
+  // The oversell path: a vest would have been tagged with the crewneck's blank and drawn from its
+  // stock. Under the old key this variant resolved cleanly and was silently proposed for tagging.
+  const variants = [
+    ...groupSlice({ body: 'crewneck', color: 'Black', size: 'M', taggedQty: [11], untagged: 0 }),
+    variant({ body: 'vest-womens', color: 'Black', size: 'M', blankId: null, quantity: 0 }),
+  ];
+  const { vocab } = learnVocab(variants);
+  const { tags, unresolvable } = planBackfill({ variants, vocab });
+  assert.equal(tags.length, 0);
+  assert.equal(unresolvable.length, 1);
+  assert.match(unresolvable[0].reason, /no blank precedent for "vest-womens \/ Black \/ M"/);
 });
 
 test('planBackfill leaves untracked variants alone', () => {
   const variants = [
     ...groupSlice({ taggedQty: [11], untagged: 0 }),
-    variant({ blankId: null, tracked: false, quantity: 0 }),
+    variant({ body: 'crewneck', blankId: null, tracked: false, quantity: 0 }),
   ];
   const { vocab } = learnVocab(variants);
   assert.equal(planBackfill({ variants, vocab }).tags.length, 0);
+});
+
+test('a variant missing colour or size is REPORTED, never silently dropped', () => {
+  // It used to be skipped with a bare `continue`, so the proposal's counts did not add up to the
+  // tracked population and nothing said why. Silence is indistinguishable from "no such variant".
+  const variants = [
+    ...groupSlice({ taggedQty: [11], untagged: 0 }),
+    variant({ body: 'crewneck', color: null, size: 'M', blankId: null, quantity: 0 }),
+    variant({ body: 'crewneck', color: 'Black', size: null, blankId: null, quantity: 0 }),
+    variant({ body: null, color: 'Black', size: 'M', blankId: null, quantity: 0 }),
+  ];
+  const { vocab } = learnVocab(variants);
+  const { tags, unresolvable } = planBackfill({ variants, vocab });
+  assert.equal(tags.length, 0);
+  assert.equal(unresolvable.length, 3);
+  assert.match(unresolvable[0].reason, /cannot be keyed: no color/);
+  assert.match(unresolvable[1].reason, /cannot be keyed: no size/);
+  assert.match(unresolvable[2].reason, /cannot be keyed: no body/);
 });
 
 test('planBackfill honours a colour and size filter', () => {
@@ -45,6 +77,117 @@ test('planBackfill honours a colour and size filter', () => {
   const { tags } = planBackfill({ variants, vocab, filter: { color: 'Black' } });
   assert.equal(tags.length, 2);
   assert.ok(tags.every((t) => t.color === 'Black'));
+});
+
+test('planBackfill honours a body filter', () => {
+  const variants = [
+    ...groupSlice({ body: 'crewneck', color: 'Black', size: 'M', taggedQty: [11], untagged: 2 }),
+    ...groupSlice({ body: 'vest-womens', color: 'Black', size: 'M', taggedQty: [11], untagged: 2 }),
+  ];
+  const { vocab } = learnVocab(variants);
+  const { tags } = planBackfill({ variants, vocab, filter: { body: 'vest-womens' } });
+  assert.equal(tags.length, 2);
+  assert.ok(tags.every((t) => t.body === 'vest-womens'));
+});
+
+// --- the new-blank bootstrap ------------------------------------------------
+
+const NEW_ID = 'BLACK_CREWNECK_0001_M';
+const untaggedM = (over = {}) =>
+  variant({ body: 'crewneck', color: 'Black', size: 'M', productHandle: 'lead-ii-crewneck', blankId: null, quantity: 0, ...over });
+
+test('the bootstrap mints a new id onto a scoped, untagged variant', () => {
+  const boot = planBlankBootstrap({
+    variants: [untaggedM()],
+    blankId: NEW_ID,
+    filter: { productHandle: 'lead-ii-crewneck', color: 'Black' },
+  });
+  assert.equal(boot.isNew, true);
+  assert.equal(boot.tags.length, 1);
+  assert.equal(boot.tags[0].blankId, NEW_ID);
+});
+
+test('the bootstrap refuses without a --product scope', () => {
+  assert.throws(
+    () => planBlankBootstrap({ variants: [untaggedM()], blankId: NEW_ID, filter: { color: 'Black' } }),
+    /--blank requires --product/
+  );
+});
+
+test('the bootstrap refuses an id whose trailing segment is not a real size', () => {
+  // "0001" is a style number, not a size. Because the size is taken from a matching variant rather
+  // than string-sliced off the id, a style-numbered id matches no variant and is refused.
+  assert.throws(
+    () => planBlankBootstrap({ variants: [untaggedM()], blankId: 'BLACK_CREWNECK_0001', filter: { productHandle: 'lead-ii-crewneck' } }),
+    /does not end with the size of any matching variant/
+  );
+});
+
+test('the bootstrap only tags variants of the id\'s own size', () => {
+  // A crewneck at L is present, but the id ends in _M, so the L variant is never touched: every
+  // tagged variant still ends up with an id ending in its own size.
+  const variants = [untaggedM(), untaggedM({ size: 'L', id: 'gid://shopify/ProductVariant/L1' })];
+  const boot = planBlankBootstrap({ variants, blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck' } });
+  assert.equal(boot.tags.length, 1);
+  assert.equal(boot.tags[0].size, 'M');
+});
+
+test('the bootstrap refuses when --size contradicts the id suffix', () => {
+  // --size L narrows to the L variant, but the id ends in _M, so no candidate ends with its size.
+  const variants = [untaggedM(), untaggedM({ size: 'L', id: 'gid://shopify/ProductVariant/L1' })];
+  assert.throws(
+    () => planBlankBootstrap({ variants, blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck', size: 'L' } }),
+    /does not end with the size of any matching variant \(sizes present: L\)/
+  );
+});
+
+test('the bootstrap caps blast radius and demands an explicit override', () => {
+  // More matching variants than the cap: without the override this is refused, since a mint is
+  // normally one variant and a large match means too broad a filter.
+  const many = Array.from({ length: BLANK_BOOTSTRAP_CAP + 1 }, (_, i) =>
+    untaggedM({ id: `gid://shopify/ProductVariant/${i}`, color: 'Black' })
+  );
+  assert.throws(
+    () => planBlankBootstrap({ variants: many, blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck' } }),
+    /over the bootstrap cap/
+  );
+  const boot = planBlankBootstrap({ variants: many, blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck' }, allowOverCap: true });
+  assert.equal(boot.tags.length, BLANK_BOOTSTRAP_CAP + 1);
+});
+
+test('the bootstrap refuses to join a variant whose quantity differs from an existing family', () => {
+  // The id already names a family at 11; the joining variant holds 5. Tagging then seeding would
+  // silently overwrite the 5. Refused.
+  const family = groupSlice({ body: 'crewneck', color: 'Black', size: 'M', taggedQty: [11, 11], untagged: 0 }).map((v) => ({
+    ...v,
+    blankId: NEW_ID,
+  }));
+  const joiner = untaggedM({ quantity: 5, id: 'gid://shopify/ProductVariant/join' });
+  assert.throws(
+    () =>
+      planBlankBootstrap({
+        variants: [...family, joiner],
+        blankId: NEW_ID,
+        filter: { productHandle: 'lead-ii-crewneck' },
+        existingGroups: buildGroups([...family, joiner]),
+      }),
+    /hold 5 but family .* holds 11/
+  );
+});
+
+test('the bootstrap refuses when selected variants disagree on quantity', () => {
+  const variants = [untaggedM({ quantity: 0, id: 'a' }), untaggedM({ quantity: 3, id: 'b' })];
+  assert.throws(
+    () => planBlankBootstrap({ variants, blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck' } }),
+    /disagree on current quantity/
+  );
+});
+
+test('the bootstrap refuses when nothing matches the filter', () => {
+  assert.throws(
+    () => planBlankBootstrap({ variants: [untaggedM({ blankId: 'already-tagged' })], blankId: NEW_ID, filter: { productHandle: 'lead-ii-crewneck' } }),
+    /No untagged, tracked variant/
+  );
 });
 
 // --- the seed write ---------------------------------------------------------

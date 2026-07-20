@@ -39,27 +39,56 @@ Each was established by testing against the live store. Do not work around any o
    refused because its baseline has moved. The API's required `@idempotent` key is for
    reproducibility, not protection, and does not reliably collapse a repeat.
 
+## The garment body axis
+
+A blank is a **physical garment**, not a colour+size. The catalogue has several bodies (crewneck,
+quarter-zip, women's vest), and two products on different bodies share **no** stock even at the same
+colour and size. The tool keys every blank on body+colour+size for exactly this reason; a plan that
+ignored the body would write one garment's count into another garment's pool.
+
+No Shopify field carries the body, so the tool **infers** it per product and the operator **approves**
+the guess at a gate. This is the one thing that must exist before any other command runs.
+
+- `bodies --stage propose` reads the catalogue (no writes) and infers a body per product from its
+  handle and title, with a confidence marker.
+- **STOP: approve the body map.** Present every row: product, proposed body, and what it was inferred
+  from. The judgement the operator must make, because no data can confirm it: **products proposed as
+  the same body must be the same physical blank.** Two crewnecks from different suppliers are two
+  bodies. To correct a row, edit its `bodyId` in the proposal file and re-present the whole table;
+  any edit repeats this STOP in full.
+- `bodies --stage approve` hashes the approved map. It is then authoritative and never re-inferred,
+  so body assignment cannot drift between runs. A product added later is **refused on every write
+  path** until you re-propose, so a new product is loud, never silently absorbed into a pool.
+
+Inference happens only at proposal time, behind this gate. The tool never infers a body at write
+time: guessing silently into a write is the original defect this axis exists to fix.
+
 ## Pipeline
 
-Gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own and `untag` has one. Ask the
-specific question, stop, and do not proceed without an explicit yes. Do not batch gates.
+The body-approval STOP above and gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own
+and `untag` has one. Ask the specific question, stop, and do not proceed without an explicit yes. Do
+not batch gates.
 
-1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit`. Report coverage, group
-   health, and any DRIFT. **DRIFT means the Flow is failing: stop and troubleshoot, do not write on
-   top of it.** Distinguish it from `awaiting-seed`, which is expected after a backfill.
+1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit` (with an approved body map
+   in place). Report coverage, group health, unmapped products, and any DRIFT. **DRIFT means the Flow
+   is failing: stop and troubleshoot, do not write on top of it.** Distinguish it from
+   `awaiting-seed`, which is expected after a backfill. Any product reported as unmapped means the
+   body map is stale: re-propose before writing.
 
 2. **Ingest.** Either take the operator's pasted numbers as-is, or transcribe a photo (below).
 
 3. **STOP: confirm the transcription and the mode.** Present a table with one row per line:
-   the **raw token as read**, the resolved blank (or Color + Size), the current quantity, and the
-   resulting target. Then state the row count and ask the operator to confirm it against the sheet.
-   In the same STOP, state the declared mode and the result of the cross-check (see "Mode is
+   the **raw token as read**, the resolved blank (or body + Color + Size), the current quantity, and
+   the resulting target. Then state the row count and ask the operator to confirm it against the
+   sheet. In the same STOP, state the declared mode and the result of the cross-check (see "Mode is
    declared, then cross-checked" below), including its residual risk. Do not proceed on anything the
    operator has not confirmed.
 
-4. **Plan.** `plan --input <csv> --mode absolute|delta`. Read-only. It emits a hashed artifact and
-   prints, per group, the chosen write target, why it was chosen, the compare-and-swap baseline, and
-   how many siblings the Flow should update.
+4. **Plan.** `plan --input <csv> --mode absolute|delta`. Read-only. The CSV is
+   `body,color,size,value` (with an optional `raw` column carrying the token as written) and needs a
+   header row, or an explicit `--format`. It emits a hashed artifact and prints, per group, the
+   chosen write target, why it was chosen, the compare-and-swap baseline, and how many siblings the
+   Flow should update. `plan` refuses to run without an approved body map.
 
 5. **STOP: approve the plan.** Present the plan output verbatim. On approval, apply exactly that
    artifact. If the operator strikes groups, re-run `plan` over a narrowed input to get a fresh
@@ -81,7 +110,16 @@ specific question, stop, and do not proceed without an explicit yes. Do not batc
 `backfill --stage propose` -> **STOP** -> `--stage tag` -> **STOP** -> `--stage seed` -> verify.
 
 The second STOP is not ceremony: `tag` moves no stock, but `seed` writes real quantities. Show the
-operator the seed target and quantity per group before running it.
+operator the seed target and quantity per group before running it. `propose` **writes a file** (the
+proposal artifact, containing every blank id) to the working directory; it is Shopify-write-free but
+not read-only, so never describe it as such.
+
+Backfill reuses an id that already exists on the store. To introduce a **new** blank id, use the
+bootstrap: `backfill --stage propose --blank <id> --product <handle>`. It is scoped to one product
+deliberately, caps how many variants one call may tag, and refuses to fold a variant into an existing
+family whose stock differs. A newly minted family has no seed source, so its level is set afterwards
+with `plan`, not `--stage seed`. The `--blank` value must follow the approved naming scheme
+(`COLOUR_BODY_STYLE_SIZE`); it is not sensitive, since it encodes no supplier or style name.
 
 ### Untag
 
@@ -101,7 +139,11 @@ group and wipes real stock everywhere.
 The vision step is the least reliable link in the chain and the only place a wrong digit silently
 becomes a wrong stock level. So:
 
-- Output **only** rows of `color,size,value` (or `blank,value`). Nothing else.
+- Output **only** CSV rows of `body,color,size,value,raw` (or `blank,value,raw`), with a header row.
+  Nothing else. The `raw` column carries the token exactly as written so the confirmation table at
+  gate 3 is generated from the file, not re-rendered from memory.
+- The body for each row comes from the **approved body map**, never guessed from the sheet. Fail
+  closed on any body token read off the sheet that is not in the approved set; no nearest-match.
 - Carry the **raw token as read** into gate 3 alongside the resolved number, so a plausible misread
   (14 read as 11) is visible instead of laundered into a clean figure.
 - Mark any illegible or low-confidence cell `UNREADABLE`. The parser refuses that row. **Never guess
@@ -142,11 +184,16 @@ actions are the operator's); or write to any variant outside the approved plan a
 
 ## Repo rules that must hold
 
-- **Public repo.** Blank ids embed the supplier name and style number and are **sensitive**. Never
-  put one in a file, a commit message, a PR body, or an issue. The vocabulary is learned from the
-  live store at runtime and never committed; tests use synthetic ids. CI enforces this
-  (`npm run blank-inventory:guard`).
-- `.blank-inventory/` (plan artifacts and receipts) is gitignored and never enters a PR.
+- **Public repo. A blank id is sensitive if any segment encodes a supplier name or style number.**
+  Garment, colour and size segments are not sensitive; a garment-coded id under the new scheme
+  (`BLACK_CREWNECK_0001_M`) is safe to write down. **If you cannot determine what a segment encodes,
+  treat the id as sensitive.** Never put a sensitive id in a file, a commit message, a PR body, or an
+  issue. Legacy supplier-encoded ids are learned from the live store at runtime and never committed;
+  tests use synthetic ids. CI enforces this (`npm run blank-inventory:guard`).
+- The working directory (plan artifacts, receipts, the body map) defaults **outside the repo**
+  (`~/.local/state/blank-inventory/`, override with `BLANK_INVENTORY_DIR`). A stray `.blank-inventory/`
+  inside the checkout is a leak: the tool warns on every command and refuses writes until it is moved.
+  Never paste working-directory contents into a commit, PR, or issue; refer to artifacts by path.
 - **The token is never printed and never written to disk.** It is minted at runtime from
   `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` and redacted from every error.
 - **Scopes are verified, not assumed** (`write_products` + `write_inventory`). If either is missing,

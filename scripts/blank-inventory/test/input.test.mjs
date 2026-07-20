@@ -1,70 +1,143 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseInput, crossCheckMode, parseValue, isSigned, MODE_ABSOLUTE, MODE_DELTA, UNREADABLE } from '../lib/input.mjs';
+import {
+  parseInput,
+  resolveLayout,
+  crossCheckMode,
+  parseValue,
+  isSigned,
+  parseCsvLine,
+  MODE_ABSOLUTE,
+  MODE_DELTA,
+  UNREADABLE,
+  FORMAT_BLANK,
+  FORMAT_BCS,
+} from '../lib/input.mjs';
+
+/** The canonical layout, with its header row. */
+const H = 'body,color,size,value';
+const bcs = (...rows) => [H, ...rows].join('\n');
 
 test('mode is required and has no default', () => {
-  assert.throws(() => parseInput('Black,M,4', { mode: undefined }), /--mode must be one of/);
-  assert.throws(() => parseInput('Black,M,4', { mode: 'guess' }), /--mode must be one of/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,4'), { mode: undefined }), /--mode must be one of/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,4'), { mode: 'guess' }), /--mode must be one of/);
 });
 
-test('absolute mode parses color,size,value rows', () => {
-  const { rows } = parseInput('Black,M,14\nGrey Heather,2XL,3', { mode: MODE_ABSOLUTE });
-  assert.equal(rows.length, 2);
-  assert.deepEqual({ color: rows[0].color, size: rows[0].size, value: rows[0].value }, { color: 'Black', size: 'M', value: 14 });
+// --- layout, which is declared and never inferred ---------------------------
+
+test('a shape is NEVER inferred from the column count', () => {
+  // The original bug: three cells silently meant "color,size,value", so there was nowhere to put
+  // the body and a mis-shaped row read as a different valid shape instead of being refused.
+  assert.throws(() => parseInput('Black,M,14', { mode: MODE_ABSOLUTE }), /no recognisable header row/);
 });
 
-test('absolute mode parses blank,value rows', () => {
-  const { rows } = parseInput('BLACK_ACME_FLEECE_0001_M,14', { mode: MODE_ABSOLUTE });
-  assert.equal(rows[0].blankId, 'BLACK_ACME_FLEECE_0001_M');
+test('an explicit --format parses a headerless file', () => {
+  const { rows, format } = parseInput('crewneck,Black,M,14', { mode: MODE_ABSOLUTE, format: FORMAT_BCS });
+  assert.equal(format, FORMAT_BCS);
+  assert.equal(rows[0].body, 'crewneck');
+});
+
+test('a header row and a contradicting --format stop the run rather than one winning', () => {
+  assert.throws(
+    () => parseInput(bcs('crewneck,Black,M,14'), { mode: MODE_ABSOLUTE, format: FORMAT_BLANK }),
+    /declared but the header row describes/
+  );
+});
+
+test('a header missing a required column is refused', () => {
+  assert.throws(() => parseInput('color,size,value\nBlack,M,14', { mode: MODE_ABSOLUTE }), /missing required column\(s\): body/);
+});
+
+test('resolveLayout accepts colour and blank_id spellings', () => {
+  assert.equal(resolveLayout(parseCsvLine('body,colour,size,qty'), undefined).format, FORMAT_BCS);
+  assert.equal(resolveLayout(parseCsvLine('blank_id,count'), undefined).format, FORMAT_BLANK);
+});
+
+test('the optional raw column carries the token as written', () => {
+  // This is what lets the confirmation table be generated FROM the file rather than re-rendered.
+  const { rows } = parseInput('body,color,size,value,raw\ncrewneck,Black,M,14,"14 (smudged)"', { mode: MODE_ABSOLUTE });
+  assert.equal(rows[0].asWritten, '14 (smudged)');
   assert.equal(rows[0].value, 14);
 });
 
+test('raw is optional, and absent means null rather than undefined', () => {
+  const { rows } = parseInput(bcs('crewneck,Black,M,14'), { mode: MODE_ABSOLUTE });
+  assert.equal(rows[0].asWritten, null);
+});
+
+test('an empty axis cell is refused rather than defaulted', () => {
+  assert.throws(() => parseInput(bcs(',Black,M,14'), { mode: MODE_ABSOLUTE }), /body is empty/);
+});
+
+// --- values and modes -------------------------------------------------------
+
+test('absolute mode parses body,color,size,value rows', () => {
+  const { rows } = parseInput(bcs('crewneck,Black,M,14', 'vest-womens,Grey Heather,2XL,3'), { mode: MODE_ABSOLUTE });
+  assert.equal(rows.length, 2);
+  assert.deepEqual(
+    { body: rows[0].body, color: rows[0].color, size: rows[0].size, value: rows[0].value },
+    { body: 'crewneck', color: 'Black', size: 'M', value: 14 }
+  );
+});
+
+test('absolute mode parses blank,value rows', () => {
+  const { rows } = parseInput('blank,value\nBLACK_ACME_BLANKA_0001_M,14', { mode: MODE_ABSOLUTE });
+  assert.equal(rows[0].blankId, 'BLACK_ACME_BLANKA_0001_M');
+  assert.equal(rows[0].value, 14);
+});
+
+test('one body+colour+size differing only by body is NOT a duplicate', () => {
+  // Under the old colour+size key these two rows collided, which is the whole defect.
+  const { rows } = parseInput(bcs('crewneck,Black,M,14', 'quarter-zip,Black,M,9'), { mode: MODE_ABSOLUTE });
+  assert.deepEqual(rows.map((r) => r.value), [14, 9]);
+});
+
 test('delta mode requires an explicit sign', () => {
-  const { rows } = parseInput('Black,M,+12\nBlack,L,-3', { mode: MODE_DELTA });
+  const { rows } = parseInput(bcs('crewneck,Black,M,+12', 'crewneck,Black,L,-3'), { mode: MODE_DELTA });
   assert.deepEqual(rows.map((r) => r.value), [12, -3]);
 });
 
 test('an UNSIGNED value under --mode delta is refused, never assumed positive', () => {
   // "12" meaning "+12" and "12" meaning "set to 12" are the same characters, opposite outcomes.
-  assert.throws(() => parseInput('Black,M,12', { mode: MODE_DELTA }), /unsigned under --mode delta/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,12'), { mode: MODE_DELTA }), /unsigned under --mode delta/);
 });
 
 test('a SIGNED value under --mode absolute is refused', () => {
-  assert.throws(() => parseInput('Black,M,+12', { mode: MODE_ABSOLUTE }), /signed under --mode absolute/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,+12'), { mode: MODE_ABSOLUTE }), /signed under --mode absolute/);
 });
 
 test('a negative absolute quantity is refused', () => {
-  assert.throws(() => parseInput('Black,M,-4', { mode: MODE_ABSOLUTE }), /signed under --mode absolute|cannot be negative/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,-4'), { mode: MODE_ABSOLUTE }), /signed under --mode absolute|cannot be negative/);
 });
 
-test('a duplicate blank is refused rather than summed or last-wins', () => {
-  assert.throws(() => parseInput('Black,M,14\nBlack,M,9', { mode: MODE_ABSOLUTE }), /duplicate entry/i);
+test('a duplicate key is refused rather than summed or last-wins', () => {
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,14', 'crewneck,Black,M,9'), { mode: MODE_ABSOLUTE }), /duplicate entry/i);
 });
 
 test('a duplicate is detected on the blank,value shape too', () => {
   assert.throws(
-    () => parseInput('BLACK_ACME_FLEECE_0001_M,14\nBLACK_ACME_FLEECE_0001_M,9', { mode: MODE_ABSOLUTE }),
+    () => parseInput('blank,value\nBLACK_ACME_BLANKA_0001_M,14\nBLACK_ACME_BLANKA_0001_M,9', { mode: MODE_ABSOLUTE }),
     /duplicate entry/i
   );
 });
 
 test('an UNREADABLE cell blocks its row and is never guessed', () => {
-  assert.throws(() => parseInput(`Black,M,${UNREADABLE}`, { mode: MODE_ABSOLUTE }), /illegible cell blocks its row/);
+  assert.throws(() => parseInput(bcs(`crewneck,Black,M,${UNREADABLE}`), { mode: MODE_ABSOLUTE }), /illegible cell blocks its row/);
 });
 
 test('a non-numeric value is refused', () => {
-  assert.throws(() => parseInput('Black,M,about ten', { mode: MODE_ABSOLUTE }), /not a whole number/);
+  assert.throws(() => parseInput(bcs('crewneck,Black,M,about ten'), { mode: MODE_ABSOLUTE }), /not a whole number/);
 });
 
 test('header rows are detected and skipped, and line numbers stay accurate', () => {
-  const { rows, headers } = parseInput('color,size,count\nBlack,M,14', { mode: MODE_ABSOLUTE });
-  assert.deepEqual(headers, ['color', 'size', 'count']);
+  const { rows, headers } = parseInput('body,color,size,count\ncrewneck,Black,M,14', { mode: MODE_ABSOLUTE });
+  assert.deepEqual(headers, ['body', 'color', 'size', 'count']);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].line, 2);
 });
 
 test('comments and blank lines are ignored', () => {
-  const { rows } = parseInput('# counted 2026-07-19\n\nBlack,M,14\n', { mode: MODE_ABSOLUTE });
+  const { rows } = parseInput('# counted 2026-07-19\n\nbody,color,size,value\ncrewneck,Black,M,14\n', { mode: MODE_ABSOLUTE });
   assert.equal(rows.length, 1);
 });
 
@@ -118,7 +191,10 @@ test('cross-check stops on an AMBIGUOUS source carrying both signal families', (
 
 test('a contradiction stops the whole run, not just the offending row', () => {
   // One clean row plus one signed row under absolute: the entire parse throws.
-  assert.throws(() => parseInput('Black,M,14\nBlack,L,+3', { mode: MODE_ABSOLUTE }), /signed under --mode absolute/);
+  assert.throws(
+    () => parseInput(bcs('crewneck,Black,M,14', 'crewneck,Black,L,+3'), { mode: MODE_ABSOLUTE }),
+    /signed under --mode absolute/
+  );
 });
 
 test('parseValue and isSigned handle whitespace inside a signed token', () => {

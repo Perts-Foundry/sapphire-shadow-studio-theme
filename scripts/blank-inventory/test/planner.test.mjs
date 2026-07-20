@@ -15,7 +15,7 @@ import { resolveBlank, learnVocab, buildGroups } from '../lib/groups.mjs';
 import { variant, groupSlice, blankIdFor, resetSeq } from './fixtures.mjs';
 
 const member = (id, quantity) =>
-  variant({ id: `gid://shopify/ProductVariant/${id}`, quantity, blankId: 'GREY_ACME_FLEECE_0001_2XL' });
+  variant({ body: 'crewneck', id: `gid://shopify/ProductVariant/${id}`, quantity, blankId: 'GREY_ACME_BLANKA_0001_2XL' });
 
 test('selectWriteTarget never picks a member that already holds the target', () => {
   // The bug this exists to prevent: writing the target to a member already at it returns
@@ -152,33 +152,54 @@ test('the key is UUID shaped, as the @idempotent directive expects', () => {
 
 // --- planAll ----------------------------------------------------------------
 
-test('planAll resolves color+size through the learned vocab and splits skips out', () => {
+test('planAll resolves body+color+size through the learned vocab and splits skips out', () => {
   resetSeq(0);
   const variants = [
-    ...groupSlice({ color: 'Grey Heather', size: '2XL', taggedQty: [11, 11], untagged: 0 }),
-    ...groupSlice({ color: 'Black', size: 'M', taggedQty: [5, 5], untagged: 0 }),
+    ...groupSlice({ body: 'crewneck', color: 'Grey Heather', size: '2XL', taggedQty: [11, 11], untagged: 0 }),
+    ...groupSlice({ body: 'crewneck', color: 'Black', size: 'M', taggedQty: [5, 5], untagged: 0 }),
   ];
   const { vocab } = learnVocab(variants);
   const groups = buildGroups(variants);
   const rows = [
-    { color: 'Grey Heather', size: '2XL', value: 14, line: 1 },
-    { color: 'Black', size: 'M', value: 5, line: 2 },
+    { body: 'crewneck', color: 'Grey Heather', size: '2XL', value: 14, line: 1 },
+    { body: 'crewneck', color: 'Black', size: 'M', value: 5, line: 2 },
   ];
   const { plans, skipped } = planAll({ rows, groups, vocab, mode: MODE_ABSOLUTE, planId: 'p1', resolveBlank });
   assert.equal(plans.length, 1);
-  assert.equal(plans[0].blankId, blankIdFor('Grey Heather', '2XL'));
+  assert.equal(plans[0].blankId, blankIdFor('crewneck', 'Grey Heather', '2XL'));
   assert.equal(skipped.length, 1, 'the Black group already holds 5');
   assert.equal(skipped[0].reason, SKIP_ALREADY_CORRECT);
+});
+
+test('two rows differing only by body plan as two separate writes', () => {
+  // The count sheet's three tables. Under the old key these were one row with one destination, so
+  // a three-garment sheet had exactly one pool to write to.
+  const variants = [
+    ...groupSlice({ body: 'crewneck', color: 'Black', size: 'M', taggedQty: [1, 1], untagged: 0 }),
+    ...groupSlice({ body: 'vest-womens', color: 'Black', size: 'M', taggedQty: [1, 1], untagged: 0 }),
+  ];
+  const { vocab } = learnVocab(variants);
+  const rows = [
+    { body: 'crewneck', color: 'Black', size: 'M', value: 14, line: 1 },
+    { body: 'vest-womens', color: 'Black', size: 'M', value: 9, line: 2 },
+  ];
+  const { plans } = planAll({ rows, groups: buildGroups(variants), vocab, mode: MODE_ABSOLUTE, planId: 'p1', resolveBlank });
+  assert.equal(plans.length, 2);
+  assert.deepEqual(
+    plans.map((p) => p.blankId).sort(),
+    [blankIdFor('crewneck', 'Black', 'M'), blankIdFor('vest-womens', 'Black', 'M')].sort()
+  );
+  assert.deepEqual(plans.map((p) => p.target).sort((a, b) => a - b), [9, 14]);
 });
 
 test('planAll refuses a blank with no tagged variants on the store', () => {
   const variants = groupSlice({ taggedQty: [11], untagged: 0 });
   const { vocab } = learnVocab(variants);
   const groups = buildGroups(variants);
-  const rows = [{ blankId: 'SAMPLE_ACME_FLEECE_9999_M', value: 1, line: 7 }];
+  const rows = [{ blankId: 'SAMPLE_ACME_BLANKA_9999_M', value: 1, line: 7 }];
   assert.throws(
     () => planAll({ rows, groups, vocab, mode: MODE_ABSOLUTE, planId: 'p1', resolveBlank }),
-    /Line 7: blank "SAMPLE_ACME_FLEECE_9999_M" has no tagged variants/
+    /Line 7: blank "SAMPLE_ACME_BLANKA_9999_M" has no tagged variants/
   );
 });
 
@@ -186,7 +207,7 @@ test('planAll attributes a failure to its input line', () => {
   const variants = groupSlice({ taggedQty: [3], untagged: 0 });
   const { vocab } = learnVocab(variants);
   const groups = buildGroups(variants);
-  const rows = [{ color: 'Grey Heather', size: '2XL', value: -9, line: 4 }];
+  const rows = [{ body: 'crewneck', color: 'Grey Heather', size: '2XL', value: -9, line: 4 }];
   assert.throws(
     () => planAll({ rows, groups, vocab, mode: MODE_DELTA, planId: 'p1', resolveBlank }),
     /Line 4: .*Negative stock is refused/s
@@ -194,15 +215,15 @@ test('planAll attributes a failure to its input line', () => {
 });
 
 test('planAll refuses two rows that RESOLVE to the same blank', () => {
-  // input.mjs already refuses a literal duplicate, but two different Color+Size spellings can
-  // resolve to one blank. Both rows would be computed against the same starting quantity and only
+  // input.mjs already refuses a literal duplicate, but a body+colour+size row and a bare blank row
+  // can resolve to one blank. Both would be computed against the same starting quantity and only
   // the first would be recorded in the receipt, so the second write would vanish from the record.
-  const variants = groupSlice({ color: 'Grey Heather', size: '2XL', taggedQty: [11, 11], untagged: 0 });
+  const variants = groupSlice({ body: 'crewneck', color: 'Grey Heather', size: '2XL', taggedQty: [11, 11], untagged: 0 });
   const { vocab } = learnVocab(variants);
   const groups = buildGroups(variants);
-  const blankId = blankIdFor('Grey Heather', '2XL');
+  const blankId = blankIdFor('crewneck', 'Grey Heather', '2XL');
   const rows = [
-    { color: 'Grey Heather', size: '2XL', value: 14, line: 1 },
+    { body: 'crewneck', color: 'Grey Heather', size: '2XL', value: 14, line: 1 },
     { blankId, value: 9, line: 2 },
   ];
   assert.throws(

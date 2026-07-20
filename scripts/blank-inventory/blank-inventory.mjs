@@ -6,6 +6,7 @@
 // The `blank-inventory` skill (.claude/skills/blank-inventory/SKILL.md) drives it and holds the
 // operator approval STOPs; this file is the deterministic half.
 //
+//   bodies    propose and approve the garment body map; a precondition of every other command
 //   audit     read-only health report: coverage, groups, drift vs awaiting-seed
 //   plan      emit an immutable, hashed plan artifact from an adjustments CSV
 //   apply     execute an approved artifact (and ONLY an artifact)
@@ -23,18 +24,21 @@ import { randomUUID } from 'node:crypto';
 import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
 import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
 import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
-import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES } from './lib/input.mjs';
+import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
 import { createArtifact, verifyArtifact, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
 import { applyPlan } from './lib/apply.mjs';
-import { planBackfill, planSeed, untagVariants } from './lib/backfill.mjs';
+import { planBackfill, planBlankBootstrap, planSeed, untagVariants } from './lib/backfill.mjs';
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
+import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
 const WORK_DIR = resolveWorkDir();
 const LOCK_FILE = path.join(WORK_DIR, '.lock');
+const BODIES_FILE = path.join(WORK_DIR, 'bodies.json');
+const BODIES_PROPOSAL_FILE = path.join(WORK_DIR, 'bodies-proposal.json');
 
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -143,7 +147,25 @@ async function withLock(fn) {
 }
 
 // ---------------------------------------------------------------------------
-async function loadStore({ requireWrite }) {
+// The approved body map is read once per process. Nested re-reads (the per-row group reader, the
+// quiesce poller) must see the SAME body assignment as the plan they are checking; re-resolving it
+// mid-run could silently regroup variants between a plan and its apply.
+let bodiesIndexCache;
+
+/**
+ * @param {boolean} requireApproved
+ * @returns {Promise<Map<string, string>|null>}
+ */
+async function ensureBodies(requireApproved) {
+  if (bodiesIndexCache === undefined) {
+    bodiesIndexCache = (await loadBodies({ requireApproved }))?.index ?? null;
+  } else if (requireApproved && !bodiesIndexCache) {
+    await loadBodies({ requireApproved: true }); // fails with the full message
+  }
+  return bodiesIndexCache;
+}
+
+async function loadStore({ requireWrite, skipBodies = false }) {
   const client = createAdminClient();
   if (requireWrite) await assertScopes(client);
   const catalogue = await readCatalogue(liveFetchers(client));
@@ -158,9 +180,22 @@ async function loadStore({ requireWrite }) {
     );
   }
 
-  const { vocab, conflicts } = learnVocab(catalogue.variants);
-  const groups = buildGroups(catalogue.variants);
-  return { client, locationId, ...catalogue, vocab, conflicts, groups };
+  // Body first: every key downstream depends on it, so attaching it after grouping would leave the
+  // vocabulary keyed on a colour+size that means nothing on a multi-garment catalogue.
+  const index = skipBodies ? null : await ensureBodies(requireWrite);
+  const variants = attachBodies(index, catalogue.variants);
+  const unmapped = index ? unmappedHandles(index, variants) : [];
+  if (unmapped.length && requireWrite) {
+    fail(
+      `${unmapped.length} product(s) have no approved body: ${unmapped.join(', ')}. A write cannot ` +
+        `proceed without knowing which physical garment each variant draws from. Re-run ` +
+        `"bodies --stage propose" and approve the new proposal.`
+    );
+  }
+
+  const { vocab, conflicts, unbodied } = learnVocab(variants);
+  const groups = buildGroups(variants);
+  return { client, locationId, ...catalogue, variants, vocab, conflicts, unbodied, unmapped, groups };
 }
 
 /** Receipts on disk, newest first, so audit can tell awaiting-seed from drift. */
@@ -176,6 +211,119 @@ async function loadReceipts() {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// The body axis. See lib/bodies.mjs for why body is proposed rather than declared.
+// ---------------------------------------------------------------------------
+
+/**
+ * Load the approved body artifact.
+ *
+ * Read commands tolerate its absence and say so; write commands refuse. A write that resolved a
+ * blank without knowing the garment is the original bug, so there is no "assume a default" path.
+ *
+ * @param {object} params
+ * @param {boolean} params.requireApproved
+ * @returns {Promise<{artifact: object, index: Map<string, string>}|null>}
+ */
+async function loadBodies({ requireApproved }) {
+  if (!existsSync(BODIES_FILE)) {
+    const msg =
+      `No approved body map at ${BODIES_FILE}. A blank is a physical garment, so the tool cannot ` +
+      `tell a crewneck from a vest without one. Run:\n` +
+      `  node scripts/blank-inventory/blank-inventory.mjs bodies --stage propose`;
+    if (requireApproved) fail(msg);
+    console.warn(`\nWARNING: ${msg}\n`);
+    return null;
+  }
+  const artifact = verifyBodiesArtifact(await readJson(BODIES_FILE));
+  return { artifact, index: bodyIndex(artifact) };
+}
+
+/** Render a proposal or approved body table. */
+function printBodyRows(rows) {
+  const w = Math.max(...rows.map((r) => r.productHandle.length), 12);
+  for (const r of rows) {
+    const conf = r.confidence === HIGH ? '' : `  <-- ${String(r.confidence).toUpperCase()} CONFIDENCE, check this`;
+    console.log(`  ${r.productHandle.padEnd(w)}  ${String(r.bodyId ?? '(UNNAMED)').padEnd(14)}  ${r.signal ?? ''}${conf}`);
+  }
+}
+
+async function cmdBodies(opts) {
+  const stage = opts.stage ?? 'propose';
+
+  if (stage === 'show') {
+    const loaded = await loadBodies({ requireApproved: true });
+    heading(`Approved bodies (proposal ${loaded.artifact.proposalId})`);
+    printBodyRows(loaded.artifact.bodies);
+    console.log(`\n  approved artifact ${BODIES_FILE}`);
+    return;
+  }
+
+  if (stage === 'propose') {
+    // skipBodies: this command exists to CREATE the body map, so warning about its absence here
+    // would be telling the operator to run the command they are already running.
+    const store = await loadStore({ requireWrite: false, skipBodies: true });
+    const { rows, excluded } = proposeBodies({ products: store.products, variants: store.variants });
+
+    heading(`Body proposal: ${rows.length} product(s)`);
+    printBodyRows(rows);
+    if (excluded.length) {
+      heading('Excluded (no tracked variants, so no body needed)');
+      for (const e of excluded) console.log(`  ${e.productHandle}  ${e.reason}`);
+    }
+
+    const unnamed = rows.filter((r) => !r.bodyId);
+    await writeJsonAtomic(BODIES_PROPOSAL_FILE, {
+      version: 1,
+      proposedAt: new Date().toISOString(),
+      rows,
+      excluded,
+    });
+
+    console.log(`\nProposal: ${BODIES_PROPOSAL_FILE}`);
+    console.log(
+      `\nThis is a GUESS from each product's handle and title, and it decides which products share ` +
+        `stock. Two products on one body share a pool; two on different bodies must not. Read every\n` +
+        `row before approving.`
+    );
+    if (unnamed.length) {
+      console.log(
+        `\n${unnamed.length} product(s) could not be named. Edit the "bodyId" field for each in the ` +
+          `proposal file; approval refuses while any is null.`
+      );
+    }
+    console.log(`\nTo correct a row, edit its "bodyId" in the file above, then:`);
+    console.log(`  node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve`);
+    return;
+  }
+
+  if (stage === 'approve') {
+    const src = opts.proposal ?? BODIES_PROPOSAL_FILE;
+    if (!existsSync(src)) fail(`No proposal at ${src}. Run "bodies --stage propose" first.`);
+    const proposal = await readJson(src);
+
+    // Re-present in full rather than trusting the operator to remember the propose output. An
+    // adjustment between the two commands is invisible otherwise, and this is the gate.
+    heading(`Approving ${proposal.rows.length} body assignment(s)`);
+    printBodyRows(proposal.rows);
+
+    const artifact = createBodiesArtifact({ rows: proposal.rows, excluded: proposal.excluded ?? [] });
+    await writeJsonAtomic(BODIES_FILE, artifact);
+
+    const bodies = [...new Set(artifact.bodies.map((b) => b.bodyId))].sort();
+    console.log(`\n  ${bodies.length} distinct body/bodies: ${bodies.join(', ')}`);
+    console.log(`  approved artifact ${BODIES_FILE}`);
+    console.log(
+      `\nThis artifact is hashed and is now authoritative. It is never re-inferred, so body ` +
+        `assignment cannot drift between runs. A product added later is refused on write paths ` +
+        `until you re-propose.`
+    );
+    return;
+  }
+
+  fail(`Unknown --stage "${stage}". Use propose | approve | show.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,8 +359,13 @@ async function cmdAudit(opts) {
   const check = (ok, label, detail) => console.log(`  ${ok ? 'PASS' : 'WARN'}  ${label}${ok ? '' : `: ${detail}`}`);
   check(unexplainedZero.length === 0, 'every tagged variant holds stock or is awaiting seed', `${unexplainedZero.length} tagged variant(s) at 0 with no pending seed`);
   check(untaggedNonZero.length === 0, 'every untagged tracked variant is at 0', `${untaggedNonZero.length} untagged variant(s) hold stock`);
-  check(store.conflicts.length === 0, 'no Color+Size resolves to two different blanks', `${store.conflicts.length} conflict(s)`);
+  // Body+Color+Size, not Color+Size. Under the old wording a correctly-modelled multi-garment
+  // catalogue was a permanent FAIL: a crewneck and a vest in the same colour and size draw on two
+  // different blanks, which is right, not a contradiction.
+  check(store.conflicts.length === 0, 'no Body+Color+Size resolves to two different blanks', `${store.conflicts.length} conflict(s)`);
   check(warnings.length === 0, 'every blank id matches the structural convention', `${warnings.length} warning(s)`);
+  check(store.unmapped.length === 0, 'every product has an approved body', `${store.unmapped.length} product(s) unmapped: ${store.unmapped.join(', ')}`);
+  check(store.unbodied.length === 0, 'every tagged variant has a body', `${store.unbodied.length} tagged variant(s) excluded from the vocabulary`);
 
   heading('Groups');
   const byState = { [CONVERGED]: 0, [DRIFT]: 0, [AWAITING_SEED]: 0 };
@@ -227,7 +380,7 @@ async function cmdAudit(opts) {
     for (const w of warnings) console.log(`  [${w.kind}] ${w.message}`);
   }
   if (store.conflicts.length) {
-    heading('Vocabulary conflicts (these Color+Size pairs cannot be resolved)');
+    heading('Vocabulary conflicts (these Body+Color+Size keys cannot be resolved)');
     for (const c of store.conflicts) console.log(`  ${c.key}: ${c.values.join(' vs ')}`);
   }
   if (byState[DRIFT]) {
@@ -246,7 +399,11 @@ async function cmdPlan(opts) {
   }
 
   const text = await readFile(opts.input, 'utf8');
-  const { rows } = parseInput(text, { mode: opts.mode });
+  const { rows } = parseInput(text, { mode: opts.mode, format: opts.format });
+  // requireWrite is false (planning writes nothing to Shopify), but an approved body map is still a
+  // hard precondition: a plan built on a colour+size key would target the wrong garment's pool, and
+  // the plan is what apply executes without re-deriving.
+  await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
 
   const pendingSeeds = pendingSeedBlankIds(await loadReceipts());
@@ -406,8 +563,39 @@ async function cmdVerify(opts) {
 // ---------------------------------------------------------------------------
 async function cmdBackfill(opts) {
   const stage = opts.stage ?? 'propose';
+  // Required even at propose: without a body map every variant is unresolvable, so the proposal
+  // would be an empty report that looks like "nothing to do" rather than "cannot tell".
+  await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: stage !== 'propose' });
-  const filter = { color: opts.color, size: opts.size, productHandle: opts.product };
+  const filter = { body: opts.body, color: opts.color, size: opts.size, productHandle: opts.product };
+
+  if (stage === 'propose' && opts.blank) {
+    // Bootstrap: mint a brand-new id rather than reuse a precedent. The machine-side gate lives in
+    // planBlankBootstrap; the operator STOP is in SKILL.md.
+    const boot = planBlankBootstrap({
+      variants: store.variants,
+      blankId: opts.blank,
+      filter,
+      existingGroups: store.groups,
+      allowOverCap: opts.allowOverCap === true,
+    });
+    heading(`New-blank bootstrap: ${boot.tags.length} variant(s) to tag with ${boot.blankId}`);
+    for (const t of boot.tags) console.log(`  ${t.label}  (${t.body} / ${t.color} / ${t.size}, qty ${t.quantity})`);
+    console.log(`\n  ${boot.isNew ? 'This id is NEW to the store' : 'Joining an existing family'}; current quantity ${boot.quantity}.`);
+
+    const planId = randomUUID();
+    const out = opts.out ?? path.join(WORK_DIR, `backfill-${planId}.json`);
+    await writeJsonAtomic(out, { version: 1, planId, createdAt: new Date().toISOString(), bootstrap: true, tags: boot.tags });
+    console.log(`\nProposal: ${out}`);
+    console.log(`Nothing written. Minting an id does not move stock; tag, then set the level:`);
+    console.log(`  1. backfill --stage tag  --plan '${out}'`);
+    if (boot.isNew) {
+      console.log(`  2. plan --input <csv> --mode absolute       (set the new family's quantity; it has no seed source yet)`);
+    } else {
+      console.log(`  2. backfill --stage seed --plan '${out}'   (a separate approval; this one moves stock)`);
+    }
+    return;
+  }
 
   if (stage === 'propose') {
     const { tags, unresolvable } = planBackfill({ variants: store.variants, vocab: store.vocab, filter });
@@ -596,12 +784,17 @@ async function cmdUntag(opts) {
 const USAGE = `
 blank-inventory: shared-blank stock and metafield tooling.
 
+  bodies   --stage propose|approve|show    the garment body map (run this before anything else)
   audit                                   read-only health report
-  plan     --input <csv> --mode <${MODES.join('|')}>
+  plan     --input <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]
   apply    --plan <artifact.json> [--dry-run] [--resume]
   verify   --receipt <receipt.json> [--timeout-ms <n>]
-  backfill --stage propose|tag|seed [--plan <f>] [--color C] [--size S] [--product H] [--dry-run]
+  backfill --stage propose|tag|seed [--plan <f>] [--body B] [--color C] [--size S] [--product H] [--dry-run]
+           propose --blank <id> --product H [--color C] [--allow-over-cap]   (mint a NEW id)
   untag    --variant <gid> [--variant <gid>] [--quantity 0] [--dry-run]
+
+Input CSV is "body,color,size,value[,raw]" with a header row, or pass --format.
+--product takes a product HANDLE, not a title or an id.
 
 Env: MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
      BLANK_INVENTORY_DIR overrides the working directory.
@@ -639,6 +832,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const writeCommands = new Set(['apply', 'backfill', 'untag']);
   const run = {
+    bodies: cmdBodies,
     audit: cmdAudit,
     plan: cmdPlan,
     apply: cmdApply,

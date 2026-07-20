@@ -11,37 +11,73 @@
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 export const COLORS = ['Black', 'Grey Heather', 'Classic Navy'];
 
-/** Pseudonymised stand-ins for the live colour+style prefixes. */
-const PREFIX = {
-  Black: 'BLACK_ACME_FLEECE_0001',
-  'Grey Heather': 'GREY_ACME_FLEECE_0001',
-  'Classic Navy': 'NAVY_ACME_FLEECE_0001',
+/**
+ * Three bodies, matching the real catalogue's shape. Two would be enough to make a test pass and
+ * would still hide the bug this axis exists to fix: with two, "the other one" is unambiguous, so a
+ * lookup that falls back to the wrong body still lands somewhere plausible.
+ */
+export const BODIES = ['crewneck', 'quarter-zip', 'vest-womens'];
+
+/** Pseudonymised stand-ins for the live colour+style prefixes, per body. */
+const COLOR_TOKEN = {
+  Black: 'BLACK',
+  'Grey Heather': 'GREY',
+  'Classic Navy': 'NAVY',
+};
+const BODY_TOKEN = {
+  crewneck: 'BLANKA',
+  'quarter-zip': 'BLANKB',
+  'vest-womens': 'SAMPLE',
 };
 
 /**
+ * @param {string} body
  * @param {string} color
  * @param {string} size
  * @returns {string}
  */
-export function blankIdFor(color, size) {
-  return `${PREFIX[color]}_${size}`;
+export function blankIdFor(body, color, size) {
+  const bodyToken = BODY_TOKEN[body];
+  const colorToken = COLOR_TOKEN[color];
+  if (!bodyToken || !colorToken) {
+    throw new Error(`No fixture blank id for body "${body}" / colour "${color}".`);
+  }
+  return `${colorToken}_ACME_${bodyToken}_0001_${size}`;
 }
 
 let seq = 0;
 /**
- * Build one normalised variant, matching catalogue.mjs's normaliseVariant output.
+ * Build one normalised variant, matching catalogue.mjs's normaliseVariant output plus the body
+ * attached by bodies.mjs.
+ *
+ * BODY IS REQUIRED AND HAS NO DEFAULT, deliberately. Defaulting it here would let every test in
+ * this suite go on asserting the single-body world that produced the original bug, and they would
+ * all stay green while the catalogue they model cannot be represented. Pass `body: null` explicitly
+ * when the absence of a body is the thing under test.
+ *
  * @param {object} over
  * @returns {object}
  */
 export function variant(over = {}) {
+  if (!('body' in over)) {
+    throw new Error(
+      'variant() requires an explicit `body`. There is no default: a fixture that silently assumes ' +
+        'one garment is exactly what let colour+size keying look correct. Pass body: null if a ' +
+        'missing body is what you are testing.'
+    );
+  }
   seq += 1;
-  const color = over.color ?? 'Grey Heather';
-  const size = over.size ?? '2XL';
-  const tagged = over.blankId !== undefined ? over.blankId : blankIdFor(color, size);
+  const body = over.body;
+  // `in`, not `??`: an explicit null means "this axis is genuinely absent", which is a case under
+  // test. `??` would quietly substitute the default and the test would assert the wrong thing.
+  const color = 'color' in over ? over.color : 'Grey Heather';
+  const size = 'size' in over ? over.size : '2XL';
+  const tagged = over.blankId !== undefined ? over.blankId : blankIdFor(body, color, size);
   return {
     id: over.id ?? `gid://shopify/ProductVariant/${5000000 + seq}`,
     title: over.title ?? `Design ${seq} / ${color} / ${size}`,
-    productHandle: over.productHandle ?? 'product-a',
+    productHandle: over.productHandle ?? `product-${body}`,
+    body,
     color,
     size,
     quantity: over.quantity ?? 11,
@@ -55,16 +91,28 @@ export function variant(over = {}) {
 }
 
 /**
- * A realistic colour+size slice: `taggedQty.length` tagged members plus `untagged` members at 0.
+ * A realistic body+colour+size slice: `taggedQty.length` tagged members plus `untagged` members at 0.
  * @param {object} opts
  * @returns {object[]}
  */
-export function groupSlice({ color = 'Grey Heather', size = '2XL', taggedQty = [11, 11, 11, 11, 11, 11, 11, 11], untagged = 13 } = {}) {
-  const members = taggedQty.map((q) => variant({ color, size, quantity: q }));
+export function groupSlice({ body = 'crewneck', color = 'Grey Heather', size = '2XL', taggedQty = [11, 11, 11, 11, 11, 11, 11, 11], untagged = 13 } = {}) {
+  const members = taggedQty.map((q) => variant({ body, color, size, quantity: q }));
   for (let i = 0; i < untagged; i++) {
-    members.push(variant({ color, size, quantity: 0, blankId: null }));
+    members.push(variant({ body, color, size, quantity: 0, blankId: null }));
   }
   return members;
+}
+
+/**
+ * The catalogue shape that broke the tool: three bodies sharing one colour and size, all carrying
+ * ONE blank id. Correct modelling needs three separate pools; the old colour+size key had exactly
+ * one slot for them.
+ *
+ * @param {object} opts
+ * @returns {object[]}
+ */
+export function crossBodySlice({ color = 'Black', size = 'M', sharedBlankId = 'BLACK_ACME_BLANKA_0001_M' } = {}) {
+  return BODIES.map((body) => variant({ body, color, size, blankId: sharedBlankId }));
 }
 
 /** Reset the id counter so tests that assert on ordering are deterministic. */

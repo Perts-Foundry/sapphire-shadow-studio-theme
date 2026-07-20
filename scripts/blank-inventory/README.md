@@ -14,56 +14,85 @@ pool across variants with different SKUs, so a Shopify Flow mirrors the quantity
 carrying the same `custom.inventory_blank_sku` value. That works, but feeding it by hand (typing
 quantities variant by variant, tagging every new variant) is tedious and silently failure-prone.
 
+## The garment body axis
+
+A blank is a **physical garment**, not a colour+size. The catalogue has several bodies (crewneck,
+quarter-zip, women's vest); two products on different bodies share no stock even at the same colour
+and size, which is why a count sheet has one table per body. Every blank is keyed on
+**body+colour+size**. No Shopify field carries the body, so the tool infers it and the operator
+approves the guess; the approved map is hashed and authoritative, and is a precondition of every
+other command.
+
 ## Commands
 
 ```bash
-# Read-only health report. Start here, every time.
+# Propose a body per product (read-only), then approve the hashed map. Run this FIRST; every other
+# command refuses without it. A product added later is refused on writes until you re-propose.
+node scripts/blank-inventory/blank-inventory.mjs bodies --stage propose
+node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # after editing the proposal
+node scripts/blank-inventory/blank-inventory.mjs bodies --stage show      # the approved map
+
+# Health report (no Shopify writes). Start here every time once bodies are approved.
 node scripts/blank-inventory/blank-inventory.mjs audit
 
-# Turn an adjustments CSV into a reviewable, hashed plan artifact. Read-only.
+# Turn an adjustments CSV into a reviewable, hashed plan artifact. No Shopify writes.
 node scripts/blank-inventory/blank-inventory.mjs plan --input counts.csv --mode absolute
 
 # Execute an APPROVED artifact. --dry-run prints the writes without making them.
-node scripts/blank-inventory/blank-inventory.mjs apply --plan .blank-inventory/plan-<id>.json
+node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json
 
 # Poll the affected groups until the Flow settles. --timeout-ms overrides the 300000ms default
 # (stale is reported at 3 minutes; polling continues to 5).
-node scripts/blank-inventory/blank-inventory.mjs verify --receipt .blank-inventory/receipt-<id>.json [--timeout-ms 300000]
+node scripts/blank-inventory/blank-inventory.mjs verify --receipt <workdir>/receipt-<id>.json [--timeout-ms 300000]
 
 # Tag untagged variants, then seed them so the Flow propagates. Two separate approvals.
+# `propose` WRITES a proposal file (it is Shopify-write-free, not read-only).
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose
-node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan .blank-inventory/backfill-<id>.json
-node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan .blank-inventory/backfill-<id>.json
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan <workdir>/backfill-<id>.json
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan <workdir>/backfill-<id>.json
+
+# Mint a NEW blank id onto a scoped set of untagged variants (the bootstrap escape hatch).
+# Scoped to one product, capped, and refuses to overwrite an existing family's stock.
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose --blank BLACK_CREWNECK_0001_M --product lead-ii-crewneck
 
 # Remove variants from a group (metafield first; see the interlock below).
 node scripts/blank-inventory/blank-inventory.mjs untag --variant gid://shopify/ProductVariant/123
 ```
 
-Env: `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`. Artifacts and receipts land in
-`.blank-inventory/`, which is gitignored.
+Env: `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`. The working directory (plan
+artifacts, receipts, the body map) defaults **outside the repo** at `~/.local/state/blank-inventory/`
+(override with `BLANK_INVENTORY_DIR`); it holds real blank ids, so it must never sit inside this
+public checkout. A stray `.blank-inventory/` in the tree makes the tool warn and refuse writes until
+it is moved.
 
 ## Input format
 
 `--mode` is required. There is no default and no per-row inference, because reading `12` as a count
 when it meant `+12` silently destroys stock and the two are the same characters.
 
+The canonical shape is `body,color,size,value` with an optional `raw` column (the token exactly as
+written on the source, so the confirmation table is generated from the file rather than re-rendered).
+A header row is required, or pass `--format body-color-size`. The shape is never inferred from the
+column count: two layouts with the same arity mean opposite things.
+
 ```csv
 # absolute: a count sheet
-color,size,count
-Black,M,14
-Grey Heather,2XL,3
+body,color,size,value,raw
+crewneck,Black,M,14,14
+vest-womens,Grey Heather,2XL,3,3
 ```
 
 ```csv
 # delta: a receiving slip. Signs are REQUIRED; an unsigned value is refused.
-color,size,change
-Black,M,+12
-Black,L,-3
+body,color,size,value
+crewneck,Black,M,+12
+crewneck,Black,L,-3
 ```
 
-`blank,value` also works if you have the blank id to hand. One mode per run, so a mixed sheet is two
-runs. Duplicate rows for the same blank are refused rather than summed or last-wins: a double-counted
-row and a running total look identical here.
+`blank,value` also works (pass `--format blank`) if you have the blank id to hand. One mode per run,
+so a mixed sheet is two runs. Duplicate rows for the same body+colour+size are refused rather than
+summed or last-wins: a double-counted row and a running total look identical here. Two rows that
+differ only by body are **not** duplicates; they are the normal multi-garment case.
 
 The parser also cross-checks the declared mode against the source (signs, arrows, and headings like
 "received" or "on hand") and stops on a contradiction or on ambiguity.
@@ -135,7 +164,14 @@ separation exists to prevent.
 
 ## Sensitive data
 
-Blank ids embed the supplier name and style number, which CLAUDE.md classifies as sensitive for this
-public repo. The vocabulary is **learned from the live store at runtime and never committed**; a
-Color+Size with no precedent is refused rather than guessed. Test fixtures use synthetic ids, and
-`check-no-real-blank-ids.mjs` fails CI if a real-looking one is ever committed.
+A blank id is **sensitive if any segment encodes a supplier name or style number**; garment, colour
+and size segments are not. Legacy supplier-encoded ids must never be committed. A garment-coded id
+under the new scheme (`BLACK_CREWNECK_0001_M`) is safe to write down, which is why the migration
+targets that format. If you cannot tell what a segment encodes, treat the id as sensitive.
+
+The vocabulary is **learned from the live store at runtime and never committed**; a body+colour+size
+with no precedent is refused rather than guessed. Test fixtures use synthetic ids, and
+`check-no-real-blank-ids.mjs` fails CI on any blank-id-shaped token carrying a segment outside a
+known-synthetic, garment, colour, or size vocabulary. Its detection rests entirely on supplier
+**name** tokens (numeric style segments are exempt), so the allowlist must never gain a word that
+could be a company name.

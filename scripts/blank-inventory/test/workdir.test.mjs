@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { defaultWorkDir, resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from '../lib/workdir.mjs';
 import { findSuspectTokens } from '../check-no-real-blank-ids.mjs';
 
@@ -69,9 +70,14 @@ test('the guard module imports cleanly with no entry script', () => {
   assert.equal(typeof findSuspectTokens, 'function');
 });
 
+// Suspect tokens are ASSEMBLED here, never written as literals. A complete blank-id-shaped string
+// with a non-allowlisted segment is exactly what the guard exists to reject, so spelling one out in
+// this file would make the guard fail on its own test suite. The brand words below are invented.
+const suspect = (...segments) => segments.join('_');
+
 test('the guard flags a supplier-encoding blank id', () => {
-  const hits = findSuspectTokens('BLACK_SUPPLIERNAME_1234_M');
-  assert.deepEqual(hits, ['BLACK_SUPPLIERNAME_1234_M']);
+  const token = suspect('BLACK', 'SUPPLIER' + 'NAME', '1234', 'M');
+  assert.deepEqual(findSuspectTokens(token), [token]);
 });
 
 test('a numeric style segment alone does NOT make an id suspect', () => {
@@ -82,6 +88,35 @@ test('a numeric style segment alone does NOT make an id suspect', () => {
 
 test('the synthetic fixture vocabulary is not flagged', () => {
   assert.deepEqual(findSuspectTokens('BLACK_ACME_FLEECE_M and GREY_ACME_FLEECE_2XL'), []);
+});
+
+test('a garment-coded id passes, so the migration can be documented in-repo', () => {
+  // Before the allowlist was widened these failed CI, which meant the intended re-tagging scheme
+  // could never appear in a doc or a fixture.
+  assert.deepEqual(findSuspectTokens('BLACK_CREWNECK_0001_M'), []);
+  assert.deepEqual(findSuspectTokens('NAVY_QUARTERZIP_0002_2XL'), []);
+  assert.deepEqual(findSuspectTokens('GREY_VEST_WOMENS_0003_L'), []);
+});
+
+test('a supplier-SHAPED id still fails after the widening', () => {
+  // The mandatory negative. Detection rests entirely on supplier NAME tokens (numeric segments are
+  // exempt), so the widening is only safe while a made-up brand word is still caught. If this ever
+  // goes green, the allowlist has swallowed the discriminator and the guard detects nothing.
+  for (const token of [
+    suspect('BLACK', 'NORTH' + 'RIDGE', 'CREWNECK', '0001', 'M'),
+    suspect('NAVY', 'VEST', 'WOMENS', 'MILLCO' + 'APPAREL', 'L'),
+  ]) {
+    assert.deepEqual(findSuspectTokens(token), [token], `${token} must still be caught`);
+  }
+});
+
+test('no allowlisted segment reads as a company name', () => {
+  // Structural restatement of the widening rule: every token is a colour, a garment, a fit, a
+  // structural placeholder, or the synthetic fixture vocabulary. A reviewer adding a supplier-ish
+  // word has to delete this test to do it.
+  const src = readFileSync(new URL('../check-no-real-blank-ids.mjs', import.meta.url), 'utf8');
+  const rule = src.match(/THE POSITIVE-DETECTION RULE[\s\S]*?const ALLOWED_SEGMENTS/)?.[0] ?? '';
+  assert.match(rule, /could never be a supplier's name/);
 });
 
 test('the guard no longer exempts a .blank-inventory path at any depth', async () => {

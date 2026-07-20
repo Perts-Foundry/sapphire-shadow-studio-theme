@@ -247,6 +247,20 @@ export function bodyOf(index, variant) {
 }
 
 /**
+ * Attach the approved body to each variant.
+ *
+ * A variant whose product is not in the artifact gets `body: null` rather than a guess. Read paths
+ * report those; write paths refuse on them. Returns copies; the input is not mutated.
+ *
+ * @param {Map<string, string>|null} index
+ * @param {object[]} variants
+ * @returns {object[]}
+ */
+export function attachBodies(index, variants) {
+  return variants.map((v) => ({ ...v, body: index?.get(v.productHandle) ?? null }));
+}
+
+/**
  * Products in the catalogue that the approved artifact does not cover.
  * @param {Map<string, string>} index
  * @param {object[]} variants

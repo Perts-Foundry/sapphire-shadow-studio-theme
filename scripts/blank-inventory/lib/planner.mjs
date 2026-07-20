@@ -158,12 +158,12 @@ export function planGroup({ blankId, members, value, mode, planId }) {
  * Plan every input row.
  *
  * @param {object} params
- * @param {Array<{blankId?: string, color?: string, size?: string, value: number, line: number}>} params.rows
+ * @param {Array<{blankId?: string, body?: string, color?: string, size?: string, value: number, line: number}>} params.rows
  * @param {Map<string, object[]>} params.groups
  * @param {Map<string, string>} params.vocab
  * @param {string} params.mode
  * @param {string} params.planId
- * @param {(vocab: Map<string,string>, color: string, size: string) => string} params.resolveBlank
+ * @param {(vocab: Map<string,string>, axes: {body: string, color: string, size: string}) => string} params.resolveBlank
  * @returns {{plans: object[], skipped: object[]}}
  */
 export function planAll({ rows, groups, vocab, mode, planId, resolveBlank }) {
@@ -175,7 +175,8 @@ export function planAll({ rows, groups, vocab, mode, planId, resolveBlank }) {
   // only the first recorded in the receipt (markRow finds by blankId). Refuse loudly instead.
   const seenBlanks = new Map();
   for (const row of rows) {
-    const blankId = row.blankId ?? resolveBlank(vocab, row.color, row.size);
+    const blankId =
+      row.blankId ?? resolveBlank(vocab, { body: row.body, color: row.color, size: row.size });
     if (seenBlanks.has(blankId)) {
       throw new Error(
         `Line ${row.line}: resolves to blank "${blankId}", which line ${seenBlanks.get(blankId)} ` +
