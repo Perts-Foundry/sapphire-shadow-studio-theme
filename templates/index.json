@@ -345,87 +345,131 @@
       }
     },
     "editorial_Qw7Rt2": {
-      "type": "media-with-content",
+      "type": "section",
       "blocks": {
-        "media": {
-          "type": "_media-without-appearance",
-          "static": true,
+        "editorial_caption": {
+          "type": "text",
           "settings": {
-            "media_type": "image",
-            "image": "shopify://shop_images/studio.jpg",
-            "image_position": "cover"
-          }
+            "text": "<p>Our story</p>",
+            "width": "100%",
+            "max_width": "normal",
+            "alignment": "center",
+            "type_preset": "h6",
+            "font": "var(--font-subheading--family)",
+            "font_size": "",
+            "line_height": "normal",
+            "letter_spacing": "normal",
+            "case": "none",
+            "wrap": "pretty",
+            "color": "var(--color-foreground-heading)",
+            "background": false,
+            "background_color": "#00000026",
+            "corner_radius": 0,
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {}
         },
-        "content": {
-          "type": "_content-without-appearance",
-          "static": true,
+        "editorial_heading": {
+          "type": "text",
           "settings": {
-            "horizontal_alignment_flex_direction_column": "flex-start",
-            "vertical_alignment_flex_direction_column": "space-between"
+            "text": "<h2>More than sweaters</h2>",
+            "width": "100%",
+            "max_width": "normal",
+            "alignment": "center",
+            "type_preset": "h2",
+            "font": "var(--font-heading--family)",
+            "font_size": "",
+            "line_height": "normal",
+            "letter_spacing": "normal",
+            "case": "none",
+            "wrap": "pretty",
+            "color": "var(--color-foreground-heading)",
+            "background": false,
+            "background_color": "#00000026",
+            "corner_radius": 0,
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
           },
-          "blocks": {
-            "caption": {
-              "type": "text",
-              "name": "t:names.caption",
-              "settings": {
-                "text": "<p>Our story</p>",
-                "type_preset": "h6"
-              }
-            },
-            "group": {
-              "type": "group",
-              "settings": {
-                "height": "fit"
-              },
-              "blocks": {
-                "heading": {
-                  "type": "text",
-                  "name": "t:names.heading",
-                  "settings": {
-                    "text": "<h3>More than sweaters</h3>",
-                    "type_preset": "h3"
-                  }
-                },
-                "text": {
-                  "type": "text",
-                  "settings": {
-                    "text": "<p>The things people wear should feel as intentional as the moments they are wearing them for.</p>",
-                    "max_width": "narrow",
-                    "type_preset": "rte"
-                  }
-                }
-              },
-              "block_order": [
-                "heading",
-                "text"
-              ]
-            },
-            "button": {
-              "type": "button",
-              "settings": {
-                "label": "Read our story",
-                "link": "shopify://pages/about",
-                "style_class": "link"
-              }
-            }
+          "blocks": {}
+        },
+        "editorial_body": {
+          "type": "text",
+          "settings": {
+            "text": "<p>The things people wear should feel as intentional as the moments they are wearing them for.</p>",
+            "width": "100%",
+            "max_width": "narrow",
+            "alignment": "center",
+            "type_preset": "rte",
+            "font": "var(--font-body--family)",
+            "font_size": "",
+            "line_height": "normal",
+            "letter_spacing": "normal",
+            "case": "none",
+            "wrap": "pretty",
+            "color": "var(--color-foreground)",
+            "background": false,
+            "background_color": "#00000026",
+            "corner_radius": 0,
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
           },
-          "block_order": [
-            "caption",
-            "group",
-            "button"
-          ]
+          "blocks": {}
+        },
+        "editorial_button": {
+          "type": "button",
+          "settings": {
+            "label": "Read our story",
+            "link": "shopify://pages/about",
+            "open_in_new_tab": false,
+            "style_class": "button",
+            "width": "fit-content",
+            "custom_width": 100,
+            "width_mobile": "fit-content",
+            "custom_width_mobile": 100
+          },
+          "blocks": {}
         }
       },
-      "name": "t:names.media_with_text",
+      "block_order": [
+        "editorial_caption",
+        "editorial_heading",
+        "editorial_body",
+        "editorial_button"
+      ],
       "settings": {
-        "media_position": "left",
-        "media_width": "medium",
-        "media_height": "60svh",
+        "content_direction": "column",
+        "vertical_on_mobile": true,
+        "horizontal_alignment": "center",
+        "vertical_alignment": "center",
+        "align_baseline": false,
+        "horizontal_alignment_flex_direction_column": "center",
+        "vertical_alignment_flex_direction_column": "center",
+        "gap": 16,
         "section_width": "full-width",
-        "extend_media": true,
-        "color_scheme": "scheme-1",
-        "padding-block-start": 0,
-        "padding-block-end": 0
+        "section_height": "large",
+        "section_height_custom": 50,
+        "color_scheme": "sss-dark-scheme",
+        "background_media": "image",
+        "video_position": "cover",
+        "background_image": "shopify://shop_images/studio.jpg",
+        "background_image_position": "cover",
+        "border": "none",
+        "border_width": 1,
+        "border_opacity": 100,
+        "border_radius": 0,
+        "toggle_overlay": true,
+        "overlay_color": "#071e3f99",
+        "overlay_style": "solid",
+        "gradient_direction": "to top",
+        "padding-block-start": 72,
+        "padding-block-end": 72
       }
     },
     "closing_Zx4Vn8": {
