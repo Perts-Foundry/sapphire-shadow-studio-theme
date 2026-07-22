@@ -690,10 +690,12 @@
 
     .hero--mobile-fallback-fit .hero__container {
       min-height: 0;
-      /* Drop the tall-hero block padding so the video sits flush under the header;
-         the button gets its own space below via the row gap and bottom padding. */
+      /* Drop the tall-hero block padding and the transparent-header top offset so
+         the video sits flush at the top instead of below a navy gap; the button
+         gets its own space below via the row gap and bottom padding. */
       --padding-block-start: 0px;
       --padding-block-end: 0px;
+      --section-top-offset: 0px;
       row-gap: 24px;
       padding-block-end: 24px;
     }
