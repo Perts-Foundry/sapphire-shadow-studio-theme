@@ -63,7 +63,7 @@
   assign video_wrapper_desktop_class = 'hero__video-wrapper--desktop'
   if section.settings.custom_mobile_media == false or section.settings.custom_mobile_media == true and media_count_mobile == 0
     assign media_image_desktop_class = media_image_desktop_class | append: ' hero__image--mobile'
-    assign media_video_desktop_class = media_video_desktop_class | append: ' hero__video--mobile'
+    assign media_video_desktop_class = media_video_desktop_class | append: ' hero__video--mobile hero__video--mobile-fallback'
     assign media_video_poster_desktop_class = media_video_poster_desktop_class | append: ' hero__video-poster--mobile'
     assign video_wrapper_desktop_class = video_wrapper_desktop_class | append: ' hero__video-wrapper--mobile'
   endif
@@ -648,6 +648,18 @@
 
     .hero__media-wrapper {
       grid-template-columns: repeat(var(--hero-media-count-mobile, 1), 1fr);
+    }
+
+    /*
+     * Mitigation: when Custom mobile media is off, the wide desktop hero video is
+     * reused in a portrait viewport. object-fit: cover would zoom in and slice the
+     * baked-in logo and tagline off both edges, so show the whole frame (contain)
+     * over the color scheme's background. The complete fix is a portrait-framed
+     * mobile asset (admin task in TODO.md); remove this once that ships.
+     */
+    .hero__video--mobile-fallback {
+      object-fit: contain;
+      background-color: rgb(var(--color-background));
     }
 
     /* Mobile stacking */
