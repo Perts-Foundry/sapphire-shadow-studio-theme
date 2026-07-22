@@ -103,6 +103,20 @@
     assign media_width_mobile = '50vw'
   endif
 
+  # When a single wide desktop video is reused on mobile, expose its aspect ratio
+  # so the stylesheet can size the mobile hero to it: the video then fills the
+  # width with no crop and no letterbox, and the button flows onto a short strip
+  # below instead of the hero being a full-screen box with dead space. Only for a
+  # lone video (not a two-up grid or an image), so the single-column math holds.
+  assign hero_mobile_fallback_aspect = ''
+  if fallback_to_desktop and media_count == 1 and has_only_video
+    if media_1 == 'video'
+      assign hero_mobile_fallback_aspect = section.settings.video_1.aspect_ratio
+    elsif media_2 == 'video'
+      assign hero_mobile_fallback_aspect = section.settings.video_2.aspect_ratio
+    endif
+  endif
+
   assign sizes = '(min-width: 750px) ' | append: media_width_desktop | append: ', ' | append: media_width_mobile
   assign widths = '832, 1200, 1600, 1920, 2560, 3840'
   assign sizes_mobile = media_width_mobile
@@ -446,12 +460,13 @@
 
 <div
   id="Hero-{{ section.id }}"
-  class="hero color-{{ section.settings.color_scheme }}{% if section.blocks.size == 0 and section.settings.section_height == 'auto' %} hero--no-blocks-auto-height{% endif %}{% if section.settings.stack_media_on_mobile %} hero--stack-mobile{% endif %}"
+  class="hero color-{{ section.settings.color_scheme }}{% if section.blocks.size == 0 and section.settings.section_height == 'auto' %} hero--no-blocks-auto-height{% endif %}{% if section.settings.stack_media_on_mobile %} hero--stack-mobile{% endif %}{% if hero_mobile_fallback_aspect != blank %} hero--mobile-fallback-fit{% endif %}"
   style="
     --hero-border-style: {{ section.settings.border }};
     --hero-border-width: {{ section.settings.border_width }}px;
     --hero-border-opacity: {{ section.settings.border_opacity }}%;
     --blur-opacity: {{ section.settings.reflection_opacity | divided_by: 100.0 }};
+    {% if hero_mobile_fallback_aspect != blank %}--hero-mobile-fallback-aspect: {{ hero_mobile_fallback_aspect }};{% endif %}
     {% if section.settings.section_height == 'custom' %}
       --hero-min-height: {{ section.settings.section_height_custom }}svh;
     {% elsif section.settings.section_height == "full-screen" %}
@@ -651,15 +666,47 @@
     }
 
     /*
-     * Mitigation: when Custom mobile media is off, the wide desktop hero video is
-     * reused in a portrait viewport. object-fit: cover would zoom in and slice the
-     * baked-in logo and tagline off both edges, so show the whole frame (contain)
-     * over the color scheme's background. The complete fix is a portrait-framed
-     * mobile asset (admin task in TODO.md); remove this once that ships.
+     * Mitigation for the wide desktop hero video reused in a portrait mobile
+     * viewport (Custom mobile media off). Safety fallback when the video's aspect
+     * ratio is unknown: show the whole frame (contain) over the scheme background
+     * rather than cropping the baked-in logo and tagline off both edges.
      */
     .hero__video--mobile-fallback {
       object-fit: contain;
       background-color: rgb(var(--color-background));
+    }
+
+    /*
+     * Preferred path: the video's aspect ratio is known, so size the mobile hero
+     * to it. The video fills the full width with no crop and no letterbox, and the
+     * button flows onto a short strip below instead of the hero being a 100svh box
+     * with dead space above and below. Desktop is unaffected. The complete fix is
+     * still a portrait-framed mobile asset (admin task in TODO.md); once that ships
+     * this fallback stops applying.
+     */
+    .hero.hero--mobile-fallback-fit {
+      min-height: 0;
+    }
+
+    .hero--mobile-fallback-fit .hero__container {
+      min-height: 0;
+      /* Drop the tall-hero block padding so the video sits flush under the header;
+         the button gets its own space below via the row gap and bottom padding. */
+      --padding-block-start: 0px;
+      --padding-block-end: 0px;
+      row-gap: 24px;
+      padding-block-end: 24px;
+    }
+
+    .hero--mobile-fallback-fit .hero__media-wrapper {
+      /* Flow in the grid (top row) instead of absolutely overlaying the hero. */
+      position: relative;
+      aspect-ratio: var(--hero-mobile-fallback-aspect);
+    }
+
+    .hero--mobile-fallback-fit .hero__video--mobile-fallback {
+      /* Wrapper aspect matches the video, so cover fills it with no crop. */
+      object-fit: cover;
     }
 
     /* Mobile stacking */

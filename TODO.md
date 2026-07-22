@@ -100,8 +100,9 @@ mitigation for the hero mobile crop shipped separately in `sections/hero.liquid`
   footer "Sign up" buttons. Darken to about `#0071c2` or darker. Admin (color scheme).
 - [ ] **Provide portrait-framed hero mobile media.** Enable hero "Custom mobile media" and
   upload an asset framed for portrait so the logo and tagline are not cropped. Once this ships,
-  the theme-code `object-fit: contain` fallback in `sections/hero.liquid` (the
-  `.hero__video--mobile-fallback` rule) can be removed. Admin (hero settings + asset).
+  the theme-code mobile fallback in `sections/hero.liquid` (the `.hero--mobile-fallback-fit`
+  aspect-fit rules and the `.hero__video--mobile-fallback` contain safety net) stops applying and
+  can be removed. Admin (hero settings + asset).
 - [ ] **Curate the featured-collection heading and fix heading order.** "Products" (the "all"
   collection title) is generic; use a curated label and change the wrapper from `<h3>` to
   `<h2>` (fixes the Lighthouse H1 to H3 `heading-order` gap). Verify the configured "View all"
