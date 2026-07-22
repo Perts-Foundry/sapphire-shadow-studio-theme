@@ -85,6 +85,39 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   sweatshirt. Either reorder that variant's media so the close-up leads, or reshoot the gray in a
   contrasting thread. Worth confirming on the storefront before deciding.
 
+**Homepage review (2026-07-20).** Findings from a live desktop (1440px) and mobile (390px)
+review of the storefront homepage. All of these live in admin-owned config (`config/settings_data.json`
+color schemes, `templates/index.json` section settings), so they are recorded here rather than
+edited in a repo PR, which the sync model would clobber. The theme-code `object-fit: contain`
+mitigation for the hero mobile crop shipped separately in `sections/hero.liquid`.
+
+- [ ] **Recolor the featured-collection section off `#6897e3`.** The bright cornflower-blue
+  background (`scheme-8089d18b-...`, `config/settings_data.json:425`) with white cards clashes
+  with the dark-navy sapphire brand above it and cheapens the grid. Switch that section to a
+  neutral light/white scheme or the dark sapphire scheme. Admin (color scheme).
+- [ ] **Fix primary-button contrast (WCAG AA fail).** White text on `#007dd5`
+  (`config/settings_data.json:471`) is 4.29:1 (needs 4.5:1); affects the hero "Shop all" and
+  footer "Sign up" buttons. Darken to about `#0071c2` or darker. Admin (color scheme).
+- [ ] **Provide portrait-framed hero mobile media.** Enable hero "Custom mobile media" and
+  upload an asset framed for portrait so the logo and tagline are not cropped. Once this ships,
+  the theme-code mobile fallback in `sections/hero.liquid` (the `.hero--mobile-fallback-fit`
+  aspect-fit rules and the `.hero__video--mobile-fallback` contain safety net) stops applying and
+  can be removed. Admin (hero settings + asset).
+- [ ] **Curate the featured-collection heading and fix heading order.** "Products" (the "all"
+  collection title) is generic; use a curated label and change the wrapper from `<h3>` to
+  `<h2>` (fixes the Lighthouse H1 to H3 `heading-order` gap). Verify the configured "View all"
+  link renders. Admin (section block settings).
+- [ ] **Add a hero headline/tagline.** The hero text block is empty; the only messaging is
+  baked into the photo. Add a concise tagline heading for messaging and SEO. Admin (hero text block).
+- [ ] **Drop the per-card shipping line.** "$8.00 shipping within the USA, Free for orders over
+  $75.00" repeats under every card (`price` block `show_shipping_info`), duplicating the
+  announcement bar. Turn it off on the card. Admin (price block setting).
+- [ ] **Announcement bar (cosmetic).** Prev/Next arrows on a 2-slide bar are minor clutter;
+  consider auto-rotate only. Admin (announcement bar settings).
+- [ ] **Optional: set the hero video's alt text in admin.** Won't clear the Lighthouse `image-alt`
+  finding (the `video_tag` poster `<img>` is Shopify-internal; see `THEME_CHECK_NON_ACTIONABLE.md`),
+  but it does give the `<video>` element a proper `aria-label` for screen readers. Admin (video media alt).
+
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent

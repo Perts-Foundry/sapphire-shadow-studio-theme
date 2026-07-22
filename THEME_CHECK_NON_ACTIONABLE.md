@@ -241,6 +241,50 @@ The linter sees `block.id` at line 182 inside the snippet and flags it as undefi
 
 ---
 
+## Lighthouse (not Theme Check)
+
+These are not Theme Check offenses; they surface in a Lighthouse audit of the rendered
+storefront. Recorded here because the root cause is a Shopify Liquid filter's fixed output,
+not something theme code can override.
+
+### 5. image-alt - Hero video poster `<img>`
+
+**Severity:** Lighthouse accessibility audit (`image-alt`)
+**Source:** `sections/hero.liquid` hero video (via the `video_tag` filter)
+
+#### Details
+
+The hero uses `{{ section.settings.video_1 | video_tag: poster: nil, ... }}`. Shopify's
+`video_tag` filter always emits a trailing poster `<img>` inside the `<video>` element:
+
+```html
+<video ... poster="//.../preview.jpg"><source ...><img src="//.../preview.jpg"></video>
+```
+
+That inner `<img>` has no `alt` attribute, which Lighthouse flags as `image-alt`.
+
+#### Why Not Actionable
+
+`video_tag` exposes only an `image_size` parameter; it has no `alt` parameter, and the
+`poster:` argument sets only the poster URL, not the inner `<img>`'s `alt`. Setting the
+media's alt text in Admin adds an `aria-label` to the `<video>` element (a real screen-reader
+improvement, tracked as an optional Admin task in `TODO.md`), but it does not add `alt` to the
+generated `<img>`. The element is filter-internal and cannot be reached from theme code without
+abandoning `video_tag` and hand-rolling the `<video>`/`<source>` markup, which the project
+declined as a hack that trades a cosmetic audit line for real fragility (source-format
+handling, quality tiers).
+
+#### References
+
+- [Liquid filters: video_tag](https://shopify.dev/docs/api/liquid/filters/video_tag)
+
+#### Resolution
+
+**No action required in theme code.** Optionally set the video media's alt text in Admin for the
+`<video>` `aria-label`. Revisit if Shopify adds `alt` support to `video_tag`.
+
+---
+
 ## Summary
 
 | Finding Type | Count | Actionable? | Reason |
@@ -249,7 +293,8 @@ The linter sees `block.id` at line 182 inside the snippet and flags it as undefi
 | RemoteAsset (Internal anchors) | 2 | No | False positive - valid HTML anchor links |
 | UndefinedObject: 'back' | 1 | No | Intentional design - undefined renders as empty string |
 | UndefinedObject: Valid objects | 17 | No | False positives from static analysis limitations |
-| **Total** | **23** | **No** | All findings documented and justified |
+| image-alt (Lighthouse, video poster) | 1 | No | `video_tag` filter output; no `alt` param, filter-internal `<img>` |
+| **Total (Theme Check)** | **23** | **No** | All findings documented and justified |
 
 ---
 
