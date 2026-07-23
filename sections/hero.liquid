@@ -648,6 +648,37 @@
     display: block;
   }
 
+  /*
+   * Reused-video fit (applies at ALL widths). When a single wide desktop video is
+   * reused with no custom mobile asset, size the hero to the video's own aspect
+   * ratio so the whole frame shows with no crop and no letterbox, and let the
+   * heading and button flow onto a strip below instead of overlaying the busy
+   * frame. This keeps the baked-in logo and tagline legible and makes desktop and
+   * mobile read the same. The complete fix is still a purpose-framed hero asset
+   * (admin task in TODO.md); once that ships this fallback stops applying.
+   */
+  .hero.hero--mobile-fallback-fit {
+    min-height: 0;
+  }
+
+  .hero--mobile-fallback-fit .hero__container {
+    min-height: 0;
+    /* Drop the tall-hero block padding and the transparent-header top offset so
+       the video sits flush at the top instead of below a navy gap; the heading and
+       button get their own space below via the row gap and bottom padding. */
+    --padding-block-start: 0px;
+    --padding-block-end: 0px;
+    --section-top-offset: 0px;
+    row-gap: 24px;
+    padding-block-end: 24px;
+  }
+
+  .hero--mobile-fallback-fit .hero__media-wrapper {
+    /* Flow in the grid (top row) instead of absolutely overlaying the hero. */
+    position: relative;
+    aspect-ratio: var(--hero-mobile-fallback-aspect);
+  }
+
   @media screen and (max-width: 749px) {
     .hero__image--desktop,
     .hero__video--desktop,
@@ -676,38 +707,9 @@
       background-color: rgb(var(--color-background));
     }
 
-    /*
-     * Preferred path: the video's aspect ratio is known, so size the mobile hero
-     * to it. The video fills the full width with no crop and no letterbox, and the
-     * button flows onto a short strip below instead of the hero being a 100svh box
-     * with dead space above and below. Desktop is unaffected. The complete fix is
-     * still a portrait-framed mobile asset (admin task in TODO.md); once that ships
-     * this fallback stops applying.
-     */
-    .hero.hero--mobile-fallback-fit {
-      min-height: 0;
-    }
-
-    .hero--mobile-fallback-fit .hero__container {
-      min-height: 0;
-      /* Drop the tall-hero block padding and the transparent-header top offset so
-         the video sits flush at the top instead of below a navy gap; the button
-         gets its own space below via the row gap and bottom padding. */
-      --padding-block-start: 0px;
-      --padding-block-end: 0px;
-      --section-top-offset: 0px;
-      row-gap: 24px;
-      padding-block-end: 24px;
-    }
-
-    .hero--mobile-fallback-fit .hero__media-wrapper {
-      /* Flow in the grid (top row) instead of absolutely overlaying the hero. */
-      position: relative;
-      aspect-ratio: var(--hero-mobile-fallback-aspect);
-    }
-
     .hero--mobile-fallback-fit .hero__video--mobile-fallback {
-      /* Wrapper aspect matches the video, so cover fills it with no crop. */
+      /* Mobile reuses the desktop video via the fallback class; the wrapper aspect
+         (set globally above) matches the video, so cover fills it with no crop. */
       object-fit: cover;
     }
 
