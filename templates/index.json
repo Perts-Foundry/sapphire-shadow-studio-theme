@@ -119,7 +119,7 @@
         "padding-block-end": 56
       }
     },
-    "marquee_Hm3Kp9": {
+    "trust_band_Hm3Kp9": {
       "type": "section",
       "blocks": {
         "trust_text": {
@@ -355,7 +355,7 @@
       },
       "name": "t:names.featured_collection",
       "settings": {
-        "collection": "all",
+        "collection": "featured",
         "layout_type": "grid",
         "carousel_on_mobile": false,
         "max_products": 8,
@@ -554,7 +554,7 @@
           "type": "button",
           "settings": {
             "label": "Start a custom order",
-            "link": "/pages/custom-orders",
+            "link": "shopify://pages/custom-orders",
             "open_in_new_tab": false,
             "style_class": "button",
             "width": "fit-content",
@@ -601,7 +601,7 @@
   },
   "order": [
     "hero_jVaWmY",
-    "marquee_Hm3Kp9",
+    "trust_band_Hm3Kp9",
     "product_list_fa6P9H",
     "editorial_Qw7Rt2",
     "closing_Zx4Vn8"
