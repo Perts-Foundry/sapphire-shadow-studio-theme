@@ -355,7 +355,7 @@
       },
       "name": "t:names.featured_collection",
       "settings": {
-        "collection": "featured",
+        "collection": "popular",
         "layout_type": "grid",
         "carousel_on_mobile": false,
         "max_products": 8,
