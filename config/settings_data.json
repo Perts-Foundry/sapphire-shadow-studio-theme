@@ -73,14 +73,15 @@
     "currency_code_enabled_product_cards": false,
     "currency_code_enabled_cart_items": false,
     "currency_code_enabled_cart_total": false,
+    "quick_add": false,
     "product_corner_radius": 0,
     "card_corner_radius": 4,
     "show_variant_image": true,
-    "size_option_name": "Size",
-    "color_option_name": "Color",
     "variant_swatch_width": 34,
     "variant_swatch_height": 34,
     "variant_swatch_radius": 32,
+    "size_option_name": "Size",
+    "color_option_name": "Color",
     "variant_button_border_width": 1,
     "variant_button_radius": 14,
     "variant_button_width": "equal-width-buttons",
@@ -91,14 +92,14 @@
         "type": "shopify://apps/inbox/blocks/chat/841fc607-4181-4ad1-842d-e24d7f8bad6b",
         "disabled": false,
         "settings": {
+          "greeting_message": "Hello, need help with something?",
           "button_color": "#000000",
           "secondary_color": "#FFFFFF",
           "ternary_color": "#6A6A6A",
           "button_icon": "hand_wave",
           "button_text": "need_help",
           "button_horizontal_position": "bottom_right",
-          "button_vertical_position": "highest",
-          "greeting_message": "Hello, need help with something?"
+          "button_vertical_position": "highest"
         }
       },
       "14060646107696862457": {
