@@ -663,14 +663,16 @@
 
   .hero--mobile-fallback-fit .hero__container {
     min-height: 0;
-    /* Drop the tall-hero block padding and the transparent-header top offset so
-       the video sits flush at the top instead of below a navy gap; the heading and
-       button get their own space below via the row gap and bottom padding. */
-    --padding-block-start: 0px;
-    --padding-block-end: 0px;
-    --section-top-offset: 0px;
-    row-gap: 24px;
+    /* Zero the top padding as a real property, not the --padding-block-start
+       variable. spacing-style sets that variable inline (higher priority than this
+       stylesheet rule), so overriding the variable would not take; .spacing-style
+       reads it into `padding-block`, and this two-class selector outranks that
+       single-class rule. Result: the video sits flush under the header with no
+       navy gap. The heading and button get their space below via the row gap and
+       bottom padding. */
+    padding-block-start: 0;
     padding-block-end: 24px;
+    row-gap: 24px;
   }
 
   .hero--mobile-fallback-fit .hero__media-wrapper {
