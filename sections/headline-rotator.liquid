@@ -2,13 +2,14 @@
   TEMPORARY exploration section.
 
   Steps the homepage hero headline through a set of typographic treatments so we
-  can preview options live on the PR preview theme. This iteration focuses on the
-  chosen direction: a cursive/accent-font emphasis on "Obsessed" inside stacked
-  and big-word layouts, across several fonts. Manual prev / next controls (arrow
-  buttons, or the Left/Right arrow keys) drive it; there is no auto-advance. It
-  renders no visible box of its own: it only injects the styles and a small script
-  that rewrites the hero <h1> in place, plus a control bar naming the current
-  option.
+  can preview options live on the PR preview theme. This iteration drills into
+  the chosen big-word layout (small lead "We", oversized cursive "Obsessed",
+  small tagline) and explores permutations of it: focus-word casing/punctuation,
+  three script fonts, tagline treatments, and a couple of flourishes. Manual
+  prev / next controls (arrow buttons, or the Left/Right arrow keys) drive it;
+  there is no auto-advance. It renders no visible box of its own: it only injects
+  the styles and a small script that rewrites the hero <h1> in place, plus a
+  control bar naming the current option.
 
   Remove this section and its entry in templates/index.json once a direction is
   chosen. Nothing else references it.
@@ -16,30 +17,19 @@
 
 <style>
   :root {
-    /* Three script/handwriting stacks so we can compare cursive personalities.
-       Each renders a script face on macOS and Windows, then falls back generic. */
     --hlr-script: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive;
-    --hlr-hand: "Ink Free", "Segoe Print", "Bradley Hand", cursive;
+    --hlr-brush: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
     --hlr-callig: "Apple Chancery", "Lucida Calligraphy", "Palatino Linotype", cursive;
   }
 
+  /* Shared big-word layout for every permutation. */
   .hero__content-wrapper h1.hlr {
-    transition: opacity 0.35s ease;
-  }
-
-  /* Shared big-word layout: small lead, oversized focus word, small tagline. */
-  .hero__content-wrapper h1.hlr[data-hlr="v2"],
-  .hero__content-wrapper h1.hlr[data-hlr="v4"],
-  .hero__content-wrapper h1.hlr[data-hlr="v5"],
-  .hero__content-wrapper h1.hlr[data-hlr="v6"],
-  .hero__content-wrapper h1.hlr[data-hlr="v7"],
-  .hero__content-wrapper h1.hlr[data-hlr="v9"],
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] {
     display: flex !important;
     flex-direction: column;
     align-items: center;
     gap: 0.05em;
     line-height: 0.9 !important;
+    transition: opacity 0.35s ease;
   }
   .hero__content-wrapper h1.hlr .pre {
     font-size: 0.4em;
@@ -48,8 +38,11 @@
     opacity: 0.85;
   }
   .hero__content-wrapper h1.hlr .big {
+    font-family: var(--hlr-script) !important;
+    font-weight: 400 !important;
     font-size: clamp(3rem, 12vw, 7rem);
     line-height: 0.85;
+    position: relative;
   }
   .hero__content-wrapper h1.hlr .post {
     font-size: 0.34em;
@@ -58,86 +51,37 @@
     opacity: 0.85;
   }
 
-  /* v1: two-line stack, cursive script "obsessed" */
-  .hero__content-wrapper h1.hlr[data-hlr="v1"] {
-    line-height: 1.05 !important;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v1"] .obs {
-    font-family: var(--hlr-script) !important;
-    font-weight: 400 !important;
-    font-size: 1.3em;
-  }
-
-  /* v2: big word, cursive script */
-  .hero__content-wrapper h1.hlr[data-hlr="v2"] .big {
-    font-family: var(--hlr-script) !important;
-    font-weight: 400 !important;
-  }
-
-  /* v3: two-line stack, accent font italic "obsessed" (no cursive) */
-  .hero__content-wrapper h1.hlr[data-hlr="v3"] {
-    line-height: 1.05 !important;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v3"] .obs {
-    font-family: var(--font-accent--family) !important;
-    font-style: italic !important;
-    font-size: 1.12em;
-  }
-
-  /* v4: big word, heading font uppercase, bold (structural, no cursive) */
+  /* v4: oversized script, smaller lead */
   .hero__content-wrapper h1.hlr[data-hlr="v4"] .big {
-    font-family: var(--font-heading--family) !important;
-    font-weight: 800 !important;
-    text-transform: uppercase;
-    letter-spacing: -0.01em;
-    font-size: clamp(2.75rem, 11vw, 6.25rem);
+    font-size: clamp(3.5rem, 15vw, 9rem);
   }
-
-  /* v5: big word, handwriting/print script */
-  .hero__content-wrapper h1.hlr[data-hlr="v5"] .big {
-    font-family: var(--hlr-hand) !important;
-    font-weight: 400 !important;
-  }
-
-  /* v6: big word, formal calligraphy */
-  .hero__content-wrapper h1.hlr[data-hlr="v6"] .big {
-    font-family: var(--hlr-callig) !important;
-    font-weight: 400 !important;
-  }
-
-  /* v7: three-line editorial, script word + small-caps subheading tagline */
-  .hero__content-wrapper h1.hlr[data-hlr="v7"] {
-    gap: 0.18em;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v7"] .big {
-    font-family: var(--hlr-script) !important;
-    font-weight: 400 !important;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v7"] .post {
-    font-family: var(--font-subheading--family) !important;
-    font-variant: small-caps;
-    text-transform: none;
-    letter-spacing: 0.16em;
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] .pre {
     font-size: 0.32em;
   }
 
-  /* v8: two-line stack, cursive script on the tagline tail */
-  .hero__content-wrapper h1.hlr[data-hlr="v8"] {
-    line-height: 1.05 !important;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v8"] .tail {
-    display: inline-block;
-    margin-block-start: 0.08em;
-    font-family: var(--hlr-script) !important;
-    font-weight: 400 !important;
-    font-size: 1.2em;
+  /* v5: underline flourish beneath the script word */
+  .hero__content-wrapper h1.hlr[data-hlr="v5"] .big::after {
+    content: "";
+    position: absolute;
+    inset-inline: 8%;
+    inset-block-end: 0.12em;
+    height: 2px;
+    background: currentColor;
+    opacity: 0.55;
+    border-radius: 2px;
   }
 
-  /* v9: big word script + accent-font italic tagline (softer, not uppercase) */
-  .hero__content-wrapper h1.hlr[data-hlr="v9"] .big {
-    font-family: var(--hlr-script) !important;
-    font-weight: 400 !important;
+  /* v6: brush-forward script */
+  .hero__content-wrapper h1.hlr[data-hlr="v6"] .big {
+    font-family: var(--hlr-brush) !important;
   }
+
+  /* v7: formal calligraphy */
+  .hero__content-wrapper h1.hlr[data-hlr="v7"] .big {
+    font-family: var(--hlr-callig) !important;
+  }
+
+  /* v9: soft accent-font italic tagline instead of tracked caps */
   .hero__content-wrapper h1.hlr[data-hlr="v9"] .post {
     font-family: var(--font-accent--family) !important;
     font-style: italic !important;
@@ -147,16 +91,12 @@
     opacity: 0.95;
   }
 
-  /* v10: big calligraphy word between tightly tracked uppercase lines */
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] .big {
-    font-family: var(--hlr-callig) !important;
-    font-weight: 400 !important;
+  /* v10: signed feel, slight rotation */
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] {
+    gap: 0.12em;
   }
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] .pre,
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] .post {
-    letter-spacing: 0.4em;
-    font-size: 0.3em;
-    opacity: 0.9;
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] .big {
+    transform: rotate(-3deg);
   }
 
   /* Manual prev / next control bar naming the current option */
@@ -211,21 +151,26 @@
 
 <script>
   (function () {
-    var STACK = "We <span class=\"obs\">obsessed</span>,<br>so you don't have to";
-    var STACK_TAIL = "We obsessed,<br><span class=\"tail\">so you don't have to</span>";
-    var BIGWORD = "<span class=\"pre\">We</span><span class=\"big\">Obsessed</span><span class=\"post\">so you don't have to</span>";
+    function bigWord(pre, word, post) {
+      return "<span class=\"pre\">" + pre + "</span>" +
+             "<span class=\"big\">" + word + "</span>" +
+             "<span class=\"post\">" + post + "</span>";
+    }
+
+    var LEAD = "We";
+    var TAIL = "so you don't have to";
 
     var VARIANTS = [
-      { v: "v1", label: "Two-line stack · cursive script", html: STACK },
-      { v: "v2", label: "Big word · cursive script", html: BIGWORD },
-      { v: "v3", label: "Two-line stack · accent font italic", html: STACK },
-      { v: "v4", label: "Big word · heading uppercase", html: BIGWORD },
-      { v: "v5", label: "Big word · handwriting script", html: BIGWORD },
-      { v: "v6", label: "Big word · calligraphy", html: BIGWORD },
-      { v: "v7", label: "Three-line editorial · script + small caps", html: BIGWORD },
-      { v: "v8", label: "Two-line stack · cursive tail", html: STACK_TAIL },
-      { v: "v9", label: "Big word · script + accent tagline", html: BIGWORD },
-      { v: "v10", label: "Big word · calligraphy + tracked caps", html: BIGWORD }
+      { v: "v1", label: "Classic script", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v2", label: "Lowercase focus word", html: bigWord(LEAD, "obsessed", TAIL) },
+      { v: "v3", label: "With a period", html: bigWord(LEAD, "Obsessed.", TAIL) },
+      { v: "v4", label: "Oversized script", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v5", label: "Underlined flourish", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v6", label: "Brush script font", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v7", label: "Calligraphy font", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v8", label: "Contraction: We're obsessed", html: bigWord("We're", "obsessed", TAIL) },
+      { v: "v9", label: "Soft accent tagline", html: bigWord(LEAD, "Obsessed", TAIL) },
+      { v: "v10", label: "Signed / skewed", html: bigWord(LEAD, "Obsessed", TAIL) }
     ];
 
     function findHeadline() {
