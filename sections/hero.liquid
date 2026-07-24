@@ -780,6 +780,9 @@
     /* Dancing Script is self-hosted (loads for every visitor); the proprietary
        system scripts are only transient fallbacks while it downloads. */
     --hero-lockup-cursive: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
+    /* Flanking star size and gap, in em off the lockup font size (the h1 size). */
+    --hero-lockup-star-size: 0.9em;
+    --hero-lockup-star-gap: 0.5em;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -796,6 +799,26 @@
     letter-spacing: 0.35em;
     text-transform: uppercase;
     opacity: 0.85;
+  }
+
+  .hero-lockup__word-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--hero-lockup-star-gap);
+  }
+
+  .hero-lockup__star {
+    display: flex;
+    flex: none;
+    line-height: 0;
+    color: inherit;
+  }
+
+  .hero-lockup__star svg {
+    display: block;
+    width: var(--hero-lockup-star-size);
+    height: var(--hero-lockup-star-size);
   }
 
   .hero-lockup__word {

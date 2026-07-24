@@ -15,7 +15,7 @@
         "headline_lockup": {
           "type": "custom-liquid",
           "settings": {
-            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">We</span><span class=\"hero-lockup__word\">Obsessed</span><span class=\"hero-lockup__tag\">so you don't have to</span></h1>"
+            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">We</span><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">Obsessed</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span><span class=\"hero-lockup__tag\">so you don't have to</span></h1>"
           }
         },
         "text_sub_hero": {
