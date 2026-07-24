@@ -12,31 +12,11 @@
     "hero_jVaWmY": {
       "type": "hero",
       "blocks": {
-        "text_YLPk4p": {
-          "type": "text",
-          "name": "t:names.heading",
+        "headline_lockup": {
+          "type": "custom-liquid",
           "settings": {
-            "text": "<h1>We obsessed, so you don't have to</h1>",
-            "width": "fit-content",
-            "max_width": "normal",
-            "alignment": "center",
-            "type_preset": "h1",
-            "font": "var(--font-heading--family)",
-            "font_size": "",
-            "line_height": "normal",
-            "letter_spacing": "normal",
-            "case": "none",
-            "wrap": "pretty",
-            "color": "var(--color-foreground-heading)",
-            "background": false,
-            "background_color": "#00000026",
-            "corner_radius": 0,
-            "padding-block-start": 0,
-            "padding-block-end": 0,
-            "padding-inline-start": 0,
-            "padding-inline-end": 0
-          },
-          "blocks": {}
+            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">We</span><span class=\"hero-lockup__word\">Obsessed</span><span class=\"hero-lockup__tag\">so you don't have to</span></h1>"
+          }
         },
         "text_sub_hero": {
           "type": "text",
@@ -81,7 +61,7 @@
         }
       },
       "block_order": [
-        "text_YLPk4p",
+        "headline_lockup",
         "text_sub_hero",
         "button_H9gpTf"
       ],
@@ -118,10 +98,6 @@
         "padding-block-start": 48,
         "padding-block-end": 56
       }
-    },
-    "headline_rotator_tmp": {
-      "type": "headline-rotator",
-      "settings": {}
     },
     "product_list_fa6P9H": {
       "type": "product-list",
@@ -546,7 +522,6 @@
   },
   "order": [
     "hero_jVaWmY",
-    "headline_rotator_tmp",
     "product_list_fa6P9H",
     "editorial_Qw7Rt2",
     "closing_Zx4Vn8"

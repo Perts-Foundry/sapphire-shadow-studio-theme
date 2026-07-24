@@ -749,6 +749,48 @@
     pointer-events: auto;
   }
 
+  /*
+   * Homepage hero headline lockup: small tracked eyebrow, oversized cursive
+   * focus word, small tracked tagline. Rendered by a custom-liquid block so the
+   * markup survives (richtext block settings strip classes). Sized in em off the
+   * theme h1 size so the three lines scale together and stay proportional on
+   * mobile. The cursive stack falls back to a system script face per OS, then
+   * the generic. Inert unless .hero-lockup markup is present.
+   */
+  .hero-lockup {
+    --hero-lockup-cursive: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15em;
+    margin: 0;
+    font-size: var(--font-h1--size);
+    line-height: 0.9;
+    text-align: center;
+    color: var(--color-foreground-heading);
+  }
+
+  .hero-lockup__pre {
+    font-size: 0.4em;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  .hero-lockup__word {
+    font-family: var(--hero-lockup-cursive);
+    font-weight: 400;
+    font-size: 2em;
+    line-height: 0.85;
+  }
+
+  .hero-lockup__tag {
+    font-size: 0.34em;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
   .hero[data-blur-shadow='true'] {
     --blurred-reflection-filter-saturate: saturate(1.5);
     --blurred-reflection-mask-image: linear-gradient(to bottom, #000 0%, #000 60%, transparent 100%);
