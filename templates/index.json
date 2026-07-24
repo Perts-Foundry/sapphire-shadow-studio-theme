@@ -44,7 +44,7 @@
           "settings": {
             "text": "<p>Small-batch, made-to-order pieces, considered down to the last stitch.</p>",
             "width": "fit-content",
-            "max_width": "narrow",
+            "max_width": "none",
             "alignment": "center",
             "type_preset": "rte",
             "font": "var(--font-body--family)",
