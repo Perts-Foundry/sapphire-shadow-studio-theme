@@ -42,7 +42,7 @@
           "type": "text",
           "name": "t:names.text",
           "settings": {
-            "text": "<p>Small-batch, made-to-order pieces, considered down to the last stitch.</p>",
+            "text": "<p>Made to order pieces, considered down to the last stitch</p>",
             "width": "fit-content",
             "max_width": "none",
             "alignment": "center",

@@ -1,33 +1,30 @@
 {% comment %}
   TEMPORARY exploration section.
 
-  Steps the homepage hero headline through a set of typographic treatments so we
-  can preview options live on the PR preview theme. This iteration drills into
-  the chosen big-word layout (small lead "We", oversized cursive "Obsessed",
-  small tagline) and explores permutations of it: focus-word casing/punctuation,
-  three script fonts, tagline treatments, and a couple of flourishes. Manual
-  prev / next controls (arrow buttons, or the Left/Right arrow keys) drive it;
-  there is no auto-advance. It renders no visible box of its own: it only injects
-  the styles and a small script that rewrites the hero <h1> in place, plus a
-  control bar naming the current option.
+  Option 1 (classic script) is locked in: small tracked lead "We", oversized
+  cursive "Obsessed", small tracked tagline "so you don't have to". This
+  iteration keeps that treatment fixed and only varies the VERTICAL SPACING of
+  the three stacked lines so we can compare density (overlapping, tight, roomy,
+  airy, and a couple of asymmetric splits). Manual prev / next controls (arrow
+  buttons, or the Left/Right arrow keys) drive it; there is no auto-advance. It
+  renders no visible box of its own: it only injects the styles and a small
+  script that rewrites the hero <h1> in place, plus a control bar naming the
+  current option.
 
-  Remove this section and its entry in templates/index.json once a direction is
+  Remove this section and its entry in templates/index.json once a spacing is
   chosen. Nothing else references it.
 {% endcomment %}
 
 <style>
   :root {
     --hlr-script: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive;
-    --hlr-brush: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
-    --hlr-callig: "Apple Chancery", "Lucida Calligraphy", "Palatino Linotype", cursive;
   }
 
-  /* Shared big-word layout for every permutation. */
+  /* Locked option-1 look; only the gap/margins change per variant. */
   .hero__content-wrapper h1.hlr {
     display: flex !important;
     flex-direction: column;
     align-items: center;
-    gap: 0.05em;
     line-height: 0.9 !important;
     transition: opacity 0.35s ease;
   }
@@ -42,7 +39,6 @@
     font-weight: 400 !important;
     font-size: clamp(3rem, 12vw, 7rem);
     line-height: 0.85;
-    position: relative;
   }
   .hero__content-wrapper h1.hlr .post {
     font-size: 0.34em;
@@ -51,53 +47,28 @@
     opacity: 0.85;
   }
 
-  /* v4: oversized script, smaller lead */
-  .hero__content-wrapper h1.hlr[data-hlr="v4"] .big {
-    font-size: clamp(3.5rem, 15vw, 9rem);
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v4"] .pre {
-    font-size: 0.32em;
-  }
+  /* Symmetric gap ladder (v1 overlaps via negative margins; gap can't be negative) */
+  .hero__content-wrapper h1.hlr[data-hlr="v1"] { gap: 0; }
+  .hero__content-wrapper h1.hlr[data-hlr="v1"] .big { margin-block: -0.06em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v2"] { gap: 0; }
+  .hero__content-wrapper h1.hlr[data-hlr="v3"] { gap: 0.05em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] { gap: 0.15em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v5"] { gap: 0.3em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v6"] { gap: 0.5em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v7"] { gap: 0.8em; }
 
-  /* v5: underline flourish beneath the script word */
-  .hero__content-wrapper h1.hlr[data-hlr="v5"] .big::after {
-    content: "";
-    position: absolute;
-    inset-inline: 8%;
-    inset-block-end: 0.12em;
-    height: 2px;
-    background: currentColor;
-    opacity: 0.55;
-    border-radius: 2px;
-  }
+  /* Asymmetric splits (gap 0, per-line margins) */
+  .hero__content-wrapper h1.hlr[data-hlr="v8"] { gap: 0; }
+  .hero__content-wrapper h1.hlr[data-hlr="v8"] .big { margin-block-start: 0.05em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v8"] .post { margin-block-start: 0.5em; }
 
-  /* v6: brush-forward script */
-  .hero__content-wrapper h1.hlr[data-hlr="v6"] .big {
-    font-family: var(--hlr-brush) !important;
-  }
+  .hero__content-wrapper h1.hlr[data-hlr="v9"] { gap: 0; }
+  .hero__content-wrapper h1.hlr[data-hlr="v9"] .big { margin-block-start: 0.4em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v9"] .post { margin-block-start: 0.05em; }
 
-  /* v7: formal calligraphy */
-  .hero__content-wrapper h1.hlr[data-hlr="v7"] .big {
-    font-family: var(--hlr-callig) !important;
-  }
-
-  /* v9: soft accent-font italic tagline instead of tracked caps */
-  .hero__content-wrapper h1.hlr[data-hlr="v9"] .post {
-    font-family: var(--font-accent--family) !important;
-    font-style: italic !important;
-    text-transform: none;
-    letter-spacing: 0.02em;
-    font-size: 0.4em;
-    opacity: 0.95;
-  }
-
-  /* v10: signed feel, slight rotation */
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] {
-    gap: 0.12em;
-  }
-  .hero__content-wrapper h1.hlr[data-hlr="v10"] .big {
-    transform: rotate(-3deg);
-  }
+  /* Condensed: tight script line-box, small gap */
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] { gap: 0.1em; }
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] .big { line-height: 0.7; }
 
   /* Manual prev / next control bar naming the current option */
   .hlr-controls {
@@ -151,26 +122,21 @@
 
 <script>
   (function () {
-    function bigWord(pre, word, post) {
-      return "<span class=\"pre\">" + pre + "</span>" +
-             "<span class=\"big\">" + word + "</span>" +
-             "<span class=\"post\">" + post + "</span>";
-    }
-
-    var LEAD = "We";
-    var TAIL = "so you don't have to";
+    var HTML = "<span class=\"pre\">We</span>" +
+               "<span class=\"big\">Obsessed</span>" +
+               "<span class=\"post\">so you don't have to</span>";
 
     var VARIANTS = [
-      { v: "v1", label: "Classic script", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v2", label: "Lowercase focus word", html: bigWord(LEAD, "obsessed", TAIL) },
-      { v: "v3", label: "With a period", html: bigWord(LEAD, "Obsessed.", TAIL) },
-      { v: "v4", label: "Oversized script", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v5", label: "Underlined flourish", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v6", label: "Brush script font", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v7", label: "Calligraphy font", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v8", label: "Contraction: We're obsessed", html: bigWord("We're", "obsessed", TAIL) },
-      { v: "v9", label: "Soft accent tagline", html: bigWord(LEAD, "Obsessed", TAIL) },
-      { v: "v10", label: "Signed / skewed", html: bigWord(LEAD, "Obsessed", TAIL) }
+      { v: "v1", label: "Overlapping (-0.08em)" },
+      { v: "v2", label: "Tight (0)" },
+      { v: "v3", label: "Snug (0.05em)" },
+      { v: "v4", label: "Balanced (0.15em)" },
+      { v: "v5", label: "Roomy (0.3em)" },
+      { v: "v6", label: "Airy (0.5em)" },
+      { v: "v7", label: "Spacious (0.8em)" },
+      { v: "v8", label: "Asymmetric: tight top, open tagline" },
+      { v: "v9", label: "Asymmetric: open top, tight tagline" },
+      { v: "v10", label: "Condensed script line-box" }
     ];
 
     function findHeadline() {
@@ -187,6 +153,7 @@
       }
 
       h1.classList.add("hlr");
+      h1.innerHTML = HTML;
 
       var controls = document.createElement("div");
       controls.className = "hlr-controls";
@@ -194,7 +161,7 @@
       var prev = document.createElement("button");
       prev.type = "button";
       prev.className = "hlr-controls__btn";
-      prev.setAttribute("aria-label", "Previous headline option");
+      prev.setAttribute("aria-label", "Previous spacing option");
       prev.textContent = "‹";
 
       var label = document.createElement("div");
@@ -204,7 +171,7 @@
       var next = document.createElement("button");
       next.type = "button";
       next.className = "hlr-controls__btn";
-      next.setAttribute("aria-label", "Next headline option");
+      next.setAttribute("aria-label", "Next spacing option");
       next.textContent = "›";
 
       controls.appendChild(prev);
@@ -215,12 +182,7 @@
       var i = 0;
       function apply() {
         var opt = VARIANTS[i];
-        h1.style.opacity = "0";
-        window.setTimeout(function () {
-          h1.setAttribute("data-hlr", opt.v);
-          h1.innerHTML = opt.html;
-          h1.style.opacity = "1";
-        }, 180);
+        h1.setAttribute("data-hlr", opt.v);
         label.innerHTML = "<strong>" + (i + 1) + " / " + VARIANTS.length +
           "</strong> · " + opt.label;
       }
