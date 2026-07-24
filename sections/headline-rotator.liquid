@@ -1,0 +1,249 @@
+{% comment %}
+  TEMPORARY exploration section.
+
+  Rotates the homepage hero headline through ten typographic treatments, one
+  every two seconds, so we can preview wording/structure/font options live on
+  the PR preview theme. It renders no visible box of its own: it only injects
+  the styles and a small script that rewrites the hero <h1> in place, plus a
+  caption badge naming the current option.
+
+  Remove this section and its entry in templates/index.json once a direction is
+  chosen. Nothing else references it.
+{% endcomment %}
+
+<style>
+  :root {
+    /* Web-safe cursive stack; renders as a script face on macOS (Snell) and
+       Windows (Segoe Script / Brush Script), falling back to the generic. */
+    --hlr-cursive: "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive;
+  }
+
+  /* The hero <h1> keeps the theme's centering; per-option styling hangs off the
+     data attribute the script sets. !important is used deliberately to beat the
+     theme's h1 presets for the duration of this throwaway demo. */
+  .hero__content-wrapper h1.hlr {
+    transition: opacity 0.35s ease;
+  }
+
+  .hero__content-wrapper h1.hlr .w-obs {
+    font-style: normal;
+  }
+
+  /* v2: cursive accent on "obsessed", inline */
+  .hero__content-wrapper h1.hlr[data-hlr="v2"] .w-obs {
+    font-family: var(--hlr-cursive) !important;
+    font-weight: 400 !important;
+    font-size: 1.35em;
+    line-height: 0.8;
+  }
+
+  /* v3: two-line stack, cursive "obsessed" */
+  .hero__content-wrapper h1.hlr[data-hlr="v3"] {
+    line-height: 1.05 !important;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v3"] .w-obs {
+    font-family: var(--hlr-cursive) !important;
+    font-weight: 400 !important;
+    font-size: 1.3em;
+  }
+
+  /* v4: small "We", huge cursive "Obsessed", small tagline beneath */
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05em;
+    line-height: 0.9 !important;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] .pre {
+    font-size: 0.4em;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] .big {
+    font-family: var(--hlr-cursive) !important;
+    font-weight: 400 !important;
+    font-size: clamp(3rem, 12vw, 7rem);
+    line-height: 0.85;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v4"] .post {
+    font-size: 0.34em;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  /* v5: whole headline in the theme accent font, italic */
+  .hero__content-wrapper h1.hlr[data-hlr="v5"] {
+    font-family: var(--font-accent--family) !important;
+    font-style: italic !important;
+  }
+
+  /* v6: uppercase tracked lead, small lowercase subheading tagline */
+  .hero__content-wrapper h1.hlr[data-hlr="v6"] {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35em;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v6"] .up {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 700 !important;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v6"] .sub {
+    font-family: var(--font-subheading--family) !important;
+    font-size: 0.4em;
+    letter-spacing: 0.14em;
+    text-transform: lowercase;
+    opacity: 0.9;
+  }
+
+  /* v7: mixed weight, bold lead + light italic tail */
+  .hero__content-wrapper h1.hlr[data-hlr="v7"] .strong {
+    font-weight: 800 !important;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v7"] .soft {
+    font-family: var(--font-body--family) !important;
+    font-weight: 300 !important;
+    font-style: italic !important;
+    opacity: 0.92;
+  }
+
+  /* v8: full cursive */
+  .hero__content-wrapper h1.hlr[data-hlr="v8"] {
+    font-family: var(--hlr-cursive) !important;
+    font-weight: 400 !important;
+    font-size: 1.25em;
+    line-height: 0.95 !important;
+  }
+
+  /* v9: elegant body italic, letter-spaced */
+  .hero__content-wrapper h1.hlr[data-hlr="v9"] {
+    font-family: var(--font-body--family) !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.01em;
+  }
+
+  /* v10: editorial two-tone, cursive accent tail on its own line */
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] {
+    line-height: 1.05 !important;
+  }
+  .hero__content-wrapper h1.hlr[data-hlr="v10"] .accent {
+    display: inline-block;
+    margin-block-start: 0.1em;
+    font-family: var(--hlr-cursive) !important;
+    font-weight: 400 !important;
+    font-size: 1.25em;
+  }
+
+  /* Caption badge naming the current option */
+  .hlr-caption {
+    position: fixed;
+    inset-block-end: 24px;
+    inset-inline: 0;
+    margin-inline: auto;
+    width: fit-content;
+    max-width: 90vw;
+    z-index: 2147483000;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(7, 30, 63, 0.9);
+    color: #fff;
+    font-family: var(--font-subheading--family), sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  .hlr-caption strong {
+    font-weight: 700;
+  }
+</style>
+
+<script>
+  (function () {
+    var INTERVAL = 2000;
+
+    var VARIANTS = [
+      { v: "v1", label: "Baseline heading",
+        html: "We obsessed, so you don't have to" },
+      { v: "v2", label: "Cursive accent on “obsessed”",
+        html: "We <span class=\"w-obs\">obsessed</span>, so you don't have to" },
+      { v: "v3", label: "Two-line stack, cursive accent",
+        html: "We <span class=\"w-obs\">obsessed</span>,<br>so you don't have to" },
+      { v: "v4", label: "Big cursive word focus",
+        html: "<span class=\"pre\">We</span><span class=\"big\">Obsessed</span><span class=\"post\">so you don't have to</span>" },
+      { v: "v5", label: "Accent font, italic",
+        html: "We obsessed, so you don't have to" },
+      { v: "v6", label: "Uppercase tracked + small tagline",
+        html: "<span class=\"up\">We Obsessed</span><span class=\"sub\">so you don't have to</span>" },
+      { v: "v7", label: "Mixed weight",
+        html: "<span class=\"strong\">We obsessed,</span> <span class=\"soft\">so you don't have to</span>" },
+      { v: "v8", label: "Full cursive",
+        html: "We obsessed, so you don't have to" },
+      { v: "v9", label: "Elegant body italic",
+        html: "We obsessed, so you don't have to" },
+      { v: "v10", label: "Editorial two-tone",
+        html: "We obsessed,<span class=\"accent\">so you don't have to</span>" }
+    ];
+
+    function findHeadline() {
+      return document.querySelector(".hero__content-wrapper h1") ||
+             document.querySelector(".hero h1") ||
+             document.querySelector("h1");
+    }
+
+    function start() {
+      var h1 = findHeadline();
+      if (!h1) {
+        window.setTimeout(start, 300);
+        return;
+      }
+
+      h1.classList.add("hlr");
+
+      var caption = document.createElement("div");
+      caption.className = "hlr-caption";
+      document.body.appendChild(caption);
+
+      var i = 0;
+      function apply() {
+        var opt = VARIANTS[i];
+        h1.style.opacity = "0";
+        window.setTimeout(function () {
+          h1.setAttribute("data-hlr", opt.v);
+          h1.innerHTML = opt.html;
+          h1.style.opacity = "1";
+        }, 180);
+        caption.innerHTML = "<strong>" + (i + 1) + " / " + VARIANTS.length +
+          "</strong> · " + opt.label;
+        i = (i + 1) % VARIANTS.length;
+      }
+
+      apply();
+      window.setInterval(apply, INTERVAL);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start);
+    } else {
+      start();
+    }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Headline rotator (temp)",
+  "settings": [],
+  "presets": [
+    {
+      "name": "Headline rotator (temp)"
+    }
+  ]
+}
+{% endschema %}

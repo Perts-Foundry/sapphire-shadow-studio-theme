@@ -119,6 +119,10 @@
         "padding-block-end": 56
       }
     },
+    "headline_rotator_tmp": {
+      "type": "headline-rotator",
+      "settings": {}
+    },
     "product_list_fa6P9H": {
       "type": "product-list",
       "blocks": {
@@ -542,6 +546,7 @@
   },
   "order": [
     "hero_jVaWmY",
+    "headline_rotator_tmp",
     "product_list_fa6P9H",
     "editorial_Qw7Rt2",
     "closing_Zx4Vn8"
