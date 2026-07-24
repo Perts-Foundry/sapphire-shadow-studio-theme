@@ -16,7 +16,7 @@
           "type": "text",
           "name": "t:names.heading",
           "settings": {
-            "text": "<h1>Embroidered for the work you do</h1>",
+            "text": "<h1>We obsessed, so you don't have to</h1>",
             "width": "fit-content",
             "max_width": "normal",
             "alignment": "center",
@@ -42,7 +42,7 @@
           "type": "text",
           "name": "t:names.text",
           "settings": {
-            "text": "<p>Made-to-order, small-batch pieces, embroidered by hand.</p>",
+            "text": "<p>Small-batch, made-to-order pieces, considered down to the last stitch.</p>",
             "width": "fit-content",
             "max_width": "narrow",
             "alignment": "center",
