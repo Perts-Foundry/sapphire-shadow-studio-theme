@@ -3,11 +3,9 @@
   (SIL OFL, see assets/dancing-script.license.txt) is an open substitute for the
   proprietary Brush Script MT, served from the theme's own Shopify CDN assets
   with no external font host. It is a variable face (weight 400 to 700); the
-  lockup renders it at 600 for a heavier brush stroke. Declared here but only
-  downloaded when .hero-lockup__word actually renders (the homepage), thanks to
-  lazy @font-face loading; font-display: swap keeps it from blocking paint.
+  lockup renders it at 600 for a heavier brush stroke.
 {% endcomment %}
-<style>
+{% style %}
   @font-face {
     font-family: "Dancing Script";
     src: url("{{ 'dancing-script.woff2' | asset_url }}") format("woff2");
@@ -15,7 +13,7 @@
     font-style: normal;
     font-display: swap;
   }
-</style>
+{% endstyle %}
 
 {% liquid
   assign media_count = 0

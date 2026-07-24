@@ -78,6 +78,82 @@
   </div>
 </div>
 
+{% stylesheet %}
+  /* settings.transition_to_main_product wraps each card in <product-card-link>,
+     which has no default display and so breaks the height-equalization rule on
+     .product-card (:is(.product-grid__item, .resource-list__item) .product-card
+     in base.css). Invisible on transparent cards; visible as ragged bottoms once
+     cards paint their own surface. */
+  .resource-list__item > product-card-link {
+    display: block;
+    height: 100%;
+  }
+
+  @media screen and (min-width: 750px) {
+    /*
+     * Center a 3-column grid's orphaned last row (this section renders 5
+     * products: 3 + 2). The theme's own auto-column rules in base.css
+     * (:has(.resource-list__item:first-child:nth-last-child(N)) inside
+     * .resource-list--grid) would normally handle this, but they only fire
+     * inside @container resource-list, and only .block-resource-list declares
+     * that container. This section's grid has no named container, so those
+     * rules are inert here and the grid stays a flat repeat(3, 1fr).
+     *
+     * Fake six equal tracks with every item spanning 2 instead. Card width is
+     * unchanged: with t = (W - 5g)/6, an item spanning 2 tracks measures
+     * 2t + g = (W - 2g)/3, identical to a real 3-column track. Only the last
+     * two items get pinned to tracks 2-4 and 4-6, which centers the row.
+     */
+    .resource-list--grid[style*='--resource-list-columns: repeat(3, 1fr)']:has(
+        .resource-list__item:first-child:nth-last-child(5)
+      ) {
+      grid-template-columns: repeat(6, 1fr);
+
+      & .resource-list__item {
+        /* auto/span, not bare `span 2`: bare span expands to
+           grid-column-start: span 2; grid-column-end: auto, so overriding
+           grid-column-start below would leave end: auto and collapse the
+           item to a single track. */
+        grid-column: auto / span 2;
+      }
+
+      & .resource-list__item:nth-last-child(2) {
+        grid-column-start: 2;
+      }
+
+      & .resource-list__item:last-child {
+        grid-column-start: 4;
+      }
+    }
+  }
+
+  /*
+   * Hover shadow: the theme budgeted for this (--hover-shadow-color is
+   * declared in base.css and referenced nowhere; the carousel's slide padding
+   * is commented as reserving room for a "15px spread with -5px offset"
+   * shadow) but never shipped it. Goes on .product-card__content, not
+   * .product-card: that element has no radius and no background of its own,
+   * so a shadow there would be square and invisible. Scoped to cards that
+   * paint their own surface (color-scheme-* class from inherit_color_scheme:
+   * false) so it doesn't appear on transparent, inherited-scheme cards.
+   */
+  .product-card__content[class*='color-scheme-'] {
+    transition: box-shadow var(--hover-transition-duration) var(--hover-transition-timing);
+  }
+
+  @media (any-pointer: fine) {
+    .product-card:hover .product-card__content[class*='color-scheme-'] {
+      box-shadow: 0 4px 16px rgb(var(--color-shadow-rgb) / var(--opacity-15));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .product-card__content[class*='color-scheme-'] {
+      transition: none;
+    }
+  }
+{% endstylesheet %}
+
 {% schema %}
 {
   "name": "t:names.product_list",

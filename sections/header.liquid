@@ -497,12 +497,11 @@
   /*
    * Pinning the header group as a block box (rule above) promotes it to its own
    * compositing layer, whose bottom edge can round to a device-pixel boundary and
-   * leave a 1px hairline of the white page background between the header and the
-   * content below it. Overlap the following content by 1px so the header sits
-   * flush over it (the header is stacked above, so the overlap is not visible) and
-   * the seam closes. Scoped to the same always-sticky + announcement-bar setup as
-   * the pinning rule; the transparent-header path offsets content itself, so skip
-   * it there.
+   * leave a hairline of the white page background between the header and the
+   * content below it. Overlap the following content so the header sits flush over
+   * it; the header is stacked above, so the overlap is not visible. Scoped to the
+   * same always-sticky + announcement-bar setup as the pinning rule; the
+   * transparent-header path offsets content itself, so skip it there.
    */
   #header-group:has(#header-component[sticky='always']):has(.announcement-bar):not(:has(.header[transparent])) {
     margin-block-end: -2px;
