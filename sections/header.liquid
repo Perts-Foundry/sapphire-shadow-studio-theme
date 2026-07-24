@@ -495,15 +495,17 @@
   }
 
   /*
-   * Pinning the header group as a block box (rule above) can leave a 1px seam of
-   * the page background between the header and the first content section, where
-   * the section begins on a fractional-pixel boundary. Pull that first section up
-   * by 1px so it sits flush under the (higher-stacked) header and the seam closes.
-   * Same always-sticky + announcement-bar scope as the pinning rule; skipped when
-   * the header is transparent, which already offsets the first section itself.
+   * Pinning the header group as a block box (rule above) promotes it to its own
+   * compositing layer, whose bottom edge can round to a device-pixel boundary and
+   * leave a 1px hairline of the white page background between the header and the
+   * content below it. Overlap the following content by 1px so the header sits
+   * flush over it (the header is stacked above, so the overlap is not visible) and
+   * the seam closes. Scoped to the same always-sticky + announcement-bar setup as
+   * the pinning rule; the transparent-header path offsets content itself, so skip
+   * it there.
    */
-  body:has(#header-group:has(#header-component[sticky='always']):has(.announcement-bar)):not(:has(.header[transparent])) .content-for-layout > .shopify-section:first-child {
-    margin-block-start: -1px;
+  #header-group:has(#header-component[sticky='always']):has(.announcement-bar):not(:has(.header[transparent])) {
+    margin-block-end: -2px;
   }
 
   .header[data-sticky-state] {
