@@ -15,6 +15,10 @@ import { SlideshowSelectEvent } from '@theme/events';
 // The threshold for determining visibility of slides.
 const SLIDE_VISIBLITY_THRESHOLD = 0.7;
 
+// Touch screens leave :hover (and an unmatched mouseenter) stuck on the last-tapped
+// element, so hover-based autoplay suspension must only apply on hover-capable devices.
+const mediaQueryHover = matchMedia('(hover: hover)');
+
 /**
  * Slideshow custom element that allows sliding between content.
  *
@@ -269,7 +273,7 @@ export class Slideshow extends Component {
     this.paused = false;
 
     this.#interval = setInterval(() => {
-      if (this.matches(':hover') || document.hidden) return;
+      if ((mediaQueryHover.matches && this.matches(':hover')) || document.hidden) return;
 
       this.next();
     }, interval);
@@ -476,8 +480,10 @@ export class Slideshow extends Component {
 
     scroller.addEventListener('mousedown', this.#handleMouseDown);
 
-    this.addEventListener('mouseenter', this.suspend);
-    this.addEventListener('mouseleave', this.resume);
+    if (mediaQueryHover.matches) {
+      this.addEventListener('mouseenter', this.suspend);
+      this.addEventListener('mouseleave', this.resume);
+    }
     this.addEventListener('pointerenter', this.#handlePointerEnter);
     document.addEventListener('visibilitychange', this.#handleVisibilityChange);
 
@@ -652,7 +658,7 @@ export class Slideshow extends Component {
           return;
         }
 
-        this.pause();
+        this.suspend();
         this.setAttribute('dragging', '');
       }
 
@@ -757,7 +763,7 @@ export class Slideshow extends Component {
   /**
    * Pause the slideshow when the page is hidden.
    */
-  #handleVisibilityChange = () => (document.hidden ? this.pause() : this.resume());
+  #handleVisibilityChange = () => (document.hidden ? this.suspend() : this.resume());
 
   #updateControlsVisibility() {
     if (!this.hasAttribute('auto-hide-controls')) return;
