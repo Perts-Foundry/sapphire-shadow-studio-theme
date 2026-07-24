@@ -1,23 +1,76 @@
 {% comment %}
   TEMPORARY exploration section.
 
-  Yesteryear is the chosen face; this now cycles the hero lockup's "Obsessed"
-  word through faux-bold TREATMENTS of Yesteryear (stroke-based and shadow-based,
-  light to heavy, plus a bigger+bold option) so we can dial in the weight that
-  best matches the (proprietary, unembeddable) Brush Script MT look. Manual
-  prev / next controls (arrow buttons, or the Left/Right arrow keys) drive it;
-  there is no auto-advance. It injects the candidate @font-face rules plus a
-  small script that restyles .hero-lockup__word in place, and a control bar
-  naming the current treatment.
+  Cycles the hero lockup's "Obsessed" word through 50 open-licensed (OFL /
+  Apache-2.0, all from Google Fonts) cursive/script faces so we can compare them
+  live on the PR preview and pick the closest to the (proprietary, unembeddable)
+  Brush Script MT look. The candidates are grouped in the label: [A] brush /
+  bold informal (closest to Brush Script MT), [B] rounded / friendly, [C]
+  flowing / signature, [D] elegant / formal calligraphy. Each candidate is a
+  tiny text-subset woff2 (glyphs for "Obsessed" only), staged as
+  assets/tmp-<slug>.woff2.
 
-  When a treatment is chosen: bake it into .hero-lockup__word in hero.liquid,
-  delete this section and its templates/index.json entry, and sweep the
-  assets/tmp-*.woff2 files (keeping only the chosen face). Nothing else
-  references this.
+  Manual prev / next controls (arrow buttons, or the Left/Right arrow keys)
+  drive it; there is no auto-advance. This pass shows each raw face with no
+  faux-bold; once a face is chosen we bring weight-tuning back for that one.
+
+  When a face is chosen: fetch its full (non-subset) woff2, wire it into
+  .hero-lockup__word in hero.liquid with its OFL/Apache license in assets/,
+  delete this section and its templates/index.json entry, and sweep all
+  assets/tmp-*.woff2. Nothing else references this.
 {% endcomment %}
 
 <style>
+  @font-face { font-family: "Damion"; src: url("{{ 'tmp-damion.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Norican"; src: url("{{ 'tmp-norican.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Kaushan Script"; src: url("{{ 'tmp-kaushan.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Yellowtail"; src: url("{{ 'tmp-yellowtail.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Satisfy"; src: url("{{ 'tmp-satisfy.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Pacifico"; src: url("{{ 'tmp-pacifico.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Courgette"; src: url("{{ 'tmp-courgette.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Grand Hotel"; src: url("{{ 'tmp-grand-hotel.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Merienda"; src: url("{{ 'tmp-merienda.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Caveat Brush"; src: url("{{ 'tmp-caveat-brush.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Fasthand"; src: url("{{ 'tmp-fasthand.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Comforter Brush"; src: url("{{ 'tmp-comforter-brush.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Water Brush"; src: url("{{ 'tmp-water-brush.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Vujahday Script"; src: url("{{ 'tmp-vujahday.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Sriracha"; src: url("{{ 'tmp-sriracha.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Sassy Frass"; src: url("{{ 'tmp-sassy-frass.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Lobster Two"; src: url("{{ 'tmp-lobster-two.woff2' | asset_url }}") format("woff2"); font-display: swap; }
   @font-face { font-family: "Yesteryear"; src: url("{{ 'tmp-yesteryear.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Cookie"; src: url("{{ 'tmp-cookie.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Sofia"; src: url("{{ 'tmp-sofia.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Niconne"; src: url("{{ 'tmp-niconne.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Marck Script"; src: url("{{ 'tmp-marck-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Bad Script"; src: url("{{ 'tmp-bad-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Kristi"; src: url("{{ 'tmp-kristi.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Handlee"; src: url("{{ 'tmp-handlee.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Gochi Hand"; src: url("{{ 'tmp-gochi-hand.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Sue Ellen Francisco"; src: url("{{ 'tmp-sue-ellen-francisco.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Dancing Script"; src: url("{{ 'tmp-dancing-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Great Vibes"; src: url("{{ 'tmp-great-vibes.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Alex Brush"; src: url("{{ 'tmp-alex-brush.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Allura"; src: url("{{ 'tmp-allura.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Sacramento"; src: url("{{ 'tmp-sacramento.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Parisienne"; src: url("{{ 'tmp-parisienne.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Rochester"; src: url("{{ 'tmp-rochester.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Clicker Script"; src: url("{{ 'tmp-clicker-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Mr Dafoe"; src: url("{{ 'tmp-mr-dafoe.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Rouge Script"; src: url("{{ 'tmp-rouge-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Style Script"; src: url("{{ 'tmp-style-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Moon Dance"; src: url("{{ 'tmp-moon-dance.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Estonia"; src: url("{{ 'tmp-estonia.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Tangerine"; src: url("{{ 'tmp-tangerine.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Pinyon Script"; src: url("{{ 'tmp-pinyon-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Petit Formal Script"; src: url("{{ 'tmp-petit-formal-script.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Italianno"; src: url("{{ 'tmp-italianno.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Herr Von Muellerhoff"; src: url("{{ 'tmp-herr-von-muellerhoff.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Mrs Saint Delafield"; src: url("{{ 'tmp-mrs-saint-delafield.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Ephesis"; src: url("{{ 'tmp-ephesis.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Bonheur Royale"; src: url("{{ 'tmp-bonheur-royale.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Corinthia"; src: url("{{ 'tmp-corinthia.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "WindSong"; src: url("{{ 'tmp-windsong.woff2' | asset_url }}") format("woff2"); font-display: swap; }
 
   .hlrf-controls {
     position: fixed;
@@ -63,28 +116,57 @@
 
 <script>
   (function () {
-    // Multi-direction same-colour text-shadow: a faux-bold that thickens the
-    // glyph evenly. v is the spread in em (scales with the word's font-size).
-    function shadowBold(v) {
-      var d = v + "em";
-      var dd = (v * 0.72).toFixed(4) + "em";
-      return [
-        d + " 0", "-" + d + " 0", "0 " + d, "0 -" + d,
-        dd + " " + dd, "-" + dd + " -" + dd, dd + " -" + dd, "-" + dd + " " + dd
-      ].map(function (o) { return o + " currentColor"; }).join(", ");
-    }
-
-    // All variants render Yesteryear; they differ only in the faux-bold
-    // treatment (stroke = -webkit-text-stroke width; shadow = shadowBold spread)
-    // and size (em off the 2em base).
     var FONTS = [
-      { label: "1. Regular (no bold)", stroke: 0, shadow: "", size: "2em" },
-      { label: "2. Stroke light (0.008em)", stroke: "0.008em", shadow: "", size: "2em" },
-      { label: "3. Stroke medium (0.014em)", stroke: "0.014em", shadow: "", size: "2em" },
-      { label: "4. Stroke heavy (0.022em)", stroke: "0.022em", shadow: "", size: "2em" },
-      { label: "5. Shadow medium (0.012em)", stroke: 0, shadow: shadowBold(0.012), size: "2em" },
-      { label: "6. Shadow heavy (0.018em)", stroke: 0, shadow: shadowBold(0.018), size: "2em" },
-      { label: "7. Bigger + stroke (2.2em, 0.014em)", stroke: "0.014em", shadow: "", size: "2.2em" }
+      { label: "1. Damion [A]", family: "\"Damion\", cursive" },
+      { label: "2. Norican [A]", family: "\"Norican\", cursive" },
+      { label: "3. Kaushan Script [A]", family: "\"Kaushan Script\", cursive" },
+      { label: "4. Yellowtail [A]", family: "\"Yellowtail\", cursive" },
+      { label: "5. Satisfy [A]", family: "\"Satisfy\", cursive" },
+      { label: "6. Pacifico [A]", family: "\"Pacifico\", cursive" },
+      { label: "7. Courgette [A]", family: "\"Courgette\", cursive" },
+      { label: "8. Grand Hotel [A]", family: "\"Grand Hotel\", cursive" },
+      { label: "9. Merienda [A]", family: "\"Merienda\", cursive" },
+      { label: "10. Caveat Brush [A]", family: "\"Caveat Brush\", cursive" },
+      { label: "11. Fasthand [A]", family: "\"Fasthand\", cursive" },
+      { label: "12. Comforter Brush [A]", family: "\"Comforter Brush\", cursive" },
+      { label: "13. Water Brush [A]", family: "\"Water Brush\", cursive" },
+      { label: "14. Vujahday Script [A]", family: "\"Vujahday Script\", cursive" },
+      { label: "15. Sriracha [A]", family: "\"Sriracha\", cursive" },
+      { label: "16. Sassy Frass [A]", family: "\"Sassy Frass\", cursive" },
+      { label: "17. Lobster Two [A]", family: "\"Lobster Two\", cursive" },
+      { label: "18. Yesteryear [B]", family: "\"Yesteryear\", cursive" },
+      { label: "19. Cookie [B]", family: "\"Cookie\", cursive" },
+      { label: "20. Sofia [B]", family: "\"Sofia\", cursive" },
+      { label: "21. Niconne [B]", family: "\"Niconne\", cursive" },
+      { label: "22. Marck Script [B]", family: "\"Marck Script\", cursive" },
+      { label: "23. Bad Script [B]", family: "\"Bad Script\", cursive" },
+      { label: "24. Kristi [B]", family: "\"Kristi\", cursive" },
+      { label: "25. Handlee [B]", family: "\"Handlee\", cursive" },
+      { label: "26. Gochi Hand [B]", family: "\"Gochi Hand\", cursive" },
+      { label: "27. Sue Ellen Francisco [B]", family: "\"Sue Ellen Francisco\", cursive" },
+      { label: "28. Dancing Script [C]", family: "\"Dancing Script\", cursive" },
+      { label: "29. Great Vibes [C]", family: "\"Great Vibes\", cursive" },
+      { label: "30. Alex Brush [C]", family: "\"Alex Brush\", cursive" },
+      { label: "31. Allura [C]", family: "\"Allura\", cursive" },
+      { label: "32. Sacramento [C]", family: "\"Sacramento\", cursive" },
+      { label: "33. Parisienne [C]", family: "\"Parisienne\", cursive" },
+      { label: "34. Rochester [C]", family: "\"Rochester\", cursive" },
+      { label: "35. Clicker Script [C]", family: "\"Clicker Script\", cursive" },
+      { label: "36. Mr Dafoe [C]", family: "\"Mr Dafoe\", cursive" },
+      { label: "37. Rouge Script [C]", family: "\"Rouge Script\", cursive" },
+      { label: "38. Style Script [C]", family: "\"Style Script\", cursive" },
+      { label: "39. Moon Dance [C]", family: "\"Moon Dance\", cursive" },
+      { label: "40. Estonia [C]", family: "\"Estonia\", cursive" },
+      { label: "41. Tangerine [D]", family: "\"Tangerine\", cursive" },
+      { label: "42. Pinyon Script [D]", family: "\"Pinyon Script\", cursive" },
+      { label: "43. Petit Formal Script [D]", family: "\"Petit Formal Script\", cursive" },
+      { label: "44. Italianno [D]", family: "\"Italianno\", cursive" },
+      { label: "45. Herr Von Muellerhoff [D]", family: "\"Herr Von Muellerhoff\", cursive" },
+      { label: "46. Mrs Saint Delafield [D]", family: "\"Mrs Saint Delafield\", cursive" },
+      { label: "47. Ephesis [D]", family: "\"Ephesis\", cursive" },
+      { label: "48. Bonheur Royale [D]", family: "\"Bonheur Royale\", cursive" },
+      { label: "49. Corinthia [D]", family: "\"Corinthia\", cursive" },
+      { label: "50. WindSong [D]", family: "\"WindSong\", cursive" }
     ];
 
     function findWord() {
@@ -125,10 +207,11 @@
       var i = 0;
       function apply() {
         var opt = FONTS[i];
-        word.style.fontFamily = "\"Yesteryear\", cursive";
-        word.style.fontSize = opt.size;
-        word.style.webkitTextStroke = opt.stroke ? opt.stroke + " currentColor" : "";
-        word.style.textShadow = opt.shadow;
+        // Raw face only this pass: clear any faux-bold and reset size.
+        word.style.fontFamily = opt.family;
+        word.style.fontSize = "2em";
+        word.style.webkitTextStroke = "";
+        word.style.textShadow = "";
         label.innerHTML = "<strong>" + (i + 1) + " / " + FONTS.length + "</strong> · " + opt.label;
       }
       function go(step) {
