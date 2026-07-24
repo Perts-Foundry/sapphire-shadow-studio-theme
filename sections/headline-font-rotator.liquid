@@ -1,0 +1,155 @@
+{% comment %}
+  TEMPORARY exploration section.
+
+  Cycles the font of the hero lockup's "Obsessed" word through a set of
+  open-licensed brush/script candidates so we can compare them live on the PR
+  preview and pick the closest to the (proprietary, unembeddable) Brush Script
+  MT look. Manual prev / next controls (arrow buttons, or the Left/Right arrow
+  keys) drive it; there is no auto-advance. It only injects @font-face rules for
+  the candidates plus a small script that restyles .hero-lockup__word in place,
+  and a control bar naming the current font.
+
+  When a font is chosen: keep that one wired in hero.liquid, delete this section
+  and its templates/index.json entry, and sweep the assets/tmp-*.woff2 files
+  (plus the unused permanent one). Nothing else references this.
+{% endcomment %}
+
+<style>
+  @font-face { font-family: "Damion"; src: url("{{ 'tmp-damion.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Norican"; src: url("{{ 'tmp-norican.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Kaushan Script"; src: url("{{ 'tmp-kaushan.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Courgette"; src: url("{{ 'tmp-courgette.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Pacifico"; src: url("{{ 'tmp-pacifico.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Yesteryear"; src: url("{{ 'tmp-yesteryear.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+  @font-face { font-family: "Satisfy"; src: url("{{ 'tmp-satisfy.woff2' | asset_url }}") format("woff2"); font-display: swap; }
+
+  .hlrf-controls {
+    position: fixed;
+    inset-block-end: 24px;
+    inset-inline: 0;
+    margin-inline: auto;
+    width: fit-content;
+    max-width: 92vw;
+    z-index: 2147483000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .hlrf-controls__btn {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(7, 30, 63, 0.92);
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  .hlrf-controls__btn:hover { background: rgba(7, 30, 63, 1); }
+  .hlrf-controls__btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .hlrf-controls__label {
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(7, 30, 63, 0.92);
+    color: #fff;
+    font-family: var(--font-subheading--family), sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  .hlrf-controls__label strong { font-weight: 700; }
+</style>
+
+<script>
+  (function () {
+    var FONTS = [
+      { label: "A. Damion (recommended)", family: "\"Damion\", cursive" },
+      { label: "B. Norican", family: "\"Norican\", cursive" },
+      { label: "C. Kaushan Script", family: "\"Kaushan Script\", cursive" },
+      { label: "D. Courgette", family: "\"Courgette\", cursive" },
+      { label: "E. Pacifico", family: "\"Pacifico\", cursive" },
+      { label: "F. Yesteryear", family: "\"Yesteryear\", cursive" },
+      { label: "G. Satisfy", family: "\"Satisfy\", cursive" },
+      { label: "H. Yellowtail (current)", family: "\"Yellowtail\", cursive" }
+    ];
+
+    function findWord() {
+      return document.querySelector(".hero-lockup__word");
+    }
+
+    function start() {
+      var word = findWord();
+      if (!word) {
+        window.setTimeout(start, 300);
+        return;
+      }
+
+      var controls = document.createElement("div");
+      controls.className = "hlrf-controls";
+
+      var prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "hlrf-controls__btn";
+      prev.setAttribute("aria-label", "Previous font");
+      prev.textContent = "‹";
+
+      var label = document.createElement("div");
+      label.className = "hlrf-controls__label";
+      label.setAttribute("aria-live", "polite");
+
+      var next = document.createElement("button");
+      next.type = "button";
+      next.className = "hlrf-controls__btn";
+      next.setAttribute("aria-label", "Next font");
+      next.textContent = "›";
+
+      controls.appendChild(prev);
+      controls.appendChild(label);
+      controls.appendChild(next);
+      document.body.appendChild(controls);
+
+      var i = 0;
+      function apply() {
+        var opt = FONTS[i];
+        word.style.fontFamily = opt.family;
+        label.innerHTML = "<strong>" + (i + 1) + " / " + FONTS.length + "</strong> · " + opt.label;
+      }
+      function go(step) {
+        i = (i + step + FONTS.length) % FONTS.length;
+        apply();
+      }
+
+      prev.addEventListener("click", function () { go(-1); });
+      next.addEventListener("click", function () { go(1); });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowLeft") { go(-1); }
+        else if (event.key === "ArrowRight") { go(1); }
+      });
+
+      apply();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start);
+    } else {
+      start();
+    }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Font rotator (temp)",
+  "settings": [],
+  "presets": [
+    {
+      "name": "Font rotator (temp)"
+    }
+  ]
+}
+{% endschema %}
