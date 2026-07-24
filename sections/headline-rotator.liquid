@@ -37,7 +37,10 @@
   .hero__content-wrapper h1.hlr .big {
     font-family: var(--hlr-script) !important;
     font-weight: 400 !important;
-    font-size: clamp(3rem, 12vw, 7rem);
+    /* Sized in em off the h1's (responsive) base so the whole lockup scales as
+       one unit; keeps "Obsessed" proportional to the lead/tagline at every
+       width instead of dropping to a viewport-based floor on mobile. */
+    font-size: 2.4em;
     line-height: 0.85;
   }
   .hero__content-wrapper h1.hlr .post {
