@@ -350,6 +350,8 @@
         "mobile_card_size": "60cqw",
         "columns_gap": 20,
         "rows_gap": 32,
+        "autoplay": true,
+        "autoplay_speed": 5,
         "icons_style": "arrow",
         "icons_shape": "circle",
         "section_width": "page-width",

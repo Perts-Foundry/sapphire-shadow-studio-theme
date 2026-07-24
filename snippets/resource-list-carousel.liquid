@@ -26,6 +26,16 @@
   if settings.icons_style != 'none'
     assign show_arrows = true
   endif
+
+  # Normalize to an explicit boolean: sections that don't define this setting
+  # (collection-list, main-collection-list, featured-blog-posts) pass settings.autoplay
+  # as nil, which is not `== false`, so it would otherwise fall through to
+  # 'slideshow''s infinite-by-default behavior below.
+  assign autoplay = false
+  if settings.autoplay == true
+    assign autoplay = true
+  endif
+  assign autoplay_speed = settings.autoplay_speed | default: 4
 %}
 
 {% capture slides %}
@@ -50,8 +60,10 @@
     icon_style: settings.icons_style,
     icon_shape: settings.icons_shape,
     auto_hide_controls: false,
-    infinite: false,
+    infinite: autoplay,
     initial_slide: 0,
+    autoplay: autoplay,
+    autoplay_speed: autoplay_speed,
     slide_count: slide_count,
     slideshow_gutters: slideshow_gutters
   %}
