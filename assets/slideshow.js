@@ -187,8 +187,15 @@ export class Slideshow extends Component {
       const targetSlide = slides[index];
       if (!targetSlide || !currentSlide) return;
 
-      // Create a placeholder in the original DOM position of targetSlide
+      // Mandatory snap re-aligns instantly when slides reorder, causing a visible
+      // hop; keep it off until the DOM is restored (same pattern as dragging).
+      this.#scroll.snap = false;
+
+      // Create a placeholder in the original DOM position of targetSlide.
+      // Size it explicitly: a bare slideshow-slide falls back to an inherited
+      // --slide-width that can differ from the actual slide, shifting the layout.
       const placeholder = document.createElement('slideshow-slide');
+      placeholder.style.width = `${targetSlide.getBoundingClientRect().width}px`;
       targetSlide.before(placeholder);
 
       // Decide whether targetSlide goes before or after currentSlide
@@ -211,6 +218,7 @@ export class Slideshow extends Component {
 
         // Instantly scroll to the target slide as its position will have changed
         this.#scroll.to(targetSlide, { instant: true });
+        this.#scroll.snap = true;
       });
     }
 
