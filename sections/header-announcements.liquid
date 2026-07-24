@@ -41,6 +41,47 @@
     border-block-end: var(--border-bottom-width) solid var(--color-border);
   }
 
+  /*
+   * Animated brand gradient background. Overrides the flat color-scheme fill
+   * with a slow-rotating multi-stop gradient. Every stop stays dark enough to
+   * keep the white foreground text legible (min contrast well above 4.5:1).
+   * The double class outranks the .color-<scheme> background-color rule
+   * regardless of stylesheet source order.
+   */
+  .announcement-bar.section {
+    background-image: linear-gradient(
+      120deg,
+      #071e3f,
+      #10346b,
+      #1b2a6b,
+      #0a3d52,
+      #241a52,
+      #071e3f
+    );
+    background-size: 300% 300%;
+    animation: announcement-bar-gradient 18s ease infinite;
+  }
+
+  @keyframes announcement-bar-gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .announcement-bar.section {
+      animation: none;
+    }
+  }
+
   .announcement-bar__slider {
     display: flex;
     flex-direction: row;
@@ -117,6 +158,14 @@
   .announcement-bar__link {
     position: absolute;
     inset: 0;
+    cursor: pointer;
+  }
+
+  /* The anchor label is visually hidden, so give the anchor itself a visible
+     focus ring for keyboard users. */
+  .announcement-bar__link:focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: -4px;
   }
 {% endstylesheet %}
 
