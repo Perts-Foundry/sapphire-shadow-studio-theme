@@ -1,27 +1,23 @@
 {% comment %}
   TEMPORARY exploration section.
 
-  Cycles the font of the hero lockup's "Obsessed" word through a set of
-  open-licensed brush/script candidates so we can compare them live on the PR
-  preview and pick the closest to the (proprietary, unembeddable) Brush Script
-  MT look. Manual prev / next controls (arrow buttons, or the Left/Right arrow
-  keys) drive it; there is no auto-advance. It only injects @font-face rules for
-  the candidates plus a small script that restyles .hero-lockup__word in place,
-  and a control bar naming the current font.
+  Yesteryear is the chosen face; this now cycles the hero lockup's "Obsessed"
+  word through faux-bold TREATMENTS of Yesteryear (stroke-based and shadow-based,
+  light to heavy, plus a bigger+bold option) so we can dial in the weight that
+  best matches the (proprietary, unembeddable) Brush Script MT look. Manual
+  prev / next controls (arrow buttons, or the Left/Right arrow keys) drive it;
+  there is no auto-advance. It injects the candidate @font-face rules plus a
+  small script that restyles .hero-lockup__word in place, and a control bar
+  naming the current treatment.
 
-  When a font is chosen: keep that one wired in hero.liquid, delete this section
-  and its templates/index.json entry, and sweep the assets/tmp-*.woff2 files
-  (plus the unused permanent one). Nothing else references this.
+  When a treatment is chosen: bake it into .hero-lockup__word in hero.liquid,
+  delete this section and its templates/index.json entry, and sweep the
+  assets/tmp-*.woff2 files (keeping only the chosen face). Nothing else
+  references this.
 {% endcomment %}
 
 <style>
-  @font-face { font-family: "Damion"; src: url("{{ 'tmp-damion.woff2' | asset_url }}") format("woff2"); font-display: swap; }
-  @font-face { font-family: "Norican"; src: url("{{ 'tmp-norican.woff2' | asset_url }}") format("woff2"); font-display: swap; }
-  @font-face { font-family: "Kaushan Script"; src: url("{{ 'tmp-kaushan.woff2' | asset_url }}") format("woff2"); font-display: swap; }
-  @font-face { font-family: "Courgette"; src: url("{{ 'tmp-courgette.woff2' | asset_url }}") format("woff2"); font-display: swap; }
-  @font-face { font-family: "Pacifico"; src: url("{{ 'tmp-pacifico.woff2' | asset_url }}") format("woff2"); font-display: swap; }
   @font-face { font-family: "Yesteryear"; src: url("{{ 'tmp-yesteryear.woff2' | asset_url }}") format("woff2"); font-display: swap; }
-  @font-face { font-family: "Satisfy"; src: url("{{ 'tmp-satisfy.woff2' | asset_url }}") format("woff2"); font-display: swap; }
 
   .hlrf-controls {
     position: fixed;
@@ -67,15 +63,28 @@
 
 <script>
   (function () {
+    // Multi-direction same-colour text-shadow: a faux-bold that thickens the
+    // glyph evenly. v is the spread in em (scales with the word's font-size).
+    function shadowBold(v) {
+      var d = v + "em";
+      var dd = (v * 0.72).toFixed(4) + "em";
+      return [
+        d + " 0", "-" + d + " 0", "0 " + d, "0 -" + d,
+        dd + " " + dd, "-" + dd + " -" + dd, dd + " -" + dd, "-" + dd + " " + dd
+      ].map(function (o) { return o + " currentColor"; }).join(", ");
+    }
+
+    // All variants render Yesteryear; they differ only in the faux-bold
+    // treatment (stroke = -webkit-text-stroke width; shadow = shadowBold spread)
+    // and size (em off the 2em base).
     var FONTS = [
-      { label: "A. Damion (recommended)", family: "\"Damion\", cursive" },
-      { label: "B. Norican", family: "\"Norican\", cursive" },
-      { label: "C. Kaushan Script", family: "\"Kaushan Script\", cursive" },
-      { label: "D. Courgette", family: "\"Courgette\", cursive" },
-      { label: "E. Pacifico", family: "\"Pacifico\", cursive" },
-      { label: "F. Yesteryear", family: "\"Yesteryear\", cursive" },
-      { label: "G. Satisfy", family: "\"Satisfy\", cursive" },
-      { label: "H. Yellowtail (current)", family: "\"Yellowtail\", cursive" }
+      { label: "1. Regular (no bold)", stroke: 0, shadow: "", size: "2em" },
+      { label: "2. Stroke light (0.008em)", stroke: "0.008em", shadow: "", size: "2em" },
+      { label: "3. Stroke medium (0.014em)", stroke: "0.014em", shadow: "", size: "2em" },
+      { label: "4. Stroke heavy (0.022em)", stroke: "0.022em", shadow: "", size: "2em" },
+      { label: "5. Shadow medium (0.012em)", stroke: 0, shadow: shadowBold(0.012), size: "2em" },
+      { label: "6. Shadow heavy (0.018em)", stroke: 0, shadow: shadowBold(0.018), size: "2em" },
+      { label: "7. Bigger + stroke (2.2em, 0.014em)", stroke: "0.014em", shadow: "", size: "2.2em" }
     ];
 
     function findWord() {
@@ -116,7 +125,10 @@
       var i = 0;
       function apply() {
         var opt = FONTS[i];
-        word.style.fontFamily = opt.family;
+        word.style.fontFamily = "\"Yesteryear\", cursive";
+        word.style.fontSize = opt.size;
+        word.style.webkitTextStroke = opt.stroke ? opt.stroke + " currentColor" : "";
+        word.style.textShadow = opt.shadow;
         label.innerHTML = "<strong>" + (i + 1) + " / " + FONTS.length + "</strong> · " + opt.label;
       }
       function go(step) {
