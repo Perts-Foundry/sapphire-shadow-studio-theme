@@ -1,16 +1,17 @@
 {% comment %}
-  Self-hosted display font for the homepage hero headline lockup. Yellowtail
-  (SIL OFL, see assets/yellowtail.license.txt) is an open substitute for the
+  Self-hosted display font for the homepage hero headline lockup. Dancing Script
+  (SIL OFL, see assets/dancing-script.license.txt) is an open substitute for the
   proprietary Brush Script MT, served from the theme's own Shopify CDN assets
-  with no external font host. Declared here but only downloaded when
-  .hero-lockup__word actually renders (the homepage), thanks to lazy @font-face
-  loading; font-display: swap keeps it from blocking paint.
+  with no external font host. It is a variable face (weight 400 to 700); the
+  lockup renders it at 600 for a heavier brush stroke. Declared here but only
+  downloaded when .hero-lockup__word actually renders (the homepage), thanks to
+  lazy @font-face loading; font-display: swap keeps it from blocking paint.
 {% endcomment %}
 <style>
   @font-face {
-    font-family: "Yellowtail";
-    src: url("{{ 'yellowtail-400.woff2' | asset_url }}") format("woff2");
-    font-weight: 400;
+    font-family: "Dancing Script";
+    src: url("{{ 'dancing-script.woff2' | asset_url }}") format("woff2");
+    font-weight: 400 700;
     font-style: normal;
     font-display: swap;
   }
@@ -776,9 +777,9 @@
    * the generic. Inert unless .hero-lockup markup is present.
    */
   .hero-lockup {
-    /* Yellowtail is self-hosted (loads for every visitor); the proprietary
+    /* Dancing Script is self-hosted (loads for every visitor); the proprietary
        system scripts are only transient fallbacks while it downloads. */
-    --hero-lockup-cursive: "Yellowtail", "Brush Script MT", "Segoe Script", cursive;
+    --hero-lockup-cursive: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -799,7 +800,7 @@
 
   .hero-lockup__word {
     font-family: var(--hero-lockup-cursive);
-    font-weight: 400;
+    font-weight: 600;
     font-size: 2em;
     line-height: 0.85;
   }
