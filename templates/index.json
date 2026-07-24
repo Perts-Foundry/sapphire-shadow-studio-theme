@@ -95,7 +95,7 @@
         "custom_mobile_media": false,
         "media_type_1_mobile": "image",
         "media_type_2_mobile": "image",
-        "link": "",
+        "link": "shopify://collections/all",
         "open_in_new_tab": false,
         "content_direction": "column",
         "vertical_on_mobile": true,
