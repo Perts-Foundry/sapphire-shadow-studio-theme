@@ -242,13 +242,14 @@
               },
               "blocks": {}
             },
-            "product_list_button_MWeP9V": {
-              "type": "_product-list-button",
-              "name": "t:names.product_list_button",
+            "view_all_button": {
+              "type": "button",
+              "name": "t:names.button",
               "settings": {
                 "label": "View all",
+                "link": "shopify://collections/all",
                 "open_in_new_tab": false,
-                "style_class": "link",
+                "style_class": "button-secondary",
                 "width": "fit-content",
                 "custom_width": 100,
                 "width_mobile": "fit-content",
@@ -259,7 +260,7 @@
           },
           "block_order": [
             "product_list_text_YFtzcL",
-            "product_list_button_MWeP9V"
+            "view_all_button"
           ]
         },
         "static-product-card": {
