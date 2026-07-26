@@ -9,11 +9,11 @@
  */
 {
   "current": {
-    "logo": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg",
-    "logo_inverse": "shopify://shop_images/SSS-Horizontal-transparent-svg.svg",
+    "logo": "shopify://shop_images/SSS-Horizontal-transparent-png.png",
+    "logo_inverse": "shopify://shop_images/SSS-Horizontal-transparent-png.png",
     "logo_height": 87,
     "logo_height_mobile": 64,
-    "favicon": "shopify://shop_images/Favicon-transparent-svg.svg",
+    "favicon": "shopify://shop_images/Favicon-transparent-png.png",
     "type_body_font": "inter_n4",
     "type_subheading_font": "inter_n5",
     "type_heading_font": "inter_n7",
