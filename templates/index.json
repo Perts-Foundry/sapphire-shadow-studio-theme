@@ -587,10 +587,10 @@
           "settings": {
             "content_direction": "column",
             "vertical_on_mobile": true,
-            "horizontal_alignment": "flex-start",
+            "horizontal_alignment": "center",
             "vertical_alignment": "center",
             "align_baseline": false,
-            "horizontal_alignment_flex_direction_column": "flex-start",
+            "horizontal_alignment_flex_direction_column": "center",
             "vertical_alignment_flex_direction_column": "center",
             "gap": 20,
             "width": "fill",
@@ -624,10 +624,10 @@
               "settings": {
                 "content_direction": "column",
                 "vertical_on_mobile": true,
-                "horizontal_alignment": "flex-start",
+                "horizontal_alignment": "center",
                 "vertical_alignment": "center",
                 "align_baseline": false,
-                "horizontal_alignment_flex_direction_column": "flex-start",
+                "horizontal_alignment_flex_direction_column": "center",
                 "vertical_alignment_flex_direction_column": "center",
                 "gap": 8,
                 "width": "fill",
@@ -662,7 +662,7 @@
                     "text": "<p>Custom orders</p>",
                     "width": "fit-content",
                     "max_width": "normal",
-                    "alignment": "left",
+                    "alignment": "center",
                     "type_preset": "custom",
                     "font": "var(--font-body--family)",
                     "font_size": "0.75rem",
@@ -685,10 +685,10 @@
                   "type": "text",
                   "name": "t:names.text",
                   "settings": {
-                    "text": "<h2>Have something in mind?</h2>",
+                    "text": "<h2>Have something else in mind?</h2>",
                     "width": "100%",
                     "max_width": "normal",
-                    "alignment": "left",
+                    "alignment": "center",
                     "type_preset": "h2",
                     "font": "var(--font-heading--family)",
                     "font_size": "",
@@ -713,37 +713,11 @@
                 "cta_heading"
               ]
             },
-            "cta_body": {
-              "type": "text",
-              "name": "t:names.text",
-              "settings": {
-                "text": "<p>Custom designs, personalized text, small-batch team orders. If we can stitch it, we will.</p>",
-                "width": "100%",
-                "max_width": "narrow",
-                "alignment": "left",
-                "type_preset": "rte",
-                "font": "var(--font-body--family)",
-                "font_size": "",
-                "line_height": "normal",
-                "letter_spacing": "normal",
-                "case": "none",
-                "wrap": "pretty",
-                "color": "var(--color-foreground)",
-                "background": false,
-                "background_color": "#00000026",
-                "corner_radius": 0,
-                "padding-block-start": 0,
-                "padding-block-end": 0,
-                "padding-inline-start": 0,
-                "padding-inline-end": 0
-              },
-              "blocks": {}
-            },
             "cta_button": {
               "type": "button",
               "name": "t:names.button",
               "settings": {
-                "label": "Start a custom order",
+                "label": "Let's talk",
                 "link": "shopify://pages/custom-orders",
                 "open_in_new_tab": false,
                 "style_class": "button",
@@ -757,7 +731,6 @@
           },
           "block_order": [
             "cta_lockup",
-            "cta_body",
             "cta_button"
           ]
         }
