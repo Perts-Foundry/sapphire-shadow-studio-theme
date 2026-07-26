@@ -149,6 +149,16 @@ runs:
         SHOPIFY_FLAG_NO_COLOR: "true"
       run: |
         set +x
+        # `set +e` is load-bearing, not redundant. A composite step's default
+        # shell is `bash --noprofile --norc -e -o pipefail`, and `set -uo
+        # pipefail` does NOT clear the injected `-e`. Every failure path in this
+        # step captures an exit code and branches on it, which `-e` pre-empts:
+        # the shell exits on the failing command itself, before capture,
+        # retry, or any GITHUB_OUTPUT write. That silently defeated the live
+        # 3-attempt retry loop below (a failed attempt 1 killed the step
+        # instead of retrying) and left `push_exit_code` empty, which the
+        # caller reads as "step never ran". Do not "simplify" this away.
+        set +e
         set -uo pipefail
 
         # Stage outputs default to empty so the parent workflow's failure ladder
