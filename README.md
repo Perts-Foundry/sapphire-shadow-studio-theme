@@ -134,6 +134,7 @@ A PR that touches no theme files skips the live push and smoke entirely, but sti
 | Auto-deploy did not fire on a `shopify-sync` / Dependabot PR | The PR is a draft. The draft-PR escape hatch halts auto-deploy by design; mark it ready (`gh pr ready <n>`), or comment `deploy` manually once reviewed. |
 | Orphaned `pr-<n>-preview` theme lingers | Preview cleanup runs on PR close and after deploy; if it silently fails the deploy report shows a cleanup warning. List orphans with `npx shopify theme list -s sapphire-shadow-studio --json` and delete with `npx shopify theme delete --theme <id> --force`. |
 | Dependabot **major** bump did not auto-deploy | Major bumps and changes under `.github/` require a manual `deploy` comment after review; there is no pre-authorization label. |
+| Deploy fails at **Theme push (assets rejected by Shopify)** | Shopify refused one or more files and `shopify theme push` still exited 0; the push step caught it and failed with exit 97. The report and the workflow log name each rejected file and Shopify's reason. Usual causes: a JSON template setting outside its section schema's range (fix the value or the schema `min`/`max`), or a template whose schema change has not landed on the theme yet. **Live is partially updated**: files that validated were written, the rejected ones were not, so fix and re-deploy rather than assuming the deploy was a no-op. |
 
 ## Staying current with Horizon
 
