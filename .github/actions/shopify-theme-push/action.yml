@@ -9,6 +9,12 @@ description: |
   Outputs are designed for the parent workflow's success/failure ladder.
   push-output is ANSI-stripped and token-redacted before exposure.
 
+  Every push (live and preview alike) is audited afterwards by
+  check-push-rejections.mjs: `shopify theme push` exits 0 even when Shopify
+  refused individual assets, so a zero exit is not on its own evidence that the
+  theme was updated. A rejection fails the step with exit 97, naming the file
+  and Shopify's reason.
+
 inputs:
   mode:
     description: live, preview, or delete-preview
@@ -81,7 +87,11 @@ outputs:
     description: Last 30 lines of push output, ANSI-stripped and token-redacted
     value: ${{ steps.push.outputs.push_output }}
   push-exit-code:
-    description: Push exit code (99 = live theme ID assertion failed)
+    description: |
+      Push exit code. Beyond the CLI's own codes, three are synthesised here:
+      97 = the push exited 0 but Shopify rejected one or more assets (see
+      check-push-rejections.mjs); 98 = the CLI's --json contract broke;
+      99 = live theme ID assertion failed.
     value: ${{ steps.push.outputs.push_exit_code }}
   smoke-output:
     description: |
@@ -191,6 +201,41 @@ runs:
           return 0
         }
 
+        # Run one `theme push`, then audit the CLI's own JSON report for assets
+        # Shopify refused to store.
+        #
+        # WHY: `theme push` exits 0 even when the server rejected individual
+        # files. Shopify validates a JSON template's settings against the
+        # section schema already stored on the theme and refuses the whole
+        # asset when a value is out of range. The CLI records the per-file
+        # failure in its --json payload, surfaces the sentence only on the
+        # debug/analytics path, and returns normally. That combination froze
+        # templates/index.json on its last valid version across three
+        # consecutive green CI runs, with the smoke test green throughout
+        # because every probed page still rendered from stale content.
+        #
+        # Sets EXIT_CODE (97 = assets rejected) and CHECK_RC (the auditor's own
+        # code: 0 clean, 1 rejected, 2 report unparseable).
+        run_push_attempt() {
+          rm -f rejections.txt
+          "$@" > push.json 2> push.err
+          EXIT_CODE=$?
+          CHECK_RC=0
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            node "${GITHUB_ACTION_PATH}/check-push-rejections.mjs" push.json > rejections.txt 2>&1
+            CHECK_RC=$?
+            if [ -s rejections.txt ]; then
+              cat rejections.txt
+            fi
+            # CHECK_RC 2 means the report could not be parsed; leave EXIT_CODE
+            # at 0 so require_json below owns that diagnosis (exit 98) instead
+            # of masking it as a rejection.
+            if [ "$CHECK_RC" -eq 1 ]; then
+              EXIT_CODE=97
+            fi
+          fi
+        }
+
         case "$MODE" in
           live)
             if [ -z "$LIVE_THEME_ID" ]; then
@@ -208,24 +253,37 @@ runs:
 
             ATTEMPTS=3
             EXIT_CODE=1
+            CHECK_RC=0
             for i in $(seq 1 $ATTEMPTS); do
               echo "::group::Live theme push attempt ${i}/${ATTEMPTS}"
               # 8-minute attempt limit + 10s SIGKILL grace; treat 124 (timeout) as
               # failure for retry purposes. The whole step is bounded by the
               # caller's timeout-minutes (15) so 3 x 8min cannot starve the runner.
-              timeout --kill-after=10s 8m npx shopify theme push --live --allow-live --json > push.json 2> push.err
-              EXIT_CODE=$?
+              run_push_attempt timeout --kill-after=10s 8m npx shopify theme push --live --allow-live --json
               echo "::endgroup::"
               if [ "$EXIT_CODE" -eq 0 ]; then
                 break
               fi
               if [ "$i" -lt "$ATTEMPTS" ]; then
+                if [ "$EXIT_CODE" -eq 97 ]; then
+                  # Rejected assets are not a transient network condition, so
+                  # skip the 60s backoff. The retry is worth one immediate pass
+                  # because of the ordering case: a schema change and a JSON
+                  # template that depends on it fail when uploaded together
+                  # (the template is validated against the schema version
+                  # already stored on the theme, not the one in the same
+                  # batch). The schema landed in this attempt, so the template
+                  # validates on the next one. A value that is genuinely out of
+                  # range still fails every attempt and stops the deploy.
+                  echo "::warning::Push attempt ${i} left rejected assets; retrying immediately"
+                  continue
+                fi
                 echo "::warning::Push attempt ${i} failed (exit ${EXIT_CODE}); retrying in 60s"
                 sleep 60
               fi
             done
 
-            capture_push_output push.json push.err
+            capture_push_output push.json push.err rejections.txt
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
             if [ "$EXIT_CODE" -eq 0 ]; then
@@ -260,11 +318,11 @@ runs:
               exit 1
             fi
             EXIT_CODE=0
+            CHECK_RC=0
             if [ "$COUNT" -eq 1 ]; then
               EXISTING_ID=$(jq -r '.[0].id' <<<"$MATCHES")
               echo "Reusing theme ${EXISTING_ID}"
-              npx shopify theme push --theme "$EXISTING_ID" --json > push.json 2> push.err
-              EXIT_CODE=$?
+              run_push_attempt npx shopify theme push --theme "$EXISTING_ID" --json
             else
               # `--unpublished --theme <name>` creates a new unpublished
               # theme with the given name in one non-interactive step. The
@@ -272,11 +330,25 @@ runs:
               # fails in CI because plain `--unpublished` prompts for a name,
               # and the prompt aborts under SHOPIFY_CLI_TTY=0.
               echo "Creating new unpublished theme: ${THEME_NAME}"
-              npx shopify theme push --unpublished --theme "$THEME_NAME" --json > push.json 2> push.err
-              EXIT_CODE=$?
+              run_push_attempt npx shopify theme push --unpublished --theme "$THEME_NAME" --json
             fi
 
-            capture_push_output push.json push.err
+            # One immediate retry when assets were rejected, for the same
+            # schema-then-template ordering reason as live mode. The retry is
+            # always addressed by theme ID, never by `--unpublished`: repeating
+            # the create flag would create a SECOND pr-N-preview theme, which
+            # the duplicate-name guard above then refuses on every later run.
+            if [ "$EXIT_CODE" -eq 97 ]; then
+              RETRY_ID=$(jq -r '.theme.id // empty' push.json 2>/dev/null)
+              if [ -n "$RETRY_ID" ]; then
+                echo "::warning::Push left rejected assets; retrying once against theme ${RETRY_ID}"
+                run_push_attempt npx shopify theme push --theme "$RETRY_ID" --json
+              else
+                echo "::warning::Push left rejected assets and the report carried no theme ID; not retrying."
+              fi
+            fi
+
+            capture_push_output push.json push.err rejections.txt
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
             if [ "$EXIT_CODE" -ne 0 ]; then

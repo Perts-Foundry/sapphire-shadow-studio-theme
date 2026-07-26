@@ -12,7 +12,7 @@
     "theme:dev": "shopify theme dev",
     "lib:test": "node --test scripts/lib/*.test.mjs",
     "images:test": "node --test scripts/process-product-images.test.mjs",
-    "smoke:test": "node --test .github/actions/shopify-theme-push/smoke.test.mjs .github/actions/shopify-theme-push/report-format.test.mjs",
+    "smoke:test": "node --test .github/actions/shopify-theme-push/smoke.test.mjs .github/actions/shopify-theme-push/report-format.test.mjs .github/actions/shopify-theme-push/check-push-rejections.test.mjs",
     "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
     "blank-inventory:test": "node --test scripts/blank-inventory/test/*.test.mjs",
     "blank-inventory:guard": "node scripts/blank-inventory/check-no-real-blank-ids.mjs",

@@ -1622,6 +1622,13 @@ jobs:
             } else if (pushExit === '99') {
               failStage = 'Live theme ID assertion';
               errorDetail = pushOutput || 'Live theme ID did not match the expected value.';
+            } else if (pushExit === '97') {
+              // The CLI exited 0 but Shopify refused one or more assets, and
+              // the retry did not clear them. Files that validated DID upload,
+              // so live is in a mixed state: partly on this SHA, partly on
+              // whatever the rejected files were before.
+              failStage = 'Theme push (assets rejected by Shopify)';
+              errorDetail = `${pushOutput || 'One or more assets were rejected. See the workflow run.'}\n\n**The live theme is partially updated.** Files that validated were written; the rejected ones were not, so live is a mix of this SHA and the previous state. A JSON template is validated against the section schema already stored on the theme, so the usual causes are a setting value outside its schema range, or a template whose schema change has not landed yet. Fix the value or the schema, then re-deploy.`;
             } else if (pushExit !== '0') {
               failStage = 'Theme push (shopify theme push --live)';
               errorDetail = pushOutput || 'Push exited non-zero. See the workflow run.';
