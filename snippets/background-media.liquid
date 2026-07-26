@@ -99,7 +99,14 @@
           assign fetch_priority = 'high'
         endif
 
-        if section and section.index <= 3
+        # Only the first section is reliably above the fold. The previous
+        # threshold of `<= 3` assumed three short sections fit in a viewport,
+        # which does not hold against a full-height hero: on the homepage it
+        # eager-loaded a 150 KB background for a section well below the fold on
+        # a 390px screen. Anything further down is better served by `sizes:
+        # auto` and lazy loading, which also lets the browser pick a smaller
+        # candidate once it knows the real rendered width.
+        if section and section.index == 1
           assign loading = 'eager'
         endif
       %}
