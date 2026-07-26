@@ -83,8 +83,15 @@
     class="{{ class }}"
   {% endif %}
   style="--slideshow-timeline: {{ timeline_scope }};{{ style }}"
+  {% comment %}
+    aria-live starts at "off" and is flipped to "polite" by assets/slideshow.js
+    when rotation is paused. Announcing every automatic slide change would mean
+    a screen reader interrupting itself on the autoplay interval indefinitely;
+    the announcements are only useful once the user has stopped the rotation and
+    is stepping through slides deliberately.
+  {% endcomment %}
   {% if autoplay == true %}
-    autoplay="{{ autoplay_speed }}" aria-live="polite"
+    autoplay="{{ autoplay_speed }}" aria-live="off"
   {% endif %}
   initial-slide="{{ initial_slide | default: 0 }}"
   {% if auto_hide_controls %}

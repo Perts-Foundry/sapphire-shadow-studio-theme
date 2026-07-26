@@ -22,8 +22,12 @@
 
   <announcement-bar-component
     class="announcement-bar__slider"
+    {% comment %}
+      Starts at "off" and is flipped to "polite" by assets/announcement-bar.js
+      when rotation stops. Mirrors the same handling in snippets/slideshow.liquid.
+    {% endcomment %}
     {% if autoplay == true %}
-      autoplay="{{ section.settings.speed }}" aria-live="polite"
+      autoplay="{{ section.settings.speed }}" aria-live="off"
     {% endif %}
   >
     {% if show_arrows %}

@@ -38,6 +38,32 @@
   assign autoplay_speed = settings.autoplay_speed | default: 4
 %}
 
+{% comment %}
+  Auto-rotating content needs a pause control (WCAG 2.2.2, and
+  docs/accessibility-patterns.md). 'slideshow' only echoes whatever `controls`
+  string it is handed; it never renders 'slideshow-controls' itself, so without
+  this capture the pause/play buttons that 'slideshow-controls' already
+  implements are unreachable from the carousel path and the carousel rotates
+  with no way to stop it.
+
+  style must not be 'none': 'slideshow-controls' wraps its whole body in
+  `unless style == 'none'`, which would silently drop the buttons along with the
+  pagination. 'dots' also gives the carousel useful position feedback.
+{% endcomment %}
+{% capture controls %}
+  {%- if autoplay -%}
+    {%- render 'slideshow-controls',
+      style: 'dots',
+      autoplay: autoplay,
+      item_count: slide_count,
+      show_arrows: false,
+      pagination_position: 'center',
+      icon_style: settings.icons_style,
+      shape: settings.icons_shape
+    -%}
+  {%- endif -%}
+{% endcapture %}
+
 {% capture slides %}
   {% for item in slides limit: slides.size %}
     {% render 'slideshow-slide'
@@ -56,6 +82,7 @@
     ref: slideshow_ref,
     class: 'resource-list__carousel',
     slides: slides,
+    controls: controls,
     show_arrows: show_arrows,
     icon_style: settings.icons_style,
     icon_shape: settings.icons_shape,

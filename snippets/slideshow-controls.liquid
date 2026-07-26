@@ -358,6 +358,23 @@
     mix-blend-mode: difference;
   }
 
+  /*
+   * Show exactly one of the pause/play pair. Both buttons are always in the
+   * markup above (two static buttons rather than one toggle with a swapping
+   * label, which is an accepted ARIA APG variant and avoids churning every
+   * caller); without these rules both render at once and the control reads as
+   * two unrelated buttons. The `paused` attribute is maintained by the setter
+   * in assets/slideshow.js.
+   *
+   * Deviation on file: docs/accessibility-patterns.md specifies a single
+   * rotation toggle with a dynamic aria-label. Revisit if slideshow-controls is
+   * ever refactored; each button already carries a correct static label.
+   */
+  slideshow-component:not([paused]) .slideshow-control.icon-play,
+  slideshow-component[paused] .slideshow-control.icon-pause {
+    display: none;
+  }
+
   .slideshow-controls__dots {
     gap: 0.6rem;
     padding: var(--padding-sm) var(--padding-lg);

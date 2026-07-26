@@ -47,6 +47,8 @@ export class AnnouncementBar extends Component {
     if (!this.autoplay) return;
 
     this.paused = false;
+    // Silence the live region while announcements rotate on their own; see pause().
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'off');
 
     this.#interval = setInterval(() => {
       if (this.matches(':hover') || document.hidden) return;
@@ -60,6 +62,10 @@ export class AnnouncementBar extends Component {
    */
   pause() {
     this.paused = true;
+    // Rotation has stopped, so a slide change is now deliberate and worth
+    // announcing. While rotating, announcing each one means a screen reader
+    // interrupting itself on the autoplay interval indefinitely.
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'polite');
     this.suspend();
   }
 

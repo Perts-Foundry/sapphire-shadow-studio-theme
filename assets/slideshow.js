@@ -91,6 +91,8 @@ export class Slideshow extends Component {
     if (slideCount > 1) {
       this.removeEventListener('mouseenter', this.suspend);
       this.removeEventListener('mouseleave', this.resume);
+      this.removeEventListener('focusin', this.#handleFocusIn);
+      this.removeEventListener('focusout', this.#handleFocusOut);
       this.removeEventListener('pointerenter', this.#handlePointerEnter);
       document.removeEventListener('visibilitychange', this.#handleVisibilityChange);
     }
@@ -279,6 +281,8 @@ export class Slideshow extends Component {
     if (this.#interval) return;
 
     this.paused = false;
+    // Silence the live region while slides advance on their own; see pause().
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'off');
 
     this.#interval = setInterval(() => {
       if ((mediaQueryHover.matches && this.matches(':hover')) || document.hidden) return;
@@ -292,6 +296,10 @@ export class Slideshow extends Component {
    */
   pause() {
     this.paused = true;
+    // Once the user has stopped the rotation, slide changes are deliberate and
+    // worth announcing. Only touch the attribute when the markup opted in to a
+    // live region (autoplay slideshows), so non-autoplay ones stay untouched.
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'polite');
     this.suspend();
   }
 
@@ -320,6 +328,21 @@ export class Slideshow extends Component {
    */
   resume() {
     if (!this.autoplay || this.paused) return;
+
+    // Reduced motion suppresses automatic rotation entirely. This is the right
+    // seam for the check rather than play(): every automatic start path (initial
+    // connect, hover-out, focus-out, tab becoming visible) goes through resume(),
+    // while play() is also what the explicit play button calls, and a user who
+    // presses play is asking for rotation regardless of the OS setting.
+    //
+    // Land in the paused state rather than just returning: that shows the play
+    // button instead of the pause button, keeps the live region on "polite", and
+    // makes later resume() calls no-op on the `paused` check. Rotation stays
+    // available to anyone who explicitly asks for it.
+    if (prefersReducedMotion()) {
+      this.pause();
+      return;
+    }
 
     this.pause();
     this.play();
@@ -492,6 +515,8 @@ export class Slideshow extends Component {
       this.addEventListener('mouseenter', this.suspend);
       this.addEventListener('mouseleave', this.resume);
     }
+    this.addEventListener('focusin', this.#handleFocusIn);
+    this.addEventListener('focusout', this.#handleFocusOut);
     this.addEventListener('pointerenter', this.#handlePointerEnter);
     document.addEventListener('visibilitychange', this.#handleVisibilityChange);
 
@@ -772,6 +797,26 @@ export class Slideshow extends Component {
    * Pause the slideshow when the page is hidden.
    */
   #handleVisibilityChange = () => (document.hidden ? this.suspend() : this.resume());
+
+  /**
+   * Suspend rotation while focus is inside the slideshow, so a keyboard user
+   * reading a slide does not have it advance out from under them. Hover already
+   * does this for pointer users; without focus handling keyboard users got no
+   * equivalent.
+   */
+  #handleFocusIn = () => this.suspend();
+
+  /**
+   * Resume once focus actually leaves. focusout bubbles, so moving between two
+   * elements inside the same slideshow fires it too; resuming on those would
+   * restart the timer mid-interaction.
+   */
+  #handleFocusOut = (/** @type {FocusEvent} */ event) => {
+    const { relatedTarget } = event;
+    if (relatedTarget instanceof Node && this.contains(relatedTarget)) return;
+
+    this.resume();
+  };
 
   #updateControlsVisibility() {
     if (!this.hasAttribute('auto-hide-controls')) return;
