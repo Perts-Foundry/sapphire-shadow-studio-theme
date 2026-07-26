@@ -1,5 +1,44 @@
 # Release Notes
 
+## Asset-rejection detection: a green deploy that changed nothing (unreleased)
+
+### The incident
+
+A homepage redesign never reached its preview theme across three separate CI runs, all of which reported green. The cause was one integer: a JSON template carried a range setting one below the `min` its section schema declared. Shopify validates a JSON template's settings server-side against the section schema **already stored on the theme** and rejects the entire asset when a value is out of range:
+
+```
+Asset upload failed for templates/index.json: Setting 'autoplay_speed' can't be less than 3
+```
+
+`shopify theme push` retried the upload, gave up, and **exited 0**. The error text was reachable only under `--verbose`, inside the analytics JSON blob under `cmd_theme_errors`. The template stayed frozen on its last version that validated, CI stayed green, and the post-deploy smoke stayed green too, because every probed page still rendered correctly from stale content. On the live path this would have reported a successful deploy, passed smoke, squash-merged, and left the storefront unchanged.
+
+The schema floor itself was a one-line fix. The observability gap is what made a one-integer mistake invisible for three runs, and that is what this change addresses.
+
+### What changed
+
+- **`check-push-rejections.mjs`** (new, with `check-push-rejections.test.mjs` folded into `npm run smoke:test`) audits the push report after every push, live and preview alike. A rejection fails the step with **exit 97**, naming each rejected file and Shopify's reason as `::error file=...::` annotations plus a plain-text summary. A clean push prints nothing, so a good deploy is not made noisy.
+- **`deploy.yml`** gains a failure-ladder branch for exit 97 that states plainly that live is **partially** updated: files that validated were written, the rejected ones were not.
+- **`capture_push_output`** now takes `--rejections <file>` and appends the summary in full after the 30-line tail, instead of letting it compete for room inside that window. A 20-file rejection runs to roughly 40 lines and would otherwise push its own header out of the PR comment at exactly the moment an operator needs it. It also neutralises any captured line that is exactly the heredoc delimiter, so server-sourced text cannot close the block early and forge step outputs.
+
+### Why the CLI's `--json` payload, not stderr
+
+The detection signal is structured, not scraped. `@shopify/cli` 4.5.2's theme-push service sets, on the object it serialises to stdout, whenever any upload result has `success === false`:
+
+```js
+theme.warning = "The theme '<name>' was pushed with errors"
+theme.errors  = { "<filename>": ["<reason>", ...] }
+```
+
+and then returns normally, which is precisely why the exit code is 0. Asserting on those two fields beats grepping human-readable stderr: it names both the file and the reason, needs no `--verbose`, and is a contract rather than a message format. The auditor treats `warning` present with `errors` absent as a rejection too, so a future CLI that drops one of the two fields degrades to a loud failure rather than a silent pass. An unparseable report is deliberately a distinct code (2) that leaves the existing `require_json` to own that diagnosis as exit 98, rather than being mislabelled a rejection.
+
+### The batch-ordering defect, and why the fix is a retry
+
+A schema change and a JSON template that depends on it fail when pushed in the same batch: the template is validated against the schema version already stored on the theme, not the one in the same upload. Pushing the section first and the template second succeeds; both together fail.
+
+Two fixes were considered. An **explicit two-phase push** (non-JSON files first, then JSON templates) is deterministic and self-documenting, but it hardcodes an ordering rule the CLI does not guarantee and doubles the passes on every deploy, including clean ones. The chosen fix is a **single immediate retry** when a push exits 0 with rejected assets: the schema landed on the first pass, so the template validates on the second, and a value that is genuinely out of range still fails every attempt and stops the deploy. It needs no knowledge of which file types must precede which, and it costs nothing on a clean push. The retry skips the 60s backoff because a rejection is not a transient network condition.
+
+In preview mode the retry is always addressed by **theme ID**, never by repeating `--unpublished`. Repeating the create flag would produce a second `pr-N-preview` theme, which the duplicate-name guard then refuses on every later run for that PR.
+
 ## Deploy-report messaging: docs-only close message + smoke markdown table (unreleased)
 
 ### What changed

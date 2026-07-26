@@ -84,7 +84,9 @@ outputs:
     description: Preview URL (preview mode only)
     value: ${{ steps.push.outputs.preview_url }}
   push-output:
-    description: Last 30 lines of push output, ANSI-stripped and token-redacted
+    description: |
+      Last 30 lines of push output, followed by the asset-rejection summary in
+      full when there is one. ANSI-stripped and token-redacted.
     value: ${{ steps.push.outputs.push_output }}
   push-exit-code:
     description: |
@@ -157,21 +159,44 @@ runs:
         # Takes one or more files (stdout + stderr are captured separately, see
         # the note on require_json below) and concatenates whichever exist, so the
         # sticky report still shows the CLI's diagnostics on failure.
+        #
+        # `--rejections <file>` names the asset-rejection summary. It is appended
+        # in full AFTER the 30-line tail rather than competing for room inside it:
+        # a 20-file rejection runs to ~40 lines, so sharing one window would push
+        # the summary's own header and file list out of the PR comment at exactly
+        # the moment an operator needs them. Safe to include whole because the
+        # summary is already bounded at source (MAX_FILES / MAX_MESSAGE_CHARS in
+        # check-push-rejections.mjs) and its every line carries a fixed prefix.
         capture_push_output() {
+          local rejections=""
+          if [ "${1:-}" = "--rejections" ]; then
+            rejections="${2:-}"
+            shift 2
+          fi
           local existing=()
           local f
           for f in "$@"; do
             [ -f "$f" ] && existing+=("$f")
           done
-          if [ ${#existing[@]} -eq 0 ]; then
+          if [ ${#existing[@]} -eq 0 ] && [ ! -s "$rejections" ]; then
             return 0
           fi
+          # scrub: ANSI-strip, redact tokens, and neutralise any line that is
+          # exactly the heredoc delimiter, so server-sourced text can never close
+          # the block early and forge additional step outputs.
+          scrub() {
+            sed 's/\x1b\[[0-9;]*m//g' \
+              | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
+              | sed 's/^GHEOF$/GHEOF./'
+          }
           {
             echo "push_output<<GHEOF"
-            cat "${existing[@]}" \
-              | sed 's/\x1b\[[0-9;]*m//g' \
-              | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
-              | tail -30
+            if [ ${#existing[@]} -gt 0 ]; then
+              cat "${existing[@]}" | scrub | tail -30
+            fi
+            if [ -n "$rejections" ] && [ -s "$rejections" ]; then
+              scrub < "$rejections"
+            fi
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
         }
@@ -214,24 +239,28 @@ runs:
         # consecutive green CI runs, with the smoke test green throughout
         # because every probed page still rendered from stale content.
         #
-        # Sets EXIT_CODE (97 = assets rejected) and CHECK_RC (the auditor's own
-        # code: 0 clean, 1 rejected, 2 report unparseable).
+        # Sets EXIT_CODE: the pushed command's own code, or 97 when the command
+        # exited 0 but the audit found rejected assets. The auditor's own code is
+        # local to this function (0 clean, 1 rejected, 2 report unparseable); no
+        # caller branches on it, they branch on EXIT_CODE.
         run_push_attempt() {
+          local check_rc
           rm -f rejections.txt
           "$@" > push.json 2> push.err
           EXIT_CODE=$?
-          CHECK_RC=0
           if [ "$EXIT_CODE" -eq 0 ]; then
             node "${GITHUB_ACTION_PATH}/check-push-rejections.mjs" push.json > rejections.txt 2>&1
-            CHECK_RC=$?
+            check_rc=$?
             if [ -s rejections.txt ]; then
               cat rejections.txt
             fi
-            # CHECK_RC 2 means the report could not be parsed; leave EXIT_CODE
-            # at 0 so require_json below owns that diagnosis (exit 98) instead
-            # of masking it as a rejection.
-            if [ "$CHECK_RC" -eq 1 ]; then
+            if [ "$check_rc" -eq 1 ]; then
               EXIT_CODE=97
+            elif [ "$check_rc" -eq 2 ]; then
+              # The report could not be parsed, so the audit is inconclusive:
+              # leave EXIT_CODE at 0 and let require_json own that diagnosis
+              # (exit 98) rather than masking a contract break as a rejection.
+              echo "::warning::Could not audit this push for rejected assets; the CLI's JSON report was unreadable."
             fi
           fi
         }
@@ -253,7 +282,6 @@ runs:
 
             ATTEMPTS=3
             EXIT_CODE=1
-            CHECK_RC=0
             for i in $(seq 1 $ATTEMPTS); do
               echo "::group::Live theme push attempt ${i}/${ATTEMPTS}"
               # 8-minute attempt limit + 10s SIGKILL grace; treat 124 (timeout) as
@@ -283,7 +311,7 @@ runs:
               fi
             done
 
-            capture_push_output push.json push.err rejections.txt
+            capture_push_output --rejections rejections.txt push.json push.err
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
             if [ "$EXIT_CODE" -eq 0 ]; then
@@ -318,7 +346,6 @@ runs:
               exit 1
             fi
             EXIT_CODE=0
-            CHECK_RC=0
             if [ "$COUNT" -eq 1 ]; then
               EXISTING_ID=$(jq -r '.[0].id' <<<"$MATCHES")
               echo "Reusing theme ${EXISTING_ID}"
@@ -348,7 +375,7 @@ runs:
               fi
             fi
 
-            capture_push_output push.json push.err rejections.txt
+            capture_push_output --rejections rejections.txt push.json push.err
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
             if [ "$EXIT_CODE" -ne 0 ]; then

@@ -1,7 +1,9 @@
 # Smoke test reference
 
 Full behavioral contract for the post-deploy smoke, `.github/actions/shopify-theme-push/smoke.mjs`
-(unit-tested by `smoke.test.mjs`, gated in the required `validate` job via `npm run smoke:test`).
+(unit-tested by `smoke.test.mjs`). Note that the `npm run smoke:test` script gating the required
+`validate` job is broader than this file's subject: it also runs `report-format.test.mjs` and
+`check-push-rejections.test.mjs`, so a red `smoke:test` is not necessarily a smoke-script failure.
 CLAUDE.md's "Smoke test" section carries the condensed, load-bearing "do not do X" directives;
 this file is the detailed reference for when you're actually touching the smoke script or
 diagnosing a deploy failure it reported.
