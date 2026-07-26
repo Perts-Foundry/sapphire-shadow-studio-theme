@@ -475,6 +475,44 @@
   {% endif %}
 {% endcapture %}
 
+{% comment %}
+  Playback speed has no HTML attribute, so the only way to slow a hero video is
+  to set playbackRate on the element. The rate is carried on the hero wrapper as
+  a data attribute because {% javascript %} is not Liquid-rendered.
+{% endcomment %}
+{% javascript %}
+  const applyHeroPlaybackRate = (hero) => {
+    const rate = parseFloat(hero.dataset.videoPlaybackRate);
+    if (!rate) return;
+
+    hero.querySelectorAll('video').forEach((video) => {
+      video.playbackRate = rate;
+      // The browser resets playbackRate whenever it loads a new source, which
+      // includes the desktop/mobile swap and any theme-editor re-render.
+      video.addEventListener('loadedmetadata', () => {
+        video.playbackRate = rate;
+      });
+    });
+  };
+
+  const applyAllHeroPlaybackRates = (root) => {
+    root.querySelectorAll('.hero[data-video-playback-rate]').forEach(applyHeroPlaybackRate);
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => applyAllHeroPlaybackRates(document), {
+      once: true,
+    });
+  } else {
+    applyAllHeroPlaybackRates(document);
+  }
+
+  // Sections re-render without a page load in the theme editor.
+  document.addEventListener('shopify:section:load', (event) => {
+    applyAllHeroPlaybackRates(event.target);
+  });
+{% endjavascript %}
+
 <div
   id="Hero-{{ section.id }}"
   class="hero color-{{ section.settings.color_scheme }}{% if section.blocks.size == 0 and section.settings.section_height == 'auto' %} hero--no-blocks-auto-height{% endif %}{% if section.settings.stack_media_on_mobile %} hero--stack-mobile{% endif %}{% if hero_mobile_fallback_aspect != blank %} hero--mobile-fallback-fit{% endif %}"
@@ -495,6 +533,9 @@
   "
   {% if request.visual_preview_mode %}
     data-shopify-visual-preview
+  {% endif %}
+  {% if section.settings.video_playback_speed != 100 %}
+    data-video-playback-rate="{{ section.settings.video_playback_speed | divided_by: 100.0 }}"
   {% endif %}
   {% if section.settings.blurred_reflection and has_only_video == false or has_only_video_mobile == false %}
     data-blur-shadow="true"
@@ -1440,6 +1481,14 @@
           "label": "t:options.auto"
         },
         {
+          "value": "1.5",
+          "label": "t:options.wide"
+        },
+        {
+          "value": "1.333",
+          "label": "t:options.standard"
+        },
+        {
           "value": "1",
           "label": "t:options.square"
         },
@@ -1450,6 +1499,17 @@
       ],
       "default": "",
       "visible_if": "{{ section.settings.custom_mobile_media == false }}"
+    },
+    {
+      "type": "range",
+      "id": "video_playback_speed",
+      "label": "t:settings.playback_speed",
+      "info": "t:info.playback_speed",
+      "min": 25,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100
     },
     {
       "type": "header",
