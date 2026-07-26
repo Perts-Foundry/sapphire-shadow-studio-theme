@@ -501,7 +501,7 @@
               "type": "text",
               "name": "t:names.text",
               "settings": {
-                "text": "<p>No factory floor, no anonymous warehouse. Every piece is designed, checked, and packed by the two of us.</p>",
+                "text": "<p>One test decides everything here: would we want to own it ourselves?</p>",
                 "width": "100%",
                 "max_width": "narrow",
                 "alignment": "left",
