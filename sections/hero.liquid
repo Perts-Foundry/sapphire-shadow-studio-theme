@@ -547,6 +547,21 @@
         endif
       %}
       {{ media }}
+      {%- if section.settings.logo_overlay and settings.logo != blank -%}
+        <div
+          class="hero__logo-overlay"
+          style="
+            --hero-logo-overlay-align: {{ section.settings.logo_overlay_position }};
+            --hero-logo-overlay-width: {{ section.settings.logo_overlay_width }}%;
+            --hero-logo-overlay-width-mobile: {{ section.settings.logo_overlay_width_mobile }}%;
+            --hero-logo-overlay-opacity: {{ section.settings.logo_overlay_opacity | divided_by: 100.0 }};
+          "
+          aria-hidden="true"
+          data-testid="hero-logo-overlay"
+        >
+          {% render 'image', image: settings.logo, height: 400, class: 'hero__logo-overlay-image' %}
+        </div>
+      {%- endif -%}
     </div>
     <div
       class="
@@ -622,6 +637,48 @@
     grid-template-columns: repeat(var(--hero-media-count, 1), 1fr);
   }
 
+  /*
+   * Optional logo lockup drawn over the hero media. The storefront logo is an
+   * SVG, so it stays sharp at any width and device pixel ratio, unlike a logo
+   * burned into the source video, which can only be as sharp as that video's
+   * resolution and bitrate allow. Decorative by design: the header already
+   * carries the linked logo and the hero blocks carry the h1, so the wrapper is
+   * aria-hidden and adds nothing to the accessibility tree.
+   *
+   * Sits inside .hero__media-wrapper so it tracks the media in both layouts:
+   * the wrapper is absolutely positioned over the whole hero by default, and
+   * flows as an aspect-ratio row under .hero--mobile-fallback-fit.
+   */
+  .hero__logo-overlay {
+    position: absolute;
+    inset: 0;
+    /* The wrapper is a grid whose column count follows the media count; span it
+       so the overlay centres on the media area, not on the first media item. */
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    align-items: var(--hero-logo-overlay-align, center);
+    /* Keeps the mark off the media edges at every alignment. */
+    padding: 6%;
+    z-index: var(--layer-flat);
+    pointer-events: none;
+  }
+
+  .hero__logo-overlay-image {
+    width: var(--hero-logo-overlay-width, 40%);
+    height: auto;
+    opacity: var(--hero-logo-overlay-opacity, 1);
+    /* Lifts the mark off busy footage without darkening the whole frame the way
+       a full-media scrim would. */
+    filter: drop-shadow(0 2px 12px rgb(0 0 0 / 45%));
+  }
+
+  @media screen and (max-width: 749px) {
+    .hero__logo-overlay-image {
+      width: var(--hero-logo-overlay-width-mobile, 70%);
+    }
+  }
+
   .hero--auto .hero__image,
   .hero--auto .hero__video {
     aspect-ratio: var(--hero-media-aspect-ratio);
@@ -670,9 +727,10 @@
    * reused with no custom mobile asset, size the hero to the video's own aspect
    * ratio so the whole frame shows with no crop and no letterbox, and let the
    * heading and button flow onto a strip below instead of overlaying the busy
-   * frame. This keeps the baked-in logo and tagline legible and makes desktop and
-   * mobile read the same. The complete fix is still a purpose-framed hero asset
-   * (admin task in TODO.md); once that ships this fallback stops applying.
+   * frame. This makes desktop and mobile read the same. The trigger is structural
+   * (one video, no custom mobile asset), so this still applies with the current
+   * logo-free montage; the logo now comes from the .hero__logo-overlay setting,
+   * which sits inside the media wrapper and so tracks this layout too.
    */
   .hero.hero--mobile-fallback-fit {
     min-height: 0;
@@ -1352,6 +1410,71 @@
       ],
       "default": "to top",
       "visible_if": "{{ section.settings.toggle_overlay and section.settings.overlay_style == 'gradient' }}"
+    },
+    {
+      "type": "header",
+      "content": "t:content.logo"
+    },
+    {
+      "type": "checkbox",
+      "id": "logo_overlay",
+      "label": "t:settings.logo_overlay",
+      "default": false,
+      "info": "t:info.logo_overlay"
+    },
+    {
+      "type": "select",
+      "id": "logo_overlay_position",
+      "label": "t:settings.position",
+      "options": [
+        {
+          "value": "flex-start",
+          "label": "t:options.top"
+        },
+        {
+          "value": "center",
+          "label": "t:options.center"
+        },
+        {
+          "value": "flex-end",
+          "label": "t:options.bottom"
+        }
+      ],
+      "default": "center",
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_width",
+      "label": "t:settings.width",
+      "min": 10,
+      "max": 90,
+      "step": 1,
+      "unit": "%",
+      "default": 40,
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_width_mobile",
+      "label": "t:settings.width_mobile",
+      "min": 10,
+      "max": 90,
+      "step": 1,
+      "unit": "%",
+      "default": 70,
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_opacity",
+      "label": "t:settings.opacity",
+      "min": 20,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100,
+      "visible_if": "{{ section.settings.logo_overlay }}"
     },
     {
       "type": "checkbox",

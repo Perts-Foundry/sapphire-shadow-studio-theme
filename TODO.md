@@ -99,7 +99,9 @@ mitigation for the hero mobile crop shipped separately in `sections/hero.liquid`
   (`config/settings_data.json:471`) is 4.29:1 (needs 4.5:1); affects the hero "Shop all" and
   footer "Sign up" buttons. Darken to about `#0071c2` or darker. Admin (color scheme).
 - [ ] **Provide portrait-framed hero mobile media.** Enable hero "Custom mobile media" and
-  upload an asset framed for portrait so the logo and tagline are not cropped. Once this ships,
+  upload an asset framed for portrait so the footage is composed for the crop. The logo half of
+  this is now solved in code: the hero video carries no baked-in mark, and the "Logo overlay"
+  setting draws the theme logo SVG over the media at any viewport. Once portrait media ships,
   the theme-code mobile fallback in `sections/hero.liquid` (the `.hero--mobile-fallback-fit`
   aspect-fit rules and the `.hero__video--mobile-fallback` contain safety net) stops applying and
   can be removed. Admin (hero settings + asset).
