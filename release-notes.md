@@ -39,6 +39,28 @@ Two fixes were considered. An **explicit two-phase push** (non-JSON files first,
 
 In preview mode the retry is always addressed by **theme ID**, never by repeating `--unpublished`. Repeating the create flag would produce a second `pr-N-preview` theme, which the duplicate-name guard then refuses on every later run for that PR.
 
+### A second defect, found by reproducing the first
+
+The reproduction itself surfaced an unrelated latent bug. A composite step's default shell is `bash --noprofile --norc -e -o pipefail`, and the push step's `set -uo pipefail` does **not** clear that injected `-e`. Every failure path in the step captures an exit code and branches on it, which `-e` pre-empts: the shell exits on the failing command itself, before any capture, retry, or `GITHUB_OUTPUT` write.
+
+The first CI reproduction attempt therefore died in 7 seconds with exit 1 and no captured output at all, instead of reporting what Shopify had refused. The same defect had silently disabled the live 3-attempt retry loop, where a failed first attempt killed the step rather than retrying, and left `push_exit_code` empty, which the caller's failure ladder reads as "step never ran". The step now sets `set +e` explicitly, with a comment saying why it must not be simplified away.
+
+### Verification
+
+Verified against a real rejection in CI, not a simulated one. A deliberately out-of-range `max_products` (99, against the section schema's `max: 16`) was pushed through the real preview workflow on the PR branch. The push exited 0, the audit caught it, the retry fired once and the rejection persisted, and the step failed with exit 97:
+
+```
+Shopify rejected 1 asset during theme push. The push command exited 0, but these files were NOT written to the theme.
+Setting 'max_products' can't be greater than 16
+Rejected assets (theme push exited 0; Shopify refused these files):
+  templates/index.json: Setting 'max_products' can't be greater than 16
+Push left rejected assets; retrying once against theme <id>
+[...retry, same rejection...]
+Process completed with exit code 97.
+```
+
+Reverting that one value returned both `preview` and `validate` to green, with zero rejection output in the log: the good path is not made noisy.
+
 ## Deploy-report messaging: docs-only close message + smoke markdown table (unreleased)
 
 ### What changed
