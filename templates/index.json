@@ -93,6 +93,7 @@
         "overlay_color": "#071e3fcc",
         "overlay_style": "gradient",
         "gradient_direction": "to top",
+        "mobile_media_aspect": "0.8",
         "logo_overlay": true,
         "logo_overlay_position": "center",
         "logo_overlay_width": 40,
