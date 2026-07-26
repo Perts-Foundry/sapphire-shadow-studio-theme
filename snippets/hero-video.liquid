@@ -1,0 +1,92 @@
+{% doc %}
+  Renders a hero video capped at a resolution ceiling.
+
+  Shopify's `video_tag` filter emits a single `<source>`, always the highest
+  rendition it has. For the homepage montage that is a 1080p / 4.8 Mbps file of
+  roughly 13.4 MB, served identically to a 390px phone and a 1440px desktop.
+  There is no declarative way to fix that downstream: `<source media="...">` is
+  ignored inside `<video>` by every browser, so the choice has to be made here,
+  server side.
+
+  Shopify transcodes each upload into a rendition ladder and exposes it as
+  `video.sources`, so this usually costs nothing but a smaller pick. The same
+  hand-rolled `<source>` pattern is used by `snippets/background-media.liquid`.
+
+  Falls back to `video_tag` unchanged when the ladder has no rendition at or
+  below the ceiling, so a video that only ever transcoded to 1080p still renders.
+
+  @param {object} video - the Shopify video object to render
+  @param {string} [class] - classes applied to the `<video>` element
+  @param {string} [testid] - value for `data-testid` on the `<video>` element
+  @param {number} [max_height] - resolution ceiling in pixels, defaults to 720
+
+  @example
+  {% render 'hero-video',
+    video: section.settings.video_1,
+    class: 'hero__video hero__video--desktop',
+    testid: 'hero-desktop-video-1'
+  %}
+{% enddoc %}
+
+{% liquid
+  assign height_ceiling = max_height | default: 720
+
+  # Pick the tallest mp4 rendition at or under the ceiling. Tracking the height
+  # in a scalar rather than holding the source object avoids comparing an object
+  # against blank, which Liquid does not do usefully.
+  assign selected_url = ''
+  assign selected_height = 0
+
+  for source in video.sources
+    if source.mime_type == 'video/mp4' and source.height <= height_ceiling and source.height > selected_height
+      assign selected_url = source.url
+      assign selected_height = source.height
+    endif
+  endfor
+%}
+
+{%- if selected_url != blank -%}
+  <video
+    playsinline
+    autoplay
+    loop
+    muted
+    preload="metadata"
+    class="{{ class }}"
+    {% if testid != blank %}
+      data-testid="{{ testid }}"
+    {% endif %}
+    data-video-rendition-height="{{ selected_height }}"
+  >
+    <source src="{{ selected_url }}" type="video/mp4">
+    {%- if video.preview_image != blank -%}
+      {%- comment -%}
+        Poster frame. `video_tag` emits this same child `<img>` with no alt at
+        all, which is the origin of the image-alt finding recorded in
+        THEME_CHECK_NON_ACTIONABLE.md. Emitting it ourselves lets us set one.
+      {%- endcomment -%}
+      <img
+        src="{{ video.preview_image | image_url: width: 1600 }}"
+        width="{{ video.preview_image.width }}"
+        height="{{ video.preview_image.height }}"
+        alt="{{ video.alt | default: '' | escape }}"
+      >
+    {%- endif -%}
+  </video>
+{%- else -%}
+  {%- comment -%}
+    No rendition at or below the ceiling. Render exactly what this section
+    rendered before, rather than dropping the video.
+  {%- endcomment -%}
+  {{
+    video
+    | video_tag:
+      poster: nil,
+      autoplay: true,
+      loop: true,
+      controls: false,
+      muted: true,
+      class: class,
+      data-testid: testid
+  }}
+{%- endif -%}

@@ -4,7 +4,21 @@
   proprietary Brush Script MT, served from the theme's own Shopify CDN assets
   with no external font host. It is a variable face (weight 400 to 700); the
   lockup renders it at 600 for a heavier brush stroke.
+
+  The preload is what makes the headline stop reflowing on a cold load. Without
+  it the face is only discovered when the CSS below is parsed and matched against
+  the lockup, which lands after the hero video request, so the headline paints in
+  the fallback script face and then swaps. Unconditional, matching the @font-face
+  it pairs with: a hero with no .hero-lockup markup pays 42 KB for nothing, which
+  is acceptable while this section is effectively homepage-only.
 {% endcomment %}
+<link
+  rel="preload"
+  as="font"
+  href="{{ 'dancing-script.woff2' | asset_url }}"
+  type="font/woff2"
+  crossorigin
+>
 {% style %}
   @font-face {
     font-family: "Dancing Script";
@@ -197,17 +211,11 @@
 
   {%- if media_1 == 'video' -%}
     <div class="{{ video_wrapper_desktop_class }}">
-      {{
-        section.settings.video_1
-        | video_tag:
-          poster: nil,
-          autoplay: true,
-          loop: true,
-          controls: false,
-          muted: true,
-          class: media_video_desktop_class,
-          data-testid: 'hero-desktop-video-1'
-      }}
+      {% render 'hero-video',
+        video: section.settings.video_1,
+        class: media_video_desktop_class,
+        testid: 'hero-desktop-video-1'
+      %}
     </div>
   {%- endif -%}
 
@@ -231,17 +239,11 @@
 
     {%- if media_1_mobile == 'video' -%}
       <div class="hero__video-wrapper hero__video-wrapper--mobile">
-        {{
-          section.settings.video_1_mobile
-          | video_tag:
-            poster: nil,
-            autoplay: true,
-            loop: true,
-            controls: false,
-            muted: true,
-            class: 'hero__video hero__video--mobile',
-            data-testid: 'hero-mobile-video-1'
-        }}
+        {% render 'hero-video',
+          video: section.settings.video_1_mobile,
+          class: 'hero__video hero__video--mobile',
+          testid: 'hero-mobile-video-1'
+        %}
       </div>
     {%- endif -%}
   {%- endif -%}
@@ -297,17 +299,11 @@
 
   {%- if media_2 == 'video' -%}
     <div class="{{ video_wrapper_desktop_class }}">
-      {{
-        section.settings.video_2
-        | video_tag:
-          poster: nil,
-          autoplay: true,
-          loop: true,
-          controls: false,
-          muted: true,
-          class: media_video_desktop_class,
-          data-testid: 'hero-desktop-video-2'
-      }}
+      {% render 'hero-video',
+        video: section.settings.video_2,
+        class: media_video_desktop_class,
+        testid: 'hero-desktop-video-2'
+      %}
     </div>
   {%- endif -%}
 
@@ -331,17 +327,11 @@
 
     {%- if media_2_mobile == 'video' -%}
       <div class="hero__video-wrapper hero__video-wrapper--mobile">
-        {{
-          section.settings.video_2_mobile
-          | video_tag:
-            poster: nil,
-            autoplay: true,
-            loop: true,
-            controls: false,
-            muted: true,
-            class: 'hero__video hero__video--mobile',
-            data-testid: 'hero-mobile-video-2'
-        }}
+        {% render 'hero-video',
+          video: section.settings.video_2_mobile,
+          class: 'hero__video hero__video--mobile',
+          testid: 'hero-mobile-video-2'
+        %}
       </div>
     {%- endif -%}
   {%- endif -%}
@@ -601,7 +591,36 @@
           aria-hidden="true"
           data-testid="hero-logo-overlay"
         >
-          {% render 'image', image: settings.logo, height: 400, class: 'hero__logo-overlay-image' %}
+          {%- comment -%}
+            This overlay is sized by CSS width percentage (--hero-logo-overlay-width),
+            not by height, so it needs a width-based srcset. Do NOT switch this back to
+            `render 'image'`: that snippet builds a DPR srcset off `height` (1x/2x/3x),
+            which at this mark's 2.7:1 ratio asks the CDN for a 3240px-wide file to
+            paint roughly 270 CSS px on a phone.
+
+            The vw figures track the width settings and ignore the wrapper's 6%
+            padding, so they over-estimate the rendered width by about 12%. That is
+            deliberate: over-estimating costs at most one srcset step, under-estimating
+            is visibly soft.
+          {%- endcomment -%}
+          {%- assign logo_overlay_sizes = '(min-width: 750px) '
+            | append: section.settings.logo_overlay_width
+            | append: 'vw, '
+            | append: section.settings.logo_overlay_width_mobile
+            | append: 'vw'
+          -%}
+          {{
+            settings.logo
+            | image_url: width: 2560
+            | image_tag:
+              width: settings.logo.width,
+              height: settings.logo.height,
+              widths: '240, 352, 832, 1200, 1600, 1920, 2560',
+              sizes: logo_overlay_sizes,
+              class: 'hero__logo-overlay-image',
+              alt: '',
+              fetchpriority: 'high'
+          }}
         </div>
       {%- endif -%}
     </div>
