@@ -61,12 +61,20 @@
     <source src="{{ selected_url }}" type="video/mp4">
     {%- if video.preview_image != blank -%}
       {%- comment -%}
-        Poster frame. `video_tag` emits this same child `<img>` with no alt at
-        all, which is the origin of the image-alt finding recorded in
-        THEME_CHECK_NON_ACTIONABLE.md. Emitting it ourselves lets us set one.
+        No-video-support fallback, not a poster: a child `<img>` inside `<video>`
+        renders only when the browser cannot play the source, so on every modern
+        browser this is downloaded and never shown. Keep it small. `video_tag`
+        emits Shopify's tiny `_small` thumbnail variant here; requesting a large
+        derivative instead costs every mobile visitor tens of KB of bandwidth
+        early in the load, competing with the video itself, for a frame nobody
+        sees.
+
+        `video_tag` also emits this element with no alt at all, which is the
+        origin of the image-alt finding in THEME_CHECK_NON_ACTIONABLE.md.
+        Emitting it ourselves lets us set one.
       {%- endcomment -%}
       <img
-        src="{{ video.preview_image | image_url: width: 1600 }}"
+        src="{{ video.preview_image | image_url: width: 800 }}"
         width="{{ video.preview_image.width }}"
         height="{{ video.preview_image.height }}"
         alt="{{ video.alt | default: '' | escape }}"
