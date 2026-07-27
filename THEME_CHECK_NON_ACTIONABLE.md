@@ -283,6 +283,60 @@ handling, quality tiers).
 **No action required in theme code.** Optionally set the video media's alt text in Admin for the
 `<video>` `aria-label`. Revisit if Shopify adds `alt` support to `video_tag`.
 
+**Status update:** largely resolved. `snippets/hero-video.liquid` now hand-rolls the
+`<video>`/`<source>` markup in order to cap the rendition at 720p, and emits the fallback `<img>`
+itself with an `alt` drawn from the media's alt text. The `video_tag` path survives only as the
+fallback for a video with no rendition at or below the ceiling, so this finding applies only to
+that branch.
+
+---
+
+## Warnings, continued
+
+### 6. AssetPreload - Hero video poster preload
+
+**Severity:** Warning
+**Count:** 1 occurrence
+**File:** `snippets/hero-video.liquid`
+
+#### Details
+
+The hero video preloads its poster frame with a hand-written tag:
+
+```liquid
+<link rel="preload" as="image" fetchpriority="high" href="{{ poster_url }}">
+```
+
+Theme Check reports: *"For better performance, prefer using the preload argument of the
+`image_tag` filter."*
+
+#### Why Not Actionable
+
+Neither filter the check steers toward can express this preload.
+
+`image_tag`'s `preload` argument emits an `<img>` alongside the preload. The resource being
+preloaded here is a `<video>` element's `poster`, not an `<img>`, so using `image_tag` would add a
+second, visible image to the page rather than replacing anything.
+
+`preload_tag` is the filter that emits a bare `<link rel="preload">`, but its documented input
+must come from `asset_url`, `global_asset_url`, or `shopify_asset_url`. A poster derivative comes
+from `image_url` against a merchant-uploaded video's `preview_image`, which is not one of those,
+and `preload_tag` also has no `fetchpriority` parameter.
+
+The `fetchpriority="high"` is the entire point of the tag: a `poster` attribute is fetched at Low
+priority and cannot carry `fetchpriority` itself, which on a throttled mobile connection measured
+as 1529 ms of load delay for a file that downloads in under a millisecond.
+
+#### References
+
+- [Liquid filters: preload_tag](https://shopify.dev/docs/api/liquid/filters/preload_tag)
+- [Liquid filters: image_tag](https://shopify.dev/docs/api/liquid/filters/image_tag)
+
+#### Resolution
+
+**No action required.** Revisit if `preload_tag` gains `fetchpriority` support and accepts
+`image_url` output.
+
 ---
 
 ## Summary
@@ -294,6 +348,7 @@ handling, quality tiers).
 | UndefinedObject: 'back' | 1 | No | Intentional design - undefined renders as empty string |
 | UndefinedObject: Valid objects | 17 | No | False positives from static analysis limitations |
 | image-alt (Lighthouse, video poster) | 1 | No | `video_tag` filter output; no `alt` param, filter-internal `<img>` |
+| AssetPreload (hero poster preload) | 1 | No | No filter emits a `<link rel="preload">` with `fetchpriority` for an `image_url` derivative |
 | **Total (Theme Check)** | **23** | **No** | All findings documented and justified |
 
 ---

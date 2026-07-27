@@ -99,8 +99,42 @@
           assign fetch_priority = 'high'
         endif
 
-        if section and section.index <= 3
+        # The previous threshold of `<= 3` assumed three short sections fit in a
+        # viewport, which does not hold against a full-height hero: on the
+        # homepage it eager-loaded a 150 KB background for a section well below
+        # the fold on a 390px screen. `== 1` then overshot the other way and
+        # demoted section 2, which commonly sits at or just under the fold.
+        # Two is the compromise, and it matches the threshold in
+        # snippets/card-gallery.liquid. Anything further down is better served
+        # by lazy loading and the capped `sizes` and `widths` below, which let
+        # the browser pick a smaller candidate once it knows the rendered width.
+        if section and section.index <= 2
           assign loading = 'eager'
+        endif
+
+        # Below-the-fold backgrounds are decorative and sit under a gradient
+        # overlay, so they do not need a device-pixel-perfect candidate. The
+        # backgrounds still loading eagerly keep the honest `sizes` and the full
+        # candidate ladder: those are the ones a visitor looks at directly.
+        #
+        # `sizes`: at `100vw` a 390px screen at DPR 3 asks for 1170px and lands
+        # on the 1200 candidate, about 150 KB, which Chrome's widened lazy
+        # threshold on a slow connection still fetches during the initial load.
+        # Under-declaring the mobile slot moves the pick down to the 832
+        # candidate, roughly a third of the bytes for a difference that is not
+        # visible through the overlay. Prepended as a `max-width` condition
+        # rather than wrapping the existing value: `sizes` may already carry a
+        # media condition of its own, and the first matching condition wins, so
+        # this caps mobile and falls through to the original list elsewhere.
+        #
+        # `widths`: the same argument in the axis `sizes` cannot reach, desktop.
+        # A 1440px viewport at DPR 2 asks for 2880px and lands on the 3840
+        # candidate, which measured 832 KB for the homepage editorial band, the
+        # largest asset on the page after the hero video. Capping at 1920 is
+        # indistinguishable through the overlay.
+        if loading == 'lazy'
+          assign sizes = '(max-width: 749px) 60vw, ' | append: sizes
+          assign widths = '832, 1200, 1600, 1920'
         endif
       %}
       {{

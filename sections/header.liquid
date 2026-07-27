@@ -475,6 +475,38 @@
     z-index: var(--layer-sticky);
   }
 
+  /*
+   * When an always-sticky header sits below an announcement bar, pin the whole
+   * top group (announcement bar + header) as a single unit so the announcement
+   * bar stays in place while scrolling instead of sliding away above the header.
+   * Scoped to 'always' so scroll-up mode keeps its hide-on-scroll-down behavior,
+   * and to :has(.announcement-bar) so bare-header stores are untouched.
+   */
+  #header-group:has(#header-component[sticky='always']):has(.announcement-bar) {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: var(--layer-sticky);
+  }
+
+  /* Undo the header section's own sticky so it flows below the pinned bar. */
+  #header-group:has(#header-component[sticky='always']):has(.announcement-bar) .header-section {
+    position: relative;
+  }
+
+  /*
+   * Pinning the header group as a block box (rule above) promotes it to its own
+   * compositing layer, whose bottom edge can round to a device-pixel boundary and
+   * leave a hairline of the white page background between the header and the
+   * content below it. Overlap the following content so the header sits flush over
+   * it; the header is stacked above, so the overlap is not visible. Scoped to the
+   * same always-sticky + announcement-bar setup as the pinning rule; the
+   * transparent-header path offsets content itself, so skip it there.
+   */
+  #header-group:has(#header-component[sticky='always']):has(.announcement-bar):not(:has(.header[transparent])) {
+    margin-block-end: -2px;
+  }
+
   .header[data-sticky-state] {
     transition: opacity var(--animation-speed) var(--animation-easing);
     opacity: 1;

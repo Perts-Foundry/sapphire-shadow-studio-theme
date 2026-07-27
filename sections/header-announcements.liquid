@@ -6,7 +6,7 @@
   ></script>
 {% endif %}
 
-<div class="section-background color-{{ section.settings.color_scheme }}"></div>
+<div class="section-background announcement-bar__background color-{{ section.settings.color_scheme }}"></div>
 <aside
   class="announcement-bar spacing-style section section--{{ section.settings.section_width }} color-{{ section.settings.color_scheme }}"
   style="{% render 'spacing-padding', settings: section.settings %}; --border-bottom-width: {{ section.settings.divider_width }}px;"
@@ -22,8 +22,12 @@
 
   <announcement-bar-component
     class="announcement-bar__slider"
+    {% comment %}
+      Starts at "off" and is flipped to "polite" by assets/announcement-bar.js
+      when rotation stops. Mirrors the same handling in snippets/slideshow.liquid.
+    {% endcomment %}
     {% if autoplay == true %}
-      autoplay="{{ section.settings.speed }}" aria-live="polite"
+      autoplay="{{ section.settings.speed }}" aria-live="off"
     {% endif %}
   >
     {% if show_arrows %}
@@ -33,12 +37,80 @@
     <div class="announcement-bar__slides">
       {% content_for 'blocks' %}
     </div>
+
+    {% if autoplay %}
+      {% comment %}
+        Pause control for the auto-rotating announcements (WCAG 2.2.2). Two static
+        buttons rather than one toggle with a swapping label, matching the pair in
+        snippets/slideshow-controls.liquid; the CSS below shows exactly one, keyed
+        off the `paused` attribute that assets/announcement-bar.js maintains.
+      {% endcomment %}
+      <button
+        type="button"
+        class="slideshow-control announcement-bar__playback button-unstyled icon-pause"
+        aria-label="{{ 'accessibility.slideshow_pause' | t }}"
+        on:click="/pause"
+      >
+        {{- 'icon-pause.svg' | inline_asset_content -}}
+      </button>
+      <button
+        type="button"
+        class="slideshow-control announcement-bar__playback button-unstyled icon-play"
+        aria-label="{{ 'accessibility.slideshow_play' | t }}"
+        on:click="/play"
+      >
+        {{- 'icon-play.svg' | inline_asset_content -}}
+      </button>
+    {% endif %}
   </announcement-bar-component>
 </aside>
 
 {% stylesheet %}
   .announcement-bar {
     border-block-end: var(--border-bottom-width) solid var(--color-border);
+  }
+
+  /*
+   * Animated brand gradient background. The .section aside itself is forced
+   * transparent by base.css (.shopify-section:not(.header-section) .section),
+   * and the flat color-scheme fill is actually painted by the sibling
+   * .section-background div, so the gradient has to live there. Every stop
+   * stays dark enough to keep the white text legible (contrast well above
+   * 4.5:1). The double class outranks the .color-<scheme> background-color.
+   */
+  .section-background.announcement-bar__background {
+    background-image: linear-gradient(
+      90deg,
+      #071e3f,
+      #123a8c,
+      #3a1a6b,
+      #6b1a52,
+      #0a5563,
+      #123a8c,
+      #071e3f
+    );
+    background-size: 300% 100%;
+    animation: announcement-bar-gradient 14s ease-in-out infinite;
+  }
+
+  @keyframes announcement-bar-gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .section-background.announcement-bar__background {
+      animation: none;
+    }
   }
 
   .announcement-bar__slider {
@@ -52,12 +124,98 @@
     }
   }
 
+  /*
+   * Mobile: three button widths of clearance, distributed asymmetrically: one
+   * for the previous arrow at the inline start, two at the inline end for the
+   * pause control plus the next arrow. Equal auto margins would need four,
+   * which costs a whole button width of text and was enough to wrap a one-line
+   * announcement onto two lines, making the bar taller. The text ends up half
+   * a button width left of geometric centre, which reads as centred there
+   * because the width calc binds and the free space on the right genuinely
+   * holds one more control than the left.
+   *
+   * Desktop: the 680px cap binds instead of the width calc, so fixed margins
+   * would pin the box (and the text centred inside it) a single button width
+   * from the left edge, visibly off-centre. Auto margins centre the capped
+   * box; the width calc reserves two button widths per side, which covers the
+   * pause-plus-arrow pair on the right even at 750px where the cap stops
+   * binding.
+   */
   .announcement-bar__slides {
     display: grid;
     grid: [stack] auto / [stack] auto;
-    width: calc(100% - var(--button-size) * 2);
+    width: calc(100% - var(--button-size) * 3);
     max-width: 680px;
+    margin-inline: var(--button-size) calc(var(--button-size) * 2);
+
+    @media screen and (min-width: 750px) {
+      width: calc(100% - var(--button-size) * 4);
+      margin-inline: auto;
+    }
+  }
+
+  /*
+   * The margins above reserve room for one arrow at the inline start and the
+   * pause control plus the next arrow at the inline end, which is the shipped
+   * configuration. Both are merchant toggles ("Show arrows" and "Auto-rotate"),
+   * so hand the reserved space back when a control is not rendered; otherwise
+   * the text sits visibly off-centre against clearance for buttons that are not
+   * there. Neither override matches while arrows and autoplay are both on, so
+   * this changes nothing in the shipped configuration.
+   */
+  .announcement-bar__slider:not(:has(.announcement-bar__playback)) .announcement-bar__slides,
+  .announcement-bar__slider:not(:has(slideshow-arrows)) .announcement-bar__slides {
+    width: calc(100% - var(--button-size) * 2);
     margin-inline: auto;
+  }
+
+  .announcement-bar__slider:not(:has(slideshow-arrows, .announcement-bar__playback))
+    .announcement-bar__slides {
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  /* No next arrow to sit inboard of, so the control takes the edge slot itself. */
+  .announcement-bar__slider:not(:has(slideshow-arrows)) .announcement-bar__playback {
+    inset-inline-end: 0;
+  }
+
+  /*
+   * Positioned out of flow for the same reason the arrows are: the control is a
+   * full 44px touch target, so as a flow child it became the tallest item in the
+   * row and made the whole bar thicker than the announcement text needs. Taking
+   * it out of flow returns the bar's height to being driven by its text alone.
+   *
+   * Offset one button width from the inline end so it sits inboard of the next
+   * arrow rather than underneath it. `inset-block: 0` with `margin-block: auto`
+   * centres it against whatever height the text ends up producing.
+   */
+  .announcement-bar__playback {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--button-size);
+    margin-block: auto;
+    color: var(--color-foreground);
+    flex-shrink: 0;
+    z-index: var(--layer-heightened);
+  }
+
+  /* Show exactly one of the pause/play pair; see the markup comment above. */
+  announcement-bar-component:not([paused]) .announcement-bar__playback.icon-play,
+  announcement-bar-component[paused] .announcement-bar__playback.icon-pause {
+    display: none;
+  }
+
+  /*
+   * base.css hides the svg inside any .icon-pause / .icon-play control and only
+   * un-hides it under `slideshow-component[autoplay]`. This is an
+   * announcement-bar-component, so without this rule the button renders as a
+   * correctly sized, correctly labelled, completely blank box: present in the
+   * accessibility tree, invisible on screen.
+   */
+  announcement-bar-component:not([paused]) .announcement-bar__playback.icon-pause > svg,
+  announcement-bar-component[paused] .announcement-bar__playback.icon-play > svg {
+    display: block;
   }
 
   .announcement-bar__slides > * {
@@ -117,6 +275,14 @@
   .announcement-bar__link {
     position: absolute;
     inset: 0;
+    cursor: pointer;
+  }
+
+  /* The anchor label is visually hidden, so give the anchor itself a visible
+     focus ring for keyboard users. */
+  .announcement-bar__link:focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: -4px;
   }
 {% endstylesheet %}
 

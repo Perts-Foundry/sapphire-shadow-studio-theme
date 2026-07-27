@@ -22,3 +22,20 @@ Match the role / attribute set exactly when implementing one of these widgets. A
 - **Tab**. Tablist: `role="tablist" aria-label`. Tabs: `role="tab" aria-selected aria-controls="<panelId>"`. Panels: `role="tabpanel" aria-labelledby="<tabId>"`. Left / Right (or Up / Down for vertical) move; Space / Enter activates; Home / End jump to ends.
 - **Tooltip**. Trigger: `<button aria-expanded aria-controls="<tooltipId>">`. Tooltip: `role="tooltip"` with matching `id`. Enter / Space shows; Esc hides. Hover and tap also toggle. Tooltip content is non-interactive and a sibling, not a descendant of the trigger.
 
+## Deviations on file
+
+Where the theme knowingly differs from a pattern above. Each entry is a decision that has been taken, not a bug to fix; do not "correct" one back to the pattern without re-opening the decision. Anything not listed here is expected to match.
+
+### Carousel
+
+- **Auto-rotation interval.** The pattern says >= 5 s. The homepage Featured carousel (`templates/index.json`, `product_list_fa6P9H`) runs at **2 s**, and `sections/product-list.liquid` sets the `autoplay_speed` range floor to 2 to allow it. This is a deliberate presentation choice by the store operator. WCAG 2.2.2 is still met: the carousel carries a visible pause control, rotation halts on hover and on focus, and `prefers-reduced-motion` suppresses automatic rotation entirely. The >= 5 s figure remains the default recommendation for any new carousel.
+- **Rotation toggle.** The pattern says one toggle with a dynamic `aria-label`. `snippets/slideshow-controls.liquid` and `sections/header-announcements.liquid` both render **two static buttons** (pause and play) and show exactly one via CSS keyed off the `paused` attribute. This is an accepted ARIA APG variant, each button carries a correct static label, and it avoids threading label state through every caller. Revisit if `slideshow-controls` is ever refactored.
+- **Next / Previous at the ends.** The pattern says never disabled. The resource-list carousel sets `infinite: false` (the wrap machinery is what produced the visible snap back to the first slide, see `snippets/resource-list-carousel.liquid`), so the arrows do disable at the ends, and `assets/base.css` hides disabled arrows outright. Autoplay compensates with `autoplay-direction="alternate"`, which turns around at the ends rather than wrapping.
+
+### Known gaps, not yet decisions
+
+Inherited from Horizon and not yet addressed; unlike the entries above these are worth closing when the surrounding code is next touched.
+
+- The carousel wrapper carries no `role="region"` / `aria-roledescription="carousel"`, and slides carry no `role="group"` / `aria-roledescription="slide"`.
+- Inactive slides are managed with `aria-hidden` rather than `visibility: hidden`.
+

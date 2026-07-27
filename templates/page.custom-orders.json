@@ -680,7 +680,7 @@
             "width": "100%",
             "max_width": "normal",
             "alignment": "center",
-            "font": "var(--font-heading--family)",
+            "font": "heading",
             "font_size": "",
             "line_height": "0.95",
             "letter_spacing": "normal",
