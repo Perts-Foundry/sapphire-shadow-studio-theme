@@ -109,6 +109,23 @@
         if section and section.index == 1
           assign loading = 'eager'
         endif
+
+        # Below-the-fold backgrounds are decorative and sit under a gradient
+        # overlay, so they do not need a device-pixel-perfect candidate. At
+        # `100vw` a 390px screen at DPR 3 asks for 1170px and lands on the 1200
+        # candidate, about 150 KB, which Chrome's widened lazy threshold on a slow
+        # connection still fetches during the initial load. Under-declaring the
+        # mobile slot moves the pick down to the 832 candidate, roughly a third of
+        # the bytes for a difference that is not visible through the overlay.
+        # The eager first-section background keeps the honest `sizes`: it is the
+        # one background a visitor actually looks at directly.
+        # Prepended as a `max-width` condition rather than wrapping the existing
+        # value: `sizes` may already carry a media condition of its own, and the
+        # first matching condition wins, so this caps mobile and falls through to
+        # the original list everywhere else.
+        if loading == 'lazy'
+          assign sizes = '(max-width: 749px) 60vw, ' | append: sizes
+        endif
       %}
       {{
         background_image
