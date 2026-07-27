@@ -42,8 +42,19 @@
   # decodes, and the handover to playback is seamless because the pixels match.
   assign poster_derivative_width = poster_width | default: 600
   assign poster_url = ''
+  assign poster_rendered_width = 0
+  assign poster_rendered_height = 0
   if video.preview_image != blank
     assign poster_url = video.preview_image | image_url: width: poster_derivative_width
+    # Dimensions of the derivative actually served, not of the original. image_url
+    # never upscales, so a preview image narrower than the requested width comes
+    # back at its own size. Declaring the original's width against a downscaled
+    # src would describe a file that is not the one being fetched.
+    assign poster_rendered_width = poster_derivative_width
+    if video.preview_image.width < poster_derivative_width
+      assign poster_rendered_width = video.preview_image.width
+    endif
+    assign poster_rendered_height = poster_rendered_width | times: video.preview_image.height | divided_by: video.preview_image.width
   endif
 
   # Pick the tallest mp4 rendition at or under the ceiling. Tracking the height
@@ -91,7 +102,6 @@
     {% if testid != blank %}
       data-testid="{{ testid }}"
     {% endif %}
-    data-video-rendition-height="{{ selected_height }}"
   >
     <source src="{{ selected_url }}" type="video/mp4">
     {%- if video.preview_image != blank -%}
@@ -113,8 +123,8 @@
       {%- endcomment -%}
       <img
         src="{{ poster_url }}"
-        width="{{ video.preview_image.width }}"
-        height="{{ video.preview_image.height }}"
+        width="{{ poster_rendered_width }}"
+        height="{{ poster_rendered_height }}"
         alt="{{ video.alt | default: '' | escape }}"
       >
     {%- endif -%}

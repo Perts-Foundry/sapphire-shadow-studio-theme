@@ -155,6 +155,32 @@
   }
 
   /*
+   * The margins above reserve room for one arrow at the inline start and the
+   * pause control plus the next arrow at the inline end, which is the shipped
+   * configuration. Both are merchant toggles ("Show arrows" and "Auto-rotate"),
+   * so hand the reserved space back when a control is not rendered; otherwise
+   * the text sits visibly off-centre against clearance for buttons that are not
+   * there. Neither override matches while arrows and autoplay are both on, so
+   * this changes nothing in the shipped configuration.
+   */
+  .announcement-bar__slider:not(:has(.announcement-bar__playback)) .announcement-bar__slides,
+  .announcement-bar__slider:not(:has(slideshow-arrows)) .announcement-bar__slides {
+    width: calc(100% - var(--button-size) * 2);
+    margin-inline: auto;
+  }
+
+  .announcement-bar__slider:not(:has(slideshow-arrows, .announcement-bar__playback))
+    .announcement-bar__slides {
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  /* No next arrow to sit inboard of, so the control takes the edge slot itself. */
+  .announcement-bar__slider:not(:has(slideshow-arrows)) .announcement-bar__playback {
+    inset-inline-end: 0;
+  }
+
+  /*
    * Positioned out of flow for the same reason the arrows are: the control is a
    * full 44px touch target, so as a flow child it became the tallest item in the
    * row and made the whole bar thicker than the announcement text needs. Taking

@@ -191,7 +191,14 @@ export class Slideshow extends Component {
 
       // Measure before touching any style below, so the one uncached read per
       // layout does not land after a write and force a second reflow.
-      this.#slideWidth ??= targetSlide.getBoundingClientRect().width;
+      //
+      // Explicit falsy test rather than `??=`: a slideshow measured while an
+      // ancestor is display:none reads 0, and `??=` would treat that as a real
+      // cached width and keep sizing the placeholder to nothing until the
+      // ResizeObserver happened to clear it.
+      if (!this.#slideWidth) {
+        this.#slideWidth = targetSlide.getBoundingClientRect().width;
+      }
 
       // Mandatory snap re-aligns instantly when slides reorder, causing a visible
       // hop; keep it off until the DOM is restored (same pattern as dragging).
@@ -224,7 +231,11 @@ export class Slideshow extends Component {
 
         // Instantly scroll to the target slide as its position will have changed
         this.#scroll.to(targetSlide, { instant: true });
-        this.#scroll.snap = true;
+
+        // Skip while a drag is in flight: dragging turns snap off for its own
+        // duration and restores it on pointerup, so re-enabling it here would
+        // snap the slides mid-gesture. Same guard the drag handler uses.
+        if (!this.#dragging) this.#scroll.snap = true;
       });
     }
 
@@ -284,6 +295,18 @@ export class Slideshow extends Component {
   play(interval = this.autoplayInterval) {
     if (this.#interval) return;
 
+    // Reaching play() while reduced motion is on means the visitor pressed the
+    // play button: resume() diverts every automatic start path away from here
+    // unless this flag is already set. Record it so later resume() calls
+    // (hover-out, focus-out, tab becoming visible) honour the request instead of
+    // re-pausing on the OS setting. See resume().
+    //
+    // Guarded on the media query rather than set unconditionally: resume() also
+    // routes through play(), so an unconditional set would latch the flag for
+    // every visitor and then ignore reduced motion being switched on later in
+    // the session.
+    if (prefersReducedMotion()) this.#playbackRequested = true;
+
     this.paused = false;
     // Silence the live region while slides advance on their own; see pause().
     if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'off');
@@ -291,13 +314,23 @@ export class Slideshow extends Component {
     this.#interval = setInterval(() => {
       if ((mediaQueryHover.matches && this.matches(':hover')) || document.hidden) return;
 
+      // Skip while the element is not rendered. `carousel_on_mobile` puts both a
+      // grid and a carousel in the DOM and hides one per breakpoint, so on desktop
+      // this interval would otherwise drive a `display: none` slideshow for the
+      // life of the page. offsetParent is null exactly when an ancestor is
+      // display:none (this element is never position:fixed).
+      if (this.offsetParent === null) return;
+
       // With `autoplay-direction="alternate"` the rotation bounces between the
       // ends instead of wrapping, so the viewer never sees the long snap back
       // to the first slide. The turnaround checks mirror the arrow-disabling
       // logic in the `current` setter: reverse when another step forward would
       // run past the last slide, and vice versa.
       if (this.getAttribute('autoplay-direction') === 'alternate') {
-        const { slides } = this.refs;
+        // `this.slides`, not `this.refs.slides`: the getter drops hidden slides,
+        // and nextIndex/atEnd are all computed against that filtered list. Using
+        // the raw ref array here would turn the rotation around a slide late.
+        const { slides } = this;
 
         if (this.#autoplayDirection > 0 && slides && this.nextIndex >= slides.length) {
           this.#autoplayDirection = -1;
@@ -322,6 +355,11 @@ export class Slideshow extends Component {
    * Pauses automatic slide playback.
    */
   pause() {
+    // An explicit stop revokes the reduced-motion override from play(). resume()
+    // already no-ops on `paused`, so this only matters for the resume() path that
+    // clears `paused` on its way back to play().
+    this.#playbackRequested = false;
+
     this.paused = true;
     // Once the user has stopped the rotation, slide changes are deliberate and
     // worth announcing. Only touch the attribute when the markup opted in to a
@@ -362,11 +400,16 @@ export class Slideshow extends Component {
     // while play() is also what the explicit play button calls, and a user who
     // presses play is asking for rotation regardless of the OS setting.
     //
+    // #playbackRequested is what makes that second half true. Without it the
+    // check here fires again on the first hover-out or focus-out after the play
+    // button was pressed, because play() clears `paused` and so the guard above
+    // stops shielding it, and the rotation the visitor asked for dies silently.
+    //
     // Land in the paused state rather than just returning: that shows the play
     // button instead of the pause button, keeps the live region on "polite", and
     // makes later resume() calls no-op on the `paused` check. Rotation stays
     // available to anyone who explicitly asks for it.
-    if (prefersReducedMotion()) {
+    if (prefersReducedMotion() && !this.#playbackRequested) {
       this.pause();
       return;
     }
@@ -486,6 +529,15 @@ export class Slideshow extends Component {
    * @type {number}
    */
   #autoplayDirection = 1;
+
+  /**
+   * Whether the visitor explicitly asked for rotation by pressing play. Lets
+   * resume() tell an automatic restart (which reduced motion should suppress)
+   * from resuming something the visitor turned on themselves (which it should
+   * not). Set in play(), cleared in pause().
+   * @type {boolean}
+   */
+  #playbackRequested = false;
 
   /**
    * The Scroller instance that manages scrolling.

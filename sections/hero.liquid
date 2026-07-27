@@ -12,13 +12,20 @@
   it pairs with: a hero with no .hero-lockup markup pays 42 KB for nothing, which
   is acceptable while this section is effectively homepage-only.
 {% endcomment %}
-<link
-  rel="preload"
-  as="font"
-  href="{{ 'dancing-script.woff2' | asset_url }}"
-  type="font/woff2"
-  crossorigin
->
+{%- comment -%}
+  preload_tag rather than a hand-written <link>: the input here is asset_url
+  output, which is one of the three sources the filter accepts, so it is the
+  supported spelling and keeps Theme Check's AssetPreload rule quiet. Extra
+  parameters render verbatim as attributes. crossorigin is not optional: theme
+  assets are served from the Shopify CDN, so the font is always a cross-origin
+  fetch, and a preload without it misses the font request entirely and
+  downloads the file twice.
+{%- endcomment -%}
+{{
+  'dancing-script.woff2'
+  | asset_url
+  | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous'
+}}
 {% style %}
   @font-face {
     font-family: "Dancing Script";
@@ -708,10 +715,10 @@
   }
 
   /*
-   * Optional logo lockup drawn over the hero media. The storefront logo is an
-   * SVG, so it stays sharp at any width and device pixel ratio, unlike a logo
-   * burned into the source video, which can only be as sharp as that video's
-   * resolution and bitrate allow. Decorative by design: the header already
+   * Optional logo lockup drawn over the hero media. Drawing the mark here rather
+   * than baking it into the footage means it is rendered from the storefront logo
+   * asset at whatever size the viewport needs, instead of being limited to the
+   * video's own resolution and bitrate. Decorative by design: the header already
    * carries the linked logo and the hero blocks carry the h1, so the wrapper is
    * aria-hidden and adds nothing to the accessibility tree.
    *
