@@ -19,17 +19,30 @@
   @param {string} [class] - classes applied to the `<video>` element
   @param {string} [testid] - value for `data-testid` on the `<video>` element
   @param {number} [max_height] - resolution ceiling in pixels, defaults to 720
+  @param {number} [poster_width] - width of the poster derivative, defaults to 600
 
   @example
   {% render 'hero-video',
     video: section.settings.video_1,
     class: 'hero__video hero__video--desktop',
+    poster_width: 1440,
     testid: 'hero-desktop-video-1'
   %}
 {% enddoc %}
 
 {% liquid
   assign height_ceiling = max_height | default: 720
+
+  # `video.preview_image` is the thumbnail Shopify generates during transcoding,
+  # which is the video's own first frame unless a custom one was uploaded in
+  # Admin. That makes it the right poster here: it paints as soon as a small
+  # image lands rather than after the first frame of a multi-megabyte file
+  # decodes, and the handover to playback is seamless because the pixels match.
+  assign poster_derivative_width = poster_width | default: 600
+  assign poster_url = ''
+  if video.preview_image != blank
+    assign poster_url = video.preview_image | image_url: width: poster_derivative_width
+  endif
 
   # Pick the tallest mp4 rendition at or under the ceiling. Tracking the height
   # in a scalar rather than holding the source object avoids comparing an object
@@ -52,6 +65,9 @@
     loop
     muted
     preload="metadata"
+    {% if poster_url != blank %}
+      poster="{{ poster_url }}"
+    {% endif %}
     class="{{ class }}"
     {% if testid != blank %}
       data-testid="{{ testid }}"
@@ -72,9 +88,12 @@
         `video_tag` also emits this element with no alt at all, which is the
         origin of the image-alt finding in THEME_CHECK_NON_ACTIONABLE.md.
         Emitting it ourselves lets us set one.
+
+        Points at the same derivative as the `poster` above rather than a width of
+        its own, so the two never cost two separate downloads.
       {%- endcomment -%}
       <img
-        src="{{ video.preview_image | image_url: width: 800 }}"
+        src="{{ poster_url }}"
         width="{{ video.preview_image.width }}"
         height="{{ video.preview_image.height }}"
         alt="{{ video.alt | default: '' | escape }}"
@@ -85,16 +104,34 @@
   {%- comment -%}
     No rendition at or below the ceiling. Render exactly what this section
     rendered before, rather than dropping the video.
+
+    Branched on the poster rather than passing `poster: poster_url` in one call:
+    an empty string would emit `poster=""`, which resolves against the document
+    and makes the browser fetch the page itself as an image.
   {%- endcomment -%}
-  {{
-    video
-    | video_tag:
-      poster: nil,
-      autoplay: true,
-      loop: true,
-      controls: false,
-      muted: true,
-      class: class,
-      data-testid: testid
-  }}
+  {%- if poster_url != blank -%}
+    {{
+      video
+      | video_tag:
+        poster: poster_url,
+        autoplay: true,
+        loop: true,
+        controls: false,
+        muted: true,
+        class: class,
+        data-testid: testid
+    }}
+  {%- else -%}
+    {{
+      video
+      | video_tag:
+        poster: nil,
+        autoplay: true,
+        loop: true,
+        controls: false,
+        muted: true,
+        class: class,
+        data-testid: testid
+    }}
+  {%- endif -%}
 {%- endif -%}
