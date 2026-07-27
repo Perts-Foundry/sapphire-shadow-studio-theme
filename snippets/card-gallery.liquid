@@ -134,9 +134,21 @@
             continue
           endif
 
-          if forloop.first and section.index == null or section.index < 5
-            assign loading = 'eager'
-            assign sizes = image_sizes
+          # Eager-load the first image of each card only in the first section.
+          # Upstream used `section.index < 5`, which on this homepage made four
+          # sections' worth of product imagery compete with the hero video for
+          # bandwidth before any of it was near the viewport. Same threshold as
+          # the one snippets/background-media.liquid now uses.
+          #
+          # Nested rather than `a and b or c`: Liquid has no operator precedence
+          # and binds right to left, so the original read as
+          # `forloop.first and (section.index == null or section.index < 5)`,
+          # which is easy to misread as the opposite grouping.
+          if forloop.first
+            if section.index == null or section.index == 1
+              assign loading = 'eager'
+              assign sizes = image_sizes
+            endif
           endif
 
           assign class = 'product-media-container media-fit product-media-container--[media_type]' | replace: '[media_type]', media.media_type
