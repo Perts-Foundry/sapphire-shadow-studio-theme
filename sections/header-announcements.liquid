@@ -37,6 +37,31 @@
     <div class="announcement-bar__slides">
       {% content_for 'blocks' %}
     </div>
+
+    {% if autoplay %}
+      {% comment %}
+        Pause control for the auto-rotating announcements (WCAG 2.2.2). Two static
+        buttons rather than one toggle with a swapping label, matching the pair in
+        snippets/slideshow-controls.liquid; the CSS below shows exactly one, keyed
+        off the `paused` attribute that assets/announcement-bar.js maintains.
+      {% endcomment %}
+      <button
+        type="button"
+        class="slideshow-control announcement-bar__playback button-unstyled icon-pause"
+        aria-label="{{ 'accessibility.slideshow_pause' | t }}"
+        on:click="/pause"
+      >
+        {{- 'icon-pause.svg' | inline_asset_content -}}
+      </button>
+      <button
+        type="button"
+        class="slideshow-control announcement-bar__playback button-unstyled icon-play"
+        aria-label="{{ 'accessibility.slideshow_play' | t }}"
+        on:click="/play"
+      >
+        {{- 'icon-play.svg' | inline_asset_content -}}
+      </button>
+    {% endif %}
   </announcement-bar-component>
 </aside>
 
@@ -99,12 +124,32 @@
     }
   }
 
+  /*
+   * Four button widths, not two: the previous/next arrows are absolutely
+   * positioned at the two edges, and the pause control is a flow sibling at the
+   * inline end. Reserving four keeps the equal auto margins landing two button
+   * widths clear on each side (arrow zone on the left; pause button plus one
+   * margin on the right), so the text stays optically centred and nothing
+   * overlaps the arrows.
+   */
   .announcement-bar__slides {
     display: grid;
     grid: [stack] auto / [stack] auto;
-    width: calc(100% - var(--button-size) * 2);
+    width: calc(100% - var(--button-size) * 4);
     max-width: 680px;
     margin-inline: auto;
+  }
+
+  .announcement-bar__playback {
+    color: var(--color-foreground);
+    flex-shrink: 0;
+    z-index: var(--layer-heightened);
+  }
+
+  /* Show exactly one of the pause/play pair; see the markup comment above. */
+  announcement-bar-component:not([paused]) .announcement-bar__playback.icon-play,
+  announcement-bar-component[paused] .announcement-bar__playback.icon-pause {
+    display: none;
   }
 
   .announcement-bar__slides > * {
