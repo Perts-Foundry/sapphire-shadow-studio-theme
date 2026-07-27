@@ -3718,6 +3718,15 @@ slideshow-arrows .slideshow-control.slideshow-control--style-none {
   .slideshow-control--next {
     margin-inline-start: auto;
   }
+
+  /*
+   * The controls row is full-bleed in page-width sections, which would put the
+   * pause control flush against the screen edge. Inset it by the same gutter
+   * the slides reserve (set on the wrapper's inline style; 0px elsewhere).
+   */
+  slideshow-controls {
+    padding-inline: var(--gutter-slide-width, 0px);
+  }
 }
 
 @container resource-list-carousel (max-width: 749px) {

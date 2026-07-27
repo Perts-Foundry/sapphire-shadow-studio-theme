@@ -353,8 +353,18 @@
     }
   }
 
-  slideshow-controls:has(.slideshow-controls__dots),
-  slideshow-component[autoplay] slideshow-controls {
+  /*
+   * Difference blending is for controls overlaid on media, where inverting the
+   * backdrop guarantees contrast (the [controls-on-media] rule above pairs it
+   * with a white foreground). In-flow controls paint in the scheme's
+   * near-black foreground instead, and difference of black is a per-channel
+   * identity (|backdrop - 0| = backdrop): the whole row repaints its backdrop
+   * onto itself and is invisible on any background. That hid the resource-list
+   * carousel's dots and pause control, so the blend is scoped to
+   * [controls-on-media].
+   */
+  slideshow-controls[controls-on-media]:has(.slideshow-controls__dots),
+  slideshow-component[autoplay] slideshow-controls[controls-on-media] {
     mix-blend-mode: difference;
   }
 
@@ -373,6 +383,19 @@
   slideshow-component:not([paused]) .slideshow-control.icon-play,
   slideshow-component[paused] .slideshow-control.icon-pause {
     display: none;
+  }
+
+  /*
+   * The pause/play pair carries .button-secondary (width: fit-content) and
+   * .button-unstyled (display: block), which beat the 44px sizing on
+   * `slideshow-controls button` above on specificity and shrink the button to
+   * the svg's 20px. Restore the minimum touch target and center the icon.
+   */
+  slideshow-controls .slideshow-control:is(.icon-pause, .icon-play) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--minimum-touch-target);
   }
 
   .slideshow-controls__dots {
