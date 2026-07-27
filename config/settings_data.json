@@ -74,7 +74,7 @@
     "currency_code_enabled_cart_items": false,
     "currency_code_enabled_cart_total": false,
     "quick_add": false,
-    "product_corner_radius": 0,
+    "product_corner_radius": 8,
     "card_corner_radius": 4,
     "show_variant_image": true,
     "variant_swatch_width": 34,
