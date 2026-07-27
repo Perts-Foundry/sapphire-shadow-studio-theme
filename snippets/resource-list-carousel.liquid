@@ -48,14 +48,14 @@
 
   style must not be 'none': 'slideshow-controls' wraps its whole body in
   `unless style == 'none'`, which would silently drop the buttons along with the
-  pagination. 'dots' also gives the carousel useful position feedback.
+  pagination. 'playback' keeps just the pause/play pair; a dot per product was
+  visual clutter at mobile widths for a catalog-sized carousel.
 {% endcomment %}
 {% capture controls %}
   {%- if autoplay -%}
     {%- render 'slideshow-controls',
-      style: 'dots',
+      style: 'playback',
       autoplay: autoplay,
-      item_count: slide_count,
       show_arrows: false,
       pagination_position: 'center',
       icon_style: settings.icons_style,
@@ -74,6 +74,18 @@
   {% endfor %}
 {% endcapture %}
 
+{% comment %}
+  Autoplay bounces between the ends (autoplay-direction="alternate" in
+  assets/slideshow.js) rather than looping, so the viewer never sees the long
+  snap back to the first slide. That also means infinite must stay off: the
+  wrap machinery is what produced the snap.
+{% endcomment %}
+{% liquid
+  assign slideshow_attributes = ''
+  if autoplay
+    assign slideshow_attributes = 'autoplay-direction="alternate"'
+  endif
+%}
 <div
   class="resource-list__carousel"
   style="{{ gutter_style }} --slide-width-max: {{ slide_width_max | default: '300px' }};"
@@ -87,11 +99,12 @@
     icon_style: settings.icons_style,
     icon_shape: settings.icons_shape,
     auto_hide_controls: false,
-    infinite: autoplay,
+    infinite: false,
     initial_slide: 0,
     autoplay: autoplay,
     autoplay_speed: autoplay_speed,
     slide_count: slide_count,
-    slideshow_gutters: slideshow_gutters
+    slideshow_gutters: slideshow_gutters,
+    attributes: slideshow_attributes
   %}
 </div>

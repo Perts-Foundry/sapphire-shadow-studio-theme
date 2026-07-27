@@ -291,6 +291,29 @@ export class Slideshow extends Component {
     this.#interval = setInterval(() => {
       if ((mediaQueryHover.matches && this.matches(':hover')) || document.hidden) return;
 
+      // With `autoplay-direction="alternate"` the rotation bounces between the
+      // ends instead of wrapping, so the viewer never sees the long snap back
+      // to the first slide. The turnaround checks mirror the arrow-disabling
+      // logic in the `current` setter: reverse when another step forward would
+      // run past the last slide, and vice versa.
+      if (this.getAttribute('autoplay-direction') === 'alternate') {
+        const { slides } = this.refs;
+
+        if (this.#autoplayDirection > 0 && slides && this.nextIndex >= slides.length) {
+          this.#autoplayDirection = -1;
+        } else if (this.#autoplayDirection < 0 && this.previousIndex < 0) {
+          this.#autoplayDirection = 1;
+        }
+
+        if (this.#autoplayDirection > 0) {
+          this.next();
+        } else {
+          this.previous();
+        }
+
+        return;
+      }
+
       this.next();
     }, interval);
   }
@@ -456,6 +479,13 @@ export class Slideshow extends Component {
    * @type {number|undefined}
    */
   #interval = undefined;
+
+  /**
+   * The direction automatic playback is currently travelling in when
+   * `autoplay-direction="alternate"` is set: 1 for forward, -1 for backward.
+   * @type {number}
+   */
+  #autoplayDirection = 1;
 
   /**
    * The Scroller instance that manages scrolling.

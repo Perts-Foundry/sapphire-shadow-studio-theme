@@ -125,13 +125,21 @@
   }
 
   /*
-   * Three button widths of clearance, distributed asymmetrically: one for the
-   * previous arrow at the inline start, two at the inline end for the pause
-   * control plus the next arrow. Equal auto margins would need four, which costs
-   * a whole button width of text and was enough to wrap a one-line announcement
-   * onto two lines, making the bar taller. The text ends up half a button width
-   * left of geometric centre, which reads as centred because the free space on
-   * the right genuinely holds one more control than the left.
+   * Mobile: three button widths of clearance, distributed asymmetrically: one
+   * for the previous arrow at the inline start, two at the inline end for the
+   * pause control plus the next arrow. Equal auto margins would need four,
+   * which costs a whole button width of text and was enough to wrap a one-line
+   * announcement onto two lines, making the bar taller. The text ends up half
+   * a button width left of geometric centre, which reads as centred there
+   * because the width calc binds and the free space on the right genuinely
+   * holds one more control than the left.
+   *
+   * Desktop: the 680px cap binds instead of the width calc, so fixed margins
+   * would pin the box (and the text centred inside it) a single button width
+   * from the left edge, visibly off-centre. Auto margins centre the capped
+   * box; the width calc reserves two button widths per side, which covers the
+   * pause-plus-arrow pair on the right even at 750px where the cap stops
+   * binding.
    */
   .announcement-bar__slides {
     display: grid;
@@ -139,6 +147,11 @@
     width: calc(100% - var(--button-size) * 3);
     max-width: 680px;
     margin-inline: var(--button-size) calc(var(--button-size) * 2);
+
+    @media screen and (min-width: 750px) {
+      width: calc(100% - var(--button-size) * 4);
+      margin-inline: auto;
+    }
   }
 
   /*
