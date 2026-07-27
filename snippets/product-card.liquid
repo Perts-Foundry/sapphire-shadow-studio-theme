@@ -143,4 +143,41 @@
   [data-quick-add-button='add'] .quick-add__button--choose {
     display: none;
   }
+
+  /* settings.transition_to_main_product wraps each card in <product-card-link>,
+     which has no default display and so breaks the height-equalization rule on
+     .product-card (:is(.product-grid__item, .resource-list__item) .product-card
+     in base.css). Invisible on transparent cards; visible as ragged bottoms once
+     cards paint their own surface. */
+  :is(.product-grid__item, .resource-list__item) > product-card-link {
+    display: block;
+    height: 100%;
+  }
+
+  /*
+   * Hover shadow: the theme budgeted for this (--hover-shadow-color is
+   * declared in base.css and referenced nowhere; the carousel's slide padding
+   * is commented as reserving room for a "15px spread with -5px offset"
+   * shadow) but never shipped it. Goes on .product-card__content, not
+   * .product-card: that element has no radius and no background of its own,
+   * so a shadow there would be square and invisible. Scoped to cards that
+   * paint their own surface (color-scheme-* class from inherit_color_scheme:
+   * false) so it doesn't appear on transparent, inherited-scheme cards,
+   * wherever the card renders.
+   */
+  .product-card__content[class*='color-scheme-'] {
+    transition: box-shadow var(--hover-transition-duration) var(--hover-transition-timing);
+  }
+
+  @media (any-pointer: fine) {
+    .product-card:hover .product-card__content[class*='color-scheme-'] {
+      box-shadow: 0 4px 16px rgb(var(--color-shadow-rgb) / var(--opacity-15));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .product-card__content[class*='color-scheme-'] {
+      transition: none;
+    }
+  }
 {% endstylesheet %}

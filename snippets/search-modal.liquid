@@ -30,7 +30,7 @@
     </h2>
     <predictive-search-component
       class="predictive-search color-{{ settings.popover_color_scheme }}{% if class != blank %} {{ class | strip }}{% endif %}"
-      style="--product-corner-radius: {{ settings.product_corner_radius | default: 8 | append: 'px' }}; --card-corner-radius: {{ settings.card_corner_radius | default: 8 | append: 'px' }};{% if settings.card_title_case == 'uppercase' %} --title-case: uppercase;{% endif %}"
+      style="--product-corner-radius: {{ settings.product_corner_radius | default: 8 | append: 'px' }}; --card-corner-radius: {{ settings.card_corner_radius | default: 8 | append: 'px' }}; --predictive-search-card-corner-radius: {{ settings.predictive_search_card_corner_radius | default: 0 | append: 'px' }}; --predictive-search-card-padding: {{ settings.predictive_search_card_padding | default: 0 | append: 'px' }};{% if settings.card_title_case == 'uppercase' %} --title-case: uppercase;{% endif %}"
       data-section-id="predictive-search"
       data-testid="{{ 'search-component--modal' }}"
       role="search"
