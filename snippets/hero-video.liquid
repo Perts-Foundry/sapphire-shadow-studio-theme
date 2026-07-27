@@ -20,6 +20,8 @@
   @param {string} [testid] - value for `data-testid` on the `<video>` element
   @param {number} [max_height] - resolution ceiling in pixels, defaults to 720
   @param {number} [poster_width] - width of the poster derivative, defaults to 600
+  @param {boolean} [preload_poster] - preload the poster at high priority; set this
+    only for the video that is actually the LCP element, never for offscreen slides
 
   @example
   {% render 'hero-video',
@@ -57,6 +59,23 @@
     endif
   endfor
 %}
+
+{%- if preload_poster and poster_url != blank -%}
+  {%- comment -%}
+    A `poster` is fetched at Low priority and cannot carry `fetchpriority`, so on a
+    throttled connection it queues behind everything else: measured at 1529 ms of
+    load delay for a file that downloads in under a millisecond. This preload
+    promotes it without changing what gets fetched. It resolves to the same URL as
+    the attribute below, from the same variable, so the two coalesce into one
+    request rather than racing.
+  {%- endcomment -%}
+  <link
+    rel="preload"
+    as="image"
+    fetchpriority="high"
+    href="{{ poster_url }}"
+  >
+{%- endif -%}
 
 {%- if selected_url != blank -%}
   <video

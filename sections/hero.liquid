@@ -155,9 +155,15 @@
   assign mobile_widths_array = mobile_widths | split: ', '
 
   assign fetch_priority = 'auto'
+  assign preload_hero_poster = false
 
   if section.index == 1
     assign fetch_priority = 'high'
+    # Only the first section's first slot is a plausible LCP element, and only
+    # its desktop call site is passed this: that element doubles as the mobile
+    # fallback, so it is the one video that always renders. Preloading a poster
+    # for an offscreen slide or a hidden slot would cost bytes for nothing.
+    assign preload_hero_poster = true
   endif
 %}
 
@@ -215,6 +221,7 @@
         video: section.settings.video_1,
         class: media_video_desktop_class,
         poster_width: 1440,
+        preload_poster: preload_hero_poster,
         testid: 'hero-desktop-video-1'
       %}
     </div>
