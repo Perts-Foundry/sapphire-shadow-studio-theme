@@ -140,9 +140,18 @@
     margin-inline: auto;
   }
 
+  /*
+   * The arrows are absolutely positioned with `inset: 0` and space-between, so
+   * the next arrow sits flush against the inline end. Without this margin the
+   * pause control, as the last flow child, lands in exactly the same place and
+   * disappears underneath it. One button width of margin puts it inboard of the
+   * arrow, which with the four widths reserved on the slides above leaves the
+   * row evenly spaced: arrow, slides, pause, arrow.
+   */
   .announcement-bar__playback {
     color: var(--color-foreground);
     flex-shrink: 0;
+    margin-inline-end: var(--button-size);
     z-index: var(--layer-heightened);
   }
 
