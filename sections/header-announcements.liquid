@@ -125,33 +125,39 @@
   }
 
   /*
-   * Four button widths, not two: the previous/next arrows are absolutely
-   * positioned at the two edges, and the pause control is a flow sibling at the
-   * inline end. Reserving four keeps the equal auto margins landing two button
-   * widths clear on each side (arrow zone on the left; pause button plus one
-   * margin on the right), so the text stays optically centred and nothing
-   * overlaps the arrows.
+   * Three button widths of clearance, distributed asymmetrically: one for the
+   * previous arrow at the inline start, two at the inline end for the pause
+   * control plus the next arrow. Equal auto margins would need four, which costs
+   * a whole button width of text and was enough to wrap a one-line announcement
+   * onto two lines, making the bar taller. The text ends up half a button width
+   * left of geometric centre, which reads as centred because the free space on
+   * the right genuinely holds one more control than the left.
    */
   .announcement-bar__slides {
     display: grid;
     grid: [stack] auto / [stack] auto;
-    width: calc(100% - var(--button-size) * 4);
+    width: calc(100% - var(--button-size) * 3);
     max-width: 680px;
-    margin-inline: auto;
+    margin-inline: var(--button-size) calc(var(--button-size) * 2);
   }
 
   /*
-   * The arrows are absolutely positioned with `inset: 0` and space-between, so
-   * the next arrow sits flush against the inline end. Without this margin the
-   * pause control, as the last flow child, lands in exactly the same place and
-   * disappears underneath it. One button width of margin puts it inboard of the
-   * arrow, which with the four widths reserved on the slides above leaves the
-   * row evenly spaced: arrow, slides, pause, arrow.
+   * Positioned out of flow for the same reason the arrows are: the control is a
+   * full 44px touch target, so as a flow child it became the tallest item in the
+   * row and made the whole bar thicker than the announcement text needs. Taking
+   * it out of flow returns the bar's height to being driven by its text alone.
+   *
+   * Offset one button width from the inline end so it sits inboard of the next
+   * arrow rather than underneath it. `inset-block: 0` with `margin-block: auto`
+   * centres it against whatever height the text ends up producing.
    */
   .announcement-bar__playback {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--button-size);
+    margin-block: auto;
     color: var(--color-foreground);
     flex-shrink: 0;
-    margin-inline-end: var(--button-size);
     z-index: var(--layer-heightened);
   }
 
