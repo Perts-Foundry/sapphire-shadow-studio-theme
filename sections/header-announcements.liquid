@@ -161,6 +161,18 @@
     display: none;
   }
 
+  /*
+   * base.css hides the svg inside any .icon-pause / .icon-play control and only
+   * un-hides it under `slideshow-component[autoplay]`. This is an
+   * announcement-bar-component, so without this rule the button renders as a
+   * correctly sized, correctly labelled, completely blank box: present in the
+   * accessibility tree, invisible on screen.
+   */
+  announcement-bar-component:not([paused]) .announcement-bar__playback.icon-pause > svg,
+  announcement-bar-component[paused] .announcement-bar__playback.icon-play > svg {
+    display: block;
+  }
+
   .announcement-bar__slides > * {
     grid-area: stack;
   }
