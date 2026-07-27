@@ -189,6 +189,10 @@ export class Slideshow extends Component {
       const targetSlide = slides[index];
       if (!targetSlide || !currentSlide) return;
 
+      // Measure before touching any style below, so the one uncached read per
+      // layout does not land after a write and force a second reflow.
+      this.#slideWidth ??= targetSlide.getBoundingClientRect().width;
+
       // Mandatory snap re-aligns instantly when slides reorder, causing a visible
       // hop; keep it off until the DOM is restored (same pattern as dragging).
       this.#scroll.snap = false;
@@ -197,7 +201,7 @@ export class Slideshow extends Component {
       // Size it explicitly: a bare slideshow-slide falls back to an inherited
       // --slide-width that can differ from the actual slide, shifting the layout.
       const placeholder = document.createElement('slideshow-slide');
-      placeholder.style.width = `${targetSlide.getBoundingClientRect().width}px`;
+      placeholder.style.width = `${this.#slideWidth}px`;
       targetSlide.before(placeholder);
 
       // Decide whether targetSlide goes before or after currentSlide
@@ -466,6 +470,15 @@ export class Slideshow extends Component {
   #resizeObserver;
 
   /**
+   * Cached measured slide width in pixels, used to size the reorder placeholder.
+   * Measuring it on every jump forces a synchronous layout, which an autoplaying
+   * slideshow pays every interval for the lifetime of the page. Invalidated by
+   * the ResizeObserver below, so it cannot outlive the layout it was read from.
+   * @type {number | null}
+   */
+  #slideWidth = null;
+
+  /**
    * IntersectionObserver for efficient visibility tracking of slides
    * @type {IntersectionObserver | null}
    */
@@ -549,6 +562,8 @@ export class Slideshow extends Component {
       });
 
       this.#resizeObserver = new ResizeObserver(async () => {
+        this.#slideWidth = null;
+
         if (viewTransition.current) await viewTransition.current;
 
         if (visibleSlidesAmount > 1) {
