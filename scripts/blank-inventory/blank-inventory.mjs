@@ -8,7 +8,10 @@
 //
 //   bodies    propose and approve the garment body map; a precondition of every other command
 //   audit     read-only health report: coverage, groups, drift vs awaiting-seed
-//   plan      emit an immutable, hashed plan artifact from an adjustments CSV
+//   vocab     read-only: the resolvable key space, or check a transcription before planning it
+//   show      render an approved plan artifact for the approval gate (read-only)
+//   plan      emit an immutable, hashed plan artifact from an adjustments CSV (refuses on any
+//             non-uniform group, whatever its state)
 //   apply     execute an approved artifact (and ONLY an artifact)
 //   verify    poll the affected groups to convergence
 //   backfill  tag untagged variants, then seed them so the Flow propagates
@@ -378,6 +381,17 @@ function groupJson(row) {
 }
 
 async function cmdAudit(opts) {
+  // Validate the flags before the catalogue read, as untag does: a bad flag should cost nothing,
+  // and a full catalogue load is slow enough that discovering it afterwards reads as a hang.
+  if (opts.group && typeof opts.group !== 'string') {
+    fail('--group needs a blank id, e.g. --group BLACK_CREWNECK_0001_M.');
+  }
+  if (opts.group && opts.stale) {
+    // Refused rather than given a precedence rule. Silently dropping --stale would print the
+    // single-group view even when that group is converged, which reads as "nothing is stale".
+    fail('--group and --stale select different views; pass one. --group <id> reports that group whatever its state, --stale reports every non-converged group.');
+  }
+
   const store = await loadStore({ requireWrite: false });
   const { receipts, staleSeeds } = await loadReceipts();
   const pendingSeeds = pendingSeedBlankIds(receipts);
@@ -390,9 +404,6 @@ async function cmdAudit(opts) {
 
   // --group narrows to one blank; --stale narrows to everything not converged. Both are views of
   // the same classification, never a different computation.
-  if (opts.group && typeof opts.group !== 'string') {
-    fail('--group needs a blank id, e.g. --group BLACK_CREWNECK_0001_M.');
-  }
   let rows = allRows;
   if (opts.group) {
     rows = allRows.filter((r) => r.blankId === opts.group);
@@ -1085,7 +1096,7 @@ blank-inventory: shared-blank stock and metafield tooling.
 
   bodies   --stage propose|approve|show    the garment body map (run this before anything else)
   audit    [--json] [--group <blankId>] [--stale]     read-only health report
-  vocab    [--check <csv> --mode <${MODES.join('|')}>]   the resolvable key space, or check a transcription
+  vocab    [--check <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]]   the resolvable key space, or check a transcription
   show     --plan <artifact.json>          render a plan artifact for the approval gate
   plan     --input <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]
   apply    --plan <artifact.json> [--dry-run] [--resume]
