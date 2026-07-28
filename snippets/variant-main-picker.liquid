@@ -73,6 +73,37 @@
             endif
           endif
 
+          # ===== BEGIN long-option dropdown (theme addition) =====
+          # A long value list (the Design option carries one credential per design) renders as a
+          # stack of full-width buttons that pushes the options below it, and Add to cart, off
+          # the first screen. Past `settings.variant_dropdown_threshold` values, collapse the
+          # option to the select branch below.
+          #
+          # The rule is value-count based and has NO exceptions, deliberately: every option is
+          # measured the same way, so a customer never has to learn why Design collapses but Size
+          # does not. That means it applies to the size option and it overrides swatches, which is
+          # why this runs last and is not gated on the current `variant_style`. Being count-based
+          # rather than option-name based also means adding a design or a color needs no settings
+          # change.
+          #
+          # Two consequences worth knowing before changing the threshold:
+          #   - The size option collapses too (XS..2XL is six values). The select branch renders
+          #     the size-guide link itself, so `#SizeChart` survives the switch.
+          #   - A swatch option past the threshold loses its swatches, because the select branch
+          #     renders plain text options and the theme has no swatch-inside-dropdown rendering.
+          #
+          # 0 is the kill switch, matching how `size_option_name` and `color_option_name` treat
+          # blank. Guarded explicitly because every option has at least one value, so a bare
+          # `>=` against 0 would collapse the entire picker.
+          assign dropdown_threshold = settings.variant_dropdown_threshold
+          if dropdown_threshold > 0
+            assign option_value_count = product_option.values | size
+            if option_value_count >= dropdown_threshold
+              assign variant_style = 'dropdowns'
+            endif
+          endif
+          # ===== END long-option dropdown =====
+
           if variant_style == 'buttons' and settings.variant_button_width == 'equal-width-buttons'
             assign fieldset_id = section.id | append: '-' | append: product_resource.id | append: '-' | append: product_option.name | handleize
             assign option_id_attribute = 'data-option-id="' | append: fieldset_id | append: '"'
@@ -80,7 +111,12 @@
           endif
         -%}
 
-        {%- if variant_style == 'swatch' or block_settings.variant_style == 'buttons' -%}
+        {%- comment -%}
+          Both branches test the per-option `variant_style` computed above, not
+          `block_settings.variant_style`. The block setting is one value for the whole picker, so
+          reading it here would ignore the swatch and threshold decisions made per option.
+        {%- endcomment -%}
+        {%- if variant_style == 'swatch' or variant_style == 'buttons' -%}
           {%- assign fieldset_index = forloop.index0 -%}
           {%- liquid
             assign is_size_option = false
@@ -189,7 +225,7 @@
               {% endstyle %}
             {% endif %}
           </fieldset>
-        {%- elsif block_settings.variant_style == 'dropdowns' -%}
+        {%- elsif variant_style == 'dropdowns' -%}
           {%
             # There is an opportunity to build a custom select component that will allow us to style the select element further (animation for dropdown, swatches shown in the dropdown options, etc)
             # It's too bad as it mean rebuilding baked in behaviours but I think we've already done that for the locale selectors

@@ -2313,6 +2313,16 @@
         "default": "Color"
       },
       {
+        "type": "range",
+        "id": "variant_dropdown_threshold",
+        "label": "t:settings.variant_dropdown_threshold",
+        "info": "t:settings.variant_dropdown_threshold_info",
+        "min": 0,
+        "max": 20,
+        "step": 1,
+        "default": 4
+      },
+      {
         "type": "header",
         "content": "t:content.buttons"
       },
