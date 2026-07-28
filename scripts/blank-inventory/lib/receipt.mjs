@@ -146,6 +146,42 @@ export function narrowArtifact(artifact, keepBlankIds, deriveKey, opts = {}) {
 }
 
 /**
+ * Fields a plan row must carry to be rendered at the approval gate.
+ *
+ * `current` is deliberately absent: it is informational, and the renderer falls back to `baseline`.
+ * Everything here is load-bearing in the decision the operator is being asked to make.
+ */
+export const PLAN_ROW_KEYS = ['blankId', 'target', 'baseline', 'writeTargetId', 'writeTargetTitle', 'inventoryItemId', 'siblingCount'];
+
+/**
+ * Refuse to render a plan artifact whose rows are missing anything the gate needs.
+ *
+ * The approval gate was once fed a hand-assembled summary that printed `write: undefined` on all 38
+ * rows, so the operator approved a table showing none of the actual writes. A renderer that emits a
+ * blank cell for a key it cannot find turns a schema change into a silently emptier gate, which is
+ * worse than no gate at all: it still looks like a review.
+ *
+ * @param {object} artifact
+ * @returns {object} the artifact
+ */
+export function assertRenderablePlan(artifact) {
+  if (!artifact || !Array.isArray(artifact.groups)) {
+    throw new Error('Artifact has no "groups" array; it is not a plan artifact.');
+  }
+  artifact.groups.forEach((g, i) => {
+    const missing = PLAN_ROW_KEYS.filter((k) => g?.[k] === undefined || g?.[k] === null);
+    if (missing.length) {
+      throw new Error(
+        `Artifact group #${i} (${g?.blankId ?? 'unknown blank'}) is missing ${missing.join(', ')}. ` +
+          `Refusing to render: a gate that shows a blank cell where a write target belongs is worse ` +
+          `than no gate. Re-run plan.`
+      );
+    }
+  });
+  return artifact;
+}
+
+/**
  * A fresh receipt: every group not yet attempted.
  * @param {object} artifact
  * @returns {object}
@@ -204,6 +240,45 @@ export function isReceiptComplete(receipt) {
  */
 export function pendingBlankIds(receipt) {
   return receipt.rows.filter((r) => r.status === ROW_NOT_ATTEMPTED || r.status === ROW_FAILED).map((r) => r.blankId);
+}
+
+/**
+ * How long a seeding receipt may go on explaining a non-uniform group.
+ *
+ * A seed settles in 80-90 seconds. A `--stage tag` receipt whose rows never reached `applied`
+ * therefore stops being an explanation within minutes, but it sits in the working directory
+ * forever, and `awaiting-seed` outranks `drift` in the classifier. One abandoned tag stage was
+ * enough to mask every subsequent real Flow fault on those groups as expected behaviour. A day is
+ * far beyond any legitimate settle and still tolerates a run left overnight.
+ */
+export const SEED_RECEIPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Split seeding receipts into those still young enough to explain a non-uniform group and those
+ * that are not. Non-seeding receipts are always kept: only the seeding flag suppresses a drift
+ * report, so only it needs an expiry.
+ *
+ * @param {object[]} receipts
+ * @param {object} [opts]
+ * @param {number} [opts.now]
+ * @param {number} [opts.maxAgeMs]
+ * @returns {{fresh: object[], stale: object[]}}
+ */
+export function splitStaleSeedReceipts(receipts, { now = Date.now(), maxAgeMs = SEED_RECEIPT_MAX_AGE_MS } = {}) {
+  const fresh = [];
+  const stale = [];
+  for (const receipt of receipts) {
+    if (!receipt?.seeding) {
+      fresh.push(receipt);
+      continue;
+    }
+    const startedAt = Date.parse(receipt.startedAt ?? '');
+    // An unparseable timestamp is treated as expired. The alternative is to trust it forever, and
+    // the failure mode being closed here is precisely a receipt that never stops being believed.
+    if (!Number.isFinite(startedAt) || now - startedAt > maxAgeMs) stale.push(receipt);
+    else fresh.push(receipt);
+  }
+  return { fresh, stale };
 }
 
 /**

@@ -188,3 +188,17 @@ quantities or metafields in Admin, which has none of these guards.
   on products past `max_root_records`. Raise the cap or adopt the roll-up approach.
 - **A non-blank product triggered work.** It should exit at the gate. Verify the gate condition is
   the first step after the trigger and checks `inventory_blank_sku` is non-empty.
+- **`plan` refuses with "N group(s) are not converged".** This is the designed gate, not a tool
+  fault. Read the per-group histogram it prints, because the deduped quantity list cannot tell the
+  two cases apart and they need opposite responses. A histogram of `{"0": 1, "12": 7}` is a cascade
+  that has nearly finished: wait and re-check with `audit --group <blankId>`. A histogram of
+  `{"0": 7, "12": 1}` is a cascade that never ran, so the seed write did not fire or the Flow
+  errored; check the run log per the first entry above. In both cases the group's state may read
+  `awaiting-seed` rather than `drift`. That state explains why the group is non-uniform; it never
+  means the group can be planned on top of.
+- **`audit` or `plan` reports an expired seeding receipt.** A `--stage tag` receipt records that a
+  seed is outstanding, which is what makes a non-uniform group report `awaiting-seed` instead of
+  `drift`. Those receipts now expire after 24 hours, far beyond the 80 to 90 second settle. Seeing
+  one named means a tag stage was abandoned without its seed, and any group it covered is now
+  reported as drift. Complete or discard that backfill; the file itself is only a record and
+  deleting it changes no stock.
