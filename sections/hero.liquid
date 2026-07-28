@@ -1,3 +1,41 @@
+{% comment %}
+  Self-hosted display font for the homepage hero headline lockup. Dancing Script
+  (SIL OFL, see assets/dancing-script.license.txt) is an open substitute for the
+  proprietary Brush Script MT, served from the theme's own Shopify CDN assets
+  with no external font host. It is a variable face (weight 400 to 700); the
+  lockup renders it at 600 for a heavier brush stroke.
+
+  The preload is what makes the headline stop reflowing on a cold load. Without
+  it the face is only discovered when the CSS below is parsed and matched against
+  the lockup, which lands after the hero video request, so the headline paints in
+  the fallback script face and then swaps. Unconditional, matching the @font-face
+  it pairs with: a hero with no .hero-lockup markup pays 42 KB for nothing, which
+  is acceptable while this section is effectively homepage-only.
+{% endcomment %}
+{%- comment -%}
+  preload_tag rather than a hand-written <link>: the input here is asset_url
+  output, which is one of the three sources the filter accepts, so it is the
+  supported spelling and keeps Theme Check's AssetPreload rule quiet. Extra
+  parameters render verbatim as attributes. crossorigin is not optional: theme
+  assets are served from the Shopify CDN, so the font is always a cross-origin
+  fetch, and a preload without it misses the font request entirely and
+  downloads the file twice.
+{%- endcomment -%}
+{{
+  'dancing-script.woff2'
+  | asset_url
+  | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous'
+}}
+{% style %}
+  @font-face {
+    font-family: "Dancing Script";
+    src: url("{{ 'dancing-script.woff2' | asset_url }}") format("woff2");
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
+  }
+{% endstyle %}
+
 {% liquid
   assign media_count = 0
   assign media_count_mobile = 0
@@ -124,9 +162,15 @@
   assign mobile_widths_array = mobile_widths | split: ', '
 
   assign fetch_priority = 'auto'
+  assign preload_hero_poster = false
 
   if section.index == 1
     assign fetch_priority = 'high'
+    # Only the first section's first slot is a plausible LCP element, and only
+    # its desktop call site is passed this: that element doubles as the mobile
+    # fallback, so it is the one video that always renders. Preloading a poster
+    # for an offscreen slide or a hidden slot would cost bytes for nothing.
+    assign preload_hero_poster = true
   endif
 %}
 
@@ -180,17 +224,13 @@
 
   {%- if media_1 == 'video' -%}
     <div class="{{ video_wrapper_desktop_class }}">
-      {{
-        section.settings.video_1
-        | video_tag:
-          poster: nil,
-          autoplay: true,
-          loop: true,
-          controls: false,
-          muted: true,
-          class: media_video_desktop_class,
-          data-testid: 'hero-desktop-video-1'
-      }}
+      {% render 'hero-video',
+        video: section.settings.video_1,
+        class: media_video_desktop_class,
+        poster_width: 1440,
+        preload_poster: preload_hero_poster,
+        testid: 'hero-desktop-video-1'
+      %}
     </div>
   {%- endif -%}
 
@@ -214,17 +254,11 @@
 
     {%- if media_1_mobile == 'video' -%}
       <div class="hero__video-wrapper hero__video-wrapper--mobile">
-        {{
-          section.settings.video_1_mobile
-          | video_tag:
-            poster: nil,
-            autoplay: true,
-            loop: true,
-            controls: false,
-            muted: true,
-            class: 'hero__video hero__video--mobile',
-            data-testid: 'hero-mobile-video-1'
-        }}
+        {% render 'hero-video',
+          video: section.settings.video_1_mobile,
+          class: 'hero__video hero__video--mobile',
+          testid: 'hero-mobile-video-1'
+        %}
       </div>
     {%- endif -%}
   {%- endif -%}
@@ -280,17 +314,12 @@
 
   {%- if media_2 == 'video' -%}
     <div class="{{ video_wrapper_desktop_class }}">
-      {{
-        section.settings.video_2
-        | video_tag:
-          poster: nil,
-          autoplay: true,
-          loop: true,
-          controls: false,
-          muted: true,
-          class: media_video_desktop_class,
-          data-testid: 'hero-desktop-video-2'
-      }}
+      {% render 'hero-video',
+        video: section.settings.video_2,
+        class: media_video_desktop_class,
+        poster_width: 1440,
+        testid: 'hero-desktop-video-2'
+      %}
     </div>
   {%- endif -%}
 
@@ -314,17 +343,11 @@
 
     {%- if media_2_mobile == 'video' -%}
       <div class="hero__video-wrapper hero__video-wrapper--mobile">
-        {{
-          section.settings.video_2_mobile
-          | video_tag:
-            poster: nil,
-            autoplay: true,
-            loop: true,
-            controls: false,
-            muted: true,
-            class: 'hero__video hero__video--mobile',
-            data-testid: 'hero-mobile-video-2'
-        }}
+        {% render 'hero-video',
+          video: section.settings.video_2_mobile,
+          class: 'hero__video hero__video--mobile',
+          testid: 'hero-mobile-video-2'
+        %}
       </div>
     {%- endif -%}
   {%- endif -%}
@@ -458,6 +481,44 @@
   {% endif %}
 {% endcapture %}
 
+{% comment %}
+  Playback speed has no HTML attribute, so the only way to slow a hero video is
+  to set playbackRate on the element. The rate is carried on the hero wrapper as
+  a data attribute because {% javascript %} is not Liquid-rendered.
+{% endcomment %}
+{% javascript %}
+  const applyHeroPlaybackRate = (hero) => {
+    const rate = parseFloat(hero.dataset.videoPlaybackRate);
+    if (!rate) return;
+
+    hero.querySelectorAll('video').forEach((video) => {
+      video.playbackRate = rate;
+      // The browser resets playbackRate whenever it loads a new source, which
+      // includes the desktop/mobile swap and any theme-editor re-render.
+      video.addEventListener('loadedmetadata', () => {
+        video.playbackRate = rate;
+      });
+    });
+  };
+
+  const applyAllHeroPlaybackRates = (root) => {
+    root.querySelectorAll('.hero[data-video-playback-rate]').forEach(applyHeroPlaybackRate);
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => applyAllHeroPlaybackRates(document), {
+      once: true,
+    });
+  } else {
+    applyAllHeroPlaybackRates(document);
+  }
+
+  // Sections re-render without a page load in the theme editor.
+  document.addEventListener('shopify:section:load', (event) => {
+    applyAllHeroPlaybackRates(event.target);
+  });
+{% endjavascript %}
+
 <div
   id="Hero-{{ section.id }}"
   class="hero color-{{ section.settings.color_scheme }}{% if section.blocks.size == 0 and section.settings.section_height == 'auto' %} hero--no-blocks-auto-height{% endif %}{% if section.settings.stack_media_on_mobile %} hero--stack-mobile{% endif %}{% if hero_mobile_fallback_aspect != blank %} hero--mobile-fallback-fit{% endif %}"
@@ -467,6 +528,7 @@
     --hero-border-opacity: {{ section.settings.border_opacity }}%;
     --blur-opacity: {{ section.settings.reflection_opacity | divided_by: 100.0 }};
     {% if hero_mobile_fallback_aspect != blank %}--hero-mobile-fallback-aspect: {{ hero_mobile_fallback_aspect }};{% endif %}
+    {% if section.settings.mobile_media_aspect != blank %}--hero-media-aspect-mobile: {{ section.settings.mobile_media_aspect }};{% endif %}
     {% if section.settings.section_height == 'custom' %}
       --hero-min-height: {{ section.settings.section_height_custom }}svh;
     {% elsif section.settings.section_height == "full-screen" %}
@@ -477,6 +539,9 @@
   "
   {% if request.visual_preview_mode %}
     data-shopify-visual-preview
+  {% endif %}
+  {% if section.settings.video_playback_speed != 100 %}
+    data-video-playback-rate="{{ section.settings.video_playback_speed | divided_by: 100.0 }}"
   {% endif %}
   {% if section.settings.blurred_reflection and has_only_video == false or has_only_video_mobile == false %}
     data-blur-shadow="true"
@@ -530,6 +595,50 @@
         endif
       %}
       {{ media }}
+      {%- if section.settings.logo_overlay and settings.logo != blank -%}
+        <div
+          class="hero__logo-overlay"
+          style="
+            --hero-logo-overlay-align: {{ section.settings.logo_overlay_position }};
+            --hero-logo-overlay-width: {{ section.settings.logo_overlay_width }}%;
+            --hero-logo-overlay-width-mobile: {{ section.settings.logo_overlay_width_mobile }}%;
+            --hero-logo-overlay-opacity: {{ section.settings.logo_overlay_opacity | divided_by: 100.0 }};
+          "
+          aria-hidden="true"
+          data-testid="hero-logo-overlay"
+        >
+          {%- comment -%}
+            This overlay is sized by CSS width percentage (--hero-logo-overlay-width),
+            not by height, so it needs a width-based srcset. Do NOT switch this back to
+            `render 'image'`: that snippet builds a DPR srcset off `height` (1x/2x/3x),
+            which at this mark's 2.7:1 ratio asks the CDN for a 3240px-wide file to
+            paint roughly 270 CSS px on a phone.
+
+            The vw figures track the width settings and ignore the wrapper's 6%
+            padding, so they over-estimate the rendered width by about 12%. That is
+            deliberate: over-estimating costs at most one srcset step, under-estimating
+            is visibly soft.
+          {%- endcomment -%}
+          {%- assign logo_overlay_sizes = '(min-width: 750px) '
+            | append: section.settings.logo_overlay_width
+            | append: 'vw, '
+            | append: section.settings.logo_overlay_width_mobile
+            | append: 'vw'
+          -%}
+          {{
+            settings.logo
+            | image_url: width: 2560
+            | image_tag:
+              width: settings.logo.width,
+              height: settings.logo.height,
+              widths: '240, 352, 832, 1200, 1600, 1920, 2560',
+              sizes: logo_overlay_sizes,
+              class: 'hero__logo-overlay-image',
+              alt: '',
+              fetchpriority: 'high'
+          }}
+        </div>
+      {%- endif -%}
     </div>
     <div
       class="
@@ -605,6 +714,48 @@
     grid-template-columns: repeat(var(--hero-media-count, 1), 1fr);
   }
 
+  /*
+   * Optional logo lockup drawn over the hero media. Drawing the mark here rather
+   * than baking it into the footage means it is rendered from the storefront logo
+   * asset at whatever size the viewport needs, instead of being limited to the
+   * video's own resolution and bitrate. Decorative by design: the header already
+   * carries the linked logo and the hero blocks carry the h1, so the wrapper is
+   * aria-hidden and adds nothing to the accessibility tree.
+   *
+   * Sits inside .hero__media-wrapper so it tracks the media in both layouts:
+   * the wrapper is absolutely positioned over the whole hero by default, and
+   * flows as an aspect-ratio row under .hero--mobile-fallback-fit.
+   */
+  .hero__logo-overlay {
+    position: absolute;
+    inset: 0;
+    /* The wrapper is a grid whose column count follows the media count; span it
+       so the overlay centres on the media area, not on the first media item. */
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    align-items: var(--hero-logo-overlay-align, center);
+    /* Keeps the mark off the media edges at every alignment. */
+    padding: 6%;
+    z-index: var(--layer-flat);
+    pointer-events: none;
+  }
+
+  .hero__logo-overlay-image {
+    width: var(--hero-logo-overlay-width, 40%);
+    height: auto;
+    opacity: var(--hero-logo-overlay-opacity, 1);
+    /* Lifts the mark off busy footage without darkening the whole frame the way
+       a full-media scrim would. */
+    filter: drop-shadow(0 2px 12px rgb(0 0 0 / 45%));
+  }
+
+  @media screen and (max-width: 749px) {
+    .hero__logo-overlay-image {
+      width: var(--hero-logo-overlay-width-mobile, 70%);
+    }
+  }
+
   .hero--auto .hero__image,
   .hero--auto .hero__video {
     aspect-ratio: var(--hero-media-aspect-ratio);
@@ -648,6 +799,40 @@
     display: block;
   }
 
+  /*
+   * Reused-video fit (applies at ALL widths). When a single wide desktop video is
+   * reused with no custom mobile asset, size the hero to the video's own aspect
+   * ratio so the whole frame shows with no crop and no letterbox, and let the
+   * heading and button flow onto a strip below instead of overlaying the busy
+   * frame. This makes desktop and mobile read the same. The trigger is structural
+   * (one video, no custom mobile asset), so this still applies with the current
+   * logo-free montage; the logo now comes from the .hero__logo-overlay setting,
+   * which sits inside the media wrapper and so tracks this layout too.
+   */
+  .hero.hero--mobile-fallback-fit {
+    min-height: 0;
+  }
+
+  .hero--mobile-fallback-fit .hero__container {
+    min-height: 0;
+    /* Zero the top padding as a real property, not the --padding-block-start
+       variable. spacing-style sets that variable inline (higher priority than this
+       stylesheet rule), so overriding the variable would not take; .spacing-style
+       reads it into `padding-block`, and this two-class selector outranks that
+       single-class rule. Result: the video sits flush under the header with no
+       navy gap. The heading and button get their space below via the row gap and
+       bottom padding. */
+    padding-block-start: 0;
+    padding-block-end: 24px;
+    row-gap: 24px;
+  }
+
+  .hero--mobile-fallback-fit .hero__media-wrapper {
+    /* Flow in the grid (top row) instead of absolutely overlaying the hero. */
+    position: relative;
+    aspect-ratio: var(--hero-mobile-fallback-aspect);
+  }
+
   @media screen and (max-width: 749px) {
     .hero__image--desktop,
     .hero__video--desktop,
@@ -677,37 +862,25 @@
     }
 
     /*
-     * Preferred path: the video's aspect ratio is known, so size the mobile hero
-     * to it. The video fills the full width with no crop and no letterbox, and the
-     * button flows onto a short strip below instead of the hero being a 100svh box
-     * with dead space above and below. Desktop is unaffected. The complete fix is
-     * still a portrait-framed mobile asset (admin task in TODO.md); once that ships
-     * this fallback stops applying.
+     * Give the mobile hero its own shape. A wide video laid out at its own aspect
+     * across a phone width is a short strip, so allow a taller frame that the
+     * video fills by cropping its sides (cover, below). Falls back to the video's
+     * own aspect when the setting is "Match video", which is the no-crop
+     * behaviour this fallback shipped with. Overriding inside the media query
+     * beats the equal-specificity rule above by source order.
+     *
+     * Cropping is only safe because the montage no longer carries a baked-in
+     * logo: the mark is now drawn over the media by .hero__logo-overlay, which
+     * is centred on whatever the visible area ends up being.
      */
-    .hero.hero--mobile-fallback-fit {
-      min-height: 0;
-    }
-
-    .hero--mobile-fallback-fit .hero__container {
-      min-height: 0;
-      /* Drop the tall-hero block padding and the transparent-header top offset so
-         the video sits flush at the top instead of below a navy gap; the button
-         gets its own space below via the row gap and bottom padding. */
-      --padding-block-start: 0px;
-      --padding-block-end: 0px;
-      --section-top-offset: 0px;
-      row-gap: 24px;
-      padding-block-end: 24px;
-    }
-
     .hero--mobile-fallback-fit .hero__media-wrapper {
-      /* Flow in the grid (top row) instead of absolutely overlaying the hero. */
-      position: relative;
-      aspect-ratio: var(--hero-mobile-fallback-aspect);
+      aspect-ratio: var(--hero-media-aspect-mobile, var(--hero-mobile-fallback-aspect));
     }
 
     .hero--mobile-fallback-fit .hero__video--mobile-fallback {
-      /* Wrapper aspect matches the video, so cover fills it with no crop. */
+      /* Mobile reuses the desktop video via the fallback class. Cover fills the
+         wrapper: no crop when the wrapper matches the video's aspect, centre crop
+         when a taller mobile aspect is set. */
       object-fit: cover;
     }
 
@@ -743,6 +916,73 @@
 
   .hero__content-wrapper--design-mode * {
     pointer-events: auto;
+  }
+
+  /*
+   * Homepage hero headline lockup: small tracked eyebrow, oversized cursive
+   * focus word, small tracked tagline. Rendered by a custom-liquid block so the
+   * markup survives (richtext block settings strip classes). Sized in em off the
+   * theme h1 size so the three lines scale together and stay proportional on
+   * mobile. The cursive stack falls back to a system script face per OS, then
+   * the generic. Inert unless .hero-lockup markup is present.
+   */
+  .hero-lockup {
+    /* Dancing Script is self-hosted (loads for every visitor); the proprietary
+       system scripts are only transient fallbacks while it downloads. */
+    --hero-lockup-cursive: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
+    /* Flanking star size and gap, in em off the lockup font size (the h1 size). */
+    --hero-lockup-star-size: 0.6em;
+    --hero-lockup-star-gap: 0.22em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15em;
+    margin: 0;
+    font-size: var(--font-h1--size);
+    line-height: 0.9;
+    text-align: center;
+    color: var(--color-foreground-heading);
+  }
+
+  .hero-lockup__pre {
+    font-size: 0.4em;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  .hero-lockup__word-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--hero-lockup-star-gap);
+  }
+
+  .hero-lockup__star {
+    display: flex;
+    flex: none;
+    line-height: 0;
+    color: inherit;
+  }
+
+  .hero-lockup__star svg {
+    display: block;
+    width: var(--hero-lockup-star-size);
+    height: var(--hero-lockup-star-size);
+  }
+
+  .hero-lockup__word {
+    font-family: var(--hero-lockup-cursive);
+    font-weight: 600;
+    font-size: 2em;
+    line-height: 0.85;
+  }
+
+  .hero-lockup__tag {
+    font-size: 0.34em;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    opacity: 0.85;
   }
 
   .hero[data-blur-shadow='true'] {
@@ -1264,6 +1504,112 @@
       ],
       "default": "to top",
       "visible_if": "{{ section.settings.toggle_overlay and section.settings.overlay_style == 'gradient' }}"
+    },
+    {
+      "type": "select",
+      "id": "mobile_media_aspect",
+      "label": "t:settings.mobile_aspect_ratio",
+      "info": "t:info.mobile_aspect_ratio",
+      "options": [
+        {
+          "value": "",
+          "label": "t:options.auto"
+        },
+        {
+          "value": "1.5",
+          "label": "t:options.wide"
+        },
+        {
+          "value": "1.333",
+          "label": "t:options.standard"
+        },
+        {
+          "value": "1",
+          "label": "t:options.square"
+        },
+        {
+          "value": "0.8",
+          "label": "t:options.portrait"
+        }
+      ],
+      "default": "",
+      "visible_if": "{{ section.settings.custom_mobile_media == false }}"
+    },
+    {
+      "type": "range",
+      "id": "video_playback_speed",
+      "label": "t:settings.playback_speed",
+      "info": "t:info.playback_speed",
+      "min": 25,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100
+    },
+    {
+      "type": "header",
+      "content": "t:content.logo"
+    },
+    {
+      "type": "checkbox",
+      "id": "logo_overlay",
+      "label": "t:settings.logo_overlay",
+      "default": false,
+      "info": "t:info.logo_overlay"
+    },
+    {
+      "type": "select",
+      "id": "logo_overlay_position",
+      "label": "t:settings.position",
+      "options": [
+        {
+          "value": "flex-start",
+          "label": "t:options.top"
+        },
+        {
+          "value": "center",
+          "label": "t:options.center"
+        },
+        {
+          "value": "flex-end",
+          "label": "t:options.bottom"
+        }
+      ],
+      "default": "center",
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_width",
+      "label": "t:settings.width",
+      "min": 10,
+      "max": 90,
+      "step": 1,
+      "unit": "%",
+      "default": 40,
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_width_mobile",
+      "label": "t:settings.width_mobile",
+      "min": 10,
+      "max": 90,
+      "step": 1,
+      "unit": "%",
+      "default": 70,
+      "visible_if": "{{ section.settings.logo_overlay }}"
+    },
+    {
+      "type": "range",
+      "id": "logo_overlay_opacity",
+      "label": "t:settings.opacity",
+      "min": 20,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100,
+      "visible_if": "{{ section.settings.logo_overlay }}"
     },
     {
       "type": "checkbox",

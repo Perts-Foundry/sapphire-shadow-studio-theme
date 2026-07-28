@@ -134,9 +134,34 @@
             continue
           endif
 
-          if forloop.first and section.index == null or section.index < 5
-            assign loading = 'eager'
-            assign sizes = image_sizes
+          # Eager-load the first image of each card in the first two sections.
+          # Upstream used `section.index < 5`, which on this homepage made four
+          # sections' worth of product imagery compete with the hero video for
+          # bandwidth before any of it was near the viewport. `== 1` overshot in
+          # the other direction: it demoted the product grid, which sits directly
+          # under the hero and is the first thing a visitor scrolls to. Measured
+          # on a throttled preview, that pushed the five card images from a 1.4 s
+          # request to 7.5 s to 8.6 s on a 390px screen, because a lazy image
+          # carrying `sizes: auto` cannot be resolved by the preload scanner at
+          # all: no candidate is chosen until layout has run.
+          #
+          # Note this branch also swaps `sizes: auto` for a concrete `sizes`.
+          # That is forced, not incidental: `sizes: auto` is only valid on a
+          # `loading: lazy` image. The concrete value resolves one candidate step
+          # higher (1200 rather than 832 at three columns), which is the price of
+          # being discoverable during HTML parse.
+          #
+          # Same threshold as the one snippets/background-media.liquid uses.
+          #
+          # Nested rather than `a and b or c`: Liquid has no operator precedence
+          # and binds right to left, so the original read as
+          # `forloop.first and (section.index == null or section.index < 5)`,
+          # which is easy to misread as the opposite grouping.
+          if forloop.first
+            if section.index == null or section.index <= 2
+              assign loading = 'eager'
+              assign sizes = image_sizes
+            endif
           endif
 
           assign class = 'product-media-container media-fit product-media-container--[media_type]' | replace: '[media_type]', media.media_type

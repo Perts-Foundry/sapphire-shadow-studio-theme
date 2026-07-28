@@ -2141,6 +2141,40 @@
         "content": "t:names.predictive_search"
       },
       {
+        "type": "color_scheme",
+        "id": "predictive_search_results_color_scheme",
+        "label": "t:settings.predictive_search_results_color_scheme",
+        "info": "t:settings.predictive_search_results_color_scheme_info",
+        "default": "scheme-1"
+      },
+      {
+        "type": "color_scheme",
+        "id": "predictive_search_card_color_scheme",
+        "label": "t:settings.predictive_search_card_color_scheme",
+        "info": "t:settings.predictive_search_card_color_scheme_info",
+        "default": "scheme-1"
+      },
+      {
+        "type": "range",
+        "id": "predictive_search_card_corner_radius",
+        "min": 0,
+        "max": 32,
+        "step": 1,
+        "unit": "px",
+        "label": "t:settings.predictive_search_card_corner_radius",
+        "default": 0
+      },
+      {
+        "type": "range",
+        "id": "predictive_search_card_padding",
+        "min": 0,
+        "max": 32,
+        "step": 1,
+        "unit": "px",
+        "label": "t:settings.predictive_search_card_padding",
+        "default": 0
+      },
+      {
         "type": "range",
         "id": "product_corner_radius",
         "min": 0,

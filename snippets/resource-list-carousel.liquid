@@ -26,7 +26,43 @@
   if settings.icons_style != 'none'
     assign show_arrows = true
   endif
+
+  # Normalize to an explicit boolean: sections that don't define this setting
+  # (collection-list, main-collection-list, featured-blog-posts) pass settings.autoplay
+  # as nil, which is not `== false`, so it would otherwise fall through to
+  # 'slideshow''s infinite-by-default behavior below.
+  assign autoplay = false
+  if settings.autoplay == true
+    assign autoplay = true
+  endif
+  assign autoplay_speed = settings.autoplay_speed | default: 4
 %}
+
+{% comment %}
+  Auto-rotating content needs a pause control (WCAG 2.2.2, and
+  docs/accessibility-patterns.md). 'slideshow' only echoes whatever `controls`
+  string it is handed; it never renders 'slideshow-controls' itself, so without
+  this capture the pause/play buttons that 'slideshow-controls' already
+  implements are unreachable from the carousel path and the carousel rotates
+  with no way to stop it.
+
+  style must not be 'none': 'slideshow-controls' wraps its whole body in
+  `unless style == 'none'`, which would silently drop the buttons along with the
+  pagination. 'playback' keeps just the pause/play pair; a dot per product was
+  visual clutter at mobile widths for a catalog-sized carousel.
+{% endcomment %}
+{% capture controls %}
+  {%- if autoplay -%}
+    {%- render 'slideshow-controls',
+      style: 'playback',
+      autoplay: autoplay,
+      show_arrows: false,
+      pagination_position: 'center',
+      icon_style: settings.icons_style,
+      shape: settings.icons_shape
+    -%}
+  {%- endif -%}
+{% endcapture %}
 
 {% capture slides %}
   {% for item in slides limit: slides.size %}
@@ -38,6 +74,18 @@
   {% endfor %}
 {% endcapture %}
 
+{% comment %}
+  Autoplay bounces between the ends (autoplay-direction="alternate" in
+  assets/slideshow.js) rather than looping, so the viewer never sees the long
+  snap back to the first slide. That also means infinite must stay off: the
+  wrap machinery is what produced the snap.
+{% endcomment %}
+{% liquid
+  assign slideshow_attributes = ''
+  if autoplay
+    assign slideshow_attributes = 'autoplay-direction="alternate"'
+  endif
+%}
 <div
   class="resource-list__carousel"
   style="{{ gutter_style }} --slide-width-max: {{ slide_width_max | default: '300px' }};"
@@ -46,13 +94,17 @@
     ref: slideshow_ref,
     class: 'resource-list__carousel',
     slides: slides,
+    controls: controls,
     show_arrows: show_arrows,
     icon_style: settings.icons_style,
     icon_shape: settings.icons_shape,
     auto_hide_controls: false,
     infinite: false,
     initial_slide: 0,
+    autoplay: autoplay,
+    autoplay_speed: autoplay_speed,
     slide_count: slide_count,
-    slideshow_gutters: slideshow_gutters
+    slideshow_gutters: slideshow_gutters,
+    attributes: slideshow_attributes
   %}
 </div>

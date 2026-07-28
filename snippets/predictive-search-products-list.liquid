@@ -52,7 +52,7 @@
             {% assign int_id = _id | times: 1 %}
             {% assign product = products | find: 'id', int_id %}
             <li
-              class="predictive-search-results__card predictive-search-results__card--product"
+              class="predictive-search-results__card predictive-search-results__card--product color-{{ settings.predictive_search_card_color_scheme }}"
               ref="recentlyViewedItems[]"
             >
               {% render 'resource-card',
@@ -67,7 +67,7 @@
         {% else %}
           {% for product in products limit: limit %}
             <li
-              class="predictive-search-results__card predictive-search-results__card--product"
+              class="predictive-search-results__card predictive-search-results__card--product color-{{ settings.predictive_search_card_color_scheme }}"
               ref="recentlyViewedItems[]"
             >
               {% render 'resource-card',
@@ -96,7 +96,7 @@
       %}
       {% for product in products limit: limit %}
         <li
-          class="predictive-search-results__card predictive-search-results__card--product"
+          class="predictive-search-results__card predictive-search-results__card--product color-{{ settings.predictive_search_card_color_scheme }}"
           ref="resultsItems[]"
         >
           {% render 'resource-card',
@@ -115,6 +115,15 @@
 {% stylesheet %}
   .predictive-search-results__products {
     padding-inline: var(--padding-xl);
+  }
+
+  /* Card surface, mirroring the grid pages: the results region paints the
+     backdrop scheme and each card paints its own, so the card reads as a card
+     the same way it does on the homepage and collection. Radius and padding
+     come from settings so the drawer can stay flat by leaving them at 0. */
+  .predictive-search-results__card--product {
+    border-radius: var(--predictive-search-card-corner-radius, 0);
+    padding: var(--predictive-search-card-padding, 0);
   }
 
   .recently-viewed-wrapper {

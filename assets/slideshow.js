@@ -15,6 +15,10 @@ import { SlideshowSelectEvent } from '@theme/events';
 // The threshold for determining visibility of slides.
 const SLIDE_VISIBLITY_THRESHOLD = 0.7;
 
+// Touch screens leave :hover (and an unmatched mouseenter) stuck on the last-tapped
+// element, so hover-based autoplay suspension must only apply on hover-capable devices.
+const mediaQueryHover = matchMedia('(hover: hover)');
+
 /**
  * Slideshow custom element that allows sliding between content.
  *
@@ -87,6 +91,8 @@ export class Slideshow extends Component {
     if (slideCount > 1) {
       this.removeEventListener('mouseenter', this.suspend);
       this.removeEventListener('mouseleave', this.resume);
+      this.removeEventListener('focusin', this.#handleFocusIn);
+      this.removeEventListener('focusout', this.#handleFocusOut);
       this.removeEventListener('pointerenter', this.#handlePointerEnter);
       document.removeEventListener('visibilitychange', this.#handleVisibilityChange);
     }
@@ -183,8 +189,26 @@ export class Slideshow extends Component {
       const targetSlide = slides[index];
       if (!targetSlide || !currentSlide) return;
 
-      // Create a placeholder in the original DOM position of targetSlide
+      // Measure before touching any style below, so the one uncached read per
+      // layout does not land after a write and force a second reflow.
+      //
+      // Explicit falsy test rather than `??=`: a slideshow measured while an
+      // ancestor is display:none reads 0, and `??=` would treat that as a real
+      // cached width and keep sizing the placeholder to nothing until the
+      // ResizeObserver happened to clear it.
+      if (!this.#slideWidth) {
+        this.#slideWidth = targetSlide.getBoundingClientRect().width;
+      }
+
+      // Mandatory snap re-aligns instantly when slides reorder, causing a visible
+      // hop; keep it off until the DOM is restored (same pattern as dragging).
+      this.#scroll.snap = false;
+
+      // Create a placeholder in the original DOM position of targetSlide.
+      // Size it explicitly: a bare slideshow-slide falls back to an inherited
+      // --slide-width that can differ from the actual slide, shifting the layout.
       const placeholder = document.createElement('slideshow-slide');
+      placeholder.style.width = `${this.#slideWidth}px`;
       targetSlide.before(placeholder);
 
       // Decide whether targetSlide goes before or after currentSlide
@@ -207,6 +231,11 @@ export class Slideshow extends Component {
 
         // Instantly scroll to the target slide as its position will have changed
         this.#scroll.to(targetSlide, { instant: true });
+
+        // Skip while a drag is in flight: dragging turns snap off for its own
+        // duration and restores it on pointerup, so re-enabling it here would
+        // snap the slides mid-gesture. Same guard the drag handler uses.
+        if (!this.#dragging) this.#scroll.snap = true;
       });
     }
 
@@ -266,10 +295,57 @@ export class Slideshow extends Component {
   play(interval = this.autoplayInterval) {
     if (this.#interval) return;
 
+    // Reaching play() while reduced motion is on means the visitor pressed the
+    // play button: resume() diverts every automatic start path away from here
+    // unless this flag is already set. Record it so later resume() calls
+    // (hover-out, focus-out, tab becoming visible) honour the request instead of
+    // re-pausing on the OS setting. See resume().
+    //
+    // Guarded on the media query rather than set unconditionally: resume() also
+    // routes through play(), so an unconditional set would latch the flag for
+    // every visitor and then ignore reduced motion being switched on later in
+    // the session.
+    if (prefersReducedMotion()) this.#playbackRequested = true;
+
     this.paused = false;
+    // Silence the live region while slides advance on their own; see pause().
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'off');
 
     this.#interval = setInterval(() => {
-      if (this.matches(':hover') || document.hidden) return;
+      if ((mediaQueryHover.matches && this.matches(':hover')) || document.hidden) return;
+
+      // Skip while the element is not rendered. `carousel_on_mobile` puts both a
+      // grid and a carousel in the DOM and hides one per breakpoint, so on desktop
+      // this interval would otherwise drive a `display: none` slideshow for the
+      // life of the page. offsetParent is null exactly when an ancestor is
+      // display:none (this element is never position:fixed).
+      if (this.offsetParent === null) return;
+
+      // With `autoplay-direction="alternate"` the rotation bounces between the
+      // ends instead of wrapping, so the viewer never sees the long snap back
+      // to the first slide. The turnaround checks mirror the arrow-disabling
+      // logic in the `current` setter: reverse when another step forward would
+      // run past the last slide, and vice versa.
+      if (this.getAttribute('autoplay-direction') === 'alternate') {
+        // `this.slides`, not `this.refs.slides`: the getter drops hidden slides,
+        // and nextIndex/atEnd are all computed against that filtered list. Using
+        // the raw ref array here would turn the rotation around a slide late.
+        const { slides } = this;
+
+        if (this.#autoplayDirection > 0 && slides && this.nextIndex >= slides.length) {
+          this.#autoplayDirection = -1;
+        } else if (this.#autoplayDirection < 0 && this.previousIndex < 0) {
+          this.#autoplayDirection = 1;
+        }
+
+        if (this.#autoplayDirection > 0) {
+          this.next();
+        } else {
+          this.previous();
+        }
+
+        return;
+      }
 
       this.next();
     }, interval);
@@ -279,7 +355,16 @@ export class Slideshow extends Component {
    * Pauses automatic slide playback.
    */
   pause() {
+    // An explicit stop revokes the reduced-motion override from play(). resume()
+    // already no-ops on `paused`, so this only matters for the resume() path that
+    // clears `paused` on its way back to play().
+    this.#playbackRequested = false;
+
     this.paused = true;
+    // Once the user has stopped the rotation, slide changes are deliberate and
+    // worth announcing. Only touch the attribute when the markup opted in to a
+    // live region (autoplay slideshows), so non-autoplay ones stay untouched.
+    if (this.hasAttribute('aria-live')) this.setAttribute('aria-live', 'polite');
     this.suspend();
   }
 
@@ -308,6 +393,26 @@ export class Slideshow extends Component {
    */
   resume() {
     if (!this.autoplay || this.paused) return;
+
+    // Reduced motion suppresses automatic rotation entirely. This is the right
+    // seam for the check rather than play(): every automatic start path (initial
+    // connect, hover-out, focus-out, tab becoming visible) goes through resume(),
+    // while play() is also what the explicit play button calls, and a user who
+    // presses play is asking for rotation regardless of the OS setting.
+    //
+    // #playbackRequested is what makes that second half true. Without it the
+    // check here fires again on the first hover-out or focus-out after the play
+    // button was pressed, because play() clears `paused` and so the guard above
+    // stops shielding it, and the rotation the visitor asked for dies silently.
+    //
+    // Land in the paused state rather than just returning: that shows the play
+    // button instead of the pause button, keeps the live region on "polite", and
+    // makes later resume() calls no-op on the `paused` check. Rotation stays
+    // available to anyone who explicitly asks for it.
+    if (prefersReducedMotion() && !this.#playbackRequested) {
+      this.pause();
+      return;
+    }
 
     this.pause();
     this.play();
@@ -419,6 +524,22 @@ export class Slideshow extends Component {
   #interval = undefined;
 
   /**
+   * The direction automatic playback is currently travelling in when
+   * `autoplay-direction="alternate"` is set: 1 for forward, -1 for backward.
+   * @type {number}
+   */
+  #autoplayDirection = 1;
+
+  /**
+   * Whether the visitor explicitly asked for rotation by pressing play. Lets
+   * resume() tell an automatic restart (which reduced motion should suppress)
+   * from resuming something the visitor turned on themselves (which it should
+   * not). Set in play(), cleared in pause().
+   * @type {boolean}
+   */
+  #playbackRequested = false;
+
+  /**
    * The Scroller instance that manages scrolling.
    * @type {Scroller}
    */
@@ -429,6 +550,15 @@ export class Slideshow extends Component {
    * @type {ResizeObserver}
    */
   #resizeObserver;
+
+  /**
+   * Cached measured slide width in pixels, used to size the reorder placeholder.
+   * Measuring it on every jump forces a synchronous layout, which an autoplaying
+   * slideshow pays every interval for the lifetime of the page. Invalidated by
+   * the ResizeObserver below, so it cannot outlive the layout it was read from.
+   * @type {number | null}
+   */
+  #slideWidth = null;
 
   /**
    * IntersectionObserver for efficient visibility tracking of slides
@@ -476,8 +606,12 @@ export class Slideshow extends Component {
 
     scroller.addEventListener('mousedown', this.#handleMouseDown);
 
-    this.addEventListener('mouseenter', this.suspend);
-    this.addEventListener('mouseleave', this.resume);
+    if (mediaQueryHover.matches) {
+      this.addEventListener('mouseenter', this.suspend);
+      this.addEventListener('mouseleave', this.resume);
+    }
+    this.addEventListener('focusin', this.#handleFocusIn);
+    this.addEventListener('focusout', this.#handleFocusOut);
     this.addEventListener('pointerenter', this.#handlePointerEnter);
     document.addEventListener('visibilitychange', this.#handleVisibilityChange);
 
@@ -510,6 +644,8 @@ export class Slideshow extends Component {
       });
 
       this.#resizeObserver = new ResizeObserver(async () => {
+        this.#slideWidth = null;
+
         if (viewTransition.current) await viewTransition.current;
 
         if (visibleSlidesAmount > 1) {
@@ -652,7 +788,7 @@ export class Slideshow extends Component {
           return;
         }
 
-        this.pause();
+        this.suspend();
         this.setAttribute('dragging', '');
       }
 
@@ -757,7 +893,27 @@ export class Slideshow extends Component {
   /**
    * Pause the slideshow when the page is hidden.
    */
-  #handleVisibilityChange = () => (document.hidden ? this.pause() : this.resume());
+  #handleVisibilityChange = () => (document.hidden ? this.suspend() : this.resume());
+
+  /**
+   * Suspend rotation while focus is inside the slideshow, so a keyboard user
+   * reading a slide does not have it advance out from under them. Hover already
+   * does this for pointer users; without focus handling keyboard users got no
+   * equivalent.
+   */
+  #handleFocusIn = () => this.suspend();
+
+  /**
+   * Resume once focus actually leaves. focusout bubbles, so moving between two
+   * elements inside the same slideshow fires it too; resuming on those would
+   * restart the timer mid-interaction.
+   */
+  #handleFocusOut = (/** @type {FocusEvent} */ event) => {
+    const { relatedTarget } = event;
+    if (relatedTarget instanceof Node && this.contains(relatedTarget)) return;
+
+    this.resume();
+  };
 
   #updateControlsVisibility() {
     if (!this.hasAttribute('auto-hide-controls')) return;

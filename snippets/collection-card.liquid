@@ -105,6 +105,31 @@
     pointer-events: auto;
   }
 
+  /*
+   * Card surface, matching the product card. _collection-card has no padding
+   * setting of its own (unlike _product-card), so the inset comes from here,
+   * guarded on the color-scheme-* class the block emits when
+   * inherit_color_scheme is false. A transparent, inherited-scheme card keeps
+   * the stock flush layout. Excludes the on_image placement, which already
+   * pads .collection-card__content and would double up.
+   */
+  .collection-card[class*='color-scheme-']:not(.collection-card--image-bg) {
+    padding: var(--collection-card-padding, 16px);
+    transition: box-shadow var(--hover-transition-duration) var(--hover-transition-timing);
+  }
+
+  @media (any-pointer: fine) {
+    .collection-card[class*='color-scheme-']:not(.collection-card--image-bg):hover {
+      box-shadow: 0 4px 16px rgb(var(--color-shadow-rgb) / var(--opacity-15));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .collection-card[class*='color-scheme-']:not(.collection-card--image-bg) {
+      transition: none;
+    }
+  }
+
   .collection-card__content {
     max-width: 100%;
     --flex-wrap: wrap;

@@ -48,6 +48,19 @@
   .footer-content {
     contain: content;
     content-visibility: auto;
+
+    /*
+     * `contain: content` is layout, paint and style, not size, so on its own
+     * `content-visibility: auto` collapses this element to zero height every
+     * time it leaves the viewport. The document height then changes underneath
+     * a scroll that is still in progress, which reads as the page jumping when
+     * you scroll back up off the footer. Reserving the space removes the jump.
+     *
+     * `auto` means the browser substitutes the real height once the footer has
+     * been rendered even once, so the 300px only governs the very first paint;
+     * `none` in the inline axis leaves width to normal block stretching.
+     */
+    contain-intrinsic-size: auto none 300px;
     display: grid;
     grid-template-columns: 1fr;
     gap: var(--footer-gap);

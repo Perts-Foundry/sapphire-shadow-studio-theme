@@ -3389,6 +3389,25 @@ slideshow-slide.product-media-container--tallest {
 }
 
 /*
+ * Opt the outer product-card slides of a resource-list carousel out of the
+ * skipping above and out of the `slideshow-slide` base rule. A carousel of this
+ * kind carries a handful of cards, so the render work skipping saves is small,
+ * while a skipped slide re-entering the viewport has to lay out and paint from
+ * scratch. On a throttled device that repaint is visible as the card blanking
+ * and filling back in, which reads as the image reloading even though no
+ * request is made: measured on the homepage carousel, four of these flipped
+ * back to rendered on a single scroll up, with zero network activity behind it.
+ *
+ * Deliberately scoped to the outer slides via 'slideshow-slides > ... .resource-list__slide'.
+ * The nested card-gallery slides inside each card keep their skipping, which is
+ * what stops all of a product's media loading at once. Specificity ties the
+ * rule above, so this must stay after it in source order.
+ */
+.resource-list__carousel slideshow-slides > slideshow-slide.resource-list__slide {
+  content-visibility: visible;
+}
+
+/*
  * Be specific about HTML children structure to avoid targeting nested slideshows.
  * Ensure that the content is 'visible' while scrolling instead of 'auto' to avoid issues in Safari.
  */
@@ -3717,6 +3736,15 @@ slideshow-arrows .slideshow-control.slideshow-control--style-none {
 
   .slideshow-control--next {
     margin-inline-start: auto;
+  }
+
+  /*
+   * The controls row is full-bleed in page-width sections, which would put the
+   * pause control flush against the screen edge. Inset it by the same gutter
+   * the slides reserve (set on the wrapper's inline style; 0px elsewhere).
+   */
+  slideshow-controls {
+    padding-inline: var(--gutter-slide-width, 0px);
   }
 }
 

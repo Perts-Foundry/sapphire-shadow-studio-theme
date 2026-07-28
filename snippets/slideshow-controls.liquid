@@ -1,7 +1,7 @@
 {%- doc -%}
   Renders controls for a slider component
 
-  @param {string} [style] - { 'dots' | 'counter' | 'thumbnails' | 'none' } The display style of the controls
+  @param {string} [style] - { 'dots' | 'counter' | 'thumbnails' | 'playback' | 'none' } The display style of the controls. 'playback' renders no pagination, only the autoplay pause/play pair; 'none' renders nothing at all.
   @param {boolean} [autoplay] - Whether the controls will display an autoplay option
   @param {number} [item_count] - The total number of slides
   @param {boolean} [show_arrows] - Whether the controls will display arrows
@@ -353,9 +353,49 @@
     }
   }
 
-  slideshow-controls:has(.slideshow-controls__dots),
-  slideshow-component[autoplay] slideshow-controls {
+  /*
+   * Difference blending is for controls overlaid on media, where inverting the
+   * backdrop guarantees contrast (the [controls-on-media] rule above pairs it
+   * with a white foreground). In-flow controls paint in the scheme's
+   * near-black foreground instead, and difference of black is a per-channel
+   * identity (|backdrop - 0| = backdrop): the whole row repaints its backdrop
+   * onto itself and is invisible on any background. That hid the resource-list
+   * carousel's dots and pause control, so the blend is scoped to
+   * [controls-on-media].
+   */
+  slideshow-controls[controls-on-media]:has(.slideshow-controls__dots),
+  slideshow-component[autoplay] slideshow-controls[controls-on-media] {
     mix-blend-mode: difference;
+  }
+
+  /*
+   * Show exactly one of the pause/play pair. Both buttons are always in the
+   * markup above (two static buttons rather than one toggle with a swapping
+   * label, which is an accepted ARIA APG variant and avoids churning every
+   * caller); without these rules both render at once and the control reads as
+   * two unrelated buttons. The `paused` attribute is maintained by the setter
+   * in assets/slideshow.js.
+   *
+   * Deviation on file: docs/accessibility-patterns.md specifies a single
+   * rotation toggle with a dynamic aria-label. Revisit if slideshow-controls is
+   * ever refactored; each button already carries a correct static label.
+   */
+  slideshow-component:not([paused]) .slideshow-control.icon-play,
+  slideshow-component[paused] .slideshow-control.icon-pause {
+    display: none;
+  }
+
+  /*
+   * The pause/play pair carries .button-secondary (width: fit-content) and
+   * .button-unstyled (display: block), which beat the 44px sizing on
+   * `slideshow-controls button` above on specificity and shrink the button to
+   * the svg's 20px. Restore the minimum touch target and center the icon.
+   */
+  slideshow-controls .slideshow-control:is(.icon-pause, .icon-play) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--minimum-touch-target);
   }
 
   .slideshow-controls__dots {
