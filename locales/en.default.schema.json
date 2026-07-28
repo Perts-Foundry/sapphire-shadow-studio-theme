@@ -769,6 +769,8 @@
     "size_option_info": "The product option holding sizes. Adds a size-guide link beside it. Leave blank to hide the link.",
     "color_option": "Color option",
     "color_option_info": "The product option holding colors. Filters the gallery to photos whose alt text names the selected value, plus photos naming no value. Leave blank to show all photos.",
+    "variant_dropdown_threshold": "Dropdown Threshold",
+    "variant_dropdown_threshold_info": "Options with at least this many values render as a dropdown instead of buttons, so long lists do not fill the page. The size option always stays buttons. Set to 0 to turn this off.",
     "align_baseline": "Align text baseline",
     "animation": "Animation",
     "animation_repeat": "Repeat animation",
