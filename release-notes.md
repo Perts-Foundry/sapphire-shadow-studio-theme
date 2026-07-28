@@ -10,12 +10,14 @@ The Lead II products carry eight Design values, one per credential, and the list
 
 `blocks/variant-picker.liquid` already had a `variant_style` setting with a working `dropdowns` value, and `snippets/variant-main-picker.liquid` already had a complete dropdown branch. Nothing needed building. The blocker was that `variant_style` is a single **block-level** setting applied to every option at once, so switching it would have taken Color and Size with it. The decision had to become per-option.
 
-`settings.variant_dropdown_threshold` (default 4, `0` disables) now collapses any option with at least that many values. The rule is value-count based rather than option-name based so that adding a design needs no settings change.
+`settings.variant_dropdown_threshold` (default 4, `0` disables) now collapses any option with at least that many values. The rule is value-count based rather than option-name based so that adding a design or a color needs no settings change.
 
-Two exclusions, both load-bearing:
+**The rule has no exceptions, deliberately.** An earlier revision exempted the size option and let swatches take precedence. That was dropped: every option is measured the same way, so a customer never has to learn why Design collapses but Size does not. The override therefore runs last and is not gated on the current `variant_style`.
 
-- **The size option is never collapsed.** `XS`..`2XL` is six values, so it clears the threshold on its own, and a bare count test would silently turn every size selector in the store into a `<select>`. The guard reuses `size_position_num`, already resolved once per picker from the shared `snippets/size-option-position.liquid`, rather than introducing a second way to identify the size option. Do not "simplify" that condition away.
-- **Swatch options are never collapsed.** The swatch branch runs first and wins, so a color option keeps its swatches at any value count.
+Two consequences to know before changing the threshold:
+
+- **The size option collapses too**, once it has enough values (`XS`..`2XL` is six). The select branch renders the size-guide link itself, so `#SizeChart` survives the switch.
+- **A swatch option past the threshold loses its swatches**, because the select branch renders plain text options and the theme has no swatch-inside-dropdown rendering. Not hit today: no color option has swatches configured, and at the default threshold of 4 a three-color product stays on buttons anyway.
 
 The other half of the change is easy to miss and is what actually makes it render: the loop already computed a per-option `variant_style` local, but **both render branches tested `block_settings.variant_style` directly and ignored it**. Overriding the local alone changed nothing visible. Both conditions now read the per-option value.
 
