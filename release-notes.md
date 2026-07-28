@@ -1,5 +1,42 @@
 # Release Notes
 
+## Product consistency pass: long-option dropdown + copy backports (unreleased)
+
+A catalogue-wide audit compared all six products across three sources: Admin API data, the five committed `templates/product.*.json` files, and each rendered storefront page. The page architecture held up (identical block skeleton, identical accordion row order and headings, byte-identical Shipping & Turnaround copy). What it found was copy cloned from the crewneck and never updated for the garment it now describes, plus one layout problem.
+
+### Long option lists now collapse to a dropdown
+
+The Lead II products carry eight Design values, one per credential, and the list is expected to grow. Rendered as full-width buttons it pushed Color, Size, and Add to cart below the fold.
+
+`blocks/variant-picker.liquid` already had a `variant_style` setting with a working `dropdowns` value, and `snippets/variant-main-picker.liquid` already had a complete dropdown branch. Nothing needed building. The blocker was that `variant_style` is a single **block-level** setting applied to every option at once, so switching it would have taken Color and Size with it. The decision had to become per-option.
+
+`settings.variant_dropdown_threshold` (default 4, `0` disables) now collapses any option with at least that many values. The rule is value-count based rather than option-name based so that adding a design needs no settings change.
+
+Two exclusions, both load-bearing:
+
+- **The size option is never collapsed.** `XS`..`2XL` is six values, so it clears the threshold on its own, and a bare count test would silently turn every size selector in the store into a `<select>`. The guard reuses `size_position_num`, already resolved once per picker from the shared `snippets/size-option-position.liquid`, rather than introducing a second way to identify the size option. Do not "simplify" that condition away.
+- **Swatch options are never collapsed.** The swatch branch runs first and wins, so a color option keeps its swatches at any value count.
+
+The other half of the change is easy to miss and is what actually makes it render: the loop already computed a per-option `variant_style` local, but **both render branches tested `block_settings.variant_style` directly and ignored it**. Overriding the local alone changed nothing visible. Both conditions now read the per-option value.
+
+Not fixed here, and still latent: `snippets/variant-main-picker.liquid` tests `block_settings.variant_style == 'dropdown'` (singular) against a schema whose only dropdown value is `dropdowns` (plural), so the `swatch_dropdown` style is unreachable dead code.
+
+### Copy backports
+
+Three drifts had been fixed on the two newest products (quarter-zip, vest) and never backported to the three older ones. All three were corrected in `product.lead-ii-crewneck.json`, `product.huddle-crewneck.json`, and `product.shift-fuel-crewneck.json`: the "Have questions **about the something?**" typo, `your shirt's tag` to `your garment's tag`, and a stray double space after "shortcuts.".
+
+### Divergences confirmed intentional, recorded so they are not "fixed" later
+
+The audit flagged these as inconsistencies. Each was reviewed and kept deliberately:
+
+- **Shift Fuel returns.** It is the only product offering 14-day returns rather than final sale, because it carries no Design option and no custom text and is therefore resellable. Two consequences follow and must be preserved: it intentionally has no `return-policy-acknowledgment` block, and it is therefore intentionally the only product showing express checkout. The mechanism is non-obvious: the acknowledgment block hides express checkout with a CSS `:has()` rule in `blocks/return-policy-acknowledgment.liquid` targeting `[ref='acceleratedCheckoutButtonContainer']`, a cross-block dependency on that literal ref.
+- **Vest gallery.** The size-chart PNG and the studio logo SVG are intentional gallery media, which is why the vest shows four slides where its siblings show six or eight. They appear on every color because `snippets/product-media-gallery-content.liquid` treats media whose alt text names no color option value as shared.
+- **Huddle Design values.** "Nurse" and "Vet Tech" deliberately do not follow Lead II's `ABBREV (Expansion)` form, and Huddle deliberately does not split LVT/RVT/CVT. The option values track what the applique artwork actually reads.
+
+### Out of scope, tracked separately
+
+Product descriptions live in Shopify Admin, not in this repo, so two factual errors the audit found (the quarter-zip and vest descriptions claiming the crewneck's "Premium 8 oz. heavyweight fleece", and all three Lead II descriptions advertising "optional" custom text against a field that is `required: true`) are corrected Admin-side and are not part of this change.
+
 ## Asset-rejection detection: a green deploy that changed nothing (unreleased)
 
 ### The incident
