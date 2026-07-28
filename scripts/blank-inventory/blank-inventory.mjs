@@ -24,10 +24,10 @@ import { pathToFileURL } from 'node:url';
 
 import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
 import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
-import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
+import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
-import { createArtifact, verifyArtifact, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
+import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
 import { applyPlan } from './lib/apply.mjs';
 import { planBackfill, planBlankBootstrap, planSeed, untagVariants } from './lib/backfill.mjs';
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
@@ -80,6 +80,24 @@ const fail = (msg) => {
 };
 
 const heading = (s) => console.log(`\n${s}\n${'-'.repeat(s.length)}`);
+
+/**
+ * Read a flag that must carry a path or an identifier.
+ *
+ * parseArgs gives a bare `--flag` the value `true`, the same trap numericOpt closes for numbers: a
+ * fat-fingered `--plan --dry-run` would otherwise reach readFile as a boolean and surface as an
+ * unrelated type error rather than as the missing argument it is.
+ *
+ * @param {string} flag
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function stringOpt(flag, raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    fail(`${flag} needs a value, got ${JSON.stringify(raw)}.`);
+  }
+  return raw;
+}
 
 /**
  * Read a numeric flag, or refuse.
@@ -196,24 +214,35 @@ async function loadStore({ requireWrite, skipBodies = false }) {
     );
   }
 
-  const { vocab, conflicts, unbodied } = learnVocab(variants);
+  const { vocab, conflicts, unbodied, display } = learnVocab(variants);
   const groups = buildGroups(variants);
-  return { client, locationId, ...catalogue, variants, vocab, conflicts, unbodied, unmapped, groups };
+  return { client, locationId, ...catalogue, variants, vocab, conflicts, unbodied, display, unmapped, groups };
 }
 
-/** Receipts on disk, newest first, so audit can tell awaiting-seed from drift. */
+/**
+ * Receipts on disk, so audit can tell awaiting-seed from drift.
+ *
+ * Seeding receipts are age-bounded (see splitStaleSeedReceipts): an abandoned tag stage otherwise
+ * goes on explaining a non-uniform group forever, and `awaiting-seed` outranks `drift`, so one
+ * stale file silently suppresses every real Flow fault on those groups. Expired ones are returned
+ * separately rather than dropped, so a report can name the file doing the masking instead of just
+ * changing its verdict.
+ *
+ * @returns {Promise<{receipts: object[], staleSeeds: object[]}>}
+ */
 async function loadReceipts() {
-  if (!existsSync(WORK_DIR)) return [];
+  if (!existsSync(WORK_DIR)) return { receipts: [], staleSeeds: [] };
   const files = (await readdir(WORK_DIR)).filter((f) => f.startsWith('receipt-') && f.endsWith('.json'));
   const out = [];
   for (const f of files) {
     try {
-      out.push(await readJson(path.join(WORK_DIR, f)));
+      out.push({ ...(await readJson(path.join(WORK_DIR, f))), sourceFile: f });
     } catch {
       /* a torn receipt is not fatal to a report */
     }
   }
-  return out;
+  const { fresh, stale } = splitStaleSeedReceipts(out);
+  return { receipts: fresh, staleSeeds: stale };
 }
 
 // ---------------------------------------------------------------------------
@@ -330,17 +359,80 @@ async function cmdBodies(opts) {
 }
 
 // ---------------------------------------------------------------------------
+/** One group's JSON shape. The pre-existing keys keep their names and types; the rest is additive. */
+function groupJson(row) {
+  return {
+    blankId: row.blankId,
+    state: row.state,
+    quantities: row.quantities,
+    members: row.members.length,
+    // Additive. `quantities` is a deduped set, so [0, 2] cannot distinguish one member at 0 from
+    // seven of them; the histogram is what makes a stranded group legible.
+    histogram: groupHistogram(row.members),
+    memberLabels: row.members.map((m) => ({
+      id: m.id,
+      label: `${m.productHandle} | ${m.title}`,
+      quantity: m.quantity,
+    })),
+  };
+}
+
 async function cmdAudit(opts) {
   const store = await loadStore({ requireWrite: false });
-  const pendingSeeds = pendingSeedBlankIds(await loadReceipts());
-  const rows = classifyGroups(store.groups, pendingSeeds);
+  const { receipts, staleSeeds } = await loadReceipts();
+  const pendingSeeds = pendingSeedBlankIds(receipts);
+  const allRows = classifyGroups(store.groups, pendingSeeds);
   const warnings = conventionWarnings(store.variants);
+  const coverage = coverageGaps(store.variants);
 
   const tagged = store.variants.filter((v) => v.blankId).length;
   const untracked = store.variants.filter((v) => v.tracked === false).length;
 
+  // --group narrows to one blank; --stale narrows to everything not converged. Both are views of
+  // the same classification, never a different computation.
+  if (opts.group && typeof opts.group !== 'string') {
+    fail('--group needs a blank id, e.g. --group BLACK_CREWNECK_0001_M.');
+  }
+  let rows = allRows;
+  if (opts.group) {
+    rows = allRows.filter((r) => r.blankId === opts.group);
+    if (!rows.length) fail(`No group "${opts.group}" on the store. Nothing carries that blank id.`);
+  } else if (opts.stale) {
+    rows = unconvergedGroups(allRows);
+  }
+
   if (opts.json) {
-    console.log(JSON.stringify({ groups: rows.map((r) => ({ blankId: r.blankId, state: r.state, quantities: r.quantities, members: r.members.length })), warnings }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          catalogue: {
+            products: store.products.length,
+            variants: store.variants.length,
+            tagged,
+            untagged: store.variants.length - tagged,
+            untracked,
+            groups: allRows.length,
+          },
+          coverage,
+          groups: rows.map(groupJson),
+          warnings,
+          staleSeedReceipts: staleSeeds.map((r) => r.sourceFile),
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  if (opts.group) {
+    const row = rows[0];
+    heading(`Group ${row.blankId}`);
+    console.log(`  state       ${row.state}`);
+    console.log(`  quantities  [${row.quantities.join(', ')}]`);
+    console.log(`  histogram   ${JSON.stringify(groupHistogram(row.members))}`);
+    heading('Members');
+    for (const m of row.members) console.log(`  ${String(m.quantity).padStart(5)}  ${m.productHandle} | ${m.title}`);
     return;
   }
 
@@ -348,8 +440,24 @@ async function cmdAudit(opts) {
   console.log(`  products            ${store.products.length}`);
   console.log(`  variants            ${store.variants.length}`);
   console.log(`  tagged / untagged   ${tagged} / ${store.variants.length - tagged} (${untracked} untracked)`);
-  console.log(`  blank groups        ${rows.length}`);
+  console.log(`  blank groups        ${allRows.length}`);
   console.log(`  active locations    1`);
+
+  // Coverage, at preflight rather than at the first write. The denominator is the KEYABLE
+  // population (tracked, with a body, colour and size), so the gap shown is work that a backfill
+  // can actually close. Legacy tagging covered a fraction of it and nothing surfaced that until a
+  // write path ran.
+  heading('Coverage (keyable variants in a blank group)');
+  const bodyWidth = Math.max(12, ...coverage.byBody.map((r) => r.body.length));
+  for (const r of coverage.byBody) {
+    const pct = r.keyable ? Math.round((r.tagged / r.keyable) * 100) : 0;
+    console.log(`  ${r.body.padEnd(bodyWidth)}  ${String(r.tagged).padStart(4)} / ${String(r.keyable).padEnd(4)} tagged  (${pct}%, ${r.untagged} untagged)`);
+  }
+  const totalPct = coverage.totals.keyable ? Math.round((coverage.totals.tagged / coverage.totals.keyable) * 100) : 0;
+  console.log(`  ${'ALL'.padEnd(bodyWidth)}  ${String(coverage.totals.tagged).padStart(4)} / ${String(coverage.totals.keyable).padEnd(4)} tagged  (${totalPct}%, ${coverage.totals.untagged} untagged)`);
+  if (coverage.unkeyable) {
+    console.log(`  ${coverage.unkeyable} variant(s) are not keyable (untracked, or missing a body, colour or size) and can never join a group.`);
+  }
 
   heading('Invariants');
   // Asserted as invariants, not as frozen counts: backfill legitimately moves variants between the
@@ -372,10 +480,21 @@ async function cmdAudit(opts) {
 
   heading('Groups');
   const byState = { [CONVERGED]: 0, [DRIFT]: 0, [AWAITING_SEED]: 0 };
-  for (const r of rows) byState[r.state]++;
+  for (const r of allRows) byState[r.state]++;
   console.log(`  converged ${byState[CONVERGED]}   awaiting-seed ${byState[AWAITING_SEED]}   DRIFT ${byState[DRIFT]}`);
   for (const r of rows.filter((x) => x.state !== CONVERGED)) {
-    console.log(`  ${r.state.toUpperCase().padEnd(14)} ${r.blankId}  quantities=[${r.quantities.join(', ')}]  members=${r.members.length}`);
+    console.log(
+      `  ${r.state.toUpperCase().padEnd(14)} ${r.blankId}  ${JSON.stringify(groupHistogram(r.members))}  members=${r.members.length}`
+    );
+  }
+
+  if (staleSeeds.length) {
+    heading('Expired seeding receipts (no longer suppressing a drift report)');
+    for (const r of staleSeeds) console.log(`  ${r.sourceFile}`);
+    console.log(
+      `  A seed settles in 80-90s, so these stopped explaining anything long ago. Any group they\n` +
+        `  covered is now reported as drift rather than awaiting-seed.`
+    );
   }
 
   if (warnings.length) {
@@ -409,17 +528,56 @@ async function cmdPlan(opts) {
   await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
 
-  const pendingSeeds = pendingSeedBlankIds(await loadReceipts());
-  const drifting = classifyGroups(store.groups, pendingSeeds).filter((r) => r.state === DRIFT);
-  if (drifting.length) {
+  const { receipts, staleSeeds } = await loadReceipts();
+  const pendingSeeds = pendingSeedBlankIds(receipts);
+
+  // Every non-uniform group, whatever its state. Keying this on DRIFT alone was the hole: a group
+  // stranded mid-fan-out is normally AWAITING_SEED, so it passed here and then threw a per-line
+  // parse error out of groupQuantity for a store-state problem. Report all of them, with the state
+  // and the histogram, because the histogram is what says whether a cascade nearly finished or
+  // never started.
+  const blocked = unconvergedGroups(classifyGroups(store.groups, pendingSeeds));
+  if (blocked.length) {
+    const detail = blocked
+      .map((g) => `  ${g.state.toUpperCase().padEnd(14)} ${g.blankId}  ${JSON.stringify(groupHistogram(g.members))}`)
+      .join('\n');
     fail(
-      `${drifting.length} group(s) are in drift (${drifting.map((d) => d.blankId).join(', ')}). ` +
-        `Planning on top of an unconverged group would mask a Flow fault. Resolve it first.`
+      `${blocked.length} group(s) are not converged:\n${detail}\n\n` +
+        `Planning on top of an unconverged group would mask a Flow fault. "awaiting-seed" explains ` +
+        `why a group is non-uniform; it never makes it plannable. Check whether the fan-out is ` +
+        `still running (audit --group <blankId>), and see the Troubleshooting section of ` +
+        `docs/blank-inventory-sync-flow.md.`
+    );
+  }
+  if (staleSeeds.length) {
+    console.warn(
+      `\nWARNING: ignoring ${staleSeeds.length} expired seeding receipt(s) ` +
+        `(${staleSeeds.map((r) => r.sourceFile).join(', ')}). They were old enough that they can no ` +
+        `longer explain a non-uniform group; any group they covered is now reported as drift.\n`
+    );
+  }
+
+  const strayPlans = (await readdir(WORK_DIR).catch(() => [])).filter(
+    (f) => f.startsWith('plan-') && f.endsWith('.json')
+  );
+  if (strayPlans.length) {
+    console.warn(
+      `\nWARNING: ${strayPlans.length} other plan artifact(s) already in the working directory ` +
+        `(${strayPlans.join(', ')}). Apply the one this run prints by its exact path; do not glob.\n`
     );
   }
 
   const planId = randomUUID();
-  const { plans, skipped } = planAll({ rows, groups: store.groups, vocab: store.vocab, mode: opts.mode, planId, resolveBlank });
+  const { plans, skipped } = planAll({
+    rows,
+    groups: store.groups,
+    vocab: store.vocab,
+    mode: opts.mode,
+    planId,
+    // Bound so a refusal can name the spellings the store actually has. Suggestion only: planAll
+    // still resolves through the exact key, and nothing substitutes a near match.
+    resolveBlank: (vocab, axes) => resolveBlank(vocab, axes, { display: store.display }),
+  });
   const artifact = createArtifact({ plans, skipped, mode: opts.mode, planId });
 
   heading(`Plan ${planId} (mode: ${opts.mode})`);
@@ -439,6 +597,144 @@ async function cmdPlan(opts) {
   console.log(`\nArtifact: ${out}`);
   console.log(`Nothing has been written to the store. Review the plan, then:`);
   console.log(`  node scripts/blank-inventory/blank-inventory.mjs apply --plan '${out}'`);
+}
+
+// ---------------------------------------------------------------------------
+// The resolvable key space, and the renderer for the transcription gate.
+//
+// This exists because the vocabulary mismatch was found AFTER the operator had already confirmed a
+// transcription table: the sheet says "Navy" and "Grey", the store's option values are "Classic
+// Navy" and "Grey Heather", and better than half the rows could not have resolved. The gate was
+// assembled by hand from tokens nothing had checked. `vocab --check` renders it from the file the
+// planner will actually read, so the confirmation and the plan see the same bytes.
+// ---------------------------------------------------------------------------
+async function cmdVocab(opts) {
+  await loadBodies({ requireApproved: true });
+  const store = await loadStore({ requireWrite: false });
+
+  if (opts.check) {
+    if (!MODES.includes(opts.mode)) {
+      fail(`vocab --check needs --mode ${MODES.join('|')}, the same mode the plan will use: the parser enforces the mode contract, and checking under a different one checks a different file.`);
+    }
+    const checkPath = stringOpt('--check', opts.check);
+    const text = await readFile(checkPath, 'utf8');
+    const { rows } = parseInput(text, { mode: opts.mode, format: opts.format });
+
+    heading(`Vocabulary check: ${rows.length} row(s) from ${checkPath}`);
+    let unresolved = 0;
+    for (const row of rows) {
+      const label = row.blankId ?? `${row.body} / ${row.color} / ${row.size}`;
+      const asWritten = row.asWritten ? `  (as written: ${JSON.stringify(row.asWritten)})` : '';
+      let blankId = null;
+      let problem = null;
+      try {
+        blankId = row.blankId ?? resolveBlank(store.vocab, row, { display: store.display });
+        if (row.blankId && !store.groups.has(row.blankId)) {
+          problem = 'no variant on the store carries this blank id';
+          blankId = null;
+        }
+      } catch (err) {
+        problem = err.message;
+      }
+      if (blankId) {
+        const members = store.groups.get(blankId) ?? [];
+        console.log(`  line ${String(row.line).padStart(3)}  OK          ${label}${asWritten}`);
+        console.log(`              -> ${blankId}  (${members.length} member(s), currently ${JSON.stringify(groupHistogram(members))}), value ${row.rawValue}`);
+      } else {
+        unresolved++;
+        console.log(`  line ${String(row.line).padStart(3)}  UNRESOLVED  ${label}${asWritten}`);
+        console.log(`              ${problem}`);
+      }
+    }
+
+    console.log(`\n  ${rows.length - unresolved} of ${rows.length} row(s) resolve.`);
+    if (unresolved) {
+      console.log(
+        `\n${unresolved} row(s) do not resolve. Do NOT edit a token to make it resolve, and do not\n` +
+          `drop the row to make the table clean: either is a silent change to what the sheet said.\n` +
+          `Show the operator the token and the suggestion side by side and let them decide.`
+      );
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  // The whole key space: what a transcription is allowed to say, and where the holes are.
+  const axis = (name) => [...store.display[name].entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const bodies = axis('body');
+  const colors = axis('color');
+  const sizes = axis('size');
+
+  heading(`Resolvable keys: ${bodies.length} body/bodies x ${colors.length} colour(s) x ${sizes.length} size(s)`);
+  console.log('  These are the store\'s own spellings. A transcription must use them exactly.\n');
+  let missing = 0;
+  for (const [, bodyLabel] of bodies) {
+    console.log(`  ${bodyLabel}`);
+    for (const [, colorLabel] of colors) {
+      const cells = sizes.map(([, sizeLabel]) => {
+        // Key through vocabKey, not a hand-joined string: the separator and the normalisation rules
+        // live in one place, and a lookup that reimplements them drifts from what the planner does.
+        const blankId = store.vocab.get(vocabKey({ body: bodyLabel, color: colorLabel, size: sizeLabel }));
+        if (!blankId) missing++;
+        return `${sizeLabel}:${blankId ? 'yes' : '--'}`;
+      });
+      console.log(`    ${colorLabel.padEnd(16)} ${cells.join('  ')}`);
+    }
+  }
+  console.log(`\n  ${store.vocab.size} key(s) resolve; ${missing} combination(s) have no blank id yet.`);
+  console.log(`  A "--" is not an error: not every body is made in every colour and size. It means a`);
+  console.log(`  transcription row for that combination cannot be planned until one variant is tagged.`);
+  if (store.conflicts.length) {
+    heading('Keys that resolve to two different blanks (refused on every path)');
+    for (const c of store.conflicts) console.log(`  ${c.key}: ${c.values.join(' vs ')}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+/**
+ * Render an approved plan artifact. The refusal rule lives in receipt.mjs (assertRenderablePlan),
+ * where it is pure and unit-tested; this is only the presentation.
+ */
+async function cmdShow(opts) {
+  if (!opts.plan) fail('show needs --plan <artifact.json>.');
+  const planPath = stringOpt('--plan', opts.plan);
+  let artifact;
+  try {
+    artifact = assertRenderablePlan(verifyArtifact(await readJson(planPath)));
+  } catch (err) {
+    fail(err.message);
+  }
+
+  heading(`Plan ${artifact.planId} (mode: ${artifact.mode}, created ${artifact.createdAt})`);
+  if (!artifact.groups.length) {
+    console.log('  nothing to write; every group already holds its target.');
+  } else {
+    const w = Math.max(...artifact.groups.map((g) => g.blankId.length));
+    console.log(`  ${'blank'.padEnd(w)}  ${'now'.padStart(5)} ${'->'} ${'target'.padStart(6)}  ${'CAS'.padStart(5)}  siblings  write target`);
+    for (const g of artifact.groups) {
+      const now = g.current ?? g.baseline;
+      console.log(
+        `  ${g.blankId.padEnd(w)}  ${String(now).padStart(5)} -> ${String(g.target).padStart(6)}  ` +
+          `${String(g.baseline).padStart(5)}  ${String(g.siblingCount).padStart(8)}  ${g.writeTargetTitle}`
+      );
+    }
+
+    heading('Per group');
+    for (const g of artifact.groups) {
+      console.log(`  ${g.blankId}`);
+      console.log(`    write ${artifact.mode === MODE_DELTA ? `delta ${g.target - g.baseline}` : `quantity ${g.target}`} to ${g.writeTargetTitle}`);
+      console.log(`    chosen because it holds ${g.baseline}, which differs from the target; a write to a`);
+      console.log(`      member already at the target fires no trigger and the siblings stay stale.`);
+      console.log(`    compare-and-swap baseline ${g.baseline}; the Flow then updates ${g.siblingCount} sibling(s).`);
+    }
+  }
+
+  if (artifact.skipped?.length) {
+    heading('Skipped');
+    for (const s of artifact.skipped) console.log(`  ${s.blankId}: ${s.reason} (at ${s.current}, target ${s.target})`);
+  }
+  console.log(`\n  ${artifact.groups.length} group(s) would be written. Artifact: ${planPath}`);
+  console.log(`  Nothing has been written to the store by this command.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,7 +1084,9 @@ const USAGE = `
 blank-inventory: shared-blank stock and metafield tooling.
 
   bodies   --stage propose|approve|show    the garment body map (run this before anything else)
-  audit                                   read-only health report
+  audit    [--json] [--group <blankId>] [--stale]     read-only health report
+  vocab    [--check <csv> --mode <${MODES.join('|')}>]   the resolvable key space, or check a transcription
+  show     --plan <artifact.json>          render a plan artifact for the approval gate
   plan     --input <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]
   apply    --plan <artifact.json> [--dry-run] [--resume]
   verify   --receipt <receipt.json> [--timeout-ms <n>]
@@ -837,6 +1135,8 @@ async function main() {
   const run = {
     bodies: cmdBodies,
     audit: cmdAudit,
+    vocab: cmdVocab,
+    show: cmdShow,
     plan: cmdPlan,
     apply: cmdApply,
     verify: cmdVerify,

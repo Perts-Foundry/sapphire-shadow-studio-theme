@@ -34,10 +34,31 @@ node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # afte
 node scripts/blank-inventory/blank-inventory.mjs bodies --stage show      # the approved map
 
 # Health report (no Shopify writes). Start here every time once bodies are approved.
+# --json adds a per-group member histogram; --group narrows to one blank; --stale to the
+# non-converged ones. The histogram is the reading that matters: `quantities` is deduped, so
+# [0, 2] cannot tell one member at 0 from seven of them, and those are opposite situations.
 node scripts/blank-inventory/blank-inventory.mjs audit
+node scripts/blank-inventory/blank-inventory.mjs audit --json
+node scripts/blank-inventory/blank-inventory.mjs audit --group BLACK_CREWNECK_0001_M
+node scripts/blank-inventory/blank-inventory.mjs audit --stale
+
+# The resolvable key space: which body+colour+size combinations have a blank id, in the store's own
+# spellings. No Shopify writes.
+node scripts/blank-inventory/blank-inventory.mjs vocab
+
+# Check a transcription BEFORE planning it. Exits non-zero if any row cannot resolve, and names the
+# store's spelling when one is close ("Navy" -> "Classic Navy"). It never substitutes: a near match
+# is a different physical blank, so only the operator may act on a suggestion.
+node scripts/blank-inventory/blank-inventory.mjs vocab --check counts.csv --mode absolute
 
 # Turn an adjustments CSV into a reviewable, hashed plan artifact. No Shopify writes.
+# Refuses while ANY group is non-uniform, whatever its state: "awaiting-seed" explains why a group
+# is non-uniform, it never makes it plannable.
 node scripts/blank-inventory/blank-inventory.mjs plan --input counts.csv --mode absolute
+
+# Render an artifact for the approval gate. Reads the artifact's real keys and refuses one that is
+# missing any of them, rather than printing a blank cell where a write target belongs.
+node scripts/blank-inventory/blank-inventory.mjs show --plan <workdir>/plan-<id>.json
 
 # Execute an APPROVED artifact. --dry-run prints the writes without making them.
 node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json
