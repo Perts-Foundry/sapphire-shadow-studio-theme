@@ -95,13 +95,25 @@ export function blankPrefix(blankId, size) {
  * A tagged variant with no body is excluded from the vocabulary and reported, rather than throwing:
  * read commands must still be able to produce a report when the body map is missing or stale.
  *
+ * `display` carries the store's own spelling for each normalised axis value ("classic navy" ->
+ * "Classic Navy"). Normalisation lowercases, so without it every suggestion and every printed key
+ * would show a spelling that appears nowhere in Admin, and an operator told to look for "classic
+ * navy" cannot find it. It is presentation only: nothing resolves through it.
+ *
  * @param {object[]} variants
- * @returns {{vocab: Map<string, string>, conflicts: Array<{key: string, values: string[]}>, unbodied: object[]}}
+ * @returns {{vocab: Map<string, string>, conflicts: Array<{key: string, values: string[]}>, unbodied: object[], display: {body: Map<string, string>, color: Map<string, string>, size: Map<string, string>}}}
  */
 export function learnVocab(variants) {
   /** @type {Map<string, Set<string>>} */
   const seen = new Map();
   const unbodied = [];
+  const display = { body: new Map(), color: new Map(), size: new Map() };
+  const remember = (axis, raw) => {
+    const norm = normaliseAxis(raw, axis);
+    // First spelling wins, so the table is stable across runs rather than reflecting variant order.
+    if (norm && !display[axis].has(norm)) display[axis].set(norm, String(raw).trim());
+  };
+
   for (const v of variants) {
     if (!v.blankId) continue;
     if (!v.body) {
@@ -109,6 +121,9 @@ export function learnVocab(variants) {
       continue;
     }
     const key = vocabKey(v);
+    remember('body', v.body);
+    remember('color', v.color);
+    remember('size', v.size);
     if (!seen.has(key)) seen.set(key, new Set());
     seen.get(key).add(v.blankId);
   }
@@ -118,7 +133,86 @@ export function learnVocab(variants) {
     if (values.size === 1) vocab.set(key, [...values][0]);
     else conflicts.push({ key, values: [...values].sort() });
   }
-  return { vocab, conflicts, unbodied };
+  return { vocab, conflicts, unbodied, display };
+}
+
+/**
+ * Levenshtein distance, bounded by an early exit on the row minimum.
+ *
+ * Used ONLY to rank suggestions in an error message. Nothing resolves through it.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+export function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/**
+ * Suggest keys the store actually has, for an axis triple that resolved to nothing.
+ *
+ * SUGGESTION ONLY. This never feeds a lookup and nothing here may ever be substituted for the
+ * operator's token: "Navy" and "Classic Navy" are one keystroke apart and address different stock.
+ * The caller prints these; only the operator may act on one, and a substituted token is a new
+ * transcription that re-enters the transcription gate.
+ *
+ * A candidate must match the other two axes exactly, so a suggestion is always a real key that
+ * differs on exactly the axis that failed.
+ *
+ * @param {Map<string, string>} vocab
+ * @param {{body: string, color: string, size: string}} axes
+ * Scoring, in two tiers. A raw edit distance alone is the wrong measure here and ranks the real
+ * answer below a wrong one: "grey" is 8 edits from "grey heather" but only 5 from "black", so an
+ * unrelated colour wins. The abbreviation case is the one that actually occurs (a sheet writes
+ * "Navy" for "Classic Navy"), so containment scores 0 and beats everything, and anything else must
+ * be within half the longer token's length to be offered at all.
+ *
+ * @param {object} [opts]
+ * @param {{body: Map<string, string>, color: Map<string, string>, size: Map<string, string>}} [opts.display]
+ * @param {number} [opts.limit]
+ * @returns {Array<{axis: string, value: string, blankId: string, distance: number}>}
+ */
+export function nearMatches(vocab, { body, color, size }, opts = {}) {
+  const { display, limit = 3 } = opts;
+  const want = {
+    body: normaliseAxis(body, 'Body'),
+    color: normaliseAxis(color, 'Color'),
+    size: normaliseAxis(size, 'Size'),
+  };
+  const axes = ['body', 'color', 'size'];
+  const out = [];
+
+  for (const [key, blankId] of vocab) {
+    const parts = key.split(SEP);
+    if (parts.length !== axes.length) continue;
+    const have = { body: parts[0], color: parts[1], size: parts[2] };
+    const differing = axes.filter((a) => have[a] !== want[a]);
+    if (differing.length !== 1) continue;
+    const axis = differing[0];
+    const [a, b] = [want[axis], have[axis]];
+    const contained = a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+    const distance = contained ? 0 : editDistance(a, b);
+    // Half the longer token: "grey" -> "black" is 5 edits on a 5-character token and is not a near
+    // match by any reading, but it beats the genuine answer on raw distance.
+    if (!contained && distance > Math.floor(Math.max(a.length, b.length) / 2)) continue;
+    out.push({ axis, value: display?.[axis]?.get(have[axis]) ?? have[axis], blankId, distance });
+  }
+
+  return out
+    .sort((a, b) => a.distance - b.distance || a.value.localeCompare(b.value))
+    .slice(0, limit);
 }
 
 /**
@@ -127,17 +221,29 @@ export function learnVocab(variants) {
  * Takes an object, not positional arguments. Three same-typed strings in a row invite a silent
  * transposition, and a transposed lookup here resolves to the wrong garment's stock.
  *
+ * The refusal may carry near-match suggestions when a `display` map is supplied. They are printed,
+ * never applied: this function still resolves through the exact key and nothing else. A suggestion
+ * is a prompt for the operator, not a fallback.
+ *
  * @param {Map<string, string>} vocab
  * @param {{body: string, color: string, size: string}} axes
+ * @param {object} [opts]
+ * @param {{body: Map<string, string>, color: Map<string, string>, size: Map<string, string>}} [opts.display]
  * @returns {string}
  */
-export function resolveBlank(vocab, { body, color, size }) {
+export function resolveBlank(vocab, { body, color, size }, opts = {}) {
   const found = vocab.get(vocabKey({ body, color, size }));
   if (!found) {
+    const near = nearMatches(vocab, { body, color, size }, opts);
+    const hint = near.length
+      ? ` The store has ${near.map((n) => `${n.axis} "${n.value}"`).join(', ')}. If one of those is ` +
+        `what the source meant, the OPERATOR must say so: this tool never substitutes a value, ` +
+        `because a near match is a different physical blank.`
+      : '';
     throw new Error(
       `No blank precedent for "${body} / ${color} / ${size}". This tool only reuses blank ids that ` +
         `already exist on the store; it never invents one. Tag one variant of this body, colour and ` +
-        `size in Admin first (or use "backfill --blank"), then re-run.`
+        `size in Admin first (or use "backfill --blank"), then re-run.${hint}`
     );
   }
   return found;
@@ -286,6 +392,89 @@ export function classifyGroups(groups, pendingSeedBlankIds = new Set()) {
       ...classifyGroup(members, pendingSeedBlankIds),
     }))
     .sort((a, b) => a.blankId.localeCompare(b.blankId));
+}
+
+/**
+ * How many members hold each quantity.
+ *
+ * `[0, 2]` cannot tell "one member at 0 and seven at 2" from "seven at 0 and one at 2", and those
+ * are opposite situations: the first is a cascade nearly done, the second is a cascade that never
+ * ran. The distinction is the whole stranding signal, so the histogram is what the JSON report
+ * carries.
+ *
+ * Keys are stringified numbers because this is serialised straight to JSON.
+ *
+ * @param {Array<{quantity: number}>} members
+ * @returns {Record<string, number>}
+ */
+export function groupHistogram(members) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const m of members) {
+    const k = String(m.quantity);
+    out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * Tagging coverage per body: how much of the keyable population is actually in a blank group.
+ *
+ * "Keyable" is the honest denominator. A variant that is untracked, or missing a colour, size or
+ * body, can never join a group, so counting it as a gap would report a permanent shortfall that no
+ * backfill can close and train the operator to ignore the number. The gap reported here is work
+ * that can actually be done.
+ *
+ * This is the reading that was missing at preflight: legacy tagging covered a fraction of the
+ * keyable catalogue and nothing surfaced it until the first write path ran.
+ *
+ * @param {object[]} variants
+ * @returns {{byBody: Array<{body: string, keyable: number, tagged: number, untagged: number}>, totals: {keyable: number, tagged: number, untagged: number}, unkeyable: number}}
+ */
+export function coverageGaps(variants) {
+  /** @type {Map<string, {body: string, keyable: number, tagged: number, untagged: number}>} */
+  const byBody = new Map();
+  let unkeyable = 0;
+
+  for (const v of variants) {
+    const keyable = v.tracked !== false && Boolean(v.body) && Boolean(v.color) && Boolean(v.size);
+    if (!keyable) {
+      // A tagged variant still counts as covered even if it is no longer keyable, but it is not
+      // part of the denominator; count it only as a shape problem.
+      unkeyable++;
+      continue;
+    }
+    const key = v.body;
+    if (!byBody.has(key)) byBody.set(key, { body: key, keyable: 0, tagged: 0, untagged: 0 });
+    const row = byBody.get(key);
+    row.keyable++;
+    if (v.blankId) row.tagged++;
+    else row.untagged++;
+  }
+
+  const rows = [...byBody.values()].sort((a, b) => a.body.localeCompare(b.body));
+  const totals = rows.reduce(
+    (acc, r) => ({ keyable: acc.keyable + r.keyable, tagged: acc.tagged + r.tagged, untagged: acc.untagged + r.untagged }),
+    { keyable: 0, tagged: 0, untagged: 0 }
+  );
+  return { byBody: rows, totals, unkeyable };
+}
+
+/**
+ * Every group that is not converged, whatever the tool calls its state.
+ *
+ * KEY ON THE QUANTITIES, NOT ON THE STATE. `plan` used to refuse only `DRIFT`, and a group stranded
+ * mid-fan-out is normally `AWAITING_SEED` instead: `backfill --stage tag` records a seeding receipt
+ * whose rows stay `not-attempted`, which is exactly what `AWAITING_SEED` means. Those groups sailed
+ * past the state check and died deeper in, inside `groupQuantity`, as a per-line parse error for
+ * what is really a store-state problem. `awaiting-seed` says a non-uniform group is EXPLAINED; it
+ * never says it is plannable.
+ *
+ * @param {Array<{blankId: string, state: string, quantities: number[], members: object[]}>} rows
+ * @returns {Array<{blankId: string, state: string, quantities: number[], members: object[]}>}
+ */
+export function unconvergedGroups(rows) {
+  return rows.filter((r) => r.quantities.length > 1);
 }
 
 /**

@@ -34,10 +34,36 @@ node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # afte
 node scripts/blank-inventory/blank-inventory.mjs bodies --stage show      # the approved map
 
 # Health report (no Shopify writes). Start here every time once bodies are approved.
+# --json emits the whole report (catalogue, coverage, groups with per-group histograms and member
+# labels, warnings, expired seeding receipts) as one object. --group narrows to one blank and
+# --stale to the non-converged ones; they are different views, so passing both is an error.
+# The histogram is the reading that matters, and it is in the human output too: `quantities` is
+# deduped, so [0, 2] cannot tell one member at 0 from seven of them, and those are opposite
+# situations.
 node scripts/blank-inventory/blank-inventory.mjs audit
+node scripts/blank-inventory/blank-inventory.mjs audit --json
+node scripts/blank-inventory/blank-inventory.mjs audit --group BLACK_CREWNECK_0001_M
+node scripts/blank-inventory/blank-inventory.mjs audit --stale
+
+# The resolvable key space: which body+colour+size combinations have a blank id, in the store's own
+# spellings. No Shopify writes.
+node scripts/blank-inventory/blank-inventory.mjs vocab
+
+# Check a transcription BEFORE planning it. Exits non-zero if any row cannot resolve, and names the
+# store's spelling when one is close ("Navy" -> "Classic Navy"). It never substitutes: a near match
+# is a different physical blank, so only the operator may act on a suggestion.
+# Pass the SAME --mode and --format the plan will use; both go to the same parser, and checking
+# under different ones checks a different file.
+node scripts/blank-inventory/blank-inventory.mjs vocab --check counts.csv --mode absolute
 
 # Turn an adjustments CSV into a reviewable, hashed plan artifact. No Shopify writes.
+# Refuses while ANY group is non-uniform, whatever its state: "awaiting-seed" explains why a group
+# is non-uniform, it never makes it plannable.
 node scripts/blank-inventory/blank-inventory.mjs plan --input counts.csv --mode absolute
+
+# Render an artifact for the approval gate. Refuses a hand-edited artifact (the hash check) and one
+# missing any key the gate needs, rather than printing a blank cell where a write target belongs.
+node scripts/blank-inventory/blank-inventory.mjs show --plan <workdir>/plan-<id>.json
 
 # Execute an APPROVED artifact. --dry-run prints the writes without making them.
 node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json
@@ -146,6 +172,17 @@ belt-and-braces; a silently failed delete followed by a zeroing write is exactly
   never looks finished. Re-run with `--resume`.
 - **A pidfile lock** prevents concurrent writes, and is reclaimed automatically if its holder died.
 - **A pre-run snapshot** of every affected group is written into the receipt.
+- **`plan` refuses any non-uniform group, whatever its state.** `awaiting-seed` explains *why* a
+  group is non-uniform; it never makes it plannable. Keying this on `drift` alone was a hole: a
+  group stranded mid-fan-out is normally `awaiting-seed`, so it passed the check and then failed
+  deeper in as a per-line parse error for a store-state problem.
+- **Seeding receipts age out.** A seed settles in 80 to 90 seconds, so a `--stage tag` receipt older
+  than 24 hours stops suppressing a drift report. `audit` and `plan` name the expired files rather
+  than silently ignoring them; without the bound, one abandoned tag stage masked every later Flow
+  fault on those groups as expected behaviour.
+- **The approval-gate renderer refuses an incomplete artifact.** `show --plan` errors on a missing
+  or renamed key instead of rendering a blank cell, so a schema change cannot silently produce an
+  emptier gate that still looks like a review.
 
 ## Tests
 
@@ -157,7 +194,10 @@ npm run blank-inventory:guard   # no real blank id may be committed
 Both run in CI on every PR. The unit suite covers the decision boundaries that are easy to get
 silently wrong: write-target selection, the all-match skip, drift refusal, partial-run receipts,
 idempotency key stability *and* distinctness, the mode cross-check (including cases that must NOT
-false-stop), convergence polling against a racing cascade, and the untag interlock.
+false-stop), convergence polling against a racing cascade, the untag interlock, the near-match
+suggestion that must never be substituted, seeding-receipt expiry (including the unparseable
+timestamp, which expires rather than being believed forever), and the refusal to render a plan
+artifact missing a gate-critical key.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that
