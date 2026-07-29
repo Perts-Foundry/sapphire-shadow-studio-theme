@@ -1,5 +1,38 @@
 # Release Notes
 
+## SEO: add a dedicated About page template (unreleased)
+
+Stage 4a, the first half of a change that needs an Admin step in the middle.
+
+### What changed
+
+New `templates/page.about.json`, a **byte-for-byte copy** of the current
+`templates/page.json`, preserving section key `176956306257ea4668` and block key
+`ai_gen_block_23c928c_UaLftP`. `templates/page.json` is untouched.
+
+### Why
+
+The default `page` template is not a default at all today: it hardcodes the
+About page's content. Every page on the default template therefore renders
+About's hero, mission, values, story, and team blocks instead of its own body.
+`/pages/data-sharing-opt-out` shows About's content right now.
+
+Splitting the About content into its own template is the precondition for
+resetting `page.json` to stock, which is stage 4b.
+
+### After this deploys
+
+Both templates render About and nothing changes on the storefront.
+`/pages/about` is unchanged; `/pages/data-sharing-opt-out` is still wrong, as it
+already was. That is the intended no-op.
+
+### Rollback stops being simple after the Admin step
+
+Revertable in isolation right now. It stops being independently revertable the
+moment the About page is assigned to the `about` template in Admin: reverting
+then would strand a live page pointing at a template the theme no longer has.
+To roll back after assignment, un-assign in Admin **first**, then revert.
+
 ## SEO: breadcrumbs (unreleased)
 
 Stage 3 of the SEO remediation, and independent of the FAQ pair below. The
