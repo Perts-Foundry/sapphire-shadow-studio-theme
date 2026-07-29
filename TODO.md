@@ -17,12 +17,17 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   stays closed.
 - [ ] **SEO: `ItemList` markup on collection pages.** Not emitted today. Low value while the catalogue
   is six products; revisit if the collection count grows.
-- [ ] **SEO: deterministic breadcrumb parent collection.** Not shipped yet; breadcrumbs are a later PR
-  and no breadcrumb snippet exists in the tree today. When it lands it will pick a product's parent as
-  the global `collection` when present, else the first entry in `product.collections` that is not
-  `all` or `frontpage`. That is non-deterministic if collections are reordered, and the churn is
-  per-page and ongoing. Accepted at 6 products and 4 collections. A `custom.breadcrumb_collection`
-  metafield is the deterministic fix if it starts to matter. Decide the tie-break before it ships.
+- [ ] **SEO: deterministic breadcrumb parent collection.** `snippets/breadcrumbs.liquid` has shipped
+  and picks a product's parent from a hardcoded preferred-handle list
+  (`healthcare,the-vitals-collection,featured`) after honouring a collection-scoped URL. Ordering is
+  deterministic, but **the list is hand-maintained and fails quietly**: a handle that no longer
+  exists is skipped with no error, so renaming or removing a collection silently degrades the trail
+  and nothing in CI catches it. A `custom.breadcrumb_collection` metafield is the fix that needs no
+  maintenance. Revisit when the catalogue or collection set grows.
+- [ ] **SEO: breadcrumb locale strings are untranslated.** `accessibility.breadcrumb`,
+  `content.breadcrumb_home`, and `content.breadcrumb_collections` carry `TODO:` placeholders in all
+  30 non-English locale files, matching the existing convention. Only English is active on the
+  storefront today, so this is invisible until a second language is enabled.
 - [ ] **SEO: `/blogs/news` is empty and indexable.** Accepted deliberately at launch rather than
   overlooked. It is a thin-content signal on a small indexable surface. Revisit at launch (B7): if
   the blog is still empty, decide then between `noindex` and unpublishing.

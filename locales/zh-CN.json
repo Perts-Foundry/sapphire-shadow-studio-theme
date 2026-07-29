@@ -20,6 +20,7 @@
     "slider_label": "滑块"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "演示 3D 模型",
     "play_video": "播放视频",
     "unit_price": "单价",
@@ -108,6 +109,8 @@
     "open": "打开"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "评价",
     "no_results_found": "未找到结果",
     "language": "语言",

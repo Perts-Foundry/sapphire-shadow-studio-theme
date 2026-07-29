@@ -20,6 +20,7 @@
     "slider_label": "Плъзгач"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Възпроизвеждане на 3D модел",
     "play_video": "Възпроизвеждане на видеоклип",
     "unit_price": "Единична цена",
@@ -108,6 +109,8 @@
     "open": "Отваряне"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "мнения",
     "language": "Език",
     "localization_region_and_language": "Регион и език",

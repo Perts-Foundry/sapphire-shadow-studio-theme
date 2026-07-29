@@ -20,6 +20,7 @@
     "slider_label": "Posuvník"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Přehrát 3D model",
     "play_video": "Přehrát video",
     "unit_price": "Jednotková cena",
@@ -112,6 +113,8 @@
     "open": "Otevřít"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "recen.",
     "language": "Jazyk",
     "localization_region_and_language": "Oblast a jazyk",

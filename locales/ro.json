@@ -38,6 +38,7 @@
     "slider_label": "Cursor"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Redă modelul 3D",
     "play_video": "Redă videoclipul",
     "unit_price": "Preț unitar",
@@ -128,6 +129,8 @@
     "open": "Deschidere"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "recenzii",
     "language": "Limba",
     "localization_region_and_language": "Regiunea și limba",

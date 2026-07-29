@@ -1,5 +1,108 @@
 # Release Notes
 
+## SEO: breadcrumbs (unreleased)
+
+Stage 3 of the SEO remediation, and independent of the FAQ pair below. The
+storefront had no breadcrumb trail and no `BreadcrumbList` markup on any page.
+
+### What changed
+
+New `snippets/breadcrumbs.liquid`, rendered from `layout/theme.liquid` as the
+first child of `<main>`. It emits the visible `<nav>` and its `BreadcrumbList`
+JSON-LD **from one trail computation**, which is the whole point of the single
+snippet: the markup and the structured data cannot drift apart.
+
+Not rendered from `layout/password.liquid`.
+
+### Design points that are load-bearing
+
+**Page types are an allow-list, not a deny-list**: `product`, `collection`,
+`page`, `article`, `blog`, `list-collections`. A page type Shopify adds later
+therefore defaults to no breadcrumb rather than to a guessed trail.
+
+**`policy` is deliberately excluded.** "Home > Policies > Refund policy" invents
+an intermediate level with no page behind it, and Google expects breadcrumbs to
+reflect a hierarchy the user can actually navigate. A two-item
+"Home > Refund policy" is not worth the markup. The same test keeps
+`list-collections` in: `/collections` is a real page.
+
+**The last `ListItem` omits `item`.** Spec-legal, and it sidesteps a real trap:
+on a collection-scoped product URL `product.url` returns
+`/collections/x/products/y` while `canonical_url` returns `/products/y`.
+Emitting either would risk contradicting the page's own canonical. The visible
+last crumb is still a link, per the accessibility contract.
+
+**The trail is carried as two delimiter-joined strings**, not arrays, because
+Liquid cannot append to an array. Home is always first, so every later entry
+appends the delimiter unconditionally and there is no leading-empty-element
+edge case.
+
+**Product parent collection is chosen by an explicit preference list.** Three
+steps: the collection the shopper actually browsed through when the URL is
+collection-scoped, else the first hit in a hand-maintained preferred-handle list
+(`healthcare`, `the-vitals-collection`, `featured`), else any collection that is
+not a catch-all.
+
+The first draft of this snippet simply took the first entry in
+`product.collections` that was not `all` or `frontpage`, and preview
+verification caught what that produces: `all-products` is a **real** collection
+in this store, not one of Shopify's virtual ones, and it sorts first. So every
+**canonical** product URL rendered "Home > All Products > Lead II Crewneck",
+while only the collection-scoped URL got "Home > Healthcare > ...". The
+canonical URL is the one Google indexes, so the breadcrumb it would have shown
+was the least informative of the four available, which throws away most of the
+reason to emit the markup. `all-products` is now excluded alongside `all` and
+`frontpage`.
+
+The tradeoff moved rather than vanished. Ordering is now deterministic, but the
+preferred list is hardcoded and hand-maintained: **a handle that no longer
+exists is skipped silently**, with no error, so renaming or removing a
+collection degrades the trail without failing anything. Nothing in CI checks it.
+A `custom.breadcrumb_collection` metafield remains the fix that needs no
+maintenance; it is recorded in `TODO.md`.
+
+### Accessibility
+
+Matches the breadcrumb contract in `docs/accessibility-patterns.md`: `<nav>` with
+`aria-label` wrapping an `<ol>`, and the current page **is** a link carrying
+`aria-current="page"`.
+
+The separator is drawn as a rotated CSS border chevron, never `content: '/'`,
+which several screen readers announce as "slash" on every crumb. A
+`[dir='rtl']` rule flips it.
+
+Links get `padding-block` with an equal negative `margin-block`, so they reach a
+usable touch-target height without changing the visual density.
+
+**Honest tradeoff:** putting the breadcrumb inside `<main>` is the correct
+placement, but it means skip-link users tab through the breadcrumb links before
+reaching content. That is the normal cost of correct placement, not a benefit.
+
+### `#MainContent` was missing `tabindex="-1"`
+
+Found while verifying the skip-link interaction, and fixed here in both
+`layout/theme.liquid` and `layout/password.liquid`. It is a precondition for
+this change rather than a drive-by: without it the skip link scrolls the page
+but focus stays on the link, so the next Tab goes back into the header instead
+of into the breadcrumb and content. The repo's global accessibility rules
+already required it. A comment on the attribute says why, so it does not get
+tidied away.
+
+### Locale strings
+
+Three storefront-visible keys: `accessibility.breadcrumb`,
+`content.breadcrumb_home`, `content.breadcrumb_collections`. Added to
+`locales/en.default.json` with real values and mirrored into all 30 other
+locale files with `TODO:` placeholders, per the existing convention. That is
+why this is a 31-file diff for three strings, and why it shipped as its own PR.
+
+The locale files were edited byte-wise rather than through a JSON round trip.
+They use CRLF, and they carry a `/* */` header plus `//` comments, so `json.load`
+fails on them and a naive read/write rewrites every line ending into a
+several-thousand-line diff. Insertions were anchored on the top-level block
+opening line, because key names repeat across blocks in these files and a
+first-match search lands in the wrong one.
+
 ## SEO: FAQ template opts into an H1 (unreleased)
 
 Stage 2b, and the other half of the pair described in the entry below. Stage 2a

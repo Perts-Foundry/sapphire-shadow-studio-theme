@@ -9,6 +9,7 @@
  */
 {
   "accessibility": {
+    "breadcrumb": "Breadcrumb",
     "account": "Account",
     "footer_navigation": "Footer navigation",
     "main_navigation": "Main navigation",
@@ -170,6 +171,8 @@
     }
   },
   "content": {
+    "breadcrumb_home": "Home",
+    "breadcrumb_collections": "Collections",
     "cancel": "Cancel",
     "discount": "Discount",
     "account_title": "Account",

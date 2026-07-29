@@ -20,6 +20,7 @@
     "slider_label": "Carrousel"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Jouer le modèle 3D",
     "play_video": "Lire la vidéo",
     "unit_price": "Prix unitaire",
@@ -110,6 +111,8 @@
     "open": "Ouvrir"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "avis",
     "language": "Langue",
     "localization_region_and_language": "Région et langue",
