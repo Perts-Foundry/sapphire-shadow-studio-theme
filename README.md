@@ -161,6 +161,17 @@ git push -u origin HEAD
 
 Expect add/add conflicts on shared files the first time. Keep ours for diverged customizations; take theirs for Horizon-internal changes worth adopting. Open a PR; CI runs as normal.
 
+### Deviations that must survive a merge
+
+Upstream Horizon files carrying intentional local changes. Taking theirs on any of these silently reverts a fix, and the in-file comments help only if you read the losing side of the conflict.
+
+| File | Deviation |
+|---|---|
+| `sections/featured-product.liquid` | `structured_data` output guarded on `section.settings.product != blank`, so an unconfigured section stops emitting an empty JSON-LD block. |
+| `sections/featured-product-information.liquid` | Same guard. |
+| `sections/header.liquid` | Organization JSON-LD removed (now `snippets/structured-data.liquid`) and the `index`-guarded visually-hidden `<h1>` removed (the hero supplies the homepage heading). |
+| `snippets/meta-tags.liquid` | `og:image` forced to `https:`; the `twitter:site` tag removed along with its broken handle parse. |
+
 ## Development and contributing
 
 ```bash
