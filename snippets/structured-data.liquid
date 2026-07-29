@@ -1,0 +1,23 @@
+{% doc %}
+  Routes page types to the structured-data snippets that apply to them.
+
+  Rendered once from `layout/theme.liquid`, in the head, immediately after
+  `meta-tags`. Deliberately NOT rendered from `layout/password.liquid`: the
+  password page is not the storefront and should not carry entity markup.
+
+  Today this emits Organization and WebSite, and only on the homepage, so the
+  store has exactly one of each rather than one per page.
+
+  Product and ProductGroup markup is not routed here. It comes from Shopify's
+  `{{ product | structured_data }}` filter in `sections/product-information.liquid`
+  and the featured-product sections, which is Shopify-maintained and not
+  extensible.
+
+  @example
+    {%- render 'structured-data' -%}
+{% enddoc %}
+
+{%- if request.page_type == 'index' -%}
+  {%- render 'structured-data-organization' -%}
+  {%- render 'structured-data-website' -%}
+{%- endif -%}

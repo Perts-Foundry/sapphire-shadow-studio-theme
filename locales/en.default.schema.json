@@ -133,6 +133,7 @@
     "size": "Size",
     "slideshow_width": "Slide width",
     "social_media": "Social media",
+    "social_media_info": "Links to the store's own profiles. Used for the Organization structured data. Enter full profile URLs, not platform home pages.",
     "submit_button": "Submit button",
     "swatches": "Swatches",
     "submenu_feature": "Submenu feature",
@@ -414,6 +415,7 @@
     "slideshow_inset": "Slideshow: Inset",
     "slideshow_controls": "Slideshow controls",
     "social_link": "Social link",
+    "social_media": "Social media",
     "social_media_links": "Social media links",
     "spacer": "Spacer",
     "spacing": "Spacing",
@@ -1141,6 +1143,12 @@
     "slide_width": "Slide width",
     "slideshow_fullwidth": "Full width slides",
     "small": "Small",
+    "social_facebook_link": "Facebook",
+    "social_instagram_link": "Instagram",
+    "social_pinterest_link": "Pinterest",
+    "social_tiktok_link": "TikTok",
+    "social_twitter_link": "X (Twitter)",
+    "social_youtube_link": "YouTube",
     // Animation timing control for slideshows and announcements
     "speed": "Speed",
     // Financial statement or account summary setting

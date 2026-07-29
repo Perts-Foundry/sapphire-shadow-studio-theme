@@ -259,17 +259,12 @@
   {% endif %}
 {% endcapture %}
 
-<script type="application/ld+json">
-  {
-    "@context": "http://schema.org",
-    "@type": "Organization",
-    "name": {{ shop.name | json }},
-    {% if settings.logo %}
-      "logo": {{ settings.logo | image_url: width: 500 | prepend: "https:" | json }},
-    {% endif %}
-    "url": {{ request.origin | append: page.url | json }}
-  }
-</script>
+{% comment %}
+  The Organization JSON-LD that used to live here now comes from
+  `snippets/structured-data-organization.liquid`, rendered once on the homepage via
+  `snippets/structured-data.liquid`. The old node emitted on every page and set
+  `url` to the current page rather than the site root.
+{% endcomment %}
 
 <header-component
   id="header-component"
@@ -284,9 +279,13 @@
   data-skip-node-update
   data-scroll-direction="none"
 >
-  {%- if request.page_type == 'index' -%}
-    <h1 class="visually-hidden">{{ shop.name }}</h1>
-  {%- endif -%}
+  {% comment %}
+    No H1 here. The homepage H1 is the hero lockup, defined in `templates/index.json`
+    under section `hero_jVaWmY`, block `headline_lockup`. A visually-hidden
+    `{{ shop.name }}` H1 used to render at this point on the index page, which gave
+    the homepage two H1 elements. If the homepage H1 ever needs to change, edit that
+    block; do not restore a heading here. Nothing in CI checks heading structure.
+  {% endcomment %}
   {% for row in rows %}
     {% liquid
       assign scheme = 'color_scheme_' | append: row
