@@ -7,7 +7,7 @@
   block_order, and hiding everything until JS runs would blank the bar.
 {%- endcomment -%}
 {%- capture first_visible_index -%}
-  {%- render 'announcement-first-visible', blocks: section.blocks -%}
+  {%- render 'announcement-visible-blocks', blocks: section.blocks -%}
 {%- endcapture -%}
 {%- assign first_visible_index = first_visible_index | strip | plus: 0 -%}
 

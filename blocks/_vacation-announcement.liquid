@@ -19,7 +19,7 @@
   assign plain_text = settings.vacation_announcement_text | strip_newlines | strip_html | strip
   assign block_index = section.blocks | find_index: 'id', block.id
   capture first_visible_index
-    render 'announcement-first-visible', blocks: section.blocks
+    render 'announcement-visible-blocks', blocks: section.blocks
   endcapture
   assign first_visible_index = first_visible_index | strip | plus: 0
 -%}

@@ -1,5 +1,81 @@
 # Release Notes
 
+## Vacation mode: one admin toggle, four storefront surfaces (unreleased)
+
+### What changed
+
+A new "Vacation Mode" theme-settings group (checkbox `vacation_mode_enabled`,
+default off) drives four surfaces at once, so the operator can flip the whole
+feature from the theme editor on the sync theme with no hand-authored PR:
+
+- **Announcement bar**: a new `blocks/_vacation-announcement.liquid` slide,
+  registered in `sections/header-announcements.liquid` and added to
+  `sections/header-group.json` as `vacation_announcement_001`. Dormant blocks
+  render nothing, so the entry stays in the group JSON permanently.
+- **Popup**: `snippets/vacation-popup.liquid` + `assets/vacation-popup.js`,
+  rendered from `layout/theme.liquid`, auto-opens once per browsing session
+  (sessionStorage key `vacation-popup:seen`, fail-closed when storage is
+  blocked, never auto-opens in the theme editor).
+- **Product-page checkbox**: `blocks/vacation-acknowledgment.liquid` +
+  `assets/vacation-acknowledgment.js`, a trimmed clone of the return-policy
+  acknowledgment (no variant-change untick; text from global settings since
+  blocks cannot read each other's settings). Records a line-item property
+  named by `vacation_property_label` with constant value "Yes". Added as
+  `vacation_ack_001` to all five garment product templates.
+- **Shipping line**: `snippets/shipping-info.liquid` appends the
+  `vacation_shipping_message` note in both branches, which surfaces on the
+  product page and directly above the cart's checkout button.
+
+### Operating constraints (the sync traps)
+
+- **Four independently dated messages must be updated together** before each
+  enable: announcement text, popup body, checkbox terms, shipping note. The
+  settings-group paragraph enumerates them; nothing reconciles them.
+- **Do not rename `vacation_property_label` mid-vacation**: the value is the
+  line-item property key, so renaming splits the acknowledgment across orders.
+- **The gift-card template deliberately has no vacation checkbox**: nothing
+  ships, so there is nothing to delay. The popup, announcement, and gift-card
+  free-shipping line still appear.
+- **Settings-group labels are deliberately literal English**, not `t:` keys,
+  matching the custom "Shipping Information" settings precedent: operator-only
+  UI, and the storefront-visible strings are all operator-editable settings
+  anyway.
+
+### Announcement bar: first-visible replaces index-0
+
+The stock `_announcement.liquid` hardcoded `aria-hidden="false"` only for
+block index 0, which was correct while every block always rendered. A dormant
+vacation slide (or a blanked announcement) at index 0 would have started every
+slide hidden, blanking the bar until JS hydrates, and the editor rewrites
+`block_order` freely, so "keep the vacation block last" was not an invariant
+worth documenting. Instead `snippets/announcement-visible-blocks.liquid`
+computes the first block that actually renders, and both announcement block
+types compare against that. Block order is now cosmetically free. The same
+snippet's `output: 'count'` mode replaces the section's `section.blocks.size`
+gates, so one real announcement plus a dormant vacation block does not render
+dead carousel controls (a headless-review catch).
+
+### Express checkout now has two composing gates
+
+`blocks/vacation-acknowledgment.liquid` adds a second fail-closed `:has()`
+rule hiding `[ref='acceleratedCheckoutButtonContainer']` while its checkbox is
+unticked. It composes with the return-policy gate: the container shows only
+when neither acknowledgment is pending. This supersedes the earlier
+release-note claim that Shift Fuel is "the only product showing express
+checkout" and that the ref has a single dependent: with vacation mode enabled,
+Shift Fuel's express checkout is gated too (by the vacation checkbox alone,
+since it still has no return-policy block), and the ref now has two CSS
+dependents, both documented in `blocks/accelerated-checkout.liquid`.
+
+### Accepted enforcement gap
+
+The acknowledgment checkbox covers product-page checkout only. The cart page's
+checkout button (and items added before the toggle was enabled) can complete
+checkout without the recorded acknowledgment; the announcement, popup, and the
+vacation note on the cart's shipping line are the mitigations. A cart-level
+gate is deliberately out of scope unless bypass orders become a real dispute
+problem.
+
 ## SEO: reset the default page template to stock (unreleased)
 
 Stage 4b, and the highest-risk change in the SEO remediation. It is the only one
@@ -442,7 +518,7 @@ Three drifts had been fixed on the two newest products (quarter-zip, vest) and n
 
 The audit flagged these as inconsistencies. Each was reviewed and kept deliberately:
 
-- **Shift Fuel returns.** It is the only product offering 14-day returns rather than final sale, because it carries no Design option and no custom text and is therefore resellable. Two consequences follow and must be preserved: it intentionally has no `return-policy-acknowledgment` block, and it is therefore intentionally the only product showing express checkout. The mechanism is non-obvious: the acknowledgment block hides express checkout with a CSS `:has()` rule in `blocks/return-policy-acknowledgment.liquid` targeting `[ref='acceleratedCheckoutButtonContainer']`, a cross-block dependency on that literal ref.
+- **Shift Fuel returns.** It is the only product offering 14-day returns rather than final sale, because it carries no Design option and no custom text and is therefore resellable. Two consequences follow and must be preserved: it intentionally has no `return-policy-acknowledgment` block, and it is therefore intentionally the only product showing express checkout. The mechanism is non-obvious: the acknowledgment block hides express checkout with a CSS `:has()` rule in `blocks/return-policy-acknowledgment.liquid` targeting `[ref='acceleratedCheckoutButtonContainer']`, a cross-block dependency on that literal ref. *(Partially superseded by the vacation-mode entry above: the no-return-policy-block decision stands, but the ref now has a second CSS dependent, and while vacation mode is enabled Shift Fuel's express checkout is gated by the vacation checkbox.)*
 - **Vest gallery.** The size-chart PNG and the studio logo SVG are intentional gallery media, which is why the vest shows four slides where its siblings show six or eight. They appear on every color because `snippets/product-media-gallery-content.liquid` treats media whose alt text names no color option value as shared.
 - **Huddle Design values.** "Nurse" and "Vet Tech" deliberately do not follow Lead II's `ABBREV (Expansion)` form, and Huddle deliberately does not split LVT/RVT/CVT. The option values track what the applique artwork actually reads.
 
