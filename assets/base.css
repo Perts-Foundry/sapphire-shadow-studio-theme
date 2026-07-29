@@ -4070,3 +4070,69 @@ text-component {
     font-size: max(1rem, 100%);
   }
 }
+
+/* Breadcrumbs
+   Rendered by `snippets/breadcrumbs.liquid` as the first child of <main>, which
+   is outside any section's grid, so it constrains its own width with the same
+   page-width variables the sections use. */
+.breadcrumbs {
+  --breadcrumbs-gap: 0.5rem;
+  --breadcrumbs-chevron-size: 0.32em;
+  --breadcrumbs-color: rgb(var(--color-foreground-rgb) / 0.7);
+
+  width: min(var(--page-width) - var(--page-margin) * 2, calc(100% - var(--page-margin) * 2));
+  margin-inline: auto;
+  margin-block-start: 1rem;
+  font-size: 0.875rem;
+}
+
+.breadcrumbs__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--breadcrumbs-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs__item {
+  display: flex;
+  align-items: center;
+  gap: var(--breadcrumbs-gap);
+}
+
+/* Separator is drawn, never generated as text content. A `content: '/'` chevron
+   is announced by several screen readers as "slash" on every crumb. */
+.breadcrumbs__item + .breadcrumbs__item::before {
+  content: '';
+  display: block;
+  inline-size: var(--breadcrumbs-chevron-size);
+  block-size: var(--breadcrumbs-chevron-size);
+  border-block-start: 1px solid var(--breadcrumbs-color);
+  border-inline-end: 1px solid var(--breadcrumbs-color);
+  rotate: 45deg;
+  flex: none;
+}
+
+[dir='rtl'] .breadcrumbs__item + .breadcrumbs__item::before {
+  rotate: 225deg;
+}
+
+/* Negative margin keeps the visual density while the padding gives the link a
+   touch-target height it would not otherwise have at this font size. */
+.breadcrumbs__link {
+  display: inline-block;
+  padding-block: 0.6875rem;
+  margin-block: -0.6875rem;
+  color: var(--breadcrumbs-color);
+  text-decoration: none;
+}
+
+.breadcrumbs__link:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbs__link[aria-current='page'] {
+  color: var(--color-foreground);
+}

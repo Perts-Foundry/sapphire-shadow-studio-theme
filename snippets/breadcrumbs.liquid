@@ -1,0 +1,142 @@
+{% doc %}
+  Renders the visible breadcrumb trail and its `BreadcrumbList` JSON-LD from a
+  single trail computation, so the markup and the structured data can never
+  disagree.
+
+  Rendered from `layout/theme.liquid` as the first child of `<main>`.
+  Deliberately NOT rendered from `layout/password.liquid`.
+
+  Page types are an **allow-list**, not a deny-list, so a page type Shopify adds
+  later defaults to no breadcrumb rather than to a guessed trail: `product`,
+  `collection`, `page`, `article`, `blog`, `list-collections`.
+
+  `policy` is deliberately absent. A "Home > Policies > Refund policy" trail
+  invents an intermediate level with no page behind it, and a two-item
+  "Home > Refund policy" is not worth the markup. `/collections` is a real page,
+  which is why `list-collections` stays.
+
+  The last entry is a link carrying `aria-current="page"`, per the breadcrumb
+  contract in `docs/accessibility-patterns.md`, but its JSON-LD `ListItem`
+  deliberately omits `item`. That is spec-legal and it sidesteps a real trap: on
+  a collection-scoped product URL `product.url` returns
+  `/collections/x/products/y` while `canonical_url` returns `/products/y`, so
+  emitting either one risks contradicting the page's own canonical.
+
+  @example
+    {%- render 'breadcrumbs' -%}
+{% enddoc %}
+
+{%- liquid
+  assign show_breadcrumbs = false
+  case request.page_type
+    when 'product', 'collection', 'page', 'article', 'blog', 'list-collections'
+      assign show_breadcrumbs = true
+  endcase
+-%}
+
+{%- if show_breadcrumbs -%}
+  {%- liquid
+    # Trail is carried as two delimiter-joined strings rather than arrays,
+    # because Liquid cannot append to an array. Home is always first, so every
+    # later entry can append the delimiter unconditionally.
+    assign sep = '~~|~~'
+    assign crumb_names = 'content.breadcrumb_home' | t
+    assign crumb_urls = routes.root_url
+
+    case request.page_type
+      when 'product'
+        assign parent_collection = ''
+
+        if collection != blank and collection.handle != 'all' and collection.handle != 'frontpage'
+          assign parent_collection = collection
+        else
+          for product_collection in product.collections
+            if product_collection.handle != 'all' and product_collection.handle != 'frontpage'
+              assign parent_collection = product_collection
+              break
+            endif
+          endfor
+        endif
+
+        if parent_collection != blank
+          assign crumb_names = crumb_names | append: sep | append: parent_collection.title
+          assign crumb_urls = crumb_urls | append: sep | append: parent_collection.url
+        endif
+
+        assign crumb_names = crumb_names | append: sep | append: product.title
+
+      when 'collection'
+        assign crumb_names = crumb_names | append: sep | append: collection.title
+
+      when 'page'
+        assign crumb_names = crumb_names | append: sep | append: page.title
+
+      when 'article'
+        assign crumb_names = crumb_names | append: sep | append: blog.title
+        assign crumb_urls = crumb_urls | append: sep | append: blog.url
+        assign crumb_names = crumb_names | append: sep | append: article.title
+
+      when 'blog'
+        assign crumb_names = crumb_names | append: sep | append: blog.title
+
+      when 'list-collections'
+        # Translate first. A trailing `| t` would be applied to the whole
+        # concatenated trail string, not to the key.
+        assign collections_label = 'content.breadcrumb_collections' | t
+        assign crumb_names = crumb_names | append: sep | append: collections_label
+    endcase
+
+    # The current page always closes the trail and never has an entry in
+    # crumb_urls, so its href comes from canonical_url instead.
+    assign crumb_urls = crumb_urls | append: sep | append: canonical_url
+
+    assign crumb_name_list = crumb_names | split: sep
+    assign crumb_url_list = crumb_urls | split: sep
+  -%}
+
+  {%- if crumb_name_list.size > 1 -%}
+    <nav class="breadcrumbs" aria-label="{{ 'accessibility.breadcrumb' | t }}">
+      <ol class="breadcrumbs__list">
+        {%- for crumb_name in crumb_name_list -%}
+          {%- liquid
+            assign is_current = false
+            if forloop.last
+              assign is_current = true
+            endif
+          -%}
+          <li class="breadcrumbs__item">
+            <a
+              class="breadcrumbs__link"
+              href="{{ crumb_url_list[forloop.index0] }}"
+              {% if is_current %}
+                aria-current="page"
+              {% endif %}
+            >
+              {{- crumb_name -}}
+            </a>
+          </li>
+        {%- endfor -%}
+      </ol>
+    </nav>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {%- for crumb_name in crumb_name_list -%}
+            {%- unless forloop.first -%},{%- endunless -%}
+            {
+              "@type": "ListItem",
+              "position": {{ forloop.index }},
+              "name": {{ crumb_name | json }}
+              {%- unless forloop.last -%}
+                , "item": {{ shop.url | append: crumb_url_list[forloop.index0] | json }}
+              {%- endunless -%}
+            }
+          {%- endfor -%}
+        ]
+      }
+    </script>
+  {%- endif -%}
+{%- endif -%}

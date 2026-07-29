@@ -20,6 +20,7 @@
     "slider_label": "Controle deslizante"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Reproduzir modelo 3D",
     "play_video": "Reproduzir vídeo",
     "unit_price": "Preço unitário",
@@ -110,6 +111,8 @@
     "open": "Abrir"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "avaliações",
     "language": "Idioma",
     "localization_region_and_language": "Região e idioma",

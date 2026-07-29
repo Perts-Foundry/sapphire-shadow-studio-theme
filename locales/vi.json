@@ -20,6 +20,7 @@
     "slider_label": "Thanh trượt"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Phát mô hình 3D",
     "play_video": "Phát video",
     "unit_price": "Đơn giá",
@@ -108,6 +109,8 @@
     "open": "Mở"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "đánh giá",
     "language": "Ngôn ngữ",
     "localization_region_and_language": "Khu vực và ngôn ngữ",

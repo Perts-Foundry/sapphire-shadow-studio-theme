@@ -100,10 +100,17 @@
       id="MainContent"
       class="content-for-layout"
       role="main"
+      {%- comment -%}
+        tabindex="-1" is required for the skip link to be able to move focus
+        here. Without it the link scrolls but focus stays on the link, so the
+        next Tab returns to the header. Do not remove it.
+      {%- endcomment -%}
+      tabindex="-1"
       data-page-transition-enabled="{{ settings.page_transition_enabled }}"
       data-product-transition="{{ settings.transition_to_main_product }}"
       data-template="{{ template }}"
     >
+      {%- render 'breadcrumbs' -%}
       {{ content_for_layout }}
     </main>
 

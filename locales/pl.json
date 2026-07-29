@@ -20,6 +20,7 @@
     "slider_label": "Suwak"
   },
   "accessibility": {
+    "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Odtwórz model 3D",
     "play_video": "Odtwórz film",
     "unit_price": "Cena jednostkowa",
@@ -112,6 +113,8 @@
     "open": "Otwórz"
   },
   "content": {
+    "breadcrumb_home": "TODO: Home",
+    "breadcrumb_collections": "TODO: Collections",
     "reviews": "recenzje",
     "language": "Język",
     "localization_region_and_language": "Region i język",
