@@ -252,6 +252,15 @@
                 "link_label": ""
               },
               "blocks": {}
+            },
+            "link_privacy_choices": {
+              "type": "footer-link",
+              "settings": {
+                "policy_type": "custom",
+                "link_url": "/pages/data-sharing-opt-out",
+                "link_label": "Your Privacy Choices"
+              },
+              "blocks": {}
             }
           },
           "block_order": [
@@ -264,7 +273,8 @@
             "link_refund",
             "link_search",
             "link_shipping",
-            "link_terms"
+            "link_terms",
+            "link_privacy_choices"
           ]
         }
       },
