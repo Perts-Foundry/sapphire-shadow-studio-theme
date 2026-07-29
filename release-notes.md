@@ -1,5 +1,112 @@
 # Release Notes
 
+## SEO: Organization and WebSite structured data, header cleanup (unreleased)
+
+A full SEO crawl of the storefront (25 URLs, all sitemaps, cross-checked against
+the Admin API) found one content bug, four code defects, missing metadata, and
+three absent structured-data types. The store is password-protected pre-launch,
+so nothing is indexed and there is no ranking damage to undo. That is what makes
+this cheap now: every fix lands before Google ever crawls the site.
+
+This entry covers the first repo change. The rest of the remediation ships as
+separate PRs (FAQ heading, breadcrumbs, page templates) and as Admin-side work.
+
+### What changed
+
+**Structured data moved out of the header and into snippets.** A new
+`snippets/structured-data.liquid` router renders from `layout/theme.liquid`, in
+the head, right after `meta-tags`. It currently emits Organization and WebSite,
+and only on the homepage. Two design points are load-bearing:
+
+- **The `@id` and `url` derive from `shop.url`, not `request.origin`.** On a
+  preview theme or the `*.myshopify.com` host, `request.origin` differs, which
+  would mint a second identifier for what is supposed to be one entity.
+- **The Organization node deliberately omits `address`, `telephone`, and email,**
+  and the snippet doc block says so. This repo is public and the operation is
+  home-based. Organization markup is exactly the shape that invites a later
+  contributor to "complete" the node with a postal address; the doc block is
+  there to stop that.
+
+The node it replaced, in `sections/header.liquid`, rendered on every page and set
+`url` to `request.origin | append: page.url`, so every page claimed to be the
+Organization's canonical URL.
+
+**No `potentialAction` / `SearchAction` on the WebSite node.** Google deprecated
+the sitelinks search box on 2024-10-21 and retired it globally on 2024-11-21. The
+WebSite node is kept only as the graph anchor that `publisher` points at, and for
+non-Google consumers. Do not add `SearchAction` back expecting a search box.
+
+**The homepage was shipping two `<h1>` elements.** `sections/header.liquid` had an
+`index`-guarded visually-hidden `<h1>{{ shop.name }}</h1>`, while the hero lockup
+in `templates/index.json` (section `hero_jVaWmY`, block `headline_lockup`) emits a
+real `<h1>`. The header one is gone and a comment names where the surviving
+heading lives, because nothing in CI checks heading structure and the next person
+to look will not otherwise know where the homepage H1 comes from.
+
+**`og:image` was hardcoded to `http:`** in `snippets/meta-tags.liquid`, on both
+layouts, while `og:image:secure_url` beside it was already `https:`.
+
+**Theme-level social link settings** now exist, and back the Organization
+`sameAs` array. Blank settings are skipped and the array is omitted entirely when
+all are blank, so a partially configured store cannot emit a trailing comma. That
+matters more than it sounds: a trailing comma invalidates the whole JSON-LD node
+and browsers surface no parse error for it.
+
+**There is deliberately no `social_twitter_link` setting, and `twitter:site` is
+gone.** This is the one place the settings addition would have changed behaviour
+beyond structured data, so it is worth stating plainly. `snippets/meta-tags.liquid`
+already read `settings.social_twitter_link` to emit `twitter:site`, against a
+setting that had never existed in `settings_schema.json`. Simply defining the
+setting would have reactivated that dead branch on every page, and the branch is
+broken: it extracts the handle with `split: 'twitter.com/'`, which does not match
+an `x.com` URL, so an X profile renders `content="@https://x.com/handle"` instead
+of `@handle`. Naming the setting "X (Twitter)" would have invited exactly the URL
+that breaks it. Both the setting and the tag are therefore out; a comment in
+`meta-tags.liquid` records what a correct restoration needs.
+
+**The `logo` ImageObject carries no `width` / `height`.** Deriving them requires
+dividing by `settings.logo.aspect_ratio`, and an SVG can report that as zero or
+nil. Liquid renders a divide-by-zero as an error string, which would land inside
+the script tag and invalidate the node with no visible symptom. Google does not
+require the dimensions, so they are omitted rather than guarded.
+
+The footer's social URLs were placeholders pointing at platform home pages
+(`https://www.facebook.com` and the like). Those are broken links for customers,
+not only bad `sameAs` data, since a bare platform URL asserts that this
+Organization *is* that platform. They now hold the real brand profiles, and the
+two platforms with no profile are blank rather than pointing at a home page.
+
+### Why the featured-product guards are a Horizon deviation
+
+`sections/featured-product.liquid` and `sections/featured-product-information.liquid`
+now wrap their `{{ section.settings.product | structured_data }}` output in an
+`{%- if section.settings.product != blank -%}` guard. With no product selected the
+filter renders nothing and the section shipped an empty, unparseable
+`application/ld+json` block. Both files are upstream Horizon; keep the guards
+through the next upstream merge.
+
+### Out of scope
+
+Product, collection, and page metadata live in Shopify Admin, not in this repo,
+and are handled Admin-side: the quarter-zip and women's vest SEO descriptions
+(both of which carried the crewneck's text verbatim and called the garment a
+"crewneck sweatshirt"), the missing collection meta descriptions, collection body
+descriptions, product SEO titles, and the homepage title and description. Reading
+this diff as the whole remediation would be a mistake.
+
+Also out of scope and tracked in `TODO.md`: return-policy structured data (blocked
+by Shopify's `structured_data` filter not being extensible, not by policy
+non-uniformity), `ItemList` markup on collections, and blog content.
+
+### Accepted risks, recorded so they are not rediscovered as bugs
+
+- **`featured` and `healthcare` hold an identical set of five products** and both
+  stay indexable. Their meta descriptions differ, but the product grid does not,
+  so canonical selection between them is Google's coin flip. Reviewed and
+  accepted rather than merged; revisit after launch with real Search Console data.
+- **The empty `/blogs/news` stays indexable.** A thin-content signal at launch on
+  a small indexable surface, accepted deliberately.
+
 ## Product consistency pass: long-option dropdown + copy backports (unreleased)
 
 A catalogue-wide audit compared all six products across three sources: Admin API data, the five committed `templates/product.*.json` files, and each rendered storefront page. The page architecture held up (identical block skeleton, identical accordion row order and headings, byte-identical Shipping & Turnaround copy). What it found was copy cloned from the crewneck and never updated for the garment it now describes, plus one layout problem.

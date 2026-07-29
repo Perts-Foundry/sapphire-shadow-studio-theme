@@ -1,0 +1,78 @@
+{% doc %}
+  Emits the site-wide Organization JSON-LD node.
+
+  Rendered only from `structured-data.liquid`, and only on the homepage, so the
+  store has exactly one Organization node rather than one per page.
+
+  The `@id` is stable across environments because it is derived from `shop.url`
+  (the canonical primary domain) rather than `request.origin`. On a preview theme
+  or a `*.myshopify.com` host, `request.origin` differs, which would mint a second
+  identifier for the same entity.
+
+  Deliberately omitted: `address`, `telephone`, and any email. This repo is public
+  and the operation is home-based, so postal and contact detail must not appear
+  here. Organization markup invites "completing" the node with an address; do not.
+  See the Sensitive Content section of CLAUDE.md.
+
+  `sameAs` must list real brand profile URLs only. A bare platform homepage
+  (`https://www.facebook.com`) asserts that this Organization is that platform,
+  which is a false entity claim. Blank settings are skipped, and the array is
+  omitted entirely when every setting is blank.
+
+  The `logo` ImageObject carries no `width` / `height`. Deriving them means
+  dividing by `settings.logo.aspect_ratio`, and an SVG can report that as zero or
+  nil. Liquid renders a divide-by-zero as an error string, which would land inside
+  this script tag and silently invalidate the whole node. Google does not require
+  the dimensions, so the safe move is to omit them rather than guard the divide.
+  Google does require a raster logo of at least 112x112; SVG is not reliably
+  consumed, so keep the logo setting on a PNG.
+
+  @example
+    {% render 'structured-data-organization' %}
+{% enddoc %}
+
+{%- liquid
+  assign social_keys = 'social_facebook_link,social_instagram_link,social_tiktok_link,social_youtube_link,social_pinterest_link' | split: ','
+  assign same_as_urls = ''
+
+  for key in social_keys
+    assign social_url = settings[key]
+    if social_url != blank
+      if same_as_urls == blank
+        assign same_as_urls = social_url
+      else
+        assign same_as_urls = same_as_urls | append: '|' | append: social_url
+      endif
+    endif
+  endfor
+
+  assign org_id = shop.url | append: '/#organization'
+  assign org_description = shop.description | default: shop.name
+-%}
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "@id": {{ org_id | json }},
+    "name": {{ shop.name | json }},
+    "url": {{ shop.url | json }},
+    "description": {{ org_description | json }}
+    {%- if settings.logo != blank -%}
+      ,
+      "logo": {
+        "@type": "ImageObject",
+        "url": {{ settings.logo | image_url: width: 500 | prepend: 'https:' | json }}
+      }
+    {%- endif -%}
+    {%- if same_as_urls != blank -%}
+      ,
+      "sameAs": [
+        {%- assign same_as_list = same_as_urls | split: '|' -%}
+        {%- for social_url in same_as_list -%}
+          {{ social_url | json }}{%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor -%}
+      ]
+    {%- endif -%}
+  }
+</script>

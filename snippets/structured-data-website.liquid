@@ -1,0 +1,34 @@
+{% doc %}
+  Emits the site-wide WebSite JSON-LD node.
+
+  Rendered only from `structured-data.liquid`, and only on the homepage. Like the
+  Organization node, the `@id` is derived from `shop.url` so it is stable across
+  the live theme, preview themes, and the `*.myshopify.com` host.
+
+  No `potentialAction` / `SearchAction`. Google deprecated the sitelinks search box
+  on 2024-10-21 and retired it globally on 2024-11-21, so the markup has no effect
+  in Google Search. This node is retained as the graph anchor that `publisher`
+  points at, and for non-Google consumers.
+
+  @example
+    {% render 'structured-data-website' %}
+{% enddoc %}
+
+{%- liquid
+  assign website_id = shop.url | append: '/#website'
+  assign org_id = shop.url | append: '/#organization'
+-%}
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": {{ website_id | json }},
+    "name": {{ shop.name | json }},
+    "url": {{ shop.url | json }},
+    "inLanguage": {{ request.locale.iso_code | json }},
+    "publisher": {
+      "@id": {{ org_id | json }}
+    }
+  }
+</script>

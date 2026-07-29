@@ -137,6 +137,21 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
 
+### Structured data
+
+All hand-authored JSON-LD routes through one snippet: `snippets/structured-data.liquid`, rendered from `layout/theme.liquid`'s head right after `meta-tags`, and deliberately **not** from `layout/password.liquid`. It dispatches to per-type snippets (`structured-data-organization.liquid`, `structured-data-website.liquid`).
+
+Rules that are easy to break and have no CI check behind them:
+
+- **Entity nodes (Organization, WebSite) are homepage-only.** They are guarded on `request.page_type == 'index'` so the store has exactly one of each. Emitting them per page is the defect this structure replaced.
+- **Do not put JSON-LD back in `sections/header.liquid`.** That is where the Organization node used to live, and a comment there says so.
+- **Derive `@id` and `url` from `shop.url`, never `request.origin`.** A preview theme and the `*.myshopify.com` host have a different origin, which would mint a second identifier for one entity.
+- **Never emit an unguarded trailing comma.** A blank setting inside an array or object silently invalidates the whole node, and browsers surface no parse error. Build optional arrays by collecting non-blank values first, then emitting with `forloop.last`.
+- **Do not divide by an image's `aspect_ratio` inside a script tag.** An SVG can report it as zero or nil, and Liquid renders a divide-by-zero as an error string that lands inside the JSON-LD.
+- Product / ProductGroup markup is **not** routed here. It comes from Shopify's `{{ product | structured_data }}` filter and is not extensible.
+
+Validate with `validate_theme_codeblocks`, then assert every `application/ld+json` block on the page parses as JSON. Rich Results Test never validated Organization or WebSite, and its URL mode cannot reach a password-gated storefront; use validator.schema.org in code-paste mode.
+
 ### Component framework
 
 Custom web-component framework in `assets/component.js`:
@@ -242,6 +257,7 @@ Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks
 - Touch targets: at least 44×44 CSS pixels.
 - All `<img>` need `alt`; `alt=""` for decorative.
 - Standard WCAG (contrast, focus-visible, lang on html, viewport zoom, prefers-reduced-motion, flash limits, landmark hygiene) applies; don't restate here.
+- **The homepage `<h1>` is the hero lockup**, in `templates/index.json` under section `hero_jVaWmY`, block `headline_lockup`. `sections/header.liquid` deliberately emits no heading; it used to carry an `index`-guarded visually-hidden `<h1>`, which gave the homepage two. Nothing in CI checks heading structure, so verify exactly one `<h1>` per page type by hand after any header or hero change.
 
 ### Component-specific accessibility patterns
 
@@ -256,5 +272,9 @@ Load `docs/accessibility-patterns.md` before implementing or modifying any of th
 ## Theme settings
 
 Global CSS variables in `snippets/theme-styles-variables.liquid`; color schemes via `color_scheme_group` in `config/settings_schema.json` rendered through `snippets/color-schemes.liquid`. `settings_schema.json` opens with a `theme_info` object. Presets that use nested blocks must declare a `block_order` array. Setting `label` text: under 30 characters, title case, no redundant type qualifier ("Columns", not "Number of columns").
+
+**Social links have two sources of truth; keep them in sync by hand.** `settings.social_*_link` (theme settings) feed the Organization `sameAs` array in `snippets/structured-data-organization.liquid`. The footer's `blocks/social-links.liquid` has its own independent `*_url` block settings, stored in `sections/footer-group.json`. Nothing reconciles them and no test covers it, so updating a profile URL in one place silently leaves the other stale. The sets are not congruent either: the footer block also supports Threads, LinkedIn, Bluesky, Snapchat, Tumblr, Vimeo, and a custom URL, none of which reach `sameAs`. Change both, or neither.
+
+**There is deliberately no `social_twitter_link` setting.** `snippets/meta-tags.liquid` has a comment explaining why: re-adding the setting alone reactivates a broken `twitter:site` handle parse that does not handle `x.com` URLs.
 
 **Product media alt text drives the gallery.** `snippets/product-media-gallery-content.liquid` filters media by matching alt text against the values of that product's option named by `settings.color_option_name`, so those values are reserved words in alt text. The data lives in Admin, no test reaches it, and every failure is silent. Read `docs/product-media-alt-text.md` before authoring alt text or changing the filter.

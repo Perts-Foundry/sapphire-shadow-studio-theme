@@ -1,6 +1,14 @@
-<script type="application/ld+json">
-  {{ section.settings.product | structured_data }}
-</script>
+{%- comment -%}
+  Horizon deviation: guard the structured-data emission on a product actually being
+  selected. With no product chosen, `structured_data` renders nothing and the script
+  tag ships an empty, unparseable JSON-LD block on the page. Keep this guard through
+  upstream merges.
+{%- endcomment -%}
+{%- if section.settings.product != blank -%}
+  <script type="application/ld+json">
+    {{ section.settings.product | structured_data }}
+  </script>
+{%- endif -%}
 
 {% capture media_gallery %}
   {% content_for 'block',
