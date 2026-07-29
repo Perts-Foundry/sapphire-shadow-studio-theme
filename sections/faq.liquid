@@ -173,7 +173,10 @@
 
 <div class="faq-section-{{ section_id }}" {{ section.shopify_attributes }}>
   {% if section.settings.title != blank %}
-    <h2 class="faq-title-{{ section_id }}">{{ section.settings.title }}</h2>
+    {%- liquid
+      assign title_tag = section.settings.title_heading_tag | default: 'h2'
+    -%}
+    <{{ title_tag }} class="faq-title-{{ section_id }}">{{ section.settings.title }}</{{ title_tag }}>
   {% endif %}
 
   {% if section.settings.show_toggle_all %}
@@ -220,6 +223,46 @@
     {% endfor %}
   </div>
 </div>
+
+{%- comment -%}
+  FAQPage JSON-LD, emitted only when the section actually has questions.
+
+  Expect zero effect in Google Search. FAQ rich results were deprecated on
+  2025-05-08 and removed outright on 2026-05-07, for all sites including
+  government and health; Rich Results Test and Search Console support were
+  withdrawn with them. `FAQPage` is still valid schema.org and is emitted here for
+  entity and LLM comprehension only. Do not restore or expand this expecting SERP
+  eligibility, and do not "fix" it by re-testing in Rich Results Test, which no
+  longer recognises the type.
+
+  `strip_html` on the answer is required, not cosmetic: the setting is `richtext`,
+  and `acceptedAnswer.text` must be plain text.
+{%- endcomment -%}
+{%- if section.blocks.size > 0 -%}
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {%- assign emitted_question = false -%}
+        {%- for block in section.blocks -%}
+          {%- if block.settings.question != blank and block.settings.answer != blank -%}
+            {%- if emitted_question -%},{%- endif -%}
+            {
+              "@type": "Question",
+              "name": {{ block.settings.question | strip_html | json }},
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": {{ block.settings.answer | strip_html | json }}
+              }
+            }
+            {%- assign emitted_question = true -%}
+          {%- endif -%}
+        {%- endfor -%}
+      ]
+    }
+  </script>
+{%- endif -%}
 
 <script>
   (function() {
@@ -347,6 +390,23 @@
       "unit": "px",
       "label": "Title size",
       "default": 36
+    },
+    {
+      "type": "select",
+      "id": "title_heading_tag",
+      "label": "Title heading level",
+      "info": "Use H1 only when this section supplies the page's main heading. Every page needs exactly one H1.",
+      "options": [
+        {
+          "value": "h1",
+          "label": "H1"
+        },
+        {
+          "value": "h2",
+          "label": "H2"
+        }
+      ],
+      "default": "h2"
     },
     {
       "type": "checkbox",
