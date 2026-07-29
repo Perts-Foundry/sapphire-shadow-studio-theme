@@ -8,6 +8,11 @@
   Today this emits Organization and WebSite, and only on the homepage, so the
   store has exactly one of each rather than one per page.
 
+  Not everything routes through here. `sections/faq.liquid` emits its own
+  `FAQPage` node, because that markup is derived from the section's own blocks and
+  has no meaning away from them. Page-scoped markup belongs with its section; this
+  router is for site-wide entity nodes.
+
   Product and ProductGroup markup is not routed here. It comes from Shopify's
   `{{ product | structured_data }}` filter in `sections/product-information.liquid`
   and the featured-product sections, which is Shopify-maintained and not

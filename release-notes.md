@@ -1,5 +1,64 @@
 # Release Notes
 
+## SEO: FAQ page heading and FAQPage markup (unreleased)
+
+Stage 2a of the SEO remediation. `/pages/faq` had **no `<h1>` at all**: the FAQ
+section hardcoded an `<h2>`, and the page's template disables `main`, so nothing
+else supplied a top-level heading.
+
+### What changed
+
+`sections/faq.liquid` gains a `title_heading_tag` select (H1 / H2, **default
+H2**) on the section schema, and renders the title with the chosen tag. The
+default is deliberately H2, so this change alone is a no-op: every existing
+placement keeps rendering exactly what it rendered before, and only a template
+that opts in gets an H1.
+
+Editing this `{% schema %}` by hand is allowed here. Nothing in `scripts/`
+generates `sections/faq.liquid`; the "never edit schema directly" rule applies to
+generated schemas such as the size-chart output.
+
+The label is plain English rather than a `t:` key, matching the twelve labels
+already in this file. Theme-check has no rule requiring `t:` keys on schema
+labels, so this is consistent rather than a shortcut.
+
+No CSS change was needed. The title is selected by class, and the section's
+`{% style %}` block sets font-size, colour, alignment, margin, and weight
+explicitly, so swapping the element is a visual no-op.
+
+`FAQPage` JSON-LD is now emitted from the section's own `faq_item` blocks, only
+when the section has blocks.
+
+### Deployment ordering, not optional
+
+**This must be deployed before the template change (2b) is pushed.** Shopify
+validates a JSON template server-side against the section schema *already stored
+on the theme* and rejects the entire asset if a setting is unknown. Pushing a
+template that sets `title_heading_tag` before this section is live gets the
+template rejected wholesale. Merging is not enough; it has to be deployed.
+
+The same coupling runs backwards: once 2b is live, reverting this alone makes
+`templates/page.faq.json` reference an unknown setting. Revert both together.
+
+### On FAQPage's actual value
+
+Close to zero, and it is worth saying so plainly so nobody restores it later
+expecting more. FAQ rich results were deprecated on 2025-05-08 and **removed
+outright on 2026-05-07** for all sites, including government and health, with
+Rich Results Test and Search Console support withdrawn alongside. `FAQPage`
+remains valid schema.org and is emitted for entity and LLM comprehension only.
+Expect no SERP effect, and do not validate it in Rich Results Test, which no
+longer recognises the type.
+
+### Why the array is built with a leading-comma flag
+
+The obvious `{%- unless forloop.last -%},{%- endunless -%}` is wrong here, and
+subtly so. Blocks with a blank question or answer are skipped, so if the *last*
+block is skipped the previous one still emits its separator and the array closes
+on a trailing comma. That invalidates the entire JSON-LD node, and browsers
+surface no parse error for it. The loop therefore tracks whether anything has
+been emitted and writes the comma *before* each subsequent entry.
+
 ## SEO: Organization and WebSite structured data, header cleanup (unreleased)
 
 A full SEO crawl of the storefront (25 URLs, all sitemaps, cross-checked against
