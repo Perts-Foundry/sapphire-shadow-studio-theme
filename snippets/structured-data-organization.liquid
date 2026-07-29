@@ -19,12 +19,20 @@
   which is a false entity claim. Blank settings are skipped, and the array is
   omitted entirely when every setting is blank.
 
+  The `logo` ImageObject carries no `width` / `height`. Deriving them means
+  dividing by `settings.logo.aspect_ratio`, and an SVG can report that as zero or
+  nil. Liquid renders a divide-by-zero as an error string, which would land inside
+  this script tag and silently invalidate the whole node. Google does not require
+  the dimensions, so the safe move is to omit them rather than guard the divide.
+  Google does require a raster logo of at least 112x112; SVG is not reliably
+  consumed, so keep the logo setting on a PNG.
+
   @example
     {% render 'structured-data-organization' %}
 {% enddoc %}
 
 {%- liquid
-  assign social_keys = 'social_facebook_link,social_instagram_link,social_tiktok_link,social_youtube_link,social_pinterest_link,social_twitter_link' | split: ','
+  assign social_keys = 'social_facebook_link,social_instagram_link,social_tiktok_link,social_youtube_link,social_pinterest_link' | split: ','
   assign same_as_urls = ''
 
   for key in social_keys
@@ -54,9 +62,7 @@
       ,
       "logo": {
         "@type": "ImageObject",
-        "url": {{ settings.logo | image_url: width: 500 | prepend: 'https:' | json }},
-        "width": 500,
-        "height": {{ 500 | divided_by: settings.logo.aspect_ratio | round }}
+        "url": {{ settings.logo | image_url: width: 500 | prepend: 'https:' | json }}
       }
     {%- endif -%}
     {%- if same_as_urls != blank -%}

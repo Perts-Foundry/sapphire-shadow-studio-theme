@@ -52,6 +52,24 @@ all are blank, so a partially configured store cannot emit a trailing comma. Tha
 matters more than it sounds: a trailing comma invalidates the whole JSON-LD node
 and browsers surface no parse error for it.
 
+**There is deliberately no `social_twitter_link` setting, and `twitter:site` is
+gone.** This is the one place the settings addition would have changed behaviour
+beyond structured data, so it is worth stating plainly. `snippets/meta-tags.liquid`
+already read `settings.social_twitter_link` to emit `twitter:site`, against a
+setting that had never existed in `settings_schema.json`. Simply defining the
+setting would have reactivated that dead branch on every page, and the branch is
+broken: it extracts the handle with `split: 'twitter.com/'`, which does not match
+an `x.com` URL, so an X profile renders `content="@https://x.com/handle"` instead
+of `@handle`. Naming the setting "X (Twitter)" would have invited exactly the URL
+that breaks it. Both the setting and the tag are therefore out; a comment in
+`meta-tags.liquid` records what a correct restoration needs.
+
+**The `logo` ImageObject carries no `width` / `height`.** Deriving them requires
+dividing by `settings.logo.aspect_ratio`, and an SVG can report that as zero or
+nil. Liquid renders a divide-by-zero as an error string, which would land inside
+the script tag and invalidate the node with no visible symptom. Google does not
+require the dimensions, so they are omitted rather than guarded.
+
 The footer's social URLs were placeholders pointing at platform home pages
 (`https://www.facebook.com` and the like). Those are broken links for customers,
 not only bad `sameAs` data, since a bare platform URL asserts that this

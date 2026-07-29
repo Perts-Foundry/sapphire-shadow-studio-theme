@@ -17,11 +17,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   stays closed.
 - [ ] **SEO: `ItemList` markup on collection pages.** Not emitted today. Low value while the catalogue
   is six products; revisit if the collection count grows.
-- [ ] **SEO: deterministic breadcrumb parent collection.** The breadcrumb snippet picks a product's
-  parent as the global `collection` when present, else the first entry in `product.collections` that
-  is not `all` or `frontpage`. That is non-deterministic if collections are reordered, and the churn
-  is per-page and ongoing. Accepted at 6 products and 4 collections. A `custom.breadcrumb_collection`
-  metafield is the deterministic fix if it starts to matter.
+- [ ] **SEO: deterministic breadcrumb parent collection.** Not shipped yet; breadcrumbs are a later PR
+  and no breadcrumb snippet exists in the tree today. When it lands it will pick a product's parent as
+  the global `collection` when present, else the first entry in `product.collections` that is not
+  `all` or `frontpage`. That is non-deterministic if collections are reordered, and the churn is
+  per-page and ongoing. Accepted at 6 products and 4 collections. A `custom.breadcrumb_collection`
+  metafield is the deterministic fix if it starts to matter. Decide the tie-break before it ships.
 - [ ] **SEO: `/blogs/news` is empty and indexable.** Accepted deliberately at launch rather than
   overlooked. It is a thin-content signal on a small indexable surface. Revisit at launch (B7): if
   the blog is still empty, decide then between `noindex` and unpublishing.

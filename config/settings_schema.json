@@ -2395,11 +2395,6 @@
         "type": "url",
         "id": "social_pinterest_link",
         "label": "t:settings.social_pinterest_link"
-      },
-      {
-        "type": "url",
-        "id": "social_twitter_link",
-        "label": "t:settings.social_twitter_link"
       }
     ]
   }
