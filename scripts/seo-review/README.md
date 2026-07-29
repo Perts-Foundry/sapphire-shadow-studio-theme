@@ -62,7 +62,12 @@ Crawl-mode checks and why each exists:
 Admin-mode checks read what is **stored**, because the storefront renders fallbacks: a null
 product SEO title renders as the product title, which is exactly how the original audit
 miscounted B5. Page metadata lives in the `global` namespace metafields (`title_tag`,
-`description_tag`); the Page resource has no `seo` field.
+`description_tag`); the Page resource has no `seo` field. The Admin client is reused from
+`scripts/blank-inventory/lib/admin.mjs` (lazy token mint, error redaction, throttle retries).
+Two guard behaviours worth knowing: any GraphQL connection reporting another page past the
+query caps raises an `admin-read-truncated` ERROR rather than silently auditing a subset, and
+collection body copy is judged after stripping editor artifacts (`<p></p>`, `&nbsp;`), so a
+visually blank body cannot pass as content.
 
 Surface mode is the generalized launch-day checklist (B7): it runs anonymously on purpose.
 Pre-launch, the password gate is reported as status and the page sweep is skipped with a reason.

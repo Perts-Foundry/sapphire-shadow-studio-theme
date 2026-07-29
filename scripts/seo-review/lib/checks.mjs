@@ -24,9 +24,10 @@ const DESCRIPTION_EXEMPT = new Set(['cart', 'search', '404', 'password']);
 // Page types where a robots noindex is expected rather than a defect.
 const NOINDEX_OK = new Set(['cart', 'search', '404', 'password', 'policy']);
 
-const TITLE_MAX = 60;
-const DESC_MIN = 50;
-const DESC_MAX = 160;
+// Shared by the crawl checks below and admin.mjs's stored-field checks.
+export const TITLE_MAX = 60;
+export const DESC_MIN = 50;
+export const DESC_MAX = 160;
 
 /**
  * Stable per-page key: the path (query stripped) for http(s) URLs, the string

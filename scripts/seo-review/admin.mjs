@@ -9,71 +9,52 @@
 // variant SKUs, and blog article counts. The shopify MCP does not expose the
 // seo field at all, hence the direct GraphQL call (docs/shopify-mcp-notes.md).
 //
-// SECURITY (public repo): the token is minted at runtime from
-// SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET, held in memory, and NEVER
-// printed, logged, or written to disk. This script performs no mutations.
+// SECURITY (public repo): the Admin client is the proven one from
+// scripts/blank-inventory/lib/admin.mjs: token minted lazily from
+// SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET, never printed or written to
+// disk, and redacted from every error it throws. This script performs no
+// mutations.
 //
 // USAGE: node scripts/seo-review/admin.mjs [--full] [--no-save]
 //   Requires MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
 
-import { ERROR, WARN } from './lib/checks.mjs';
+import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
+import { ERROR, WARN, TITLE_MAX, DESC_MIN, DESC_MAX } from './lib/checks.mjs';
 import { finishRun } from './lib/report.mjs';
-
-const API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-01';
-const DESC_MIN = 50;
-const DESC_MAX = 160;
-const TITLE_MAX = 60;
 
 function arg(flag) { return process.argv.includes(flag); }
 
-async function mintToken(domain) {
-  const res = await fetch(`https://${domain}/admin/oauth/access_token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_id: process.env.SHOPIFY_CLIENT_ID,
-      client_secret: process.env.SHOPIFY_CLIENT_SECRET,
-      grant_type: 'client_credentials',
-    }),
-  });
-  if (!res.ok) throw new Error(`token exchange failed (${res.status})`);
-  const data = await res.json();
-  if (!data.access_token) throw new Error('token exchange returned no token');
-  return data.access_token;
-}
-
-async function gql(domain, token, query) {
-  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-shopify-access-token': token },
-    body: JSON.stringify({ query }),
-  });
-  if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
-  const data = await res.json();
-  if (data.errors) throw new Error(`GraphQL errors: ${data.errors.map((e) => e.message).join('; ')}`);
-  return data.data;
-}
-
+// Caps sized to the current catalogue with generous headroom. If a
+// connection reports another page, the run FAILS LOUDLY (admin-read-truncated
+// ERROR) rather than silently auditing a subset: a truncated read that greens
+// is the fail-open shape this tool exists to prevent.
 const QUERY = `
 {
   products(first: 100) {
+    pageInfo { hasNextPage }
     edges { node {
       handle title
       seo { title description }
-      variants(first: 250) { edges { node { sku } } }
+      variants(first: 250) {
+        pageInfo { hasNextPage }
+        edges { node { sku } }
+      }
     } }
   }
-  collections(first: 50) {
+  collections(first: 100) {
+    pageInfo { hasNextPage }
     edges { node { handle title description seo { title description } } }
   }
   pages(first: 100) {
+    pageInfo { hasNextPage }
     edges { node {
       handle title
       titleTag: metafield(namespace: "global", key: "title_tag") { value }
       descriptionTag: metafield(namespace: "global", key: "description_tag") { value }
     } }
   }
-  blogs(first: 10) {
+  blogs(first: 25) {
+    pageInfo { hasNextPage }
     edges { node { handle articlesCount { count } } }
   }
 }`;
@@ -107,20 +88,38 @@ function checkSeoText(findings, kind, handle, seo) {
   return description || null;
 }
 
+/**
+ * True when a rich-text body is effectively empty once markup artifacts are
+ * gone. Admin's editor can leave `<p></p>` or bare `&nbsp;` in a "blank"
+ * field; those must not count as body copy.
+ */
+export function isEffectivelyEmpty(text) {
+  return (text || '').replace(/<[^>]*>|&nbsp;/gi, ' ').trim().length === 0;
+}
+
 async function main() {
   const log = (l) => process.stdout.write(l + '\n');
-  const domain = process.env.MYSHOPIFY_DOMAIN;
-  if (!domain || !process.env.SHOPIFY_CLIENT_ID || !process.env.SHOPIFY_CLIENT_SECRET) {
-    log('admin mode needs MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, and SHOPIFY_CLIENT_SECRET in the environment.');
-    process.exit(2);
+  for (const v of ['MYSHOPIFY_DOMAIN', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET']) {
+    if (!process.env[v]) {
+      log(`admin mode needs MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, and SHOPIFY_CLIENT_SECRET; ${v} is missing.`);
+      process.exit(2);
+    }
   }
 
-  log(`seo-review admin (read-only): ${domain}, API ${API_VERSION}`);
-  const token = await mintToken(domain);
-  const data = await gql(domain, token, QUERY);
+  const client = createAdminClient(
+    process.env.SHOPIFY_API_VERSION ? { apiVersion: process.env.SHOPIFY_API_VERSION } : {},
+  );
+  log(`seo-review admin (read-only): ${process.env.MYSHOPIFY_DOMAIN}, API ${client.apiVersion}`);
+  const data = await client.gql(QUERY);
 
   const findings = [];
   const descriptions = new Map(); // description text -> [resource labels]
+
+  // Loud truncation guard on every connection (see QUERY comment).
+  const truncated = [];
+  for (const key of ['products', 'collections', 'pages', 'blogs']) {
+    if (data[key]?.pageInfo?.hasNextPage) truncated.push(key);
+  }
 
   const products = data.products.edges.map((e) => e.node);
   const collections = data.collections.edges.map((e) => e.node);
@@ -131,6 +130,7 @@ async function main() {
   let skuMissing = 0;
   let variantTotal = 0;
   for (const p of products) {
+    if (p.variants.pageInfo.hasNextPage) truncated.push(`product/${p.handle} variants`);
     const desc = checkSeoText(findings, 'product', p.handle, p.seo);
     if (desc) descriptions.set(desc, [...(descriptions.get(desc) || []), `product/${p.handle}`]);
     for (const v of p.variants.edges) {
@@ -138,10 +138,16 @@ async function main() {
       if (!v.node.sku) skuMissing += 1;
     }
   }
+  if (truncated.length > 0) {
+    findings.push({
+      check: 'admin-read-truncated', severity: ERROR, url: 'admin:query',
+      detail: `connection(s) exceeded the query cap and were NOT fully audited: ${truncated.join(', ')}. Raise the first: argument or add pagination before trusting this run.`,
+    });
+  }
   for (const c of collections) {
     const desc = checkSeoText(findings, 'collection', c.handle, c.seo);
     if (desc) descriptions.set(desc, [...(descriptions.get(desc) || []), `collection/${c.handle}`]);
-    if (!c.description || c.description.trim().length === 0) {
+    if (isEffectivelyEmpty(c.description)) {
       findings.push({
         check: 'collection-body-empty', severity: WARN, url: `admin:collection/${c.handle}`,
         detail: 'collection has no body copy (an empty grid is a thin landing page)',
@@ -149,6 +155,12 @@ async function main() {
     }
   }
   for (const pg of pages) {
+    if (!pg.titleTag || !pg.titleTag.value) {
+      findings.push({
+        check: 'page-seo-title-missing', severity: WARN, url: `admin:page/${pg.handle}`,
+        detail: 'no title_tag metafield (global namespace); renders as the page title',
+      });
+    }
     if (!pg.descriptionTag || !pg.descriptionTag.value) {
       findings.push({
         check: 'page-seo-description-missing', severity: ERROR, url: `admin:page/${pg.handle}`,
@@ -192,11 +204,14 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((e) => {
-  // Redact defensively: an error message must never carry the secret.
-  let msg = String(e && e.message ? e.message : 'error');
-  const secret = process.env.SHOPIFY_CLIENT_SECRET;
-  if (secret) msg = msg.split(secret).join('[REDACTED]');
-  process.stderr.write(`seo-review admin: fatal (${msg})\n`);
-  process.exit(1);
-});
+// Only run the CLI when executed directly, not when imported by tests.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => {
+    // The client redacts its own errors; strip the secret again regardless.
+    let msg = String(e && e.message ? e.message : 'error');
+    const secret = process.env.SHOPIFY_CLIENT_SECRET;
+    if (secret) msg = msg.split(secret).join('[REDACTED]');
+    process.stderr.write(`seo-review admin: fatal (${msg})\n`);
+    process.exit(1);
+  });
+}
