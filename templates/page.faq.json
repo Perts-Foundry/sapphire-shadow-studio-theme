@@ -127,6 +127,7 @@
       ],
       "settings": {
         "title": "Frequently Asked Questions",
+        "title_heading_tag": "h1",
         "title_size": 36,
         "show_toggle_all": true,
         "question_size": 18,

@@ -1,5 +1,39 @@
 # Release Notes
 
+## SEO: FAQ template opts into an H1 (unreleased)
+
+Stage 2b, and the other half of the pair described in the entry below. Stage 2a
+added the `title_heading_tag` select to `sections/faq.liquid` with a default of
+H2, which made it a deliberate no-op. This change is what actually gives
+`/pages/faq` a top-level heading.
+
+### What changed
+
+`templates/page.faq.json` sets `"title_heading_tag": "h1"` on
+`sections.faq_section.settings`. That is the whole diff. The FAQ title now
+renders as the page's `<h1>`, resolving the zero-H1 finding on `/pages/faq`.
+
+`templates/page.custom-orders.json` is deliberately left alone. It omits the key,
+takes the H2 default, and keeps the H1 it already has in its hero.
+
+### Ordering
+
+Stage 2a is already deployed to live, which is the precondition for this push.
+Shopify validates a JSON template server-side against the section schema stored
+on the theme and rejects the whole asset if a setting is unknown, so the reverse
+order would have failed the deploy. The setting `id` was also confirmed wired
+end to end in the theme editor on the preview theme before this was written.
+
+Rollback is `git revert` plus deploy, but not in isolation: reverting 2a while
+this is live leaves the template referencing an unknown setting. Revert both
+together.
+
+### Out of scope
+
+Everything else in the SEO remediation: breadcrumbs, the page-template split, and
+all Admin-side work (meta descriptions, collection descriptions, SEO titles,
+contact copy, variant SKUs). The theme diff is not the complete remediation.
+
 ## SEO: FAQ page heading and FAQPage markup (unreleased)
 
 Stage 2a of the SEO remediation. `/pages/faq` had **no `<h1>` at all**: the FAQ
