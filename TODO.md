@@ -9,6 +9,30 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
+- [ ] **SEO: return-policy structured data.** Deferred, and the reason matters because the obvious
+  one is wrong. It is blocked by Shopify's `structured_data` filter not being extensible, **not** by
+  the return policy varying per product. `MerchantReturnPolicy` does not need to be store-wide, and
+  `MerchantReturnNotPermitted` expresses Shift Fuel's final-sale case precisely. Declaring the policy
+  at the Organization level on the homepage node is a viable partial path if the product-level route
+  stays closed.
+- [ ] **SEO: `ItemList` markup on collection pages.** Not emitted today. Low value while the catalogue
+  is six products; revisit if the collection count grows.
+- [ ] **SEO: deterministic breadcrumb parent collection.** The breadcrumb snippet picks a product's
+  parent as the global `collection` when present, else the first entry in `product.collections` that
+  is not `all` or `frontpage`. That is non-deterministic if collections are reordered, and the churn
+  is per-page and ongoing. Accepted at 6 products and 4 collections. A `custom.breadcrumb_collection`
+  metafield is the deterministic fix if it starts to matter.
+- [ ] **SEO: `/blogs/news` is empty and indexable.** Accepted deliberately at launch rather than
+  overlooked. It is a thin-content signal on a small indexable surface. Revisit at launch (B7): if
+  the blog is still empty, decide then between `noindex` and unpublishing.
+- [ ] **SEO: `featured` and `healthcare` list an identical five products.** Both stay indexable by
+  decision. Their meta descriptions differ but the grid does not, so canonical selection between them
+  is Google's coin flip. Revisit with real Search Console data after launch, not before.
+- [ ] **SEO: variant SKUs.** Backfilled Admin-side so Merchant Center and free product listings have a
+  stable per-variant identifier. Coordinate with the existing `custom.inventory_blank_sku` metafield
+  so the two identifiers do not collide.
+- [ ] **SEO: blog content.** No posts. Content work, not a code change.
+
 - [x] **Per-variant image matching for colours.** Shipped as an alt-text filter. The gallery shows
   photos whose alt text names the selected `Color` option value, plus photos naming no value at all
   (group shots and design-only shots), and falls back to the full gallery for a colour with nothing
