@@ -15,6 +15,7 @@
     "smoke:test": "node --test .github/actions/shopify-theme-push/smoke.test.mjs .github/actions/shopify-theme-push/report-format.test.mjs .github/actions/shopify-theme-push/check-push-rejections.test.mjs",
     "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
     "blank-inventory:test": "node --test scripts/blank-inventory/test/*.test.mjs",
+    "seo-review:test": "node --test scripts/seo-review/test/*.test.mjs",
     "blank-inventory:guard": "node scripts/blank-inventory/check-no-real-blank-ids.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs"
   },
