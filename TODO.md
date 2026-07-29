@@ -18,11 +18,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **SEO: `ItemList` markup on collection pages.** Not emitted today. Low value while the catalogue
   is six products; revisit if the collection count grows.
 - [ ] **SEO: deterministic breadcrumb parent collection.** `snippets/breadcrumbs.liquid` has shipped
-  and picks a product's parent as the global `collection` when present, else the first entry in
-  `product.collections` that is not `all` or `frontpage`. That fallback is non-deterministic if
-  collections are reordered, and the churn is per-page and ongoing rather than a one-time cost.
-  Accepted at 6 products and 4 collections. A `custom.breadcrumb_collection` metafield is the
-  deterministic fix if it starts to matter.
+  and picks a product's parent from a hardcoded preferred-handle list
+  (`healthcare,the-vitals-collection,featured`) after honouring a collection-scoped URL. Ordering is
+  deterministic, but **the list is hand-maintained and fails quietly**: a handle that no longer
+  exists is skipped with no error, so renaming or removing a collection silently degrades the trail
+  and nothing in CI catches it. A `custom.breadcrumb_collection` metafield is the fix that needs no
+  maintenance. Revisit when the catalogue or collection set grows.
 - [ ] **SEO: breadcrumb locale strings are untranslated.** `accessibility.breadcrumb`,
   `content.breadcrumb_home`, and `content.breadcrumb_collections` carry `TODO:` placeholders in all
   30 non-English locale files, matching the existing convention. Only English is active on the

@@ -37,12 +37,29 @@ Liquid cannot append to an array. Home is always first, so every later entry
 appends the delimiter unconditionally and there is no leading-empty-element
 edge case.
 
-**Product parent collection is non-deterministic and that is accepted.** The
-global `collection` object when present, else the first entry in
-`product.collections` that is not `all` or `frontpage`. Reordering collections
-changes the trail, and the churn is per-page and ongoing rather than one-time.
-Accepted at 6 products and 4 collections; a `custom.breadcrumb_collection`
-metafield is the deterministic fix if it ever matters. Recorded in `TODO.md`.
+**Product parent collection is chosen by an explicit preference list.** Three
+steps: the collection the shopper actually browsed through when the URL is
+collection-scoped, else the first hit in a hand-maintained preferred-handle list
+(`healthcare`, `the-vitals-collection`, `featured`), else any collection that is
+not a catch-all.
+
+The first draft of this snippet simply took the first entry in
+`product.collections` that was not `all` or `frontpage`, and preview
+verification caught what that produces: `all-products` is a **real** collection
+in this store, not one of Shopify's virtual ones, and it sorts first. So every
+**canonical** product URL rendered "Home > All Products > Lead II Crewneck",
+while only the collection-scoped URL got "Home > Healthcare > ...". The
+canonical URL is the one Google indexes, so the breadcrumb it would have shown
+was the least informative of the four available, which throws away most of the
+reason to emit the markup. `all-products` is now excluded alongside `all` and
+`frontpage`.
+
+The tradeoff moved rather than vanished. Ordering is now deterministic, but the
+preferred list is hardcoded and hand-maintained: **a handle that no longer
+exists is skipped silently**, with no error, so renaming or removing a
+collection degrades the trail without failing anything. Nothing in CI checks it.
+A `custom.breadcrumb_collection` metafield remains the fix that needs no
+maintenance; it is recorded in `TODO.md`.
 
 ### Accessibility
 
