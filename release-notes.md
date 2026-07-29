@@ -7,10 +7,26 @@ that can blank a live page.
 
 ### What changed
 
-`templates/page.json` is now a stock page template: `main` enabled, and the
-`_blocks` section plus its `order` entry removed. `main` also loses
-`"color_scheme": "scheme-4"`, which was About-specific styling rather than a
-sensible default.
+`templates/page.json` is restored to **Horizon's actual upstream stock
+template**, taken verbatim from the `Horizon v3.0.0` import commit: `main`
+enabled, carrying a `text` block that renders `<h1>{{ closest.page.title }}</h1>`
+and a `page-content` block that renders the page body. The `_blocks` section and
+its `order` entry are gone.
+
+### The first attempt at this was wrong, and preview caught it
+
+Worth recording, because the failure was silent and would have shipped. The
+first draft removed `_blocks` and left `main` with settings but **no blocks**,
+on the assumption that `main-page` renders `page.content` itself. It does not:
+`sections/main-page.liquid` renders `{% content_for 'blocks' %}` and nothing
+else, so a blockless `main` renders an empty section.
+
+On the preview theme that produced a `/pages/data-sharing-opt-out` with **zero
+`<h1>`** and 286 characters inside `<main>`, essentially all of it breadcrumb
+and JSON-LD. The page body was gone. That is precisely the "turns wrong content
+into no content" outcome the staging was designed to prevent, and neither
+theme-check nor `validate` flags it, because the template is perfectly valid
+JSON referencing a real section.
 
 ### Why
 
