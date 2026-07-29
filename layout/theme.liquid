@@ -118,6 +118,10 @@
 
     {% render 'search-modal' %}
 
+    {% if settings.vacation_mode_enabled %}
+      {% render 'vacation-popup' %}
+    {% endif %}
+
     {% if settings.quick_add or settings.mobile_quick_add %}
       {% render 'quick-add-modal' %}
     {% endif %}

@@ -2397,5 +2397,71 @@
         "label": "t:settings.social_pinterest_link"
       }
     ]
+  },
+  {
+    "name": "Vacation Mode",
+    "settings": [
+      {
+        "type": "paragraph",
+        "content": "Turns on the vacation announcement, the once-per-session popup, the required delay checkbox on product pages, and the shipping-line note. Each message carries its own date: before enabling, update the announcement text, popup body, checkbox terms, and shipping note so they all state the same date."
+      },
+      {
+        "type": "checkbox",
+        "id": "vacation_mode_enabled",
+        "label": "Enable Vacation Mode",
+        "default": false
+      },
+      {
+        "type": "inline_richtext",
+        "id": "vacation_announcement_text",
+        "label": "Announcement Text",
+        "default": "<strong>We're on a short break!</strong> Orders placed now ship after August 15",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "text",
+        "id": "vacation_popup_heading",
+        "label": "Popup Heading",
+        "default": "We're on a short break",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "richtext",
+        "id": "vacation_popup_body",
+        "label": "Popup Body",
+        "default": "<p>You can still browse and order as usual, but orders placed while we're away will begin processing after August 15. Thanks for your patience!</p>",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "richtext",
+        "id": "vacation_checkbox_terms",
+        "label": "Checkbox Terms",
+        "info": "Leave blank to hide the product-page checkbox.",
+        "default": "<p><strong>Please note:</strong> we're on a short break. Orders placed now will begin processing after August 15.</p>",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "text",
+        "id": "vacation_checkbox_label",
+        "label": "Checkbox Label",
+        "default": "I understand my order will be delayed",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "text",
+        "id": "vacation_property_label",
+        "label": "Order Property Label",
+        "info": "Names the acknowledgment recorded on the order. Avoid brackets or quotes, and do not rename while a vacation's orders are open: renaming splits the property across orders.",
+        "default": "Delayed processing acknowledged",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "text",
+        "id": "vacation_shipping_message",
+        "label": "Shipping Note",
+        "default": "Ships after August 15",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      }
+    ]
   }
 ]

@@ -219,6 +219,16 @@
               },
               "blocks": {}
             },
+            "vacation_ack_001": {
+              "type": "vacation-acknowledgment",
+              "settings": {
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
             "buy_buttons_eYQEYi": {
               "type": "buy-buttons",
               "settings": {
@@ -592,6 +602,7 @@
             "text_aEtTtq",
             "divider_VJhene",
             "variant_picker_R3rGDr",
+            "vacation_ack_001",
             "buy_buttons_eYQEYi",
             "request_combination_001",
             "accordion_HrL6gj"

@@ -1,0 +1,51 @@
+{%- doc -%}
+  Outputs the index (into the given blocks array) of the first announcement-bar
+  block that will actually render, or -1 when none will. Announcement slides use
+  this instead of a bare `block_index == 0` check for their initial aria-hidden
+  state: a dormant vacation slide (or a blank announcement) at index 0 renders
+  nothing, and hiding every slide until JS hydrates would blank the bar.
+
+  Visibility rules mirror each block's own render guard exactly; keep them in
+  sync when either guard changes:
+  - `_announcement`: visible when its stripped `text` setting is non-blank.
+  - `_vacation-announcement`: visible when `settings.vacation_mode_enabled` and
+    the stripped global `settings.vacation_announcement_text` is non-blank.
+  Unknown block types are treated as visible, so a future block type fails
+  toward "first slide shown" rather than a blank bar.
+
+  @param {object} blocks - The announcement section's blocks (section.blocks)
+
+  @example
+    {% capture first_visible_index %}
+      {%- render 'announcement-first-visible', blocks: section.blocks -%}
+    {% endcapture %}
+    {% assign first_visible_index = first_visible_index | strip | plus: 0 %}
+{%- enddoc -%}
+{%- liquid
+  assign first_visible_index = -1
+
+  for candidate in blocks
+    case candidate.type
+      when '_announcement'
+        assign candidate_text = candidate.settings.text | strip_newlines | strip_html | strip
+        if candidate_text != ''
+          assign first_visible_index = forloop.index0
+        endif
+      when '_vacation-announcement'
+        if settings.vacation_mode_enabled
+          assign candidate_text = settings.vacation_announcement_text | strip_newlines | strip_html | strip
+          if candidate_text != ''
+            assign first_visible_index = forloop.index0
+          endif
+        endif
+      else
+        assign first_visible_index = forloop.index0
+    endcase
+
+    if first_visible_index > -1
+      break
+    endif
+  endfor
+
+  echo first_visible_index
+-%}

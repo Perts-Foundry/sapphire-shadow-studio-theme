@@ -1,6 +1,15 @@
 {%- assign block_settings = block.settings -%}
 {%- assign plain_text = block_settings.text | strip_newlines | strip_html | strip -%}
 {%- assign block_index = section.blocks | find_index: 'id', block.id -%}
+{%- comment -%}
+  The pre-hydration visible slide is the first block that renders, not index 0:
+  a blank announcement or a dormant _vacation-announcement can sit first in
+  block_order, and hiding everything until JS runs would blank the bar.
+{%- endcomment -%}
+{%- capture first_visible_index -%}
+  {%- render 'announcement-first-visible', blocks: section.blocks -%}
+{%- endcapture -%}
+{%- assign first_visible_index = first_visible_index | strip | plus: 0 -%}
 
 {%- unless plain_text == '' -%}
   <slideshow-slide
@@ -22,7 +31,7 @@
       --line-height: 1;
     "
     {{ block.shopify_attributes }}
-    aria-hidden="{% if block_index == 0 %}false{% else %}true{% endif %}"
+    aria-hidden="{% if block_index == first_visible_index %}false{% else %}true{% endif %}"
   >
     <p class="announcement-bar__text">
       {{ block.settings.text }}
