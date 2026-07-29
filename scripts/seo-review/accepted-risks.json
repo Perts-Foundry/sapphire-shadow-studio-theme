@@ -1,0 +1,14 @@
+[
+  {
+    "check": "blog-empty",
+    "path": null,
+    "note": "Deliberate: /blogs/news stays indexable while empty. Revisit a few weeks after launch (TODO.md row); if still empty, decide between noindex and unpublishing.",
+    "accepted_on": "2026-07-28"
+  },
+  {
+    "check": "variant-sku-missing",
+    "path": null,
+    "note": "Deferred, not dropped: SKU scheme and lifecycle are unsettled (TODO.md row, 2026-07-29). Merchant Center falls back to variant ID, so the SEO cost was overstated.",
+    "accepted_on": "2026-07-29"
+  }
+]

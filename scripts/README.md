@@ -14,6 +14,9 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
 - `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
   metafield, cooperating with the inventory-sync Flow. Writes to the **live store**, through gated
   plan artifacts. See [`blank-inventory/README.md`](blank-inventory/README.md).
+- `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
+  check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
+  skill. See [`seo-review/README.md`](seo-review/README.md).
 
 The `product-images` Claude skill (`.claude/skills/product-images/`) drives the whole pipeline end to
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it

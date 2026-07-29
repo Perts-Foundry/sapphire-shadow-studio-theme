@@ -16,6 +16,13 @@ Admin data through the MCP, so it isn't misrouted.
   check the scopes before relying on it. Prefer the token for reads the MCP truncates (e.g.
   `get-product-by-id` caps variants at 20 and cannot enumerate a full option set). Never
   commit the token or the exchange script.
+- **SEO fields are not exposed by the MCP at all.** Products and collections carry
+  `seo { title description }` in the Admin GraphQL API; the Page resource has no `seo` field
+  and stores its SEO title/description in metafields
+  (`metafield(namespace: "global", key: "title_tag" | "description_tag")`). Read or write any
+  of these via the exchanged token (bullet above), not the MCP. Also note the render-time
+  fallbacks: a null stored SEO title renders as the resource title on the storefront, so a
+  crawl cannot tell you what is actually stored.
 - **Media / image upload is not an MCP tool.** The MCP exposes no media or file upload tool,
   so theme imagery ships through the `assets/` directory. Product / media imagery goes
   through the Admin UI or the Admin GraphQL API (staged upload, then `fileCreate` / product
