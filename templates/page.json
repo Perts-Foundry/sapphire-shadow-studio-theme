@@ -11,108 +11,16 @@
   "sections": {
     "main": {
       "type": "main-page",
-      "disabled": true,
       "settings": {
         "content_direction": "column",
         "gap": 16,
-        "color_scheme": "scheme-4",
+        "color_scheme": "",
         "padding-block-start": 20,
         "padding-block-end": 40
-      }
-    },
-    "176956306257ea4668": {
-      "type": "_blocks",
-      "blocks": {
-        "ai_gen_block_23c928c_UaLftP": {
-          "type": "ai_gen_block_23c928c",
-          "settings": {
-            "show_hero": true,
-            "hero_title": "About Sapphire Shadow Studio",
-            "hero_text": "<p>More than sweaters. It's about creating something that actually matters. Behind every cozy custom sweater is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for.</p>",
-            "hero_bg_color": "#f5f5f5",
-            "hero_text_color": "#000000",
-            "hero_title_size": 34,
-            "hero_text_size": 16,
-            "show_mission": true,
-            "mission_title": "What we believe",
-            "mission_text": "<p>This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning. Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out.</p>",
-            "mission_bg_color": "#ffffff",
-            "show_values": true,
-            "values_title": "Why good enough never makes the cut",
-            "value_1_title": "Quality First",
-            "value_1_text": "<p>Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected.</p>",
-            "value_2_title": "Personal Attention",
-            "value_2_text": "<p>Every order gets personal attention. Real people handle it: checking details, ensuring quality, packaging with care. It's the opposite of anonymous.</p>",
-            "value_3_title": "Never Rushed",
-            "value_3_text": "<p>Each design goes through rounds of testing and refinement. Does it look as good in person as it does on screen? Does it hold up after washing?</p>",
-            "value_4_title": "Made for You",
-            "value_4_text": "<p>Fun, unique, eye-catching designs that aren't the kind of pieces that blend into the background. They're the ones that start conversations.</p>",
-            "show_story": true,
-            "story_title": "How late nights and big dreams became a business",
-            "story_text": "<p>Sapphire Shadow Studio was born from one woman's leap of faith, backed by her husband's unwavering belief that she could pull it off.</p><p>For nearly a decade, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. The schedule dictated everything. Time with family and friends became something squeezed into gaps rather than built around. Creativity? That lived somewhere in the margins, waiting.</p><p>Then came the late nights with a different kind of purpose. Sketching designs instead of charting vitals. Testing fabrics instead of taking temperatures. What started as a search for better work-life balance evolved into something bigger: a creative outlet that finally felt like hers.</p>",
-            "story_image": "shopify://shop_images/studio.jpg",
-            "story_bg_color": "#f5f5f5",
-            "story_image_radius": 8,
-            "show_team": true,
-            "team_title": "Meet the team behind the seams",
-            "team_member_1_name": "Maddie",
-            "team_member_1_role": "Founder & Creative Director",
-            "team_member_1_bio": "The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Her years in healthcare taught her that attention to detail isn't optional when the outcome matters.",
-            "team_member_2_name": "Seth",
-            "team_member_2_role": "Operations & Technology",
-            "team_member_2_bio": "The behind-the-scenes force who makes everything actually work. He handles the website, manages all the backend tech and coding, and serves as the honest eye that vets every design before it goes live. Professional and smart with just enough goofiness to keep things fun.",
-            "team_member_3_image": "shopify://shop_images/Kitkat-Rory.jpg",
-            "team_member_3_name": "Our Cats",
-            "team_member_3_role": "Chief Morale Officers",
-            "team_member_3_bio": "The unofficial supervisors who ensure every work session includes mandatory cuddle breaks. They inspect every package, test every cozy sweater for nap-worthiness, and provide emotional support during late-night creative sessions. Essential team members who work for treats and head scratches.",
-            "team_rotation_speed": 5,
-            "team_image_radius": 50,
-            "text_color": "#000000",
-            "section_title_size": 30,
-            "body_text_size": 14,
-            "card_bg_color": "#ffffff",
-            "card_border_color": "#e6e6e6",
-            "card_border_radius": 8,
-            "icon_bg_color": "#f5f5f5",
-            "icon_color": "#000000"
-          },
-          "blocks": {}
-        }
-      },
-      "block_order": [
-        "ai_gen_block_23c928c_UaLftP"
-      ],
-      "settings": {
-        "content_direction": "column",
-        "vertical_on_mobile": true,
-        "horizontal_alignment": "flex-start",
-        "vertical_alignment": "center",
-        "align_baseline": false,
-        "horizontal_alignment_flex_direction_column": "flex-start",
-        "vertical_alignment_flex_direction_column": "center",
-        "gap": 0,
-        "section_width": "page-width",
-        "section_height": "",
-        "section_height_custom": 50,
-        "color_scheme": "",
-        "background_media": "none",
-        "video_position": "cover",
-        "background_image_position": "cover",
-        "border": "none",
-        "border_width": 1,
-        "border_opacity": 100,
-        "border_radius": 0,
-        "toggle_overlay": false,
-        "overlay_color": "#00000026",
-        "overlay_style": "solid",
-        "gradient_direction": "to top",
-        "padding-block-start": 0,
-        "padding-block-end": 0
       }
     }
   },
   "order": [
-    "main",
-    "176956306257ea4668"
+    "main"
   ]
 }

@@ -1,5 +1,64 @@
 # Release Notes
 
+## SEO: reset the default page template to stock (unreleased)
+
+Stage 4b, and the highest-risk change in the SEO remediation. It is the only one
+that can blank a live page.
+
+### What changed
+
+`templates/page.json` is now a stock page template: `main` enabled, and the
+`_blocks` section plus its `order` entry removed. `main` also loses
+`"color_scheme": "scheme-4"`, which was About-specific styling rather than a
+sensible default.
+
+### Why
+
+The default page template was not a default. It hardcoded About's content, so
+every page assigned to it rendered About's hero, mission, values, story, and
+team blocks instead of its own body. `/pages/data-sharing-opt-out` has been
+serving About's content, complete with an "About Sapphire Shadow Studio" H1.
+
+### Preconditions, both verified before this was written
+
+1. `templates/page.about.json` is live (stage 4a, deployed).
+2. The About page is assigned to the `about` template in Admin. Confirmed
+   through the Admin API rather than by eye: `pages(first: 50)` reports
+   `templateSuffix: "about"` for handle `about`.
+
+Order matters. Deploying this before that assignment would have blanked
+`/pages/about` on the live storefront.
+
+### Every page was enumerated, not sampled
+
+The plan called for an exhaustive Admin enumeration because an empty body would
+turn *wrong content* into *no content*, which is worse. There are five pages:
+
+| Handle | Template | Body |
+|---|---|---|
+| `data-sharing-opt-out` | (default) | 2602 chars |
+| `about` | `about` | 0 |
+| `contact` | `contact` | 0 |
+| `custom-orders` | `custom-orders` | 0 |
+| `faq` | `faq` | 0 |
+
+Exactly one page uses the default template, and it has real body content, so
+this change gives that page its own content back rather than blanking anything.
+The four zero-length bodies are all on templates that disable `main` and compose
+from sections, which is what makes an empty Admin body correct for them.
+
+### The smoke test does not cover this
+
+`.github/actions/shopify-theme-push/smoke.mjs` probes published **products**
+from the sitemap. It reaches no page templates at all, so a regression here
+deploys green. Verify `/pages/about` and `/pages/data-sharing-opt-out` by hand
+after deploy.
+
+### Rollback
+
+`git revert` plus deploy. `blocks/ai_gen_block_23c928c.liquid` is never deleted,
+so the block type still exists and the reverted template renders as before.
+
 ## SEO: add a dedicated About page template (unreleased)
 
 Stage 4a, the first half of a change that needs an Admin step in the middle.
