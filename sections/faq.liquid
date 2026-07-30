@@ -1,9 +1,13 @@
 {% assign section_id = section.id | replace: '_', '' | downcase %}
 
 {% style %}
+  .faq-scheme-{{ section_id }} {
+    background-color: var(--color-background);
+  }
+
   .faq-section-{{ section_id }} {
     width: 100%;
-    max-width: 600px;
+    max-width: 720px;
     margin: 0 auto;
     padding-inline: 20px;
     padding-block-start: {{ section.settings.padding_top }}px;
@@ -11,8 +15,9 @@
   }
 
   .faq-title-{{ section_id }} {
+    font-family: var(--font-heading--family);
     font-size: {{ section.settings.title_size }}px;
-    color: {{ section.settings.text_color }};
+    color: var(--color-foreground-heading);
     text-align: center;
     margin-block-end: 20px;
     font-weight: 700;
@@ -26,8 +31,8 @@
 
   .faq-toggle-all-{{ section_id }} {
     background: transparent;
-    border: 1px solid {{ section.settings.border_color }};
-    color: {{ section.settings.text_color }};
+    border: 1px solid var(--color-border);
+    color: var(--color-foreground);
     padding: 8px 16px;
     font-size: 14px;
     font-weight: 500;
@@ -37,12 +42,12 @@
   }
 
   .faq-toggle-all-{{ section_id }}:hover {
-    background: {{ section.settings.text_color }};
-    color: #ffffff;
+    background: var(--color-foreground);
+    color: var(--color-background);
   }
 
   .faq-toggle-all-{{ section_id }}:focus-visible {
-    outline: 2px solid {{ section.settings.text_color }};
+    outline: 2px solid var(--color-foreground);
     outline-offset: 2px;
   }
 
@@ -53,14 +58,14 @@
   }
 
   .faq-section-{{ section_id }} .faq-item {
-    border-block-end: 1px solid {{ section.settings.border_color }};
+    border-block-end: 1px solid var(--color-border);
     /* Clear the sticky header plus announcement bar when deep-linked
        (e.g. the vacation surfaces' #away-from-studio links). */
     scroll-margin-top: 150px;
   }
 
   .faq-section-{{ section_id }} .faq-item:first-child {
-    border-block-start: 1px solid {{ section.settings.border_color }};
+    border-block-start: 1px solid var(--color-border);
   }
 
   .faq-section-{{ section_id }} .faq-question {
@@ -75,7 +80,7 @@
     text-align: left;
     font-size: {{ section.settings.question_size }}px;
     font-weight: 600;
-    color: {{ section.settings.text_color }};
+    color: var(--color-foreground);
     gap: 16px;
   }
 
@@ -84,7 +89,7 @@
   }
 
   .faq-section-{{ section_id }} .faq-question:focus-visible {
-    outline: 2px solid {{ section.settings.text_color }};
+    outline: 2px solid var(--color-foreground);
     outline-offset: 2px;
   }
 
@@ -103,7 +108,7 @@
     padding: 0 0 20px;
     font-size: {{ section.settings.answer_size }}px;
     line-height: 1.7;
-    color: {{ section.settings.text_color }};
+    color: var(--color-foreground);
     opacity: 0.85;
   }
 
@@ -120,7 +125,7 @@
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    color: {{ section.settings.text_color }};
+    color: var(--color-foreground);
     opacity: 0.6;
     text-decoration: none;
     margin-inline-start: auto;
@@ -134,7 +139,7 @@
   }
 
   .faq-section-{{ section_id }} .faq-link:focus-visible {
-    outline: 2px solid {{ section.settings.text_color }};
+    outline: 2px solid var(--color-foreground);
     outline-offset: 2px;
     opacity: 1;
   }
@@ -173,7 +178,8 @@
   }
 {% endstyle %}
 
-<div class="faq-section-{{ section_id }}" {{ section.shopify_attributes }}>
+<div class="faq-scheme-{{ section_id }} color-{{ section.settings.color_scheme }}" {{ section.shopify_attributes }}>
+<div class="faq-section-{{ section_id }}">
   {% if section.settings.title != blank %}
     {%- liquid
       assign title_tag = section.settings.title_heading_tag | default: 'h2'
@@ -224,6 +230,7 @@
       </details>
     {% endfor %}
   </div>
+</div>
 </div>
 
 {%- comment -%}
@@ -417,6 +424,12 @@
       "default": true
     },
     {
+      "type": "color_scheme",
+      "id": "color_scheme",
+      "label": "Color scheme",
+      "default": "scheme-1"
+    },
+    {
       "type": "header",
       "content": "Style"
     },
@@ -439,18 +452,6 @@
       "unit": "px",
       "label": "Answer text size",
       "default": 16
-    },
-    {
-      "type": "color",
-      "id": "text_color",
-      "label": "Text color",
-      "default": "#000000"
-    },
-    {
-      "type": "color",
-      "id": "border_color",
-      "label": "Border color",
-      "default": "#e5e5e5"
     },
     {
       "type": "color",

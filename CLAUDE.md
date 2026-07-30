@@ -135,7 +135,7 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 ### Directory structure
 
-README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `media-with-content` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
+README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
 
 ### Structured data
 
