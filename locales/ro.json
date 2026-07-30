@@ -363,7 +363,8 @@
       "size_guide_link_label": "TODO: Size guide",
       "custom_text_invalid": "TODO: Please fill out this field before adding to cart.",
       "vacation_acknowledgment_invalid": "TODO: Please acknowledge the shipping delay before adding to cart.",
-      "vacation_acknowledgment_value": "TODO: Yes"
+      "vacation_acknowledgment_value": "TODO: Yes",
+      "vacation_acknowledgment_value_dated": "TODO: Yes - processing begins after {{ date }}"
     }
   }
 }

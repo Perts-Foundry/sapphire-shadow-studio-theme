@@ -52,6 +52,21 @@
     <p class="announcement-bar__text">
       {{ settings.vacation_announcement_text }}
     </p>
+
+    {%- comment -%}
+      Whole-slide overlay link, same pattern as blocks/_announcement.liquid.
+      The fragment must match the `custom_anchor` of the vacation entry in
+      templates/page.faq.json (faq_item_vacation); sections/faq.liquid
+      handleizes it into the rendered id.
+    {%- endcomment -%}
+    <a
+      class="announcement-bar__link"
+      href="/pages/faq#away-from-studio"
+    >
+      <span class="visually-hidden">
+        {{ settings.vacation_announcement_text | strip_html }}
+      </span>
+    </a>
   </slideshow-slide>
 {%- endif -%}
 

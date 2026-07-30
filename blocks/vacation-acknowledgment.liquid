@@ -18,11 +18,13 @@
     HTML5 submit-time validation blocks Add to Cart until ticked. The terms
     div is the checkbox's `aria-describedby`: the label is short and does not
     carry the meaning on its own.
-  - Records the acknowledgment as a line-item property with a constant `Yes`
-    value under the merchant-editable `settings.vacation_property_label` key
-    (escaped: the label is operator text and must not be able to malform the
-    input's name attribute). For support-ticket triage, not a click-wrap
-    contract.
+  - Records the acknowledgment as a line-item property under the
+    merchant-editable `settings.vacation_property_label` key (escaped: the
+    label is operator text and must not be able to malform the input's name
+    attribute). The value embeds `settings.vacation_processing_date` ("Yes -
+    processing begins after August 15") so each order records the exact date
+    the customer acknowledged; blank date falls back to plain "Yes". For
+    support-ticket triage, not a click-wrap contract.
   - Renders its validation message as visible `role="alert"` text with
     `aria-invalid` and an `aria-describedby` append, because the native bubble
     alone does not satisfy WCAG 3.3.1.
@@ -63,12 +65,24 @@
 
   comment
     The property label is operator-editable global text; escape it so quotes
-    or brackets cannot malform the input's name attribute. The value is a
-    constant Yes.
+    or brackets cannot malform the input's name attribute. The value carries
+    the specific processing date the customer acknowledged
+    (settings.vacation_processing_date), so orders record which date was
+    agreed to; with the date setting blank it degrades to a plain Yes.
   endcomment
   assign property_label = settings.vacation_property_label | strip | default: 'Delayed processing acknowledged' | escape
   assign property_name = 'properties[' | append: property_label | append: ']'
-  assign ack_value = 'products.product.vacation_acknowledgment_value' | t
+  assign processing_date = settings.vacation_processing_date | strip
+  if processing_date == blank
+    assign ack_value = 'products.product.vacation_acknowledgment_value' | t
+  else
+    assign ack_value = 'products.product.vacation_acknowledgment_value_dated' | t: date: processing_date
+  endif
+  comment
+    The date is operator text and the checkbox snippet emits value="{{ value }}"
+    verbatim; escape so a stray quote cannot break out of the attribute.
+  endcomment
+  assign ack_value = ack_value | escape
 -%}
 
 {%- if settings.vacation_mode_enabled and terms != blank -%}

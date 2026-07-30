@@ -15,22 +15,36 @@ feature from the theme editor on the sync theme with no hand-authored PR:
 - **Popup**: `snippets/vacation-popup.liquid` + `assets/vacation-popup.js`,
   rendered from `layout/theme.liquid`, auto-opens once per browsing session
   (sessionStorage key `vacation-popup:seen`, fail-closed when storage is
-  blocked, never auto-opens in the theme editor).
+  blocked, never auto-opens in the theme editor). No light dismiss: a
+  capture-phase guard stops `DialogComponent`'s outside-click close, so the
+  popup closes only via the dismiss button, the X, or Esc (kept per the modal
+  pattern in docs/accessibility-patterns.md).
 - **Product-page checkbox**: `blocks/vacation-acknowledgment.liquid` +
   `assets/vacation-acknowledgment.js`, a trimmed clone of the return-policy
   acknowledgment (no variant-change untick; text from global settings since
   blocks cannot read each other's settings). Records a line-item property
-  named by `vacation_property_label` with constant value "Yes". Added as
-  `vacation_ack_001` to all five garment product templates.
+  named by `vacation_property_label` whose value embeds
+  `vacation_processing_date` ("Yes - processing begins after August 15"), so
+  each order records the exact date the customer acknowledged; a blank date
+  degrades to plain "Yes". Added as `vacation_ack_001` to all five garment
+  product templates.
 - **Shipping line**: `snippets/shipping-info.liquid` appends the
   `vacation_shipping_message` note in both branches, which surfaces on the
   product page and directly above the cart's checkout button.
 
 ### Operating constraints (the sync traps)
 
-- **Four independently dated messages must be updated together** before each
-  enable: announcement text, popup body, checkbox terms, shipping note. The
-  settings-group paragraph enumerates them; nothing reconciles them.
+- **Four independently dated settings must be updated together** before each
+  enable: popup body, checkbox terms, shipping note, and `vacation_processing_date`
+  (the announcement default carries no date). The settings-group paragraph
+  enumerates them; nothing reconciles them. `vacation_processing_date` matters
+  most: it is the date recorded on orders.
+- **The FAQ deep link is a repo-side contract**: the announcement slide links
+  (and the popup-body / checkbox-terms defaults link) to
+  `/pages/faq#away-from-studio`, which exists only while `faq_item_vacation`
+  in `templates/page.faq.json` keeps `custom_anchor: "away-from-studio"`.
+  Nothing validates the fragment; a removed or re-anchored FAQ entry turns
+  every vacation link into a scroll-to-top.
 - **Do not rename `vacation_property_label` mid-vacation**: the value is the
   line-item property key, so renaming splits the acknowledgment across orders.
 - **The gift-card template deliberately has no vacation checkbox**: nothing

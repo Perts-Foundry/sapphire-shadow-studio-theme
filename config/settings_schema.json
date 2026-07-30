@@ -2403,7 +2403,7 @@
     "settings": [
       {
         "type": "paragraph",
-        "content": "Turns on the vacation announcement, the once-per-session popup, the required delay checkbox on product pages, and the shipping-line note. Each message carries its own date: before enabling, update the announcement text, popup body, checkbox terms, and shipping note so they all state the same date."
+        "content": "Turns on the vacation announcement, the once-per-session popup, the required delay checkbox on product pages, and the shipping-line note. Each message carries its own date: before enabling, update the popup body, checkbox terms, shipping note, and Processing Date so they all state the same date."
       },
       {
         "type": "checkbox",
@@ -2415,21 +2415,22 @@
         "type": "inline_richtext",
         "id": "vacation_announcement_text",
         "label": "Announcement Text",
-        "default": "<strong>We're on a short break!</strong> Orders placed now ship after August 15",
+        "default": "<strong>We're away from the studio right now.</strong> Orders will be delayed",
+        "info": "The whole slide links to the away-from-the-studio FAQ entry.",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
         "type": "text",
         "id": "vacation_popup_heading",
         "label": "Popup Heading",
-        "default": "We're on a short break",
+        "default": "We're away from the studio right now. Orders will be delayed",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
         "type": "richtext",
         "id": "vacation_popup_body",
         "label": "Popup Body",
-        "default": "<p>You can still browse and order as usual, but orders placed while we're away will begin processing after August 15. Thanks for your patience!</p>",
+        "default": "<p>You can still browse and order as usual, but orders placed while we're away will begin processing after <strong>August 15</strong>. Thanks for your patience! <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
@@ -2437,7 +2438,7 @@
         "id": "vacation_checkbox_terms",
         "label": "Checkbox Terms",
         "info": "Leave blank to hide the product-page checkbox.",
-        "default": "<p><strong>Please note:</strong> we're on a short break. Orders placed now will begin processing after August 15.</p>",
+        "default": "<p><strong>Please note:</strong> we're away from the studio right now. Orders placed now will begin processing after <strong>August 15</strong>. <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
@@ -2453,6 +2454,14 @@
         "label": "Order Property Label",
         "info": "Names the acknowledgment recorded on the order. Avoid brackets or quotes, and do not rename while a vacation's orders are open: renaming splits the property across orders.",
         "default": "Delayed processing acknowledged",
+        "visible_if": "{{ settings.vacation_mode_enabled }}"
+      },
+      {
+        "type": "text",
+        "id": "vacation_processing_date",
+        "label": "Processing Date",
+        "info": "Recorded in the acknowledgment on each order (\"Yes - processing begins after ...\"). Keep it matching the date in the messages above.",
+        "default": "August 15",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {

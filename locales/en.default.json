@@ -386,7 +386,8 @@
       "size_guide_link_label": "Size guide",
       "custom_text_invalid": "Please fill out this field before adding to cart.",
       "vacation_acknowledgment_invalid": "Please acknowledge the shipping delay before adding to cart.",
-      "vacation_acknowledgment_value": "Yes"
+      "vacation_acknowledgment_value": "Yes",
+      "vacation_acknowledgment_value_dated": "Yes - processing begins after {{ date }}"
     }
   }
 }
