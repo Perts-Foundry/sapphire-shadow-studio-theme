@@ -43,7 +43,7 @@
           "type": "faq_item",
           "settings": {
             "question": "How long will my order take to arrive?",
-            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for all the details!</p>",
+            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for all the details!</p>",
             "custom_anchor": ""
           }
         },
