@@ -54,7 +54,9 @@
 
   .faq-section-{{ section_id }} .faq-item {
     border-block-end: 1px solid {{ section.settings.border_color }};
-    scroll-margin-top: 100px;
+    /* Clear the sticky header plus announcement bar when deep-linked
+       (e.g. the vacation surfaces' #away-from-studio links). */
+    scroll-margin-top: 150px;
   }
 
   .faq-section-{{ section_id }} .faq-item:first-child {
