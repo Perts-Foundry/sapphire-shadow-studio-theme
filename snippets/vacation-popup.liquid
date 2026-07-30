@@ -1,0 +1,115 @@
+{%- doc -%}
+  Vacation-mode popup dialog, rendered once from layout/theme.liquid (inside a
+  `settings.vacation_mode_enabled` guard there; the guard here is
+  belt-and-braces so a stray render elsewhere stays safe). Auto-opens once per
+  browsing session via assets/vacation-popup.js; a blank popup heading
+  disables it entirely.
+
+  Deliberately not rendered from layout/password.liquid: the password page has
+  no orders to delay.
+
+  @example
+    {% render 'vacation-popup' %}
+{%- enddoc -%}
+
+{%- liquid
+  assign popup_heading = settings.vacation_popup_heading | strip
+-%}
+
+{%- if settings.vacation_mode_enabled and popup_heading != blank -%}
+  <script
+    src="{{ 'vacation-popup.js' | asset_url }}"
+    type="module"
+    fetchpriority="low"
+  ></script>
+
+  <vacation-popup-component class="vacation-popup">
+    <dialog
+      ref="dialog"
+      class="vacation-popup__content dialog-modal color-{{ settings.popover_color_scheme }}"
+      scroll-lock
+      aria-labelledby="VacationPopupHeading"
+    >
+      {%- comment -%}
+        Close button first in DOM per the modal pattern in
+        docs/accessibility-patterns.md: it is the first tab stop, so a
+        keyboard user can always leave immediately.
+      {%- endcomment -%}
+      <button
+        ref="closeButton"
+        on:click="/closeDialog"
+        class="button button-unstyled close-button vacation-popup__close"
+        aria-label="{{ 'accessibility.close_dialog' | t }}"
+      >
+        {{- 'icon-close.svg' | inline_asset_content -}}
+      </button>
+
+      <h2 id="VacationPopupHeading" class="vacation-popup__heading h4">
+        {{ popup_heading }}
+      </h2>
+
+      <div class="vacation-popup__body rte">
+        {{ settings.vacation_popup_body }}
+      </div>
+
+      <button
+        on:click="/closeDialog"
+        class="button vacation-popup__dismiss"
+      >
+        {{ 'content.vacation_popup_dismiss' | t }}
+      </button>
+    </dialog>
+  </vacation-popup-component>
+{%- endif -%}
+
+{% stylesheet %}
+  .vacation-popup__content {
+    box-shadow: var(--shadow-popover);
+    border: var(--style-border-popover);
+    border-radius: var(--style-border-radius-popover);
+    background-color: var(--color-background);
+    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
+    max-width: var(--normal-content-width);
+    max-height: var(--modal-max-height);
+
+    @media screen and (min-width: 750px) {
+      padding: var(--padding-5xl);
+    }
+  }
+
+  .vacation-popup__content[open] {
+    animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .vacation-popup__content.dialog-closing {
+    animation: modalSlideOutTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .vacation-popup__close {
+    top: var(--margin-2xs);
+    right: var(--margin-2xs);
+    opacity: 0.8;
+    animation: none;
+  }
+
+  .vacation-popup__heading {
+    margin-block: 0 var(--padding-sm);
+  }
+
+  .vacation-popup__body {
+    margin-block-end: var(--padding-lg);
+  }
+
+  .vacation-popup__body p:first-child {
+    margin-block-start: 0;
+  }
+
+  .vacation-popup__body p:last-child {
+    margin-block-end: 0;
+  }
+
+  .vacation-popup__dismiss {
+    display: block;
+    margin-inline: auto;
+  }
+{% endstylesheet %}

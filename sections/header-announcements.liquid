@@ -1,4 +1,15 @@
-{% if section.blocks.size > 1 %}
+{%- comment -%}
+  Carousel chrome is gated on the number of blocks that will actually render,
+  not section.blocks.size: a dormant _vacation-announcement (or a blanked
+  announcement) would otherwise count toward the threshold and leave dead
+  arrows, autoplay, and pause controls around a single visible slide.
+{%- endcomment -%}
+{%- capture visible_block_count -%}
+  {%- render 'announcement-visible-blocks', blocks: section.blocks, output: 'count' -%}
+{%- endcapture -%}
+{%- assign visible_block_count = visible_block_count | strip | plus: 0 -%}
+
+{% if visible_block_count > 1 %}
   <script
     src="{{ 'announcement-bar.js' | asset_url }}"
     type="module"
@@ -14,7 +25,7 @@
   {% liquid
     assign autoplay = false
     assign show_arrows = false
-    if section.blocks.size > 1
+    if visible_block_count > 1
       assign autoplay = true
       assign show_arrows = true
     endif
@@ -292,6 +303,9 @@
   "blocks": [
     {
       "type": "_announcement"
+    },
+    {
+      "type": "_vacation-announcement"
     }
   ],
   "enabled_on": {

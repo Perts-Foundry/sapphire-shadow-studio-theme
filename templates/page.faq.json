@@ -43,8 +43,16 @@
           "type": "faq_item",
           "settings": {
             "question": "How long will my order take to arrive?",
-            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for all the details!</p>",
+            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for all the details!</p>",
             "custom_anchor": ""
+          }
+        },
+        "faq_item_vacation": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What happens when we are away from the studio?",
+            "answer": "<p>When we are away from the studio we do not process orders, as we are only a two-person team. Any orders placed while we are away will begin processing on the date mentioned on our site.</p><p>Once processing resumes, our existing <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> applies from that point.</p>",
+            "custom_anchor": "away-from-studio"
           }
         },
         "faq_item_eFjiBw": {
@@ -116,6 +124,7 @@
         "faq_item_hWDtXx",
         "faq_item_cKhCmD",
         "faq_item_bAkNEw",
+        "faq_item_vacation",
         "faq_item_eFjiBw",
         "faq_item_VPTVLm",
         "faq_item_qQdxkM",

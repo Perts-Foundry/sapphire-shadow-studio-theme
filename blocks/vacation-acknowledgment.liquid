@@ -1,0 +1,225 @@
+{%- doc -%}
+  Required acknowledgment of vacation-mode processing delays. A close sibling
+  of blocks/return-policy-acknowledgment.liquid, cloned rather than shared so a
+  seasonal feature cannot regress the battle-tested final-sale gate. Two
+  deliberate differences:
+
+  - All text comes from global theme settings (Vacation Mode group), not block
+    settings: the block sits in five product templates and blocks cannot read
+    each other's settings, so globals are the single source of truth. The
+    whole block is dormant unless `settings.vacation_mode_enabled` is on AND
+    `settings.vacation_checkbox_terms` is non-blank.
+  - No variant-change untick: the delay applies to every variant equally, so
+    silently clearing the box on a size change would be pure friction.
+
+  Preserved mechanics:
+
+  - A required checkbox bound to the product form via `form="..."`, so native
+    HTML5 submit-time validation blocks Add to Cart until ticked. The terms
+    div is the checkbox's `aria-describedby`: the label is short and does not
+    carry the meaning on its own.
+  - Records the acknowledgment as a line-item property under the
+    merchant-editable `settings.vacation_property_label` key (escaped: the
+    label is operator text and must not be able to malform the input's name
+    attribute). The value embeds `settings.vacation_processing_date` ("Yes -
+    processing begins after August 15") so each order records the exact date
+    the customer acknowledged; blank date falls back to plain "Yes". For
+    support-ticket triage, not a click-wrap contract.
+  - Renders its validation message as visible `role="alert"` text with
+    `aria-invalid` and an `aria-describedby` append, because the native bubble
+    alone does not satisfy WCAG 3.3.1.
+  - Hides the accelerated-checkout container while unticked via a fail-closed
+    `data-vacation-pending` `:has()` rule (documented in
+    blocks/accelerated-checkout.liquid). Composes with the return-policy gate:
+    each rule independently hides the same container, so it shows only when
+    neither acknowledgment is pending.
+  - Window capture-phase interception of the sticky add-to-cart puppet click,
+    which must stay even though return-policy also provides one: templates
+    without the return-policy block (shift-fuel) have no other interceptor,
+    and double interception is benign since both call whole-form
+    reportValidity().
+
+  The schema declares `"tag": null` and this file emits its own
+  `<vacation-acknowledgment-component>` root: a schema-generated tag renders
+  even when the block body is empty, and the fail-closed `:has()` rule would
+  match that empty element and hide accelerated checkout with no checkbox
+  present to ever un-hide it. Do not move the element back into the schema's
+  `tag`.
+
+  This block depends on a sibling `buy-buttons` block in the same section: the
+  `product_form_id` is derived from the section id
+  (`BuyButtons-ProductForm-{section.id}`) and the `<product-form-component>`
+  element is queried within the section root by JS.
+{%- enddoc -%}
+
+{%- liquid
+  assign block_settings = block.settings
+  assign product_form_id = 'BuyButtons-ProductForm-' | append: section.id
+  assign element_id = 'VacationAck-' | append: block.id
+  assign terms_id = 'VacationAckTerms-' | append: block.id
+  assign error_id = 'VacationAckError-' | append: block.id
+  assign label_text = settings.vacation_checkbox_label
+  assign terms = settings.vacation_checkbox_terms
+
+  assign product_resource = closest.product
+
+  comment
+    The property label is operator-editable global text; escape it so quotes
+    or brackets cannot malform the input's name attribute. The value carries
+    the specific processing date the customer acknowledged
+    (settings.vacation_processing_date), so orders record which date was
+    agreed to; with the date setting blank it degrades to a plain Yes.
+  endcomment
+  assign property_label = settings.vacation_property_label | strip | default: 'Delayed processing acknowledged' | escape
+  assign property_name = 'properties[' | append: property_label | append: ']'
+  assign processing_date = settings.vacation_processing_date | strip
+  if processing_date == blank
+    assign ack_value = 'products.product.vacation_acknowledgment_value' | t
+  else
+    assign ack_value = 'products.product.vacation_acknowledgment_value_dated' | t: date: processing_date
+  endif
+  comment
+    The date is operator text and the checkbox snippet emits value="{{ value }}"
+    verbatim; escape so a stray quote cannot break out of the attribute.
+  endcomment
+  assign ack_value = ack_value | escape
+-%}
+
+{%- if settings.vacation_mode_enabled and terms != blank -%}
+  <vacation-acknowledgment-component
+    class="spacing-style"
+    style="{% render 'spacing-style', settings: block_settings %}"
+    data-product-id="{{ product_resource.id }}"
+    {{ block.shopify_attributes }}
+  >
+    <div id="{{ terms_id }}" class="vacation-acknowledgment__terms">{{ settings.vacation_checkbox_terms }}</div>
+
+    {% render 'checkbox',
+      name: property_name,
+      value: ack_value,
+      label: label_text,
+      id: element_id,
+      checked: false,
+      events: 'on:change="/handleChange"',
+      disabled: false,
+      required: true,
+      formId: product_form_id,
+      inputRef: 'checkbox',
+      describedBy: terms_id
+    %}
+
+    {%- comment -%}
+      The visible error message. Empty until JS fills it, so it never occupies
+      space or announces on a valid form. `role="alert"` announces the moment
+      it is filled; the JS pairs it with `aria-invalid` on the checkbox and
+      appends this id to the checkbox's `aria-describedby`.
+    {%- endcomment -%}
+    <p
+      id="{{ error_id }}"
+      class="vacation-acknowledgment__error"
+      ref="errorMessage"
+      role="alert"
+      hidden
+    ></p>
+
+    {%- comment -%}
+      Translated string source for JS. Permanently hidden; the JS reads
+      textContent.
+    {%- endcomment -%}
+    <span hidden ref="invalidMessage">
+      {{- 'products.product.vacation_acknowledgment_invalid' | t | escape -}}
+    </span>
+
+    <noscript>
+      <style>
+        product-form-component [ref="acceleratedCheckoutButtonContainer"] { display: none; }
+      </style>
+    </noscript>
+  </vacation-acknowledgment-component>
+{%- endif -%}
+
+{% stylesheet %}
+  vacation-acknowledgment-component {
+    display: block;
+    width: 100%;
+  }
+
+  vacation-acknowledgment-component .vacation-acknowledgment__terms {
+    margin-block-end: var(--padding-sm);
+    font-size: var(--font-size--xs);
+  }
+
+  vacation-acknowledgment-component .vacation-acknowledgment__terms p {
+    margin-block: 0 var(--padding-sm);
+  }
+
+  vacation-acknowledgment-component .vacation-acknowledgment__error {
+    margin-block: var(--padding-xs) 0;
+    font-size: var(--font-size--xs);
+    color: var(--color-error, currentcolor);
+    font-weight: bold;
+  }
+
+  vacation-acknowledgment-component .vacation-acknowledgment__error[hidden] {
+    display: none;
+  }
+
+  /*
+   * The shared checkbox snippet ships with white-space: nowrap +
+   * text-overflow: ellipsis on .checkbox__label-text; the label here is
+   * operator-editable, so keep the wrap override. Matches
+   * blocks/return-policy-acknowledgment.liquid.
+   */
+  vacation-acknowledgment-component .checkbox__label {
+    align-items: flex-start;
+    line-height: 1.4;
+    margin-block-start: var(--padding-sm);
+  }
+
+  vacation-acknowledgment-component .checkbox__label-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    font-weight: bold;
+  }
+
+  /*
+   * Cross-block gate. Fail-closed: matches whenever the component does NOT
+   * have data-vacation-pending='false', covering both the pre-JS state and
+   * the unchecked state. Independent of (and composing with) the
+   * return-policy gate on the same container: accelerated checkout shows
+   * only when no pending acknowledgment remains.
+   *
+   * Cross-block dependency: targets the accelerated-checkout container by
+   * its `ref` attribute (see blocks/accelerated-checkout.liquid). Renaming
+   * the ref will silently disable the gate.
+   */
+  .shopify-section:has(
+    vacation-acknowledgment-component:not([data-vacation-pending='false'])
+  ) [ref='acceleratedCheckoutButtonContainer'] {
+    display: none;
+  }
+{% endstylesheet %}
+
+<script
+  src="{{ 'vacation-acknowledgment.js' | asset_url }}"
+  type="module"
+  fetchpriority="low"
+></script>
+
+{% schema %}
+{
+  "name": "t:names.vacation_acknowledgment",
+  "tag": null,
+  "settings": [
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-start", "label": "t:settings.left", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-end", "label": "t:settings.right", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 }
+  ],
+  "presets": [
+    { "name": "t:names.vacation_acknowledgment", "category": "t:categories.product" }
+  ]
+}
+{% endschema %}

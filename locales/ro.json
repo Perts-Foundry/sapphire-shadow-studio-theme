@@ -273,6 +273,7 @@
     "price_at": "la",
     "price_range": "Intervalul de prețuri",
     "cancel": "Anulează",
+    "vacation_popup_dismiss": "TODO: Got it",
     "product_subtotal": "Subtotal produs",
     "quantity_per_item": "/buc",
     "remove_all": "Elimină tot",
@@ -360,7 +361,10 @@
       "return_policy_acknowledgment_cleared": "TODO: Your acknowledgement was cleared because you changed an option. Please review the terms and agree again.",
       "return_policy_acknowledgment_value": "TODO: Yes",
       "size_guide_link_label": "TODO: Size guide",
-      "custom_text_invalid": "TODO: Please fill out this field before adding to cart."
+      "custom_text_invalid": "TODO: Please fill out this field before adding to cart.",
+      "vacation_acknowledgment_invalid": "TODO: Please acknowledge the shipping delay before adding to cart.",
+      "vacation_acknowledgment_value": "TODO: Yes",
+      "vacation_acknowledgment_value_dated": "TODO: Yes - processing begins after {{ date }}"
     }
   }
 }

@@ -1,0 +1,84 @@
+{%- doc -%}
+  Vacation-mode announcement slide. Renders one extra slide in the announcement
+  bar carousel while `settings.vacation_mode_enabled` is on and the global
+  `settings.vacation_announcement_text` is non-blank; renders nothing otherwise
+  (the carousel counts only rendered `ref="slides[]"`, so a dormant block is
+  safe at any position in `block_order`).
+
+  Text lives in theme settings (Vacation Mode group), not block settings, so
+  one edit updates the storefront regardless of where the block sits. Typography
+  is fixed to match the sibling `_announcement` slides' configured style.
+
+  The schema declares `"tag": null` and this file emits its own single
+  top-level `<slideshow-slide>`: a schema-generated wrapper would render an
+  empty slide while vacation mode is off, and the carousel would rotate
+  through a blank frame.
+{%- enddoc -%}
+
+{%- liquid
+  assign plain_text = settings.vacation_announcement_text | strip_newlines | strip_html | strip
+  assign block_index = section.blocks | find_index: 'id', block.id
+  capture first_visible_index
+    render 'announcement-visible-blocks', blocks: section.blocks
+  endcapture
+  assign first_visible_index = first_visible_index | strip | plus: 0
+-%}
+
+{%- if settings.vacation_mode_enabled and plain_text != '' -%}
+  <slideshow-slide
+    ref="slides[]"
+    class="
+      announcement-bar__slide
+      text-block
+      text-block--{{ block.id }}
+      text-block--align-center
+      text-block--full-width
+      custom-typography
+      custom-font-size
+    "
+    style="
+      --font-family: var(--font-subheading--family);
+      --font-size: 0.75rem;
+      --font-weight: var(--font-subheading--weight);
+      --letter-spacing: var(--letter-spacing--body-normal);
+      --text-transform: none;
+      --width: 100%;
+      --text-align: center;
+      --line-height: 1;
+    "
+    {{ block.shopify_attributes }}
+    aria-hidden="{% if block_index == first_visible_index %}false{% else %}true{% endif %}"
+  >
+    <p class="announcement-bar__text">
+      {{ settings.vacation_announcement_text }}
+    </p>
+
+    {%- comment -%}
+      Whole-slide overlay link, same pattern as blocks/_announcement.liquid.
+      The fragment must match the `custom_anchor` of the vacation entry in
+      templates/page.faq.json (faq_item_vacation); sections/faq.liquid
+      handleizes it into the rendered id.
+    {%- endcomment -%}
+    <a
+      class="announcement-bar__link"
+      href="/pages/faq#away-from-studio"
+    >
+      <span class="visually-hidden">
+        {{ settings.vacation_announcement_text | strip_html }}
+      </span>
+    </a>
+  </slideshow-slide>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "t:names.vacation_announcement",
+  "tag": null,
+  "settings": [],
+  "presets": [
+    {
+      "name": "t:names.vacation_announcement"
+    }
+  ]
+}
+{% endschema %}

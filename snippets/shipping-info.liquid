@@ -1,6 +1,8 @@
 {% doc %}
   Displays shipping information with dynamic messaging based on cart total.
-  Shows flat rate shipping and free shipping threshold.
+  Shows flat rate shipping and free shipping threshold. When vacation mode is
+  enabled (settings.vacation_mode_enabled), appends the vacation shipping note
+  (settings.vacation_shipping_message) to the text in both branches.
 
   @param {number} [product_price] - Product price to use for calculating shipping (product page)
   @param {boolean} [cart_context] - Set to true when rendering in cart context
@@ -37,6 +39,10 @@
       assign qualifies_for_free_shipping = false
     endif
   endif
+
+  if settings.vacation_mode_enabled
+    assign vacation_note = settings.vacation_shipping_message | strip
+  endif
 %}
 
 <a href="/policies/shipping-policy" class="shipping-info">
@@ -51,6 +57,7 @@
       {% else %}
         Free shipping on this order
       {% endif %}
+      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
     </span>
   {% else %}
     <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -61,6 +68,7 @@
     </svg>
     <span class="shipping-info__text">
       ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
+      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
     </span>
   {% endif %}
 </a>

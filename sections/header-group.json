@@ -55,12 +55,19 @@
             "case": "none"
           },
           "blocks": {}
+        },
+        "vacation_announcement_001": {
+          "type": "_vacation-announcement",
+          "name": "t:names.vacation_announcement",
+          "settings": {},
+          "blocks": {}
         }
       },
       "block_order": [
         "announcement_JzbHfJ",
         "announcement_gGTzRP",
-        "announcement_NGhH78"
+        "announcement_NGhH78",
+        "vacation_announcement_001"
       ],
       "name": "t:names.announcement_bar",
       "settings": {

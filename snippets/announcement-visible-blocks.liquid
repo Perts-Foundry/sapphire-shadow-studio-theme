@@ -1,0 +1,71 @@
+{%- doc -%}
+  Announcement-bar block visibility, computed in one place. Outputs either the
+  index (into the given blocks array) of the first block that will actually
+  render (-1 when none will), or the count of blocks that will render.
+
+  Two consumers, both replacing raw `section.blocks`-based checks that a
+  dormant block would miscount:
+  - `_announcement` / `_vacation-announcement` compare their own index against
+    `output: 'index'` for the initial aria-hidden state (a dormant vacation
+    slide or blank announcement at index 0 must not hide every slide until JS
+    hydrates).
+  - `header-announcements.liquid` gates the carousel chrome (script, autoplay,
+    arrows, pause buttons) on `output: 'count'`, so one real announcement plus
+    a dormant vacation block does not render dead controls.
+
+  Visibility rules mirror each block's own render guard exactly; keep them in
+  sync when either guard changes:
+  - `_announcement`: visible when its stripped `text` setting is non-blank.
+  - `_vacation-announcement`: visible when `settings.vacation_mode_enabled` and
+    the stripped global `settings.vacation_announcement_text` is non-blank.
+  Unknown block types are treated as visible, so a future block type fails
+  toward "shown and counted" rather than a blank bar.
+
+  @param {object} blocks - The announcement section's blocks (section.blocks)
+  @param {string} [output] - 'index' (default) for the first visible block's
+    index, or 'count' for the number of visible blocks
+
+  @example
+    {% capture first_visible_index %}
+      {%- render 'announcement-visible-blocks', blocks: section.blocks -%}
+    {% endcapture %}
+    {% assign first_visible_index = first_visible_index | strip | plus: 0 %}
+{%- enddoc -%}
+{%- liquid
+  assign visible_count = 0
+  assign first_visible_index = -1
+
+  for candidate in blocks
+    assign candidate_visible = false
+
+    case candidate.type
+      when '_announcement'
+        assign candidate_text = candidate.settings.text | strip_newlines | strip_html | strip
+        if candidate_text != ''
+          assign candidate_visible = true
+        endif
+      when '_vacation-announcement'
+        if settings.vacation_mode_enabled
+          assign candidate_text = settings.vacation_announcement_text | strip_newlines | strip_html | strip
+          if candidate_text != ''
+            assign candidate_visible = true
+          endif
+        endif
+      else
+        assign candidate_visible = true
+    endcase
+
+    if candidate_visible
+      assign visible_count = visible_count | plus: 1
+      if first_visible_index == -1
+        assign first_visible_index = forloop.index0
+      endif
+    endif
+  endfor
+
+  if output == 'count'
+    echo visible_count
+  else
+    echo first_visible_index
+  endif
+-%}

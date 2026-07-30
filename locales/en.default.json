@@ -174,6 +174,7 @@
     "breadcrumb_home": "Home",
     "breadcrumb_collections": "Collections",
     "cancel": "Cancel",
+    "vacation_popup_dismiss": "Got it",
     "discount": "Discount",
     "account_title": "Account",
     "terms_and_policies": "Terms and Policies",
@@ -383,7 +384,10 @@
       "return_policy_acknowledgment_cleared": "Your acknowledgement was cleared because you changed an option. Please review the terms and agree again.",
       "return_policy_acknowledgment_value": "Yes",
       "size_guide_link_label": "Size guide",
-      "custom_text_invalid": "Please fill out this field before adding to cart."
+      "custom_text_invalid": "Please fill out this field before adding to cart.",
+      "vacation_acknowledgment_invalid": "Please acknowledge the shipping delay before adding to cart.",
+      "vacation_acknowledgment_value": "Yes",
+      "vacation_acknowledgment_value_dated": "Yes - processing begins after {{ date }}"
     }
   }
 }

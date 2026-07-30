@@ -26,8 +26,11 @@
   {%- comment -%}
     The ref="acceleratedCheckoutButtonContainer" attribute below is also used as
     a CSS hook by blocks/return-policy-acknowledgment.liquid (which hides this
-    container while the final-sale acknowledgement checkbox is unticked).
-    Renaming the ref will silently disable that gate.
+    container while the final-sale acknowledgement checkbox is unticked) and by
+    blocks/vacation-acknowledgment.liquid (same mechanism for the vacation-mode
+    delay checkbox; both gates compose, so the container shows only when
+    neither acknowledgment is pending). Renaming the ref will silently disable
+    both gates.
   {%- endcomment -%}
   <div
     class="accelerated-checkout-block"
