@@ -19,8 +19,11 @@ Two rendering bugs fixed rather than worked around:
   `width: fit-content` never emit `--text-align` (see
   `snippets/text.liquid`), so their `alignment: left` was silently ignored and
   the section's centered `--horizontal-alignment` leaked in as the default.
-  Both bullet-list body blocks now use `width: 100%` + `max_width: narrow`,
-  the code path that honors the alignment setting.
+  Both bullet-list body blocks now use `width: 100%` + `max_width: normal`,
+  the code path that honors the alignment setting. (A desktop visual pass then
+  centered the text sections' lockups and body columns on one axis; the body
+  copy stays left-aligned inside its centered `normal`-width column, since
+  `narrow` at 22.75em left-pinned a skinny column under full-width headings.)
 - **Headings referenced `var(--font-primary--family)`, which is defined
   nowhere in the theme** and is not even an option in the text block's font
   select. It is inert on non-custom type presets, so this was hygiene, not a
