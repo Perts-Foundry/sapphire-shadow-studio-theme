@@ -26,7 +26,13 @@ word to 1.3em because "Custom Orders" is longer than "Obsessed". The four
 process steps become rounded `scheme-3` cards (24px radius, 28px padding) on
 the white section, echoing the homepage product-card language; the
 numbered-circle CSS keys off `h4` elements in DOM order, so the card wrappers
-do not disturb it.
+do not disturb it. Because the two row-direction wrappers size each card to
+its own text, the `hiw_styles` block also converts the section content
+wrapper to a 2-column grid at 750px+: the rows and their `group-block-content`
+divs collapse via `display: contents`, the lockup spans both columns, and
+`grid-auto-rows: 1fr` equalizes all four cards to the tallest. The
+`:nth-child(2..4)` selectors bind to the section's block order (styles,
+lockup, row 1, row 2); reordering blocks in the editor breaks the grid.
 
 Two rendering bugs fixed rather than worked around:
 
