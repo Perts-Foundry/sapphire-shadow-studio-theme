@@ -13,6 +13,17 @@ scheme rhythm (navy / scheme-3 / scheme-1 / scheme-3 / white FAQ / scheme-3),
 two row-direction group wrappers. The oversized `jumbo-text` closing block,
 which overflowed the viewport on mobile, is replaced by the card.
 
+A second pass ports two homepage signature elements. The hero section
+converts from the generic `section` type to `hero` and reuses the homepage's
+custom-liquid headline lockup (Dancing Script cursive word flanked by
+`sss-star.svg` stars); no hero media is set, so the section renders as a navy
+band, and a scoped `.hero-lockup--custom-orders` override drops the cursive
+word to 1.3em because "Custom Orders" is longer than "Obsessed". The four
+process steps become rounded `scheme-3` cards (24px radius, 28px padding) on
+the white section, echoing the homepage product-card language; the
+numbered-circle CSS keys off `h4` elements in DOM order, so the card wrappers
+do not disturb it.
+
 Two rendering bugs fixed rather than worked around:
 
 - **Bullet lists rendered center-aligned with left markers.** Text blocks with
