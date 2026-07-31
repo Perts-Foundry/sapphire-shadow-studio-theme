@@ -358,7 +358,11 @@
   {{ media_slot_1 }}
   {{ media_slot_2 }}
 
-  {% if media_count == 0 %}
+  {% comment %}
+    The placeholder is an editor affordance only: a published hero with no
+    media renders its color scheme (the Custom Orders hero is a navy band).
+  {% endcomment %}
+  {% if media_count == 0 and request.design_mode %}
     {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image' }}
   {%- endif -%}
 {% endcapture %}
@@ -390,7 +394,7 @@
         sizes: sizes
     }}
   {% endif %}
-  {% if media_count == 0 %}
+  {% if media_count == 0 and request.design_mode %}
     {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image' }}
   {% endif %}
 {% endcapture %}
@@ -474,7 +478,7 @@
               sizes: sizes
             }}
         {% endif %}
-        {% if media_count == 0 %}
+        {% if media_count == 0 and request.design_mode %}
           {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image hero__image--mobile' }}
         {% endif %}
       {% endif %}

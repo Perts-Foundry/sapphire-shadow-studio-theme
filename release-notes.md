@@ -17,7 +17,11 @@ A second pass ports two homepage signature elements. The hero section
 converts from the generic `section` type to `hero` and reuses the homepage's
 custom-liquid headline lockup (Dancing Script cursive word flanked by
 `sss-star.svg` stars); no hero media is set, so the section renders as a navy
-band, and a scoped `.hero-lockup--custom-orders` override drops the cursive
+band. That surfaced a latent hero.liquid behavior: a media-less hero rendered
+the `hero-apparel-1` placeholder SVG on the storefront, not just in the
+editor, so the three placeholder emissions are now guarded on
+`request.design_mode` (inert for the homepage hero, which always has media).
+A scoped `.hero-lockup--custom-orders` override drops the cursive
 word to 1.3em because "Custom Orders" is longer than "Obsessed". The four
 process steps become rounded `scheme-3` cards (24px radius, 28px padding) on
 the white section, echoing the homepage product-card language; the
