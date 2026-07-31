@@ -1,5 +1,87 @@
 # Release Notes
 
+## Custom Orders redesign + FAQ section color-scheme migration (unreleased)
+
+### What changed
+
+`templates/page.custom-orders.json` is rebuilt to match the homepage's design
+language: uppercase eyebrow + heading lockups above every section, a navy
+`sss-dark-scheme` hero and a rounded navy closing-CTA card (cloned from the
+homepage's `closing_Zx4Vn8` card, with fresh block keys), an alternating
+scheme rhythm (navy / scheme-3 / scheme-1 / scheme-3 / white FAQ / scheme-3),
+72px section padding, and the four process steps arranged as a 2x2 grid via
+two row-direction group wrappers. The oversized `jumbo-text` closing block,
+which overflowed the viewport on mobile, is replaced by the card.
+
+A second pass ports two homepage signature elements. The hero section
+converts from the generic `section` type to `hero` and reuses the homepage's
+custom-liquid headline lockup (Dancing Script cursive word flanked by
+`sss-star.svg` stars); no hero media is set, so the section renders as a navy
+band. That surfaced a latent hero.liquid behavior: a media-less hero rendered
+the `hero-apparel-1` placeholder SVG on the storefront, not just in the
+editor, so the three placeholder emissions are now guarded on
+`request.design_mode` (inert for the homepage hero, which always has media).
+A scoped `.hero-lockup--custom-orders` override drops the cursive
+word to 1.3em because "Custom Orders" is longer than "Obsessed". The four
+process steps become rounded `scheme-3` cards (24px radius, 28px padding) on
+the white section, echoing the homepage product-card language; the
+numbered-circle CSS keys off `h4` elements in DOM order, so the card wrappers
+do not disturb it. Because the two row-direction wrappers size each card to
+its own text, the `hiw_styles` block also converts the section content
+wrapper to a 2-column grid at 750px+: the rows and their `group-block-content`
+divs collapse via `display: contents`, the lockup spans both columns, and
+`grid-auto-rows: 1fr` equalizes all four cards to the tallest. The
+`:nth-child(2..4)` selectors bind to the section's block order (styles,
+lockup, row 1, row 2); reordering blocks in the editor breaks the grid.
+
+Two rendering bugs fixed rather than worked around:
+
+- **Bullet lists rendered center-aligned with left markers.** Text blocks with
+  `width: fit-content` never emit `--text-align` (see
+  `snippets/text.liquid`), so their `alignment: left` was silently ignored and
+  the section's centered `--horizontal-alignment` leaked in as the default.
+  Both bullet-list body blocks now use `width: 100%` + `max_width: normal`,
+  the code path that honors the alignment setting. (A desktop visual pass then
+  centered the text sections' lockups and body columns on one axis; the body
+  copy stays left-aligned inside its centered `normal`-width column, since
+  `narrow` at 22.75em left-pinned a skinny column under full-width headings.)
+- **Headings referenced `var(--font-primary--family)`, which is defined
+  nowhere in the theme** and is not even an option in the text block's font
+  select. It is inert on non-custom type presets, so this was hygiene, not a
+  visible fix; this template now uses `var(--font-heading--family)`. The same
+  stale value remains in 15 other templates and is deliberately out of scope
+  here (candidate for a separate cleanup pass).
+
+`sections/faq.liquid` moves onto the color-scheme system: the hardcoded
+`text_color` / `border_color` settings are removed and the CSS reads
+`var(--color-foreground)`, `var(--color-foreground-heading)`, and
+`var(--color-border)` instead; a `color_scheme` setting (default `scheme-1`)
+plus a scheme-classed wrapper div (which also carries
+`section.shopify_attributes`) give both instances an explicit color contract;
+the title uses `var(--font-heading--family)`; max-width widens from 600px to
+720px. `highlight_color` deliberately stays a hex picker: the deep-link flash
+is a semantic highlight (yellow on every scheme), not a scheme color. This
+supersedes the stage-2a claim below that the FAQ style block sets its colours
+explicitly; colour now comes from scheme variables.
+
+### Ordering
+
+The stage-2a/2b entries below record that Shopify validates a JSON template
+against the section schema already stored on the theme, which forced that pair
+to deploy in two stages. This change avoids the hazard instead of re-testing
+it: neither `page.faq.json` nor `page.custom-orders.json` sets the new
+`color_scheme` setting, so no template references a setting the live schema
+does not know, and the schema default carries the value. Single-stage deploy
+is safe in both directions (the removed `text_color` / `border_color` values
+are cleaned out of both templates in the same commit, and unknown instance
+settings are ignored at render anyway).
+
+### Rollback
+
+`git revert` plus deploy, as one unit. The removed color settings come back
+with their old stored values on revert since the template cleanup is in the
+same commit.
+
 ## Vacation mode: one admin toggle, four storefront surfaces (unreleased)
 
 ### What changed

@@ -10,7 +10,8 @@
   the lockup, which lands after the hero video request, so the headline paints in
   the fallback script face and then swaps. Unconditional, matching the @font-face
   it pairs with: a hero with no .hero-lockup markup pays 42 KB for nothing, which
-  is acceptable while this section is effectively homepage-only.
+  is acceptable while every page using this section renders a lockup (today the
+  homepage and Custom Orders heroes).
 {% endcomment %}
 {%- comment -%}
   preload_tag rather than a hand-written <link>: the input here is asset_url
@@ -357,7 +358,11 @@
   {{ media_slot_1 }}
   {{ media_slot_2 }}
 
-  {% if media_count == 0 %}
+  {% comment %}
+    The placeholder is an editor affordance only: a published hero with no
+    media renders its color scheme (the Custom Orders hero is a navy band).
+  {% endcomment %}
+  {% if media_count == 0 and request.design_mode %}
     {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image' }}
   {%- endif -%}
 {% endcapture %}
@@ -389,7 +394,7 @@
         sizes: sizes
     }}
   {% endif %}
-  {% if media_count == 0 %}
+  {% if media_count == 0 and request.design_mode %}
     {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image' }}
   {% endif %}
 {% endcapture %}
@@ -473,7 +478,7 @@
               sizes: sizes
             }}
         {% endif %}
-        {% if media_count == 0 %}
+        {% if media_count == 0 and request.design_mode %}
           {{ 'hero-apparel-1' | placeholder_svg_tag: 'hero__image hero__image--mobile' }}
         {% endif %}
       {% endif %}
