@@ -20,7 +20,7 @@
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs"
   },
   "devDependencies": {
-    "@shopify/cli": "4.5.2",
+    "@shopify/cli": "4.6.0",
     "sharp": "0.35.3"
   }
 }
