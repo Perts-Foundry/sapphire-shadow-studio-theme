@@ -129,8 +129,10 @@ matrix in `lib/heic.mjs`, which is a visual change and therefore a `styleVersion
 
 ## Tests
 
-`npm run applique-grid:test`: node:test, no network, temp dirs only, **operator-run locally and
-deliberately not wired into CI** (operator decision; CI on PRs stays as-is). The cohesion test
-pins the shipped template's `pattern_options` byte-equal to the shipped registry's derived text,
-except when the registry byte-equals the bootstrap sentinel; an accidentally-emptied registry
-fails. Goldens (page-1 SVG, dropdown text) regen via `npm run applique-grid:golden:update`.
+`npm run applique-grid:test`: node:test, no network, temp dirs only, and **gated in CI on every
+PR** (a step in `validate.yml`, with the same zero-tests guard as the other tooling suites). The
+cohesion test pins the shipped template's `pattern_options` byte-equal to the shipped registry's
+derived text, except when the registry byte-equals the bootstrap sentinel; an
+accidentally-emptied registry fails. That is a cross-file invariant between two committed
+artifacts, so CI is what makes it real: a PR that edits the template or the registry alone goes
+red. Goldens (page-1 SVG, dropdown text) regen via `npm run applique-grid:golden:update`.
