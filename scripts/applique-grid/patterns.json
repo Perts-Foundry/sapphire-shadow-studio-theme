@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "product": {
+    "handle": "huddle-crewneck",
+    "gid": "gid://shopify/Product/10231493787948",
+    "colorValues": [
+      "Black",
+      "Grey Heather",
+      "Classic Navy"
+    ]
+  },
+  "threads": [],
+  "chart": {
+    "columns": 3,
+    "rows": 3,
+    "cell_aspect": 0.75,
+    "cell_fit": "cover",
+    "title": "Applique Patterns",
+    "width_units": 1600,
+    "scale": 2,
+    "styleVersion": 1
+  },
+  "patterns": [],
+  "published": []
+}

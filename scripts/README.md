@@ -17,6 +17,11 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).
+- `applique-grid/`: turn applique fabric photos into the Huddle Crewneck's numbered pattern
+  chart gallery images and keep the pattern dropdown, the live media, and the committed registry
+  (`applique-grid/patterns.json`) in agreement. Writes to the **live store** through gated
+  dry-run plans. Driven by the `applique-grid` Claude skill. See
+  [`applique-grid/README.md`](applique-grid/README.md).
 
 The `product-images` Claude skill (`.claude/skills/product-images/`) drives the whole pipeline end to
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it

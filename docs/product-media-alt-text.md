@@ -72,6 +72,14 @@ The values in Admin today, which is the only authority:
 | Huddle Crewneck | `Black` / `Gray` / `Navy` |
 | **Lead II Vest, Women's** | **`Black` only** |
 
+> **Known-stale row (noted 2026-08-10).** The Huddle Crewneck row above no longer matches Admin:
+> the applique-grid registry (`scripts/applique-grid/patterns.json`) snapshots the live values as
+> `Black` / `Grey Heather` / `Classic Navy`, pending confirmation by the first
+> `publish.mjs --dry-run` against the live store, after which this row gets rewritten. Until this
+> table, `scripts/lib/photo-naming.mjs`, and `scripts/README.md` are reconciled (a separate PR),
+> the `upload-product-media.mjs` uploader hard-fails on Huddle by design, and
+> `scripts/applique-grid/audit.mjs` reports any Huddle photo alt still naming `Gray` or `Navy`.
+
 No product uses `Blue`, so every `blue-*.jpg` file is a `Navy` photo. The vest is the one
 deliberate divergence: it is sold in black only, so `Black` is its entire vocabulary and `Gray`
 and `Navy` are ordinary words there, reserved nowhere on that product. Keep new products on
@@ -137,6 +145,28 @@ embroidered on the chest"); they bind identically, because only the value word m
 Note the last three: `crew-caffeine-trauma-gray-*` and `blue-crew-caffeine-trauma-*` are design
 shots that **do** name a value, while `nurse-crew-*` is a design shot that **must not**. Same
 visual bucket, opposite rule. The difference is whether the photo exists per colour.
+
+## Applique pattern charts
+
+The Huddle Crewneck's numbered pattern chart images (`scripts/applique-grid/`) are shared by
+construction: their alt text is a **pinned template** built from pattern names only, never thread
+words and never colour words:
+
+> Applique pattern chart 1 of 2: patterns 1-9, Sunset Bloom, Meadow Trace, ...
+
+The colour guard runs at the skill's naming gate against the fully rendered alt string, so no
+pattern name that whole-word-matches a Color option value can reach the store; the charts
+therefore name no value and show on every colourway. Two consequences worth pinning:
+
+- **Never attach a chart to a variant.** A chart is a shared photo, and `hide_variants` would
+  un-share it (the rule above). `publish.mjs` refuses to delete variant-attached media for the
+  same reason: a variant-attached "chart" means something is already wrong.
+- **Chart media is identified by recorded GID first, convention second.** The registry's
+  `published` block records each chart's media GID; the filename
+  (`huddle-crewneck-applique-pattern-chart-<n>-of-<m>-<hash8>.jpg`) and the alt template are only
+  the fallback for unrecorded media, and anything matching one signal but not the other is
+  reported as a suspect and left untouched. Do not hand-name other Huddle media into that
+  filename shape or hand-write alts opening with "Applique pattern chart".
 
 ## Where alt text is authored
 
