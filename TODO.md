@@ -51,10 +51,13 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
      `scripts/sku-backfill/` module in the pattern of `scripts/size-chart/` and
      `scripts/blank-inventory/`, dry-run by default, filling only nulls, aborting on duplicates, with
      the product and colour code tables in git rather than in a one-off script.
-  3. **Huddle applique is unresolved and feeds into the scheme.** How applique variations are
-     modelled on `huddle-crewneck` is still open, and whatever is decided changes what a SKU has to
-     encode. Settle that first; a scheme built before it will need reissuing, and reissuing SKUs
-     after any orders exist leaves history keyed to strings that no longer mean anything.
+  3. **Huddle applique is now settled; the scheme can account for it.** Applique variations on
+     `huddle-crewneck` are modelled as a required line-item property (the numbered pattern
+     dropdown) backed by the committed registry `scripts/applique-grid/patterns.json`, not as
+     variants or option values. So a SKU never encodes the pattern: it stays derivable from each
+     variant's own options, and the pattern travels on the order line as
+     `<n>. <Name> (<thread>)`, with the registry's git history as the ledger of what each number
+     meant when.
   A working scheme already exists if it helps: `SSS-<PRODUCT>-<DESIGN>-<COLOR>-<SIZE>`, for example
   `SSS-L2VW-RN-BLK-M`, 24 characters at its longest, verified unique across all 343 variants and
   derived purely from each variant's own options so it needs no lookup state. It is orthogonal to

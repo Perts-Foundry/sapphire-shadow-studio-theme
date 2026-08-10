@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+// Ingest the operator's HEIC pattern photos: copy them out of the source folder (never writing to
+// it), decode via lib/heic.mjs, and produce working cells (long edge 1600, q90) + small previews
+// (~600px, sized for reading during the grouping gate) + an ingest manifest keyed on basename +
+// source content sha256 + decoder version, so a re-shoot under the same basename or a heic-decode
+// bump forces a re-decode and an unchanged photo skips.
+//
+// The source directory is a runtime flag only: a dev-machine path is sensitive content in this
+// public repo, so the manifest stores BASENAMES only and the path never lands in any artifact.
+// Crops recorded in the registry are normalized on the decoded photo; cells and previews are
+// straight downscales, so the same normalized coordinates apply to all of them 1:1.
+
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { DECODER_VERSION, decodeToRaw, planIngest, sharpFromRaw } from './lib/heic.mjs';
+import { load as loadRegistry, REGISTRY_PATH } from './lib/registry.mjs';
+
+const DEFAULT_OUT_DIR = 'product-images/applique';
+const CELL_LONG_EDGE = 1600;
+const PREVIEW_LONG_EDGE = 600;
+const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
+
+function parseArgs(argv) {
+  const opts = { source: null, outDir: DEFAULT_OUT_DIR, force: false };
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i];
+    if (!a.startsWith('--')) continue;
+    a = a.slice(2);
+    let val;
+    const eq = a.indexOf('=');
+    if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
+    if (a === 'force') { opts.force = true; continue; }
+    if (a === 'source') { opts.source = val ?? argv[++i]; continue; }
+    if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
+    throw new Error(`Unknown option --${a}`);
+  }
+  if (!opts.source) throw new Error("Missing --source '<dir>' (the operator's HEIC folder; quoted if it has spaces)");
+  return opts;
+}
+
+async function readManifest(manifestPath) {
+  try {
+    return JSON.parse(await readFile(manifestPath, 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return { version: 1, entries: {} };
+    throw new Error(`ingest manifest is unreadable (${e.message}); fix or delete ${manifestPath}`);
+  }
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const outDir = path.resolve(opts.outDir);
+  if (!OUT_DIR_RE.test(outDir)) {
+    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
+  }
+  const sourceDir = path.resolve(opts.source);
+
+  const registry = await loadRegistry(REGISTRY_PATH);
+
+  // Enumerate source HEICs. NTFS Zone.Identifier sidecars (WSL) are skipped silently.
+  const names = (await readdir(sourceDir))
+    .filter((n) => !/:Zone\.Identifier$/i.test(n))
+    .filter((n) => /\.(heic|heif)$/i.test(n))
+    .sort();
+  if (!names.length) throw new Error(`no .heic files found in ${sourceDir}`);
+
+  // Hash sources up front (also the copy read; the source is never opened for writing).
+  const sources = [];
+  const bytesByName = new Map();
+  for (const basename of names) {
+    const buf = await readFile(path.join(sourceDir, basename));
+    bytesByName.set(basename, buf);
+    sources.push({ basename, sha256: createHash('sha256').update(buf).digest('hex') });
+  }
+
+  const manifestPath = path.join(outDir, 'ingest-manifest.json');
+  const manifest = await readManifest(manifestPath);
+  const plan = planIngest({
+    sources,
+    previous: manifest.entries,
+    decoderVersion: DECODER_VERSION,
+    patterns: registry.patterns,
+    force: opts.force,
+  });
+
+  await mkdir(path.join(outDir, 'originals'), { recursive: true });
+  await mkdir(path.join(outDir, 'cells'), { recursive: true });
+  await mkdir(path.join(outDir, 'previews'), { recursive: true });
+
+  const failures = [];
+  const warnings = [];
+  let decoded = 0;
+  for (const basename of plan.decode) {
+    const buf = bytesByName.get(basename);
+    const src = sources.find((s) => s.basename === basename);
+
+    // Copy the original out of the source folder, byte-size verified against the source.
+    const copyPath = path.join(outDir, 'originals', basename);
+    await writeFile(copyPath, buf);
+    const [srcStat, dstStat] = [buf.length, (await stat(copyPath)).size];
+    if (srcStat !== dstStat) throw new Error(`copy of ${basename} is ${dstStat} bytes, source is ${srcStat}; aborting`);
+
+    let raw;
+    try {
+      raw = await decodeToRaw(buf);
+    } catch (e) {
+      failures.push(`${basename}: ${e.message}`);
+      delete manifest.entries[basename]; // a stale cell must not survive a now-undecodable source
+      continue;
+    }
+    if (raw.width > raw.height) warnings.push(`${basename}: landscape orientation (${raw.width}x${raw.height}); pattern photos are expected portrait`);
+
+    const cellPath = path.join(outDir, 'cells', `${basename}.jpg`);
+    const cellInfo = await (await sharpFromRaw(raw))
+      .resize(CELL_LONG_EDGE, CELL_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 90, mozjpeg: true, chromaSubsampling: '4:4:4' })
+      .toFile(cellPath);
+    await (await sharpFromRaw(raw))
+      .resize(PREVIEW_LONG_EDGE, PREVIEW_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toFile(path.join(outDir, 'previews', `${basename}.jpg`));
+
+    manifest.entries[basename] = {
+      sha256: src.sha256,
+      decoderVersion: DECODER_VERSION,
+      width: raw.width,
+      height: raw.height,
+      cellWidth: cellInfo.width,
+      cellHeight: cellInfo.height,
+    };
+    decoded++;
+  }
+
+  manifest.version = 1;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  console.log(`Ingested ${names.length} photo(s): ${decoded} decoded, ${plan.skip.length} unchanged (skipped), ${failures.length} failed.`);
+  if (warnings.length) {
+    console.log('\nWarnings:');
+    warnings.forEach((w) => console.log(`  ${w}`));
+  }
+  if (failures.length) {
+    console.error('\nDecode failures (excluded from the manifest; content is never guessed from filenames):');
+    failures.forEach((f) => console.error(`  ${f}`));
+    process.exitCode = 1;
+  }
+  if (plan.unassigned.length) {
+    console.log(`\nUnassigned photos (in no registry pattern yet): ${plan.unassigned.length}`);
+    plan.unassigned.forEach((b) => console.log(`  ${b}`));
+  }
+  console.log(`\nManifest: ${manifestPath}`);
+  console.log(`Previews for the grouping gate: ${path.join(outDir, 'previews')}`);
+  console.log('Next: group the unassigned previews into patterns at the naming gate, then run render.mjs.');
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+}

@@ -199,6 +199,35 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── applique-grid tooling tests ────────────────────────────
+      # `scripts/applique-grid/` publishes the Huddle chart gallery and owns the
+      # product-page dropdown text. Its cohesion test pins the shipped template's
+      # pattern_options byte-equal to the committed registry (patterns.json), the
+      # same shipped-template invariant the size-chart step gates, and it is only
+      # worth anything if something enforces it. Unit-only; no network access.
+      - name: Applique grid tests
+        id: applique-grid
+        run: |
+          set +e
+          OUTPUT=$(npm run applique-grid:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Same "green on zero tests" guard as the suites above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::applique-grid suite reported ${TESTS_RUN:-0} tests. The glob in the applique-grid:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Blank-id leak guard ────────────────────────────────────
       # Blank ids embed the supplier name and style number, which are sensitive for
       # this public repo. Gitleaks matches token-shaped strings and does not catch
@@ -330,6 +359,7 @@ jobs:
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
@@ -337,7 +367,7 @@ jobs:
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$BLANK_ID_GUARD_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -369,6 +399,7 @@ jobs:
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
@@ -379,6 +410,7 @@ jobs:
           SIZE_CHART_OUTPUT: ${{ steps.size-chart.outputs.output }}
           BLANK_INVENTORY_OUTPUT: ${{ steps.blank-inventory.outputs.output }}
           SEO_REVIEW_OUTPUT: ${{ steps.seo-review.outputs.output }}
+          APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
           SMOKE_TEST_OUTPUT: ${{ steps.smoke-test.outputs.output }}
           ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
@@ -410,6 +442,7 @@ jobs:
             const sizeChart = process.env.SIZE_CHART_EXIT;
             const blankInventory = process.env.BLANK_INVENTORY_EXIT;
             const seoReview = process.env.SEO_REVIEW_EXIT;
+            const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const smokeTest = process.env.SMOKE_TEST_EXIT;
             const actionlint = process.env.ACTIONLINT_EXIT;
@@ -421,6 +454,7 @@ jobs:
             const sizeChartOut = sanitize(process.env.SIZE_CHART_OUTPUT) || 'No output';
             const blankInventoryOut = sanitize(process.env.BLANK_INVENTORY_OUTPUT) || 'No output';
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
+            const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
@@ -451,6 +485,7 @@ jobs:
               `| **Size chart** | \`npm run size-chart:test\` | ${status(sizeChart)} |`,
               `| **Blank inventory** | \`npm run blank-inventory:test\` | ${status(blankInventory)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
+              `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
               `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
               '',
@@ -505,6 +540,14 @@ jobs:
               '',
               '```',
               seoReviewOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Applique grid</strong> (<code>npm run applique-grid:test</code>)</summary>',
+              '',
+              '```',
+              appliqueGridOut,
               '```',
               '',
               '</details>',
@@ -600,6 +643,7 @@ jobs:
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
@@ -622,6 +666,7 @@ jobs:
           check_exit "size-chart" "$SIZE_CHART_EXIT"
           check_exit "blank-inventory" "$BLANK_INVENTORY_EXIT"
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
+          check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "smoke-test" "$SMOKE_TEST_EXIT"
           check_exit "actionlint" "$ACTIONLINT_EXIT"
