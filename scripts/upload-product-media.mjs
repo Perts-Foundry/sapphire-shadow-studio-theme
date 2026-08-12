@@ -27,7 +27,8 @@
 
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { PRODUCTS, recognizedColorValues, altColorProblem } from './lib/photo-naming.mjs';
+import { pathToFileURL } from 'node:url';
+import { PRODUCTS, productForHandle, recognizedColorValues, altColorProblem } from './lib/photo-naming.mjs';
 
 const API_VERSION = '2026-07';
 const REQUIRED_SCOPES = ['write_products', 'write_files'];
@@ -37,8 +38,8 @@ const HERO_SHOT_PRIORITY = ['styled', 'flat', 'angled', 'closeup']; // first ava
 
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const opts = { dryRun: false, all: false, attachHeroes: false, product: null, manifest: null, limit: Infinity };
-  const alias = { 'dry-run': 'dryRun', 'attach-heroes': 'attachHeroes' };
+  const opts = { dryRun: false, all: false, attachHeroes: false, checkProducts: false, product: null, manifest: null, limit: Infinity };
+  const alias = { 'dry-run': 'dryRun', 'attach-heroes': 'attachHeroes', 'check-products': 'checkProducts' };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -47,7 +48,7 @@ function parseArgs(argv) {
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
     const key = alias[a] || a;
-    if (key === 'dryRun' || key === 'all' || key === 'attachHeroes') {
+    if (key === 'dryRun' || key === 'all' || key === 'attachHeroes' || key === 'checkProducts') {
       opts[key] = val === undefined ? true : val !== 'false';
     } else if (key === 'product') {
       opts.product = val ?? argv[++i];
@@ -60,6 +61,14 @@ function parseArgs(argv) {
     } else {
       throw new Error(`Unknown option --${a}`);
     }
+  }
+  if (opts.checkProducts) {
+    // The preflight is a standalone read-only mode: no manifest, no upload scoping. Refusing the
+    // combinations keeps "did I just upload?" unambiguous.
+    if (opts.product || opts.all || opts.dryRun || opts.manifest) {
+      throw new Error('--check-products is a standalone preflight; do not combine it with --product, --all, --dry-run, or --manifest.');
+    }
+    return opts;
   }
   if (!opts.product && !opts.all) {
     throw new Error('Refusing an unscoped run. Pass --product <handle> for one product (do this first), or --all to opt into every product. --dry-run is strongly recommended before any live run.');
@@ -234,6 +243,30 @@ async function pollMediaReady(domain, token, productId, mediaId, redact) {
   throw new Error(`media ${mediaId} did not reach READY within timeout`);
 }
 
+// Pure drift predicates, exported for unit tests. Each returns an error string or null; the key
+// is a PRODUCTS key ('<line>/<garment>'). An unknown/null key returns null (nothing recorded to
+// drift from; resolveProduct only reaches these with a known key anyway).
+export function gidDriftProblem(liveId, key) {
+  const record = PRODUCTS[key];
+  if (!record) return null;
+  if (liveId !== record.gid) {
+    return `product GID drift for "${record.handle}": live ${liveId} != recorded ${record.gid}. Update scripts/lib/photo-naming.mjs after confirming.`;
+  }
+  return null;
+}
+
+export function colorDriftProblem(liveValues, key) {
+  const record = PRODUCTS[key];
+  if (!record) return null;
+  const expected = recognizedColorValues(key);
+  const missing = expected.filter((v) => !liveValues.includes(v));
+  const extra = liveValues.filter((v) => !expected.includes(v));
+  if (missing.length || extra.length) {
+    return `Color option drift for "${record.handle}": live [${liveValues.join(', ')}] vs recorded [${expected.join(', ')}]. Reconcile scripts/lib/photo-naming.mjs before uploading (alt bindings depend on it).`;
+  }
+  return null;
+}
+
 // Resolve and validate a product; returns { product, colorValues, key, variantsByColor }.
 async function resolveProduct(domain, token, handle, redact) {
   const data = await gql(domain, token, Q_PRODUCT, { identifier: { handle } }, redact);
@@ -241,25 +274,19 @@ async function resolveProduct(domain, token, handle, redact) {
   if (!product) throw new Error(`no product resolves for handle "${handle}"`);
 
   // Cross-check against the recorded map: find the (line,garment) whose handle matches.
-  const known = Object.entries(PRODUCTS).find(([, p]) => p.handle === handle);
-  const key = known ? known[0] : null;
+  const known = productForHandle(handle);
+  const key = known ? known.key : null;
   if (key) {
-    const expectedGid = known[1].gid;
-    if (product.id !== expectedGid) {
-      throw new Error(`product GID drift for "${handle}": live ${product.id} != recorded ${expectedGid}. Update scripts/lib/photo-naming.mjs after confirming.`);
-    }
+    const gidProblem = gidDriftProblem(product.id, key);
+    if (gidProblem) throw new Error(gidProblem);
   }
 
   // Validate the live Color option values against the recorded set (the item-1a runtime diff).
   const colorOption = product.options.find((o) => o.name.toLowerCase() === COLOR_OPTION_NAME.toLowerCase());
   const liveValues = colorOption ? colorOption.optionValues.map((v) => v.name) : [];
   if (key) {
-    const expected = recognizedColorValues(key);
-    const missing = expected.filter((v) => !liveValues.includes(v));
-    const extra = liveValues.filter((v) => !expected.includes(v));
-    if (missing.length || extra.length) {
-      throw new Error(`Color option drift for "${handle}": live [${liveValues.join(', ')}] vs recorded [${expected.join(', ')}]. Reconcile scripts/lib/photo-naming.mjs before uploading (alt bindings depend on it).`);
-    }
+    const colorProblem = colorDriftProblem(liveValues, key);
+    if (colorProblem) throw new Error(colorProblem);
   }
 
   const variantsByColor = new Map();
@@ -273,10 +300,64 @@ async function resolveProduct(domain, token, handle, redact) {
 }
 
 // ---------------------------------------------------------------------------
+// Preflight support (--check-products). Pure over an injected resolver so it unit-tests without
+// a network: loops every recorded product through resolveFn and reports per-product outcomes.
+// ---------------------------------------------------------------------------
+
+// Classify a resolveProduct failure so the preflight output distinguishes "the credentials/scopes
+// are wrong" (nothing about the products is known) from "the recorded vocab has drifted" (the
+// upload blocker this preflight exists to surface early).
+export function classifyResolveError(err) {
+  const msg = String((err && err.message) || err || '');
+  if (/\bdrift\b/i.test(msg)) return 'drift';
+  if (/token exchange failed|missing required env|missing required scope|401|403|unauthorized|forbidden|access denied/i.test(msg)) return 'auth';
+  return 'other';
+}
+
+export async function checkProducts(products, resolveFn) {
+  const lines = [];
+  let ok = true;
+  for (const p of Object.values(products)) {
+    try {
+      const { colorValues } = await resolveFn(p.handle);
+      lines.push(`ok     ${p.handle} [${colorValues.join(', ')}]`);
+    } catch (e) {
+      ok = false;
+      const kind = classifyResolveError(e);
+      const label = kind === 'drift' ? 'DRIFT ' : kind === 'auth' ? 'AUTH  ' : 'ERROR ';
+      lines.push(`${label} ${p.handle}: ${e.message}`);
+    }
+  }
+  return { ok, lines };
+}
+
+// ---------------------------------------------------------------------------
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const domain = requireEnv('MYSHOPIFY_DOMAIN');
   const redact = makeRedactor(process.env.SHOPIFY_CLIENT_SECRET);
+
+  // Read-only preflight: resolve every recorded product against the live store and report GID /
+  // Color-option drift per product, without needing a manifest. Run this before naming or
+  // processing a batch; it surfaces at minute two the drift that would otherwise hard-fail the
+  // upload at the end of the pipeline.
+  if (opts.checkProducts) {
+    const token = await mintToken(domain, redact);
+    const redactTok = makeRedactor(token, process.env.SHOPIFY_CLIENT_SECRET);
+    const scopes = await grantedScopes(domain, token);
+    const missingScopes = REQUIRED_SCOPES.filter((s) => !scopes.includes(s));
+    if (missingScopes.length) {
+      throw new Error(`Missing required scope(s): ${missingScopes.join(', ')}. The app must grant ${REQUIRED_SCOPES.join(' + ')}; until then upload manually in Admin.`);
+    }
+    const { ok, lines } = await checkProducts(PRODUCTS, (handle) => resolveProduct(domain, token, handle, redactTok));
+    console.log(`check-products: ${Object.keys(PRODUCTS).length} recorded product(s), scope OK (${REQUIRED_SCOPES.join(', ')})`);
+    for (const l of lines) console.log(`  ${l}`);
+    if (!ok) {
+      console.error('\nOne or more products failed the preflight; uploads to them will hard-fail until reconciled.');
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   // --manifest relocates the manifest; the processed images are expected in the same directory
   // (that is how process-product-images.mjs writes them), so derive the image dir from it.
@@ -421,4 +502,9 @@ function pickHero(incumbent, row, mediaId) {
   return rank(row.shot) < rank(incumbent.row.shot) ? { row, mediaId } : incumbent;
 }
 
-main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+// Exported for unit testing; the CLI entrypoint below runs only when invoked directly.
+export { parseArgs };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
+}

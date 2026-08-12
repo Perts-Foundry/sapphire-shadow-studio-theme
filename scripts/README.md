@@ -62,8 +62,9 @@ including the uploaded Shopify filename): `lead2_quarter-zip_black_emt_flat-1.jp
 `lead2-quarter-zip-black-emt-flat-1.jpg` is recovered to it. It also resolves each file to its product handle and its
 Admin **Color** value and records them in the manifest, because alt text on this store binds a photo
 to a colour (see `docs/product-media-alt-text.md`). The colorway token maps to the Admin value:
-`black` -> `Black`, `classic-navy` -> `Navy`, `grey-heather` -> `Gray`, `group` -> shared (no value).
-Note the women's vest is `Black`-only, a deliberate divergence encoded in the module.
+`black` -> `Black`, `classic-navy` -> `Classic Navy`, `grey-heather` -> `Grey Heather`, `group` ->
+shared (no value). Note the women's vest is `Black`-only, a deliberate divergence encoded in the
+module.
 
 ### What it does per image
 
@@ -166,6 +167,13 @@ cautious.
 - **`--manifest <path>`** overrides the default `product-images/processed/manifest.csv`; the processed
   images are read from the manifest's own directory, so a relocated manifest and its images stay
   together.
+- **Preflight without a manifest.** `--check-products` is a standalone read-only mode: it resolves
+  every product recorded in `lib/photo-naming.mjs` against the live store and reports per-product
+  `ok` (with the live Color values) or the GID / Color-option drift that would hard-fail an upload,
+  labelling an auth/scope failure (`AUTH`) distinctly from drift (`DRIFT`). It refuses to combine
+  with `--product`, `--all`, `--dry-run`, or `--manifest`, and exits non-zero on any product error.
+  Run it before naming or processing a batch, so an upload blocker surfaces in minute two rather
+  than at the end of the pipeline.
 - **Dry-run first.** `--dry-run` resolves IDs, verifies the recorded product GID and Color option
   values still match the live store (it fails loudly on drift), runs the alt-colour guard, prints the
   per-image plan, and writes nothing.
@@ -176,6 +184,10 @@ cautious.
   appends a per-colour variant hero. It never deletes media and never edits other product fields.
 
 ```bash
+# Preflight (read-only, no manifest needed): confirm every recorded product still matches the
+# live store before spending any effort on a batch:
+node scripts/upload-product-media.mjs --check-products
+
 # Review the whole batch's per-image plan against the live store (read-only), pointing at the
 # batch manifest that --new-batch produced:
 node scripts/upload-product-media.mjs --all --dry-run --manifest 'product-images/processed/<timestamp>/manifest.csv'
@@ -203,7 +215,7 @@ If you prefer the Admin UI (or the scopes are not granted):
    the selected Color option value shows for that colour; a photo naming no value is shared across
    every colour. **Read `docs/product-media-alt-text.md` before writing any of it.** The trap in one
    line: the navy photos are named `blue-*.jpg` / `classic-navy`, and alt text must follow the Admin
-   option value (`Navy`), not the filename.
+   option value (`Classic Navy`), not the filename; a bare "Navy" names no value at all.
 4. Optionally attach one hero image per colour to that colour's variants. This does **not** drive
    the gallery: Shopify caps a variant at one attached media, so attachment can express one hero
    per colour and never "all three black photos", which is why the gallery reads alt text

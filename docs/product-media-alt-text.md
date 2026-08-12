@@ -36,18 +36,24 @@ collection cards, which the gallery filter never touches.
 - Matching is against **that product's own Color option values**, not against colours in general,
   not against a store-wide list, and not against filenames. The filter reads each product's
   `options_with_values`, so a word is reserved only on products whose Color option actually lists
-  it. On the crewnecks the values are `Black`, `Gray`, `Navy`. "Blue" is a colour; it is not a
-  value there, so it matches nothing.
+  it. On the crewnecks the values are `Black`, `Grey Heather`, `Classic Navy`. "Blue" is a colour;
+  it is not a value there, so it matches nothing. Neither is a bare "Navy" or "Grey": a multi-word
+  value matches as the **full phrase only**, so only the complete `Classic Navy` binds.
 - Matching is **case-insensitive** and on **whole words**. `Black` matches "black crewneck" and
   "BLACK CREW"; it does not match "blackout".
 - The separator list is **exhaustive**: `-` `_` `,` `.` `/` `(` `)` `:` `;` and the apostrophe.
-  Any other punctuation touching the value breaks the binding, so "Navy | front view" names no
+  Any other punctuation touching the value breaks the binding, so "Black | front view" names no
   value and goes shared. Stick to plain words and commas.
+- Every separator normalizes to exactly **one space**, and doubles are never collapsed. So
+  "Classic-Navy" and "classic/navy" bind `Classic Navy`, but a **doubled separator breaks a
+  multi-word phrase**: "Classic, Navy" reads as `classic␣␣navy` (the comma becomes a second
+  space) and names no value. Inside a multi-word value, use a single plain space, nothing else.
 - A photo that names **exactly one value** is bound to that colour and shows only there.
 - A photo that names **no value at all** is shared and shows on every colour.
 - A **multi-word value shadows its own substring**. With `Blue` selected, a photo tagged "light
   blue" is excluded rather than shown under both, because `Light Blue` is a value that contains
-  `Blue`. Latent on today's values; it matters the day a "Heather Gray" ships.
+  `Blue`. Still latent on today's values (no value is contained in another, since bare `Grey` and
+  `Navy` are not values); it matters the day one is.
 
 ## Binding a photo to a colour
 
@@ -55,36 +61,33 @@ Name the value, spelled the way Admin spells it.
 
 **The filenames lie, and this is the trap.** The navy photos are named `blue-crew-1.jpg`,
 `blue-zip-2.jpg`, and so on, because that is what the colour looks like. On the crewnecks the
-option value is `Navy`. Alt text follows Admin, never the filename. A photo whose alt says "Blue
-crewneck" names no value, becomes shared, and shows under Black and Gray as well.
+option value is `Classic Navy`. Alt text follows Admin, never the filename. A photo whose alt
+says "Blue crewneck" (or a bare "Navy crewneck") names no value, becomes shared, and shows under
+Black and Grey Heather as well.
 
 **Check the value in Admin before trusting that.** Because the vocabulary is per product, the
-trap runs in reverse on any product whose Color option really does list `Blue`: there, "Navy
-quarter-zip" is the string that names no value and goes shared.
+trap runs in reverse on any product whose Color option really does list `Blue`: there, "Classic
+Navy quarter-zip" is the string that names no value and goes shared.
 
 The values in Admin today, which is the only authority:
 
 | Product | Color option values |
 |---|---|
-| Lead II Crewneck | `Black` / `Gray` / `Navy` |
-| Lead II Quarter-Zip | `Black` / `Gray` / `Navy` |
-| Shift Fuel Crewneck | `Black` / `Gray` / `Navy` |
-| Huddle Crewneck | `Black` / `Gray` / `Navy` |
+| Lead II Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
+| Lead II Quarter-Zip | `Black` / `Grey Heather` / `Classic Navy` |
+| Shift Fuel Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
+| Huddle Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
 | **Lead II Vest, Women's** | **`Black` only** |
 
-> **Known-stale row (noted 2026-08-10).** The Huddle Crewneck row above no longer matches Admin:
-> the applique-grid registry (`scripts/applique-grid/patterns.json`) snapshots the live values as
-> `Black` / `Grey Heather` / `Classic Navy`, pending confirmation by the first
-> `publish.mjs --dry-run` against the live store, after which this row gets rewritten. Until this
-> table, `scripts/lib/photo-naming.mjs`, and `scripts/README.md` are reconciled (a separate PR),
-> the `upload-product-media.mjs` uploader hard-fails on Huddle by design, and
-> `scripts/applique-grid/audit.mjs` reports any Huddle photo alt still naming `Gray` or `Navy`.
+> Reconciled 2026-08-11 against the live Admin values for all five recorded products; this table,
+> `scripts/lib/photo-naming.mjs`, and `scripts/README.md` agree, and the uploader's
+> `--check-products` preflight re-verifies them against Admin on demand.
 
-No product uses `Blue`, so every `blue-*.jpg` file is a `Navy` photo. The vest is the one
-deliberate divergence: it is sold in black only, so `Black` is its entire vocabulary and `Gray`
-and `Navy` are ordinary words there, reserved nowhere on that product. Keep new products on
-`Black` / `Gray` / `Navy` unless there is a reason not to, and record any further divergence in
-this table.
+No product uses `Blue`, so every `blue-*.jpg` file is a `Classic Navy` photo. The vest is the one
+deliberate divergence: it is sold in black only, so `Black` is its entire vocabulary and `Grey
+Heather` and `Classic Navy` are ordinary words there, reserved nowhere on that product. Keep new
+products on `Black` / `Grey Heather` / `Classic Navy` unless there is a reason not to, and record
+any further divergence in this table.
 
 ## Sharing a photo across every colour
 
@@ -112,13 +115,15 @@ description reaches for exactly these words. All three values are ordinary photo
 
 | Tempting alt text | What goes wrong |
 |---|---|
-| "Black embroidery on navy fleece" | Names Black and Navy. Shows under both. |
-| "Navy crewneck on a gray background" | Names Navy and Gray. Shows under both. |
-| "Black zipper on the gray quarter-zip" | Names Black and Gray. Shows under both. |
+| "Black stitching on the classic navy fleece" | Names Black and Classic Navy. Shows under both. |
+| "Classic Navy crewneck beside the grey heather one" | Names Classic Navy and Grey Heather. Shows under both. |
+| "Black zipper on the grey heather quarter-zip" | Names Black and Grey Heather. Shows under both. |
 
-Use a synonym for any colour that is not the garment's own: "dark zipper", "pale background",
-"charcoal stitching". Describe the garment's colour with the value; describe everything else
-some other way.
+The multi-word values soften this trap without removing it: a bare "grey" or "navy" is safe on
+these products, but the full phrase is exactly what accurate description produces. Use a synonym
+for any colour that is not the garment's own: "dark zipper", "pale background", "charcoal
+stitching". Describe the garment's colour with the value; describe everything else some other
+way.
 
 **The vocabulary can grow under you.** Adding a value to a product's Color option reserves that
 word retroactively, across alt text written before the value existed. That is pointed here: the
@@ -131,11 +136,11 @@ grep the manifest's `alt` column for the word.
 | File | Alt text | Result |
 |---|---|---|
 | `black-crew-1.jpg` | Black crewneck, front view | Bound to Black |
-| `blue-crew-1.jpg` | Navy crewneck, front view | Bound to Navy (**not** "Blue") |
-| `gray-crew-2.jpg` | Gray crewneck, back view | Bound to Gray |
+| `blue-crew-1.jpg` | Classic Navy crewneck, front view | Bound to Classic Navy (**not** "Blue", not a bare "Navy") |
+| `gray-crew-2.jpg` | Grey Heather crewneck, back view | Bound to Grey Heather (the full phrase, single-spaced) |
 | `nurse-crew-1.jpg` | Nurse design embroidered on the chest | Shared (colour omitted on purpose) |
-| `crew-caffeine-trauma-gray-1.jpg` | Gray crewneck with the Caffeine and Trauma design | Bound to Gray |
-| `blue-crew-caffeine-trauma-1.jpg` | Navy crewneck with the Caffeine and Trauma design | Bound to Navy |
+| `crew-caffeine-trauma-gray-1.jpg` | Grey Heather crewneck with the Caffeine and Trauma design | Bound to Grey Heather |
+| `blue-crew-caffeine-trauma-1.jpg` | Classic Navy crewneck with the Caffeine and Trauma design | Bound to Classic Navy |
 | `crew-group-1.jpg` | Three crewnecks side by side | Shared |
 
 These are illustrative recipes, not a record of what is in Admin. The manifest's real strings are
@@ -201,11 +206,13 @@ Nothing warns you. The gallery just renders differently.
 |---|---|
 | Alt left blank | Photo names no value, becomes shared, shows under every colour |
 | Alt uses the filename's colour ("Blue") | Same: names no value, shows under every colour |
+| Alt uses half a multi-word value ("Navy crewneck") | Same: only the full `Classic Navy` binds |
 | Alt names a second value | Photo shows under two colours |
-| Punctuation outside the separator list touches the value ("Navy \| front") | Names no value, goes shared |
+| Punctuation outside the separator list touches the value ("Classic Navy \| front") | Names no value, goes shared |
+| A doubled separator splits a multi-word value ("Classic, Navy crewneck") | The extra space breaks the phrase; names no value, goes shared |
 | Color option renamed in Admin ("Colour", a stray space, or a per-product name like "Shade") | Filtering switches off **for that product only**. Every photo shows on every variant, exactly like the kill switch, with nothing in the theme editor to hint at it. More likely than any other row here |
 | A value added to the option later | That word becomes reserved retroactively, across alt text written before it existed |
-| Alt names a colour inside another word ("Grayscale backdrop") | Nothing. Whole-word matching handles it |
+| Alt names a colour inside another word ("Blackout backdrop") | Nothing. Whole-word matching handles it |
 
 **Do not put a colour value in a product title.** Shopify falls back to the resource title when an
 image has no alt text of its own: `image_tag` documents the alt attribute as "the media alt text,

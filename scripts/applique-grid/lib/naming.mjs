@@ -18,8 +18,8 @@ import { createHash } from 'node:crypto';
 import { matchedColorValues } from '../../lib/photo-naming.mjs';
 
 // Word characters plus the guard's separator set: - _ , . / ( ) : ; ' and the plain space.
-// (photo-naming.mjs's SEP class also spans other whitespace; names are single-line, so only the
-// space is admitted here.) Consumed by both registry validation and the guard tests.
+// (photo-naming.mjs's separator set also spans other whitespace; names are single-line, so only
+// the space is admitted here.) Consumed by both registry validation and the guard tests.
 export const NAME_CHARSET_RE = /^[A-Za-z0-9\-_,./():;' ]+$/;
 
 export const ALT_MAX = 512; // Shopify's media alt limit; charset above is ASCII, so length = bytes

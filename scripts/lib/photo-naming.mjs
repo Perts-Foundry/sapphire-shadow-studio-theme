@@ -39,8 +39,8 @@ const FIELD_TYPOS = new Map([
 // values live in PRODUCTS below (the women's vest ships in Black only).
 const COLORWAY_TO_ADMIN = new Map([
   ['black', 'Black'],
-  ['classic-navy', 'Navy'],
-  ['grey-heather', 'Gray'],
+  ['classic-navy', 'Classic Navy'],
+  ['grey-heather', 'Grey Heather'],
   ['group', null],
 ]);
 
@@ -56,13 +56,13 @@ export const PRODUCTS = {
     line: 'lead2', garment: 'crew-sweater',
     title: 'Lead II Crewneck', handle: 'lead-ii-crewneck',
     gid: 'gid://shopify/Product/10209039483180',
-    colorValues: ['Black', 'Gray', 'Navy'],
+    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
   },
   'lead2/quarter-zip': {
     line: 'lead2', garment: 'quarter-zip',
     title: 'Lead II Quarter-Zip', handle: 'lead-ii-quarter-zip',
     gid: 'gid://shopify/Product/10401392263468',
-    colorValues: ['Black', 'Gray', 'Navy'],
+    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
   },
   'lead2/vest': {
     line: 'lead2', garment: 'vest',
@@ -74,13 +74,13 @@ export const PRODUCTS = {
     line: 'shift-fuel', garment: 'crew-sweater',
     title: 'Shift Fuel Crewneck', handle: 'shift-fuel-crewneck',
     gid: 'gid://shopify/Product/10231499882796',
-    colorValues: ['Black', 'Gray', 'Navy'],
+    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
   },
   'huddle/crew-sweater': {
     line: 'huddle', garment: 'crew-sweater',
     title: 'Huddle Crewneck', handle: 'huddle-crewneck',
     gid: 'gid://shopify/Product/10231493787948',
-    colorValues: ['Black', 'Gray', 'Navy'],
+    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
   },
 };
 
@@ -103,35 +103,79 @@ export function productForLineGarment(line, garment) {
   return PRODUCTS[`${line}/${garment}`] || null;
 }
 
+// Reverse lookup: the product entry for an Admin handle, as { key, record }, or null when no
+// recorded product uses that handle. The uploader resolves manifest rows by handle, and the
+// shared-asset alt guard needs the product key back from a row that carries only the handle.
+export function productForHandle(handle) {
+  const found = Object.entries(PRODUCTS).find(([, p]) => p.handle === handle);
+  return found ? { key: found[0], record: found[1] } : null;
+}
+
 // The recognized Admin Color values for a product key (used by the alt-colour guard).
 export function recognizedColorValues(productKey) {
   return PRODUCTS[productKey] ? [...PRODUCTS[productKey].colorValues] : [];
 }
 
-// Separators the storefront gallery filter treats as word boundaries around a Color value, per
-// docs/product-media-alt-text.md: - _ , . / ( ) : ; and the apostrophe. Any OTHER punctuation
-// touching the value breaks the binding, so this list is deliberately exhaustive, not \b.
-const SEP = "[-_,./():;'\\s]";
+// Separator characters the storefront gallery filter normalizes to a space on BOTH sides of the
+// comparison (snippets/product-media-gallery-content.liquid), per docs/product-media-alt-text.md:
+// - _ , . / ( ) : ; and the apostrophe. Any OTHER punctuation touching the value breaks the
+// binding, so this list is deliberately exhaustive. The guard additionally treats every whitespace
+// character as a separator (alt text is single-line in practice; a tab reads as a space here).
+const SEP_CHARS = new Set([...`-_,./():;'`]);
 
 /**
- * The Admin Color values (from `values`) that an alt string binds to, using the same whole-word,
- * case-insensitive, separator-aware match the theme's gallery filter applies. Each value is tested
- * independently: every value whose whole-word form appears in `alt` is returned, in `values` order.
- * NOTE: this does NOT implement the theme filter's shadow rule (where a longer Color value such as
- * "Light Blue" suppresses a contained shorter one like "Blue"). Every Color value in use today
- * (Black / Gray / Navy) is a single word that contains no other, so guard and theme agree. If a
- * multi-word Color value that contains another ever ships, add the shadow here to keep this guard
- * aligned with snippets/product-media-gallery-content.liquid; until then it is unsupported.
+ * Normalize one side of the colour comparison exactly the way the theme does: lowercase, then
+ * each separator character becomes exactly ONE space (Liquid `replace`, which never collapses
+ * doubles), then trim, then pad with single spaces. The padding turns whole-word / whole-phrase
+ * matching into a plain substring test: ' grey heather ' is found inside ' a grey heather crew '
+ * but not inside ' grey  heather ' (a doubled separator breaks a multi-word phrase, on the
+ * storefront and here alike).
+ */
+function normalizeForColorMatch(s) {
+  let out = '';
+  for (const ch of String(s).toLowerCase()) {
+    out += SEP_CHARS.has(ch) || /\s/.test(ch) ? ' ' : ch;
+  }
+  return ` ${out.trim()} `;
+}
+
+/**
+ * The Admin Color values (from `values`) that an alt string binds to, under the exact match the
+ * theme's gallery filter applies: whole-word / whole-phrase, case-insensitive, separator-aware,
+ * including the shadow rule (a matched value whose padded form is contained in another matched
+ * value's padded form is suppressed, the way a photo tagged "light blue" does not show under a
+ * selected "Blue" when "Light Blue" is also a value). Values are returned in `values` order.
+ * A doubled separator breaks a multi-word match: 'Classic, Navy' normalizes to a doubled space
+ * and no longer contains ' classic navy '. There is no executable Liquid oracle for this parity,
+ * so the contract table below is copied verbatim from the table-driven test in
+ * photo-naming.test.mjs; keep the two in lockstep.
+ *
+ *   alt input                | values                              | result
+ *   'Black crewneck, flat'   | [Black, Grey Heather, Classic Navy] | [Black]
+ *   'Grey-Heather crewneck'  | [Black, Grey Heather, Classic Navy] | [Grey Heather]
+ *   'Grey/Heather crewneck'  | [Black, Grey Heather, Classic Navy] | [Grey Heather]
+ *   'grey_heather flat'      | [Black, Grey Heather, Classic Navy] | [Grey Heather]
+ *   'Grey  Heather crewneck' | [Black, Grey Heather, Classic Navy] | []
+ *   'Classic, Navy crewneck' | [Black, Grey Heather, Classic Navy] | []
+ *   'Navy crewneck'          | [Black, Grey Heather, Classic Navy] | []
+ *   'light blue flat'        | [Blue, Light Blue]                  | [Light Blue]
+ *   'Blackout hoodie'        | [Black]                             | []
  */
 export function matchedColorValues(alt, values) {
   if (!alt) return [];
-  const found = new Set();
+  const paddedAlt = normalizeForColorMatch(alt);
+  const padded = new Map();
   for (const value of values) {
-    const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`(^|${SEP})${esc}(${SEP}|$)`, 'i');
-    if (re.test(alt)) found.add(value);
+    const p = normalizeForColorMatch(value);
+    // A blank value can never match: its padded form is pure whitespace and would spuriously
+    // "match" any alt containing a doubled separator.
+    if (p.trim()) padded.set(value, p);
   }
-  return values.filter((v) => found.has(v));
+  const hits = values.filter((v) => padded.has(v) && paddedAlt.includes(padded.get(v)));
+  // Shadow rule: a matched value contained (padded) in a DIFFERENT matched value is suppressed.
+  // Inequality is on the padded forms, matching the theme's token comparison, so two spellings
+  // that normalize identically never suppress each other.
+  return hits.filter((v) => !hits.some((w) => padded.get(w) !== padded.get(v) && padded.get(w).includes(padded.get(v))));
 }
 
 /**
