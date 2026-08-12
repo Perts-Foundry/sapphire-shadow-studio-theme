@@ -20,7 +20,7 @@ or opens a PR.
 | `publish.mjs` | Create / delete / reorder chart media on the live product (dry-run gated). |
 | `apply-options.mjs` | Byte-stable upsert of the registry-derived dropdown into the product template. |
 | `audit.mjs` | Registry vs template vs charts vs live store; `--local` for the offline subset. |
-| `lib/` | Pure logic (registry, layout, crop, naming, chart-svg, options-writer, media-plan) plus the sharp (`compose`, `heic`) and network (`media`) executors. |
+| `lib/` | Pure logic (registry, layout, crop, naming, chart-svg, options-writer, media-plan) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` is a thin wrapper: it keeps `planIngest` and re-exports the decode helpers from the shared `scripts/lib/heic.mjs`. |
 | `test/` | `npm run applique-grid:test`; goldens regen via `npm run applique-grid:golden:update`. |
 
 Image output and manifests are guarded to gitignored `product-images/` paths; binaries never
@@ -106,9 +106,10 @@ patterns gets the same warning.
 tolerates mid-pipeline staleness: STALE lines exit 0, structural FAILs exit non-zero. The full
 `audit.mjs` treats STALE as drift and exits non-zero: green means registry, template, rendered
 charts, published record, live media, alts, and gallery order all agree. It also WARNs (without
-failing) about legacy Huddle photo alts that still say Gray / Navy; that predates this module
-(`scripts/lib/photo-naming.mjs` and the alt-text doc still carry the old vocabulary) and its fix
-is a separate PR.
+failing) about legacy Huddle photo alts that still say Gray / Navy; that predates this module. The
+repo-side vocabulary is now reconciled (`scripts/lib/photo-naming.mjs` and the alt-text doc record
+`Black` / `Grey Heather` / `Classic Navy`), so the remaining drift is live media alts in Admin, and
+it is fixed there rather than in the repo.
 
 **The audit has no scheduled trigger.** It is an operator-run backstop; a green test suite says
 nothing about live state, because nothing in the repo or CI can see the store.
@@ -125,7 +126,10 @@ a local dev tool, which is compatible with this repo; nothing from it ships to t
 
 The decoder returns bare RGBA: the iPhone's Display P3 profile is dropped, slightly shifting
 saturation. The sample gate is the acceptance check; the documented fallback is a P3-to-sRGB
-matrix in `lib/heic.mjs`, which is a visual change and therefore a `styleVersion` bump.
+matrix, which is a visual change and therefore a `styleVersion` bump. Put that matrix in this
+module's own wrapper, NOT in the shared `scripts/lib/heic.mjs`: the product-images pipeline reads
+the same decoder and deliberately preserves the source profile instead, so editing the shared
+module would silently change the colour of every product photo too.
 
 ## Tests
 

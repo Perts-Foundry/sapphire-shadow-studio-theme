@@ -178,12 +178,21 @@ jobs:
             EXIT_CODE=1
           fi
 
-          OUTPUT=$(printf '=== npm run lib:test ===\n%s\n\n=== npm run images:test ===\n%s\n' "$OUT_LIB" "$OUT_IMAGES")
-          echo "$OUTPUT"
+          printf '=== npm run lib:test (exit %s) ===\n%s\n\n=== npm run images:test (exit %s) ===\n%s\n' \
+            "$RC_LIB" "$OUT_LIB" "$RC_IMAGES" "$OUT_IMAGES"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Tail each suite SEPARATELY. Tailing the concatenation would spend the whole budget on
+          # the second suite and drop every line of the first, so a lib failure would render a
+          # red row above a details block showing nothing but a green images run.
           {
             echo "output<<GHEOF"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            {
+              echo "=== npm run lib:test (exit ${RC_LIB}) ==="
+              printf '%s\n' "$OUT_LIB" | tail -35
+              echo ""
+              echo "=== npm run images:test (exit ${RC_IMAGES}) ==="
+              printf '%s\n' "$OUT_IMAGES" | tail -35
+            } | sed -E $'s/\x1b\\[[0-9;]*m//g'
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 

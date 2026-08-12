@@ -119,8 +119,11 @@ export function recognizedColorValues(productKey) {
 // Separator characters the storefront gallery filter normalizes to a space on BOTH sides of the
 // comparison (snippets/product-media-gallery-content.liquid), per docs/product-media-alt-text.md:
 // - _ , . / ( ) : ; and the apostrophe. Any OTHER punctuation touching the value breaks the
-// binding, so this list is deliberately exhaustive. The guard additionally treats every whitespace
-// character as a separator (alt text is single-line in practice; a tab reads as a space here).
+// binding, so this list is deliberately exhaustive. Deliberately NOT extended to other whitespace:
+// the theme replaces these nine characters and nothing else, so a non-breaking space or a tab
+// between two words does NOT bind on the storefront. Treating them as separators here would pass
+// an alt the storefront reads as naming no colour at all, which silently shares that photo across
+// every colour. Leaving them alone keeps the guard in parity and fails in the safe direction.
 const SEP_CHARS = new Set([...`-_,./():;'`]);
 
 /**
@@ -134,7 +137,7 @@ const SEP_CHARS = new Set([...`-_,./():;'`]);
 function normalizeForColorMatch(s) {
   let out = '';
   for (const ch of String(s).toLowerCase()) {
-    out += SEP_CHARS.has(ch) || /\s/.test(ch) ? ' ' : ch;
+    out += SEP_CHARS.has(ch) ? ' ' : ch;
   }
   return ` ${out.trim()} `;
 }
@@ -158,6 +161,8 @@ function normalizeForColorMatch(s) {
  *   'Grey  Heather crewneck' | [Black, Grey Heather, Classic Navy] | []
  *   'Classic, Navy crewneck' | [Black, Grey Heather, Classic Navy] | []
  *   'Navy crewneck'          | [Black, Grey Heather, Classic Navy] | []
+ *   'Grey\u00a0Heather crew' | [Black, Grey Heather, Classic Navy] | []   (NBSP is not a separator)
+ *   'Grey\tHeather crewneck' | [Black, Grey Heather, Classic Navy] | []   (nor is a tab)
  *   'light blue flat'        | [Blue, Light Blue]                  | [Light Blue]
  *   'Blackout hoodie'        | [Black]                             | []
  */

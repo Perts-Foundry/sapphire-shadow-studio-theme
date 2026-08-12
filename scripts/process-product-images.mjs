@@ -212,7 +212,12 @@ function planManifestRows(d, preservedRows) {
     };
   }
   if (preservedRows.length > 1) {
-    warnings.push('several preserved manifest rows for one name; keeping the first row\'s alt/upload_status');
+    // Deterministic first-wins, and loud about it: an earlier revision of this tool kept the LAST
+    // duplicate, so a manifest carrying duplicate rows for one output name changes which alt
+    // survives a reprocess. Name the discarded alts, because the surviving one is what the
+    // uploader will push over the live media.
+    const dropped = preservedRows.slice(1).map((p) => `"${p.alt || ''}"`).join(', ');
+    warnings.push(`${preservedRows.length} preserved manifest rows for one name; keeping the first row's alt/upload_status and discarding ${dropped}. De-duplicate the manifest if that is not what you want.`);
   }
   const keep = preservedRows[0] || { alt: '', upload_status: '' };
   return {
@@ -693,12 +698,18 @@ async function main() {
       planWarnings.forEach((w) => console.warn(`WARN: ${f}: ${w}`));
       console.log(`ok  ${f}  ->  ${name}  (${enc.mp_before}MP/${enc.kb_before}KB -> ${enc.kb_after}KB)${fanOut ? `  [shared: ${seeds.length} rows]` : ''}`);
     } catch (e) {
-      const keep = preservedRows[0] || { alt: '', upload_status: '' };
-      rows.push({
-        original: f, new_name: '', ...d, w_before: '', h_before: '', mp_before: '', kb_before: '',
-        w_after: '', h_after: '', kb_after: '', alt: keep.alt, upload_status: keep.upload_status,
-        notes: `SKIPPED: ${e.message}`,
-      });
+      // A failed file still emits one row per planned seed, so a shared asset's hand-authored
+      // per-product rows do not collapse to one on a failed reprocess (that discarded the other
+      // products' alt text permanently). The row carries the INTENDED canonical name rather than
+      // an empty one so the next run's manifest reader can key it and restore the alt; the
+      // uploader is unaffected because it only uploads rows whose file is actually on disk.
+      for (const seed of seeds) {
+        rows.push({
+          original: f, new_name: name, ...seed, w_before: '', h_before: '', mp_before: '', kb_before: '',
+          w_after: '', h_after: '', kb_after: '',
+          notes: `SKIPPED: ${e.message}`,
+        });
+      }
       console.error(`ERR ${f}: ${e.message}`);
     }
   }

@@ -62,6 +62,8 @@ const CONTRACT = [
   ['Grey  Heather crewneck', LIVE, []],
   ['Classic, Navy crewneck', LIVE, []],
   ['Navy crewneck', LIVE, []],
+  ['Grey\u00a0Heather crewneck', LIVE, []],
+  ['Grey\tHeather crewneck', LIVE, []],
   ['light blue flat', ['Blue', 'Light Blue'], ['Light Blue']],
   ['Blackout hoodie', ['Black'], []],
 ];

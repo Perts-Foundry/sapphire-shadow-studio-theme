@@ -189,7 +189,7 @@ test('profileName cross-boundary concatenation is an accepted false positive (pi
   // NUL-stripping can join unrelated byte runs into a keyword. Accepted: the label is a cosmetic
   // audit note and the colour conversion never reads it. This test pins the trade-off so a future
   // "fix" is a deliberate decision, not an accident.
-  const buf = Buffer.from('Disp  lay P3', 'latin1');
+  const buf = Buffer.from('Disp\u0000\u0000lay P3', 'latin1');
   assert.equal(profileName(buf), 'Display P3');
 });
 
@@ -363,6 +363,58 @@ test('shared-asset rows survive a reprocess and vanish with their original (CLI 
     const rows3 = lines.slice(1).map(parseCsvLine);
     assert.equal(rows3.filter((c) => c[col('new_name')] === 'logo-tag-closeup-1.jpg').length, 0);
     assert.equal(rows3.filter((c) => c[col('new_name')] === 'huddle_crew-sweater_black_flat-1.jpg').length, 1);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test('a failed file keeps every fanned-out row and its alt across runs (CLI round-trip)', { timeout: 120000 }, async () => {
+  // The failure path used to write ONE row with an empty new_name, which collapsed a shared asset's
+  // per-product rows and then lost their alt entirely on the next run (an empty new_name is not a
+  // key the preservation reader can restore from). Both are data loss the operator cannot see.
+  const base = await mkdtemp(path.join(tmpdir(), 'ppi-fail-'));
+  try {
+    const { mkdir, copyFile } = await import('node:fs/promises');
+    const inDir = path.join(base, 'originals');
+    const outDir = path.join(base, 'product-images', 'processed');
+    const manifestPath = path.join(outDir, 'manifest.csv');
+    await mkdir(inDir, { recursive: true });
+    const seed = path.join(base, 'seed.jpg');
+    await sharp({ create: { width: 32, height: 24, channels: 3, background: '#808080' } }).jpeg().toFile(seed);
+    await copyFile(seed, path.join(inDir, 'logo-tag-closeup-1.jpg'));
+
+    const runCli = (...args) => execFileP(process.execPath, [SCRIPT, ...args]);
+    await runCli('--input-dir', inDir, '--out', outDir);
+
+    let lines = (await readFile(manifestPath, 'utf8')).split(/\r?\n/).filter((l) => l.length);
+    const header = parseCsvLine(lines[0]);
+    const col = (name) => header.indexOf(name);
+    const template = lines.slice(1).map(parseCsvLine).find((c) => c[col('new_name')] === 'logo-tag-closeup-1.jpg');
+    const fanned = CSV_HANDLES.map((handle) => {
+      const cells = [...template];
+      cells[col('product')] = handle;
+      cells[col('alt')] = `Woven logo tag for ${handle}`;
+      return cells.map(csvCell).join(',');
+    });
+    await writeFile(manifestPath, [lines[0], ...fanned].join('\n') + '\n');
+
+    // Corrupt the source so processOne throws, then reprocess twice.
+    await writeFile(path.join(inDir, 'logo-tag-closeup-1.jpg'), 'not an image at all');
+    await runCli('--input-dir', inDir, '--out', outDir).catch(() => {});
+    lines = (await readFile(manifestPath, 'utf8')).split(/\r?\n/).filter((l) => l.length);
+    let rows = lines.slice(1).map(parseCsvLine).filter((c) => c[col('original')] === 'logo-tag-closeup-1.jpg');
+    assert.equal(rows.length, CSV_HANDLES.length, 'failed file keeps one row per product');
+    assert.deepEqual(rows.map((c) => c[col('product')]), CSV_HANDLES);
+    assert.match(rows[0][col('notes')], /SKIPPED/);
+    assert.equal(rows[0][col('new_name')], 'logo-tag-closeup-1.jpg', 'carries the intended name');
+
+    await runCli('--input-dir', inDir, '--out', outDir).catch(() => {});
+    lines = (await readFile(manifestPath, 'utf8')).split(/\r?\n/).filter((l) => l.length);
+    rows = lines.slice(1).map(parseCsvLine).filter((c) => c[col('original')] === 'logo-tag-closeup-1.jpg');
+    assert.equal(rows.length, CSV_HANDLES.length, 'still one row per product a run later');
+    for (const [i, c] of rows.entries()) {
+      assert.equal(c[col('alt')], `Woven logo tag for ${CSV_HANDLES[i]}`, 'alt survives a failed run');
+    }
   } finally {
     await rm(base, { recursive: true, force: true });
   }

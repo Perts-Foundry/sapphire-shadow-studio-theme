@@ -105,13 +105,28 @@ test('extractIcc skips a decoy colr without an acsp signature (mdat noise)', () 
   assert.deepEqual(extractIcc(buf), real);
 });
 
-test('extractIcc ignores pathological enclosing box sizes (0, 1, <8) without looping', () => {
+test('extractIcc is unaffected by the enclosing box size field, because the scan never reads it', () => {
   const real = fakeProfile();
-  // size==0 (extends-to-EOF, legal BMFF), size==1 (64-bit largesize follows), size==5 (<8).
+  // The scan locates 'colr' by byte search and validates the payload, so a declared size of 0
+  // (extends-to-EOF), 1 (largesize marker), or 5 (< header) changes nothing. This pins that the
+  // sizes cannot loop or misdirect the scan; it is NOT a claim that largesize boxes are parsed.
   for (const pathological of [0, 1, 5]) {
     const buf = Buffer.concat([colrBox('prof', real, pathological), junk(8)]);
     assert.deepEqual(extractIcc(buf), real, `box size ${pathological}`);
   }
+});
+
+test('extractIcc returns null for a genuine 64-bit largesize box (known byte-scan limitation)', () => {
+  // A real largesize box puts an 8-byte size between 'colr' and the colour type, so the scan reads
+  // the top half of that field where it expects 'prof' and skips the candidate. Honest pin of the
+  // limitation: iPhone HEICs do not use largesize for colr, and a structural BMFF walk is the fix
+  // if one ever does.
+  const real = fakeProfile();
+  const head = Buffer.alloc(16);
+  head.writeUInt32BE(1, 0);              // size == 1 -> largesize follows
+  head.write('colr', 4, 'ascii');
+  head.writeBigUInt64BE(BigInt(16 + real.length), 8); // the 64-bit size
+  assert.equal(extractIcc(Buffer.concat([head, Buffer.from('prof', 'ascii'), real])), null);
 });
 
 test('extractIcc scans past nclx to a later prof, and takes the first of several profs', () => {

@@ -78,3 +78,19 @@ test('renderSheet composes a labeled grid from synthetic images', async () => {
 test('renderSheet refuses an empty file list', async () => {
   await assert.rejects(() => renderSheet([], '/tmp/never.jpg'), /at least one file/);
 });
+
+test('renderSheet survives an XML-hostile basename in the label', async () => {
+  // The label goes into an SVG <text> node. An unescaped & or < produces invalid SVG and sharp
+  // throws, which would abort a whole review round over one awkward filename.
+  const dir = await mkdtemp(path.join(tmpdir(), 'contact-sheet-xml-'));
+  try {
+    const p = path.join(dir, 'a&b<c>"d\'e.jpg');
+    await sharp({ create: { width: 20, height: 20, channels: 3, background: '#123456' } }).jpeg().toFile(p);
+    const outPath = path.join(dir, 'sheet.jpg');
+    const info = await renderSheet([p], outPath, { columns: 1, cell: 80 });
+    assert.equal(info.count, 1);
+    assert.equal((await sharp(outPath).metadata()).format, 'jpeg');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

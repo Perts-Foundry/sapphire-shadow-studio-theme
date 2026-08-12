@@ -416,7 +416,16 @@ async function main() {
       const expected = row.admin_color ? row.admin_color : null;
 
       if (!row.alt) { problems.push(`${row.new_name}: no alt text; author it in the manifest first`); skipped++; continue; }
-      const guard = key ? altColorProblem(row.alt, expected, key) : null;
+      // An unrecorded handle means no recorded Color vocabulary, so the GID check, the drift check
+      // and the alt-colour guard above all had nothing to compare against. Refuse rather than
+      // upload unguarded: the file header promises the guard passes for EVERY row, and shared-asset
+      // rows carry a hand-authored handle, which is exactly where a typo lands.
+      if (!key) {
+        problems.push(`${row.new_name}: product "${handle}" is not recorded in scripts/lib/photo-naming.mjs, so the colour-drift and alt-colour guards cannot run; add the product there before uploading to it`);
+        skipped++;
+        continue;
+      }
+      const guard = altColorProblem(row.alt, expected, key);
       if (guard) { problems.push(`${row.new_name}: alt-colour guard: ${guard}`); skipped++; continue; }
 
       const filePath = path.join(processedDir, row.new_name);

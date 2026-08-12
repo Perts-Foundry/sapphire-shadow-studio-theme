@@ -109,7 +109,7 @@
       elsif media_alt contains selected_token
         assign show_media = true
         # A multi-word value shadows its own substring: with Blue selected, a photo tagged
-        # "light blue" would otherwise match. Never fires for Black / Gray / Navy.
+        # "light blue" would otherwise match. Never fires for Black / Grey Heather / Classic Navy.
         for color_token in color_tokens
           if color_token != selected_token and color_token contains selected_token and media_alt contains color_token
             assign show_media = false

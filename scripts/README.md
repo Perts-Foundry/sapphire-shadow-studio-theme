@@ -10,7 +10,12 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
 - `contact-sheet.mjs` (below): render labeled thumbnail grids from a folder of photos, so a review
   round reads one composite per couple dozen frames instead of every frame full-size.
 - `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
-  by both scripts. One source of truth.
+  by the pipeline scripts and by the applique-grid naming guard. One source of truth.
+- `lib/heic.mjs`: the shared iPhone-HEIC decoder (`decodeToRaw`, `sharpFromRaw`, `DECODER_VERSION`)
+  plus `extractIcc`. Read by `process-product-images.mjs` and `contact-sheet.mjs`, and re-exported by
+  `applique-grid/lib/heic.mjs`. The two consumers make opposite colour choices deliberately: the
+  product pipeline re-attaches the source ICC profile, applique-grid drops it. Do not add a colour
+  transform here; put it in the caller.
 - `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
   a per-blank profile. See [`size-chart/README.md`](size-chart/README.md).
 - `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
@@ -182,6 +187,17 @@ are file basenames, middle-truncated to fit.
 node scripts/contact-sheet.mjs --input-dir 'product-images/originals'
 node scripts/contact-sheet.mjs --input-dir '<dir>' --out 'product-images/contact-sheets' --columns 4 --cell 480
 ```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--input-dir <dir>` | `product-images/originals` | Source folder. |
+| `--out <dir>` | `product-images/contact-sheets` | Output folder. Must be under a `product-images/` path. |
+| `--columns <n>` | `4` | Thumbnails per row. Positive integer. |
+| `--cell <px>` | `480` | Thumbnail box in pixels. Integer >= 64. |
+
+Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`, matching the processor, so an untouched iPhone
+batch can be reviewed before anything is processed. 24 frames per sheet is a fixed constant, not a
+flag; more frames roll onto `contact-sheet-2.jpg` and so on. There is no `--dry-run`.
 
 ## upload-product-media.mjs
 

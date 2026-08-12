@@ -14,12 +14,16 @@
 //     --columns 4 --cell 480
 
 import sharp from 'sharp';
-import { readdir, mkdir } from 'node:fs/promises';
+import { readdir, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { underProductImages } from './process-product-images.mjs';
+import { decodeToRaw, sharpFromRaw } from './lib/heic.mjs';
 
-const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff']);
+// .heic is included because selection runs on the ORIGINALS, and an iPhone batch is all HEIC.
+// A sheet that could not read the very inputs the pipeline ingests natively would send the review
+// round back to reading every frame full-size, which is what this tool exists to avoid.
+const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.heic']);
 const PER_SHEET = 24; // frames per sheet; keeps a 4-column sheet at 6 rows, readable in one view
 const LABEL_HEIGHT = 40;
 const LABEL_MAX_CHARS = 44;
@@ -92,6 +96,17 @@ const escapeXml = (s) => String(s)
 // Render one sheet: thumbnails laid out row-major on white, each with its basename underneath.
 // filePaths are absolute (or cwd-relative) paths; layout columns come from the plan.
 // ---------------------------------------------------------------------------
+// A sharp instance for one input frame. sharp/libvips cannot decode iPhone tiled HEICs (the same
+// "bad seek" the shared decoder documents), so those route through the WASM bridge. Thumbnails are
+// for human selection only, so no ICC fidelity is attempted here; the processor does the real
+// colour management at ingest. Raw RGBA carries no EXIF, so .rotate() is a no-op on that path and
+// the decoder's own orientation handling stands.
+async function frameSharp(filePath) {
+  if (path.extname(filePath).toLowerCase() !== '.heic') return sharp(filePath).rotate();
+  const raw = await decodeToRaw(await readFile(filePath));
+  return sharpFromRaw(raw);
+}
+
 export async function renderSheet(filePaths, outPath, { columns = 4, cell = 480 } = {}) {
   if (!filePaths.length) throw new Error('renderSheet needs at least one file');
   const gridCols = Math.min(columns, filePaths.length);
@@ -102,8 +117,7 @@ export async function renderSheet(filePaths, outPath, { columns = 4, cell = 480 
   for (let i = 0; i < filePaths.length; i++) {
     const col = i % columns;
     const row = Math.floor(i / columns);
-    const thumb = await sharp(filePaths[i])
-      .rotate()
+    const thumb = await (await frameSharp(filePaths[i]))
       .resize(cell, cell, { fit: 'inside', withoutEnlargement: false })
       .jpeg()
       .toBuffer({ resolveWithObject: true });
