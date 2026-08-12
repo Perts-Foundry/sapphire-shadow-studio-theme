@@ -142,6 +142,60 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── product-images tooling tests ───────────────────────────
+      # `scripts/lib/` and the top-level `scripts/*.test.mjs` suites cover the
+      # product-photo pipeline: the shared naming/colour-vocab library that the
+      # alt-colour guard and the uploader both read, and the processor/uploader
+      # scripts themselves. The uploader hard-fails on colour-vocab drift, so
+      # the pinned vocab is only trustworthy if something enforces it. Two npm
+      # scripts run in this one step; each output is captured and zero-test
+      # guarded separately so one dead glob cannot hide behind the other
+      # suite's test count.
+      - name: Product images tests
+        id: product-images
+        run: |
+          set +e
+          OUT_LIB=$(npm run lib:test 2>&1)
+          RC_LIB=$?
+          OUT_IMAGES=$(npm run images:test 2>&1)
+          RC_IMAGES=$?
+          EXIT_CODE=0
+          if [ "$RC_LIB" -ne 0 ] || [ "$RC_IMAGES" -ne 0 ]; then
+            EXIT_CODE=1
+          fi
+
+          # Same "green on zero tests" guard as the suites above, applied to each
+          # suite's own output: `node --test <glob>` exits 0 when the glob matches
+          # nothing, so assert each suite actually ran.
+          LIB_TESTS=$(printf '%s\n' "$OUT_LIB" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${LIB_TESTS:-0}" -lt 1 ]; then
+            echo "::error::lib suite reported ${LIB_TESTS:-0} tests. The glob in the lib:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+          IMAGES_TESTS=$(printf '%s\n' "$OUT_IMAGES" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${IMAGES_TESTS:-0}" -lt 1 ]; then
+            echo "::error::images suite reported ${IMAGES_TESTS:-0} tests. The glob in the images:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          printf '=== npm run lib:test (exit %s) ===\n%s\n\n=== npm run images:test (exit %s) ===\n%s\n' \
+            "$RC_LIB" "$OUT_LIB" "$RC_IMAGES" "$OUT_IMAGES"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Tail each suite SEPARATELY. Tailing the concatenation would spend the whole budget on
+          # the second suite and drop every line of the first, so a lib failure would render a
+          # red row above a details block showing nothing but a green images run.
+          {
+            echo "output<<GHEOF"
+            {
+              echo "=== npm run lib:test (exit ${RC_LIB}) ==="
+              printf '%s\n' "$OUT_LIB" | tail -35
+              echo ""
+              echo "=== npm run images:test (exit ${RC_IMAGES}) ==="
+              printf '%s\n' "$OUT_IMAGES" | tail -35
+            } | sed -E $'s/\x1b\\[[0-9;]*m//g'
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── blank-inventory tooling tests ──────────────────────────
       # `scripts/blank-inventory/` writes to LIVE inventory, so its decision logic
       # (which variant to write, when to refuse, how a partial run is recorded) is
@@ -357,6 +411,7 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
@@ -367,7 +422,7 @@ jobs:
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -397,6 +452,7 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
@@ -408,6 +464,7 @@ jobs:
           THEME_CHECK_OUTPUT: ${{ steps.theme-check.outputs.output }}
           RECONCILE_OUTPUT: ${{ steps.reconcile.outputs.output }}
           SIZE_CHART_OUTPUT: ${{ steps.size-chart.outputs.output }}
+          PRODUCT_IMAGES_OUTPUT: ${{ steps.product-images.outputs.output }}
           BLANK_INVENTORY_OUTPUT: ${{ steps.blank-inventory.outputs.output }}
           SEO_REVIEW_OUTPUT: ${{ steps.seo-review.outputs.output }}
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
@@ -440,6 +497,7 @@ jobs:
             const themeCheck = process.env.THEME_CHECK_EXIT;
             const reconcile = process.env.RECONCILE_EXIT;
             const sizeChart = process.env.SIZE_CHART_EXIT;
+            const productImages = process.env.PRODUCT_IMAGES_EXIT;
             const blankInventory = process.env.BLANK_INVENTORY_EXIT;
             const seoReview = process.env.SEO_REVIEW_EXIT;
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
@@ -452,6 +510,7 @@ jobs:
             const themeCheckOut = sanitize(process.env.THEME_CHECK_OUTPUT) || 'No issues found';
             const reconcileOut = sanitize(process.env.RECONCILE_OUTPUT) || 'No output';
             const sizeChartOut = sanitize(process.env.SIZE_CHART_OUTPUT) || 'No output';
+            const productImagesOut = sanitize(process.env.PRODUCT_IMAGES_OUTPUT) || 'No output';
             const blankInventoryOut = sanitize(process.env.BLANK_INVENTORY_OUTPUT) || 'No output';
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
@@ -483,6 +542,7 @@ jobs:
               `| Check | Tool | Result |`,
               `|:------|:-----|:------:|`,
               `| **Size chart** | \`npm run size-chart:test\` | ${status(sizeChart)} |`,
+              `| **Product images** | \`npm run lib:test\` + \`npm run images:test\` | ${status(productImages)} |`,
               `| **Blank inventory** | \`npm run blank-inventory:test\` | ${status(blankInventory)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
@@ -524,6 +584,14 @@ jobs:
               '',
               '```',
               sizeChartOut,
+              '```',
+              '',
+              '</details>',
+              '',
+              '<details><summary><strong>Product images</strong> (<code>npm run lib:test</code> + <code>npm run images:test</code>)</summary>',
+              '',
+              '```',
+              productImagesOut,
               '```',
               '',
               '</details>',
@@ -641,6 +709,7 @@ jobs:
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
           SIZE_CHART_EXIT: ${{ steps.size-chart.outputs.exit_code }}
+          PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
@@ -664,6 +733,7 @@ jobs:
           check_exit "theme-check" "$THEME_CHECK_EXIT"
           check_exit "reconcile" "$RECONCILE_EXIT"
           check_exit "size-chart" "$SIZE_CHART_EXIT"
+          check_exit "product-images" "$PRODUCT_IMAGES_EXIT"
           check_exit "blank-inventory" "$BLANK_INVENTORY_EXIT"
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"

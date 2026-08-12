@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  colorwayToAdminValue, productForLineGarment, recognizedColorValues,
+  colorwayToAdminValue, productForLineGarment, productForHandle, recognizedColorValues,
   matchedColorValues, altColorProblem, parseName, normalizeName,
 } from './photo-naming.mjs';
 
 // --- colorwayToAdminValue ------------------------------------------------------------------
 test('colorwayToAdminValue maps the general colorway tokens', () => {
   assert.equal(colorwayToAdminValue('black'), 'Black');
-  assert.equal(colorwayToAdminValue('classic-navy'), 'Navy');
-  assert.equal(colorwayToAdminValue('grey-heather'), 'Gray');
+  assert.equal(colorwayToAdminValue('classic-navy'), 'Classic Navy');
+  assert.equal(colorwayToAdminValue('grey-heather'), 'Grey Heather');
 });
 
 test('colorwayToAdminValue returns null for group and unknown tokens', () => {
@@ -23,42 +23,100 @@ test('colorwayToAdminValue honours the vest Black-only divergence', () => {
   assert.equal(colorwayToAdminValue('grey-heather', 'lead2/vest'), null);
   assert.equal(colorwayToAdminValue('black', 'lead2/vest'), 'Black');
   // A product that reserves the value keeps it.
-  assert.equal(colorwayToAdminValue('classic-navy', 'lead2/crew-sweater'), 'Navy');
+  assert.equal(colorwayToAdminValue('classic-navy', 'lead2/crew-sweater'), 'Classic Navy');
 });
 
-// --- productForLineGarment / recognizedColorValues -----------------------------------------
+// --- productForLineGarment / productForHandle / recognizedColorValues ----------------------
 test('productForLineGarment resolves known pairs and rejects unknown', () => {
   assert.equal(productForLineGarment('lead2', 'crew-sweater').handle, 'lead-ii-crewneck');
   assert.equal(productForLineGarment('nope', 'nope'), null);
 });
 
+test('productForHandle reverse-resolves a handle to { key, record } and rejects unknown', () => {
+  const hit = productForHandle('lead-ii-crewneck');
+  assert.equal(hit.key, 'lead2/crew-sweater');
+  assert.equal(hit.record.handle, 'lead-ii-crewneck');
+  assert.equal(productForHandle('no-such-handle'), null);
+  assert.equal(productForHandle(''), null);
+});
+
 test('recognizedColorValues returns a defensive copy and [] for unknown keys', () => {
   const values = recognizedColorValues('lead2/crew-sweater');
-  assert.deepEqual(values, ['Black', 'Gray', 'Navy']);
+  assert.deepEqual(values, ['Black', 'Grey Heather', 'Classic Navy']);
   values.push('Chartreuse'); // mutate the returned array
-  assert.deepEqual(recognizedColorValues('lead2/crew-sweater'), ['Black', 'Gray', 'Navy']);
+  assert.deepEqual(recognizedColorValues('lead2/crew-sweater'), ['Black', 'Grey Heather', 'Classic Navy']);
   assert.deepEqual(recognizedColorValues('nope/nope'), []);
 });
 
 // --- matchedColorValues --------------------------------------------------------------------
+const LIVE = ['Black', 'Grey Heather', 'Classic Navy'];
+
+// Contract table, copied VERBATIM into the matchedColorValues doc comment in photo-naming.mjs.
+// There is no executable Liquid oracle for theme parity, so this table and that comment are the
+// pinned statement of the storefront behaviour; keep the two in lockstep.
+const CONTRACT = [
+  ['Black crewneck, flat', LIVE, ['Black']],
+  ['Grey-Heather crewneck', LIVE, ['Grey Heather']],
+  ['Grey/Heather crewneck', LIVE, ['Grey Heather']],
+  ['grey_heather flat', LIVE, ['Grey Heather']],
+  ['Grey  Heather crewneck', LIVE, []],
+  ['Classic, Navy crewneck', LIVE, []],
+  ['Navy crewneck', LIVE, []],
+  ['Grey\u00a0Heather crewneck', LIVE, []],
+  ['Grey\tHeather crewneck', LIVE, []],
+  ['light blue flat', ['Blue', 'Light Blue'], ['Light Blue']],
+  ['Blackout hoodie', ['Black'], []],
+];
+
+test('matchedColorValues honours the pinned contract table (theme parity)', () => {
+  for (const [alt, values, expected] of CONTRACT) {
+    assert.deepEqual(matchedColorValues(alt, values), expected, `alt "${alt}"`);
+  }
+});
+
 test('matchedColorValues matches whole words with separator awareness', () => {
-  assert.deepEqual(matchedColorValues('', ['Black']), []);
-  assert.deepEqual(matchedColorValues('Black crewneck, flat', ['Black', 'Gray', 'Navy']), ['Black']);
-  assert.deepEqual(matchedColorValues('crew (Navy)', ['Navy']), ['Navy']);
-  // An embedded, non-word-bounded occurrence does NOT match.
-  assert.deepEqual(matchedColorValues('Blackout hoodie', ['Black']), []);
+  assert.deepEqual(matchedColorValues('', LIVE), []);
+  assert.deepEqual(matchedColorValues('crew (Classic Navy)', LIVE), ['Classic Navy']);
+  // Leading/trailing separators around the alt are boundaries too.
+  assert.deepEqual(matchedColorValues('-Black-', LIVE), ['Black']);
+  // Case-insensitive across a multi-word phrase.
+  assert.deepEqual(matchedColorValues('GREY Heather flat', LIVE), ['Grey Heather']);
 });
 
-test('matchedColorValues preserves values order and escapes regex metacharacters', () => {
-  assert.deepEqual(matchedColorValues('shot in Navy and Black', ['Black', 'Navy']), ['Black', 'Navy']);
-  // A value with regex metachars is matched literally, not as a pattern.
+test('matchedColorValues preserves values order and treats value text literally', () => {
+  assert.deepEqual(matchedColorValues('shot in Classic Navy and Black', LIVE), ['Black', 'Classic Navy']);
+  // A value with regex metacharacters is matched literally, not as a pattern.
   assert.deepEqual(matchedColorValues('the A+ colour', ['A+']), ['A+']);
+  // Separators inside the VALUE normalize like separators inside the alt.
+  assert.deepEqual(matchedColorValues('Black (Heather) crew', ['Black (Heather)']), ['Black (Heather)']);
 });
 
-test('matchedColorValues does NOT shadow (documents the single-word-only limitation)', () => {
-  // Current behaviour: both a containing multi-word value and the contained value match.
-  // Every live Color value is a single word, so this never bites today; see the function doc.
-  assert.deepEqual(matchedColorValues('light blue flat', ['Blue', 'Light Blue']), ['Blue', 'Light Blue']);
+test('matchedColorValues normalizes the value side symmetrically with the alt side', () => {
+  // The apostrophe is a separator on both sides: "Robin's Egg" is "robin s egg" everywhere.
+  assert.deepEqual(matchedColorValues("the robin's egg vest", ["Robin's Egg"]), ["Robin's Egg"]);
+  assert.deepEqual(matchedColorValues('robin s egg vest', ["Robin's Egg"]), ["Robin's Egg"]);
+  // A hyphenated value matches a spaced alt and vice versa.
+  assert.deepEqual(matchedColorValues('grey heather flat', ['Grey-Heather']), ['Grey-Heather']);
+});
+
+test('matchedColorValues never throws on degenerate inputs and never matches a blank value', () => {
+  assert.deepEqual(matchedColorValues('---', LIVE), []);
+  assert.deepEqual(matchedColorValues('Black crewneck', []), []);
+  // A blank value's padded form is pure whitespace; it must not "match" a doubled-separator alt.
+  assert.deepEqual(matchedColorValues('Classic, Navy crewneck', ['', 'Black']), []);
+  assert.deepEqual(matchedColorValues('anything at all', ['   ']), []);
+});
+
+test('matchedColorValues applies the shadow rule (theme parity)', () => {
+  // The shorter value appearing only inside the longer one is suppressed.
+  assert.deepEqual(matchedColorValues('light blue flat', ['Blue', 'Light Blue']), ['Light Blue']);
+  // The shorter value present independently AND inside the longer one is still suppressed,
+  // exactly as the theme hides that photo under a selected "Blue".
+  assert.deepEqual(matchedColorValues('blue trim on the light blue vest', ['Blue', 'Light Blue']), ['Light Blue']);
+  // Order independence: the containing value may be listed first or last.
+  assert.deepEqual(matchedColorValues('light blue flat', ['Light Blue', 'Blue']), ['Light Blue']);
+  // No shadow when the shorter value stands alone.
+  assert.deepEqual(matchedColorValues('blue flat', ['Blue', 'Light Blue']), ['Blue']);
 });
 
 // --- altColorProblem -----------------------------------------------------------------------
@@ -74,9 +132,18 @@ test('altColorProblem accepts an exact single match', () => {
 });
 
 test('altColorProblem flags wrong, missing, and extra colour values', () => {
-  assert.match(altColorProblem('Navy crewneck', 'Black', KEY), /expected exactly "Black"/);
+  assert.match(altColorProblem('Classic Navy crewneck', 'Black', KEY), /expected exactly "Black"/);
   assert.match(altColorProblem('a plain crewneck', 'Black', KEY), /names no recognized colour value/);
-  assert.match(altColorProblem('Black and Navy crewneck', 'Black', KEY), /expected exactly "Black"/);
+  assert.match(altColorProblem('Black and Classic Navy crewneck', 'Black', KEY), /expected exactly "Black"/);
+});
+
+test('altColorProblem handles multi-word values', () => {
+  assert.equal(altColorProblem('Classic Navy crewneck laid flat', 'Classic Navy', KEY), null);
+  // "Navy" alone is not a value on this vocabulary; the alt binds nothing and goes shared.
+  assert.match(altColorProblem('Navy crewneck laid flat', 'Classic Navy', KEY), /names no recognized colour value/);
+  // A doubled separator breaks the phrase the same way it does on the storefront.
+  assert.match(altColorProblem('Classic, Navy crewneck', 'Classic Navy', KEY), /names no recognized colour value/);
+  assert.match(altColorProblem('Grey Heather and Classic Navy crewnecks', 'Classic Navy', KEY), /expected exactly "Classic Navy"/);
 });
 
 test('altColorProblem enforces the shared/group rule', () => {

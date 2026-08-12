@@ -7,8 +7,15 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   upload-ready JPEGs plus a `manifest.csv`.
 - `upload-product-media.mjs` (below): upload the processed photos to Shopify and set their alt text
   via the Admin API (the live-write step; gated, one product at a time).
+- `contact-sheet.mjs` (below): render labeled thumbnail grids from a folder of photos, so a review
+  round reads one composite per couple dozen frames instead of every frame full-size.
 - `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
-  by both scripts. One source of truth.
+  by the pipeline scripts and by the applique-grid naming guard. One source of truth.
+- `lib/heic.mjs`: the shared iPhone-HEIC decoder (`decodeToRaw`, `sharpFromRaw`, `DECODER_VERSION`)
+  plus `extractIcc`. Read by `process-product-images.mjs` and `contact-sheet.mjs`, and re-exported by
+  `applique-grid/lib/heic.mjs`. The two consumers make opposite colour choices deliberately: the
+  product pipeline re-attaches the source ICC profile, applique-grid drops it. Do not add a colour
+  transform here; put it in the caller.
 - `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
   a per-blank profile. See [`size-chart/README.md`](size-chart/README.md).
 - `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
@@ -37,6 +44,15 @@ Upload is a separate step: either `upload-product-media.mjs` (below) or the Admi
 is the mapping aid and the place you author alt text; a reprocess **preserves** the `alt` and
 `upload_status` columns you have filled in.
 
+**Shared assets (one file, several products).** A product-agnostic photo (a logo tag close-up,
+packaging, a studio scene) sits outside the naming convention under a plain descriptive kebab name;
+the processor emits its manifest row with an empty `product`. To publish it on several products,
+duplicate that row by hand, one copy per target product handle, keeping `admin_color` empty and the
+alt colour-free (the `product-images` skill drives this). A reprocess preserves the duplicated rows
+per (name, product), each keeping its own `alt` and `upload_status`, and the uploader treats each
+row as one create on that row's product. Deleting or renaming the source file drops its rows on the
+next reprocess; re-add them with the file.
+
 ### The naming convention
 
 Source filenames follow this shape (underscore-separated fields, multi-word values hyphenated
@@ -62,8 +78,9 @@ including the uploaded Shopify filename): `lead2_quarter-zip_black_emt_flat-1.jp
 `lead2-quarter-zip-black-emt-flat-1.jpg` is recovered to it. It also resolves each file to its product handle and its
 Admin **Color** value and records them in the manifest, because alt text on this store binds a photo
 to a colour (see `docs/product-media-alt-text.md`). The colorway token maps to the Admin value:
-`black` -> `Black`, `classic-navy` -> `Navy`, `grey-heather` -> `Gray`, `group` -> shared (no value).
-Note the women's vest is `Black`-only, a deliberate divergence encoded in the module.
+`black` -> `Black`, `classic-navy` -> `Classic Navy`, `grey-heather` -> `Grey Heather`, `group` ->
+shared (no value). Note the women's vest is `Black`-only, a deliberate divergence encoded in the
+module.
 
 ### What it does per image
 
@@ -141,14 +158,46 @@ node scripts/process-product-images.mjs --rename-map approved-names.csv --rename
 | `--rename-only` | off | With `--rename-originals`, do only the rename and skip processing. |
 | `--rename-map <csv>` | none | Apply operator-approved names to originals the parser could not confidently name. A CSV with `from,to` columns; each `to` is normalised and must resolve to a clean convention name (an unknown token, a missing field, or a missing index is refused, never renamed). Implies `--rename-originals`; the map wins over the auto name for a listed file. The verified guess is composed and approved by the operator upstream (the `product-images` skill); the script only applies the explicit map and never guesses. |
 
-Accepted inputs: `.jpg .jpeg .png .tif .tiff`. Anything else (e.g. HEIC) is skipped with a
+Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`. An iPhone `.heic` is decoded through the
+heic-decode WASM bridge (`lib/heic.mjs`; sharp's libvips cannot read the tiled iPhone HEICs), its
+own embedded ICC profile is extracted and honoured, and when no profile exists the manifest notes
+record an assuming-sRGB warning (distinguishing "nclx colour info present, ICC absent" from no
+colour info at all). `.heif` is **not** accepted (unverified). Anything else is skipped with a
 warning and logged in the manifest. NTFS alternate-data-stream sidecars (a `name:Zone.Identifier`
 entry beside a file downloaded on Windows, visible on WSL) are ignored silently: no warning, no
 manifest row.
 
+Convention note: any new top-level `scripts/*.test.mjs` file automatically joins the `images:test`
+suite (its npm script globs one level of `scripts/`), so a new script's tests need no CI wiring,
+and every script it imports must guard its CLI entrypoint with the `pathToFileURL` check the
+existing scripts use, or importing it from a test would run it.
+
 `--verify` also warns when a row's `upload_status` column holds prose rather than a short status
 token; that usually means an unquoted comma in a hand-edited `alt` overflowed into the next column
 and truncated the alt. It is a warning, not a failure: re-quote the alt and reprocess.
+
+## contact-sheet.mjs
+
+Renders labeled thumbnail grids (24 frames per sheet, 4 columns by default) from a folder of
+photos. Read-only over the inputs; writes only the sheet JPEGs, and only under a `product-images/`
+path (the same containment guard as the processor, so nothing unignored lands in the repo). Labels
+are file basenames, middle-truncated to fit.
+
+```bash
+node scripts/contact-sheet.mjs --input-dir 'product-images/originals'
+node scripts/contact-sheet.mjs --input-dir '<dir>' --out 'product-images/contact-sheets' --columns 4 --cell 480
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--input-dir <dir>` | `product-images/originals` | Source folder. |
+| `--out <dir>` | `product-images/contact-sheets` | Output folder. Must be under a `product-images/` path. |
+| `--columns <n>` | `4` | Thumbnails per row. Positive integer. |
+| `--cell <px>` | `480` | Thumbnail box in pixels. Integer >= 64. |
+
+Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`, matching the processor, so an untouched iPhone
+batch can be reviewed before anything is processed. 24 frames per sheet is a fixed constant, not a
+flag; more frames roll onto `contact-sheet-2.jpg` and so on. There is no `--dry-run`.
 
 ## upload-product-media.mjs
 
@@ -166,6 +215,13 @@ cautious.
 - **`--manifest <path>`** overrides the default `product-images/processed/manifest.csv`; the processed
   images are read from the manifest's own directory, so a relocated manifest and its images stay
   together.
+- **Preflight without a manifest.** `--check-products` is a standalone read-only mode: it resolves
+  every product recorded in `lib/photo-naming.mjs` against the live store and reports per-product
+  `ok` (with the live Color values) or the GID / Color-option drift that would hard-fail an upload,
+  labelling an auth/scope failure (`AUTH`) distinctly from drift (`DRIFT`). It refuses to combine
+  with `--product`, `--all`, `--dry-run`, or `--manifest`, and exits non-zero on any product error.
+  Run it before naming or processing a batch, so an upload blocker surfaces in minute two rather
+  than at the end of the pipeline.
 - **Dry-run first.** `--dry-run` resolves IDs, verifies the recorded product GID and Color option
   values still match the live store (it fails loudly on drift), runs the alt-colour guard, prints the
   per-image plan, and writes nothing.
@@ -176,6 +232,10 @@ cautious.
   appends a per-colour variant hero. It never deletes media and never edits other product fields.
 
 ```bash
+# Preflight (read-only, no manifest needed): confirm every recorded product still matches the
+# live store before spending any effort on a batch:
+node scripts/upload-product-media.mjs --check-products
+
 # Review the whole batch's per-image plan against the live store (read-only), pointing at the
 # batch manifest that --new-batch produced:
 node scripts/upload-product-media.mjs --all --dry-run --manifest 'product-images/processed/<timestamp>/manifest.csv'
@@ -203,7 +263,7 @@ If you prefer the Admin UI (or the scopes are not granted):
    the selected Color option value shows for that colour; a photo naming no value is shared across
    every colour. **Read `docs/product-media-alt-text.md` before writing any of it.** The trap in one
    line: the navy photos are named `blue-*.jpg` / `classic-navy`, and alt text must follow the Admin
-   option value (`Navy`), not the filename.
+   option value (`Classic Navy`), not the filename; a bare "Navy" names no value at all.
 4. Optionally attach one hero image per colour to that colour's variants. This does **not** drive
    the gallery: Shopify caps a variant at one attached media, so attachment can express one hero
    per colour and never "all three black photos", which is why the gallery reads alt text

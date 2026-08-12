@@ -11,8 +11,8 @@
 //            non-zero. The naming-gate step gates on this.
 //   (full)   everything local PLUS the live store: product GID, live Color values vs the
 //            committed snapshot, published GIDs/alts/count/contiguous-tail order vs live media,
-//            convention suspects, and a WARN (not a failure; the fix is a separate PR) when
-//            legacy Huddle photo alts still say Gray/Navy. In full mode, STALE is drift and the
+//            convention suspects, and a WARN (not a failure; the fix is in Admin, not the repo)
+//            when legacy Huddle photo alts still say Gray/Navy. In full mode, STALE is drift and the
 //            exit is non-zero: green means everything converged.
 
 import { readFile } from 'node:fs/promises';
@@ -177,14 +177,15 @@ async function main() {
       }
     }
 
-    // Legacy staleness, surfaced not fixed: photo alts naming Gray/Navy (not live values) block
-    // the product-images uploader for Huddle and may have un-shared old photos. Separate PR.
+    // Legacy staleness, surfaced not fixed: photo alts naming Gray/Navy (not live values) may have
+    // un-shared old photos. The repo-side vocabulary is reconciled; this is live Admin data only,
+    // and it is edited in Admin, not here.
     const legacyWords = ['Gray', 'Navy'].filter((w) => !state.liveColorValues.includes(w));
     const legacyHits = state.media.filter(
       (m) => legacyWords.some((w) => new RegExp(`(^|[-_,./():;'\\s])${w}([-_,./():;'\\s]|$)`, 'i').test(m.alt)),
     );
     if (legacyHits.length) {
-      report('WARN', 'legacy alt drift (out of scope)', `${legacyHits.length} media alt(s) name ${legacyWords.join('/')}, which are not live Color values; scripts/lib/photo-naming.mjs and docs/product-media-alt-text.md still record the old vocabulary. Fix is a separate PR.`);
+      report('WARN', 'legacy alt drift (out of scope)', `${legacyHits.length} media alt(s) name ${legacyWords.join('/')}, which are not live Color values; fix those alts in Admin (the repo-side vocabulary is already reconciled).`);
     }
   }
 

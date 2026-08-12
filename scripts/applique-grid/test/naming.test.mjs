@@ -40,9 +40,10 @@ test("apostrophe is a separator: Black's conflicts", () => {
 
 test('multi-word value matches as the full phrase only', () => {
   assert.deepEqual(colorConflicts('Grey Heather Sky', VALUES), ['Grey Heather']);
-  // A separator other than the literal space breaks the phrase; so does doubled whitespace.
-  // Matches the storefront: these would NOT bind there either.
-  assert.deepEqual(colorConflicts('Grey/Heather', VALUES), []);
+  // Any single separator normalizes to a space on the storefront, so it binds and must conflict
+  // here too ("Grey/Heather" previously slipped past the guard while binding on the storefront).
+  assert.deepEqual(colorConflicts('Grey/Heather', VALUES), ['Grey Heather']);
+  // Doubled whitespace still breaks the phrase; matches the storefront, which never collapses it.
   assert.deepEqual(colorConflicts('Grey  Heather', VALUES), []);
 });
 

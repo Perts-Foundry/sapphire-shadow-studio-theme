@@ -95,8 +95,9 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   cart line-item thumbnails and collection cards, which the gallery filter never touches. Photography
   coverage today, by *filename* colour: the crewnecks have black / blue / gray, the quarter-zip
   black / blue / gray, the women's vest black only. Those are not the Admin option values: every
-  product's values are `Black` / `Gray` / `Navy` (the vest, `Black` only), and the `blue-*` files
-  are the Navy ones. All 53 media across the five products were alt-tagged on 2026-07-17. Huddle
+  product's values are `Black` / `Grey Heather` / `Classic Navy` (the vest, `Black` only; the repo
+  vocabulary was reconciled to these on 2026-08-11, though the live media alts written on
+  2026-07-17 still say the old `Gray` / `Navy`), and the `blue-*` files are the Classic Navy ones. All 53 media across the five products were alt-tagged on 2026-07-17. Huddle
   is deliberately left unbound because its colour and design are locked 1:1, so filtering by
   colour would hide the shopper's chosen design. See `docs/product-media-alt-text.md`, which
   carries the per-product value table and the traps.
@@ -141,7 +142,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Shift Fuel's gray colourway photographs badly.** The design is white thread on light
   heather, so at full-garment scale it is effectively invisible; only the close-up
   (`crew-caffeine-trauma-gray-3.jpg`) shows it. This did not matter while every colour showed all
-  the photos, but now that Gray filters to its own three, two of the three read as a blank
+  the photos, but now that Grey Heather filters to its own three, two of the three read as a blank
   sweatshirt. Either reorder that variant's media so the close-up leads, or reshoot the gray in a
   contrasting thread. Worth confirming on the storefront before deciding.
 
