@@ -7,6 +7,8 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   upload-ready JPEGs plus a `manifest.csv`.
 - `upload-product-media.mjs` (below): upload the processed photos to Shopify and set their alt text
   via the Admin API (the live-write step; gated, one product at a time).
+- `contact-sheet.mjs` (below): render labeled thumbnail grids from a folder of photos, so a review
+  round reads one composite per couple dozen frames instead of every frame full-size.
 - `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
   by both scripts. One source of truth.
 - `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
@@ -36,6 +38,15 @@ copies; originals are only modified under the explicit opt-in `--rename-original
 Upload is a separate step: either `upload-product-media.mjs` (below) or the Admin UI. `manifest.csv`
 is the mapping aid and the place you author alt text; a reprocess **preserves** the `alt` and
 `upload_status` columns you have filled in.
+
+**Shared assets (one file, several products).** A product-agnostic photo (a logo tag close-up,
+packaging, a studio scene) sits outside the naming convention under a plain descriptive kebab name;
+the processor emits its manifest row with an empty `product`. To publish it on several products,
+duplicate that row by hand, one copy per target product handle, keeping `admin_color` empty and the
+alt colour-free (the `product-images` skill drives this). A reprocess preserves the duplicated rows
+per (name, product), each keeping its own `alt` and `upload_status`, and the uploader treats each
+row as one create on that row's product. Deleting or renaming the source file drops its rows on the
+next reprocess; re-add them with the file.
 
 ### The naming convention
 
@@ -150,6 +161,18 @@ manifest row.
 `--verify` also warns when a row's `upload_status` column holds prose rather than a short status
 token; that usually means an unquoted comma in a hand-edited `alt` overflowed into the next column
 and truncated the alt. It is a warning, not a failure: re-quote the alt and reprocess.
+
+## contact-sheet.mjs
+
+Renders labeled thumbnail grids (24 frames per sheet, 4 columns by default) from a folder of
+photos. Read-only over the inputs; writes only the sheet JPEGs, and only under a `product-images/`
+path (the same containment guard as the processor, so nothing unignored lands in the repo). Labels
+are file basenames, middle-truncated to fit.
+
+```bash
+node scripts/contact-sheet.mjs --input-dir 'product-images/originals'
+node scripts/contact-sheet.mjs --input-dir '<dir>' --out 'product-images/contact-sheets' --columns 4 --cell 480
+```
 
 ## upload-product-media.mjs
 

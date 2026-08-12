@@ -32,7 +32,7 @@ import { readdir, stat, mkdir, rm, writeFile, readFile, rename } from 'node:fs/p
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  normalizeName, productForLineGarment, colorwayToAdminValue, altColorProblem,
+  normalizeName, productForLineGarment, productForHandle, colorwayToAdminValue, altColorProblem,
 } from './lib/photo-naming.mjs';
 
 // Shopify hard limits (help.shopify.com). Outputs must clear both.
@@ -150,28 +150,72 @@ function parseCsvLine(line) {
   return cells;
 }
 
-// Read an existing manifest to preserve authored columns keyed by output name.
+// Read an existing manifest to preserve authored columns, keyed by output name. Each name maps
+// to an ARRAY of rows, in file order, because a shared asset (see planManifestRows below) is one
+// output file fanned out across several per-product manifest rows, each carrying its own alt and
+// upload_status. Collapsing to one row per name (the old shape) silently destroyed the fan-out.
 async function readExistingManifest(manifestPath) {
-  const preserved = new Map(); // new_name -> { alt, upload_status }
+  const preserved = new Map(); // new_name -> [{ alt, upload_status, product, line, garment }]
   let text;
   try { text = await readFile(manifestPath, 'utf8'); } catch { return preserved; }
   const lines = text.split(/\r?\n/).filter((l) => l.length);
   if (lines.length < 2) return preserved;
   const header = parseCsvLine(lines[0]);
   const iName = header.indexOf('new_name');
-  const iAlt = header.indexOf('alt');
-  const iStatus = header.indexOf('upload_status');
+  const idx = (k) => header.indexOf(k);
   if (iName === -1) return preserved;
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
     const name = cells[iName];
     if (!name) continue;
-    preserved.set(name, {
-      alt: iAlt >= 0 ? (cells[iAlt] || '') : '',
-      upload_status: iStatus >= 0 ? (cells[iStatus] || '') : '',
+    const get = (k) => (idx(k) >= 0 ? (cells[idx(k)] || '') : '');
+    if (!preserved.has(name)) preserved.set(name, []);
+    preserved.get(name).push({
+      alt: get('alt'),
+      upload_status: get('upload_status'),
+      product: get('product'),
+      line: get('line'),
+      garment: get('garment'),
     });
   }
   return preserved;
+}
+
+// Plan the manifest row seed(s) for one output name from its derived columns and the rows
+// preserved from the previous manifest. Pure; exported for tests.
+//   - Shared-asset fan-out: the name resolves to NO product, but preserved per-product rows
+//     exist (hand-authored, one per target product). Emit one seed per preserved row, in
+//     preserved order, each keeping its own alt and upload_status; admin_color stays blank
+//     (shared rows are colour-free by contract; docs/product-media-alt-text.md).
+//   - Otherwise: the normal single row. Several preserved rows for a resolving name keep the
+//     first row's alt/upload_status, with a warning.
+// Rows whose source file was removed or renamed still vanish on a reprocess (emission is driven
+// by the current input files); that is deliberate and pinned by test.
+function planManifestRows(d, preservedRows) {
+  const warnings = [];
+  if (!d.product && preservedRows.some((p) => p.product)) {
+    return {
+      fanOut: true,
+      seeds: preservedRows.map((p) => ({
+        ...d,
+        line: d.line || p.line || '',
+        garment: d.garment || p.garment || '',
+        product: p.product || '',
+        alt: p.alt || '',
+        upload_status: p.upload_status || '',
+      })),
+      warnings,
+    };
+  }
+  if (preservedRows.length > 1) {
+    warnings.push('several preserved manifest rows for one name; keeping the first row\'s alt/upload_status');
+  }
+  const keep = preservedRows[0] || { alt: '', upload_status: '' };
+  return {
+    fanOut: false,
+    seeds: [{ ...d, alt: keep.alt || '', upload_status: keep.upload_status || '' }],
+    warnings,
+  };
 }
 
 // Resolved product / colour columns from a parsed source name.
@@ -191,6 +235,11 @@ function derivedColumns(parsed) {
   };
 }
 
+// Containment guard for every write target: only paths under a product-images/ directory are
+// acceptable, because .gitignore covers exactly that tree and nothing else keeps image binaries
+// (or the manifest) out of this public repo. Shared with contact-sheet.mjs.
+const underProductImages = (p) => /(^|[\\/])product-images([\\/]|$)/.test(p);
+
 // Shared cap predicate so processing and --verify enforce the exact same invariants.
 function capProblems(w, h, bytes, maxEdge) {
   const problems = [];
@@ -204,19 +253,37 @@ function capProblems(w, h, bytes, maxEdge) {
 function profileName(iccBuf) {
   if (!iccBuf) return 'no-profile';
   const s = iccBuf.toString('latin1');
+  // Apple's profiles (Display P3 among them) carry their description in a UTF-16BE 'mluc' tag,
+  // which latin1 decoding renders with interleaved NULs ('D\0i\0s\0p...'), so the plain haystack
+  // misses it. Scan a NUL-stripped copy as a second haystack. Stripping can in principle
+  // concatenate unrelated byte runs into a keyword (an accepted false positive: this label is a
+  // cosmetic audit note, and the actual colour conversion never reads it); pinned by test so a
+  // future "fix" here is deliberate.
+  const stripped = s.replace(/\u0000/g, '');
   for (const k of ['Display P3', 'Adobe RGB', 'ProPhoto', 'Rec709', 'Rec. 709', 'sRGB', 'Apple', 'Generic RGB']) {
-    if (s.includes(k)) return k;
+    if (s.includes(k) || stripped.includes(k)) return k;
   }
   return 'other-profile';
 }
 
 // Guard the alt column against the reserved-colour-vocabulary rule (docs/product-media-alt-text.md).
 // Only rows with a resolved product and a non-empty alt are checked. Returns `${name}: ${problem}`.
+// A shared-asset fan-out row has a product handle but empty line/garment; resolve its key via
+// productForHandle so those rows are guarded too (expected=null enforces a colour-free alt against
+// that product's vocabulary). An unknown handle is a guard problem, never a throw.
 function altGuardProblems(rows) {
   const out = [];
   for (const r of rows) {
     if (!r.new_name || !r.product || !r.alt) continue;
-    const key = `${r.line}/${r.garment}`;
+    let key = `${r.line}/${r.garment}`;
+    if (!r.line || !r.garment) {
+      const known = productForHandle(r.product);
+      if (!known) {
+        out.push(`${r.new_name}: product "${r.product}" is not a recorded product; cannot colour-guard this row`);
+        continue;
+      }
+      key = known.key;
+    }
     const expected = r.admin_color ? r.admin_color : null;
     const problem = altColorProblem(r.alt, expected, key);
     if (problem) out.push(`${r.new_name}: ${problem}`);
@@ -444,8 +511,7 @@ async function main() {
   // Refuse to write anywhere but a product-images/ path, so overriding --out or --manifest can't
   // scatter unignored files into the repo (the .gitignore only covers product-images/). The manifest
   // is text, but the repo rule is that it never enters a PR, so it gets the same containment as the
-  // image binaries.
-  const underProductImages = (p) => /(^|[\\/])product-images([\\/]|$)/.test(p);
+  // image binaries. (underProductImages lives at module scope; contact-sheet.mjs reuses it.)
   if (!opts.dryRun && !opts.renameOnly && !underProductImages(outDir)) {
     throw new Error(`--out must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
   }
@@ -533,11 +599,15 @@ async function main() {
     for (const f of recognized) {
       const { name, collided, norm } = nameMap.get(f);
       const d = derivedColumns(norm.parsed);
-      const alt = preserved.get(name)?.alt || '';
-      previewRows.push({ new_name: name, line: d.line, garment: d.garment, admin_color: d.admin_color, product: d.product, alt });
-      const notes = [...norm.warnings];
+      const { fanOut, seeds, warnings: planWarnings } = planManifestRows(d, preserved.get(name) || []);
+      for (const seed of seeds) {
+        previewRows.push({ new_name: name, line: seed.line, garment: seed.garment, admin_color: seed.admin_color, product: seed.product, alt: seed.alt });
+      }
+      const notes = [...norm.warnings, ...planWarnings];
       if (collided) notes.push('collision -> suffixed');
-      console.log([f, name, d.product || '(unresolved)', d.admin_color || '(shared)', notes.join('; ')].join('\t'));
+      if (fanOut) notes.push(`shared asset: ${seeds.length} preserved product row(s)`);
+      const productCell = fanOut ? `(shared: ${seeds.length} products)` : (d.product || '(unresolved)');
+      console.log([f, name, productCell, d.admin_color || '(shared)', notes.join('; ')].join('\t'));
     }
     const guard = altGuardProblems(previewRows);
     if (guard.length) {
@@ -558,17 +628,23 @@ async function main() {
   for (const f of recognized) {
     const { name, collided, norm } = nameMap.get(f);
     const d = derivedColumns(norm.parsed);
-    const keep = preserved.get(name) || { alt: '', upload_status: '' };
+    const preservedRows = preserved.get(name) || [];
+    const { fanOut, seeds, warnings: planWarnings } = planManifestRows(d, preservedRows);
     const src = path.join(inDir, f);
     const dst = path.join(outDir, name);
     try {
       const enc = await processOne(src, dst, opts);
-      const notes = [...norm.warnings];
+      const notes = [...norm.warnings, ...planWarnings];
       if (enc.notes) notes.push(enc.notes);
       if (collided) notes.push('renamed to avoid collision');
-      rows.push({ original: f, new_name: name, ...d, ...enc, alt: keep.alt, upload_status: keep.upload_status, notes: notes.join('; ') });
-      console.log(`ok  ${f}  ->  ${name}  (${enc.mp_before}MP/${enc.kb_before}KB -> ${enc.kb_after}KB)`);
+      if (fanOut) notes.push(`shared asset: fanned out to ${seeds.length} product row(s)`);
+      for (const seed of seeds) {
+        rows.push({ original: f, new_name: name, ...seed, ...enc, notes: notes.join('; ') });
+      }
+      planWarnings.forEach((w) => console.warn(`WARN: ${f}: ${w}`));
+      console.log(`ok  ${f}  ->  ${name}  (${enc.mp_before}MP/${enc.kb_before}KB -> ${enc.kb_after}KB)${fanOut ? `  [shared: ${seeds.length} rows]` : ''}`);
     } catch (e) {
+      const keep = preservedRows[0] || { alt: '', upload_status: '' };
       rows.push({
         original: f, new_name: '', ...d, w_before: '', h_before: '', mp_before: '', kb_before: '',
         w_after: '', h_after: '', kb_after: '', alt: keep.alt, upload_status: keep.upload_status,
@@ -606,13 +682,18 @@ async function main() {
     guard.forEach((g) => console.warn(`  ${g}`));
   }
 
-  const ok = rows.filter((r) => r.new_name).length;
+  // Distinct output names, not manifest rows: a shared asset fans out to several rows for ONE file.
+  const ok = new Set(rows.filter((r) => r.new_name).map((r) => r.new_name)).size;
   console.log(`\nWrote ${ok}/${recognized.length} image(s) to ${outDir}; manifest at ${manifestPath}`);
   if (ok !== recognized.length) { console.error('Some files were skipped; see manifest notes.'); process.exitCode = 1; }
 }
 
-// Exported for unit testing; the CLI entrypoint below runs only when invoked directly.
-export { planRenames, loadRenameMap };
+// Exported for unit testing (and underProductImages for contact-sheet.mjs); the CLI entrypoint
+// below runs only when invoked directly.
+export {
+  planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
+  profileName, underProductImages,
+};
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e) => { console.error(`Fatal: ${e.message}`); process.exitCode = 1; });
