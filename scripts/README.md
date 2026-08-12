@@ -153,10 +153,19 @@ node scripts/process-product-images.mjs --rename-map approved-names.csv --rename
 | `--rename-only` | off | With `--rename-originals`, do only the rename and skip processing. |
 | `--rename-map <csv>` | none | Apply operator-approved names to originals the parser could not confidently name. A CSV with `from,to` columns; each `to` is normalised and must resolve to a clean convention name (an unknown token, a missing field, or a missing index is refused, never renamed). Implies `--rename-originals`; the map wins over the auto name for a listed file. The verified guess is composed and approved by the operator upstream (the `product-images` skill); the script only applies the explicit map and never guesses. |
 
-Accepted inputs: `.jpg .jpeg .png .tif .tiff`. Anything else (e.g. HEIC) is skipped with a
+Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`. An iPhone `.heic` is decoded through the
+heic-decode WASM bridge (`lib/heic.mjs`; sharp's libvips cannot read the tiled iPhone HEICs), its
+own embedded ICC profile is extracted and honoured, and when no profile exists the manifest notes
+record an assuming-sRGB warning (distinguishing "nclx colour info present, ICC absent" from no
+colour info at all). `.heif` is **not** accepted (unverified). Anything else is skipped with a
 warning and logged in the manifest. NTFS alternate-data-stream sidecars (a `name:Zone.Identifier`
 entry beside a file downloaded on Windows, visible on WSL) are ignored silently: no warning, no
 manifest row.
+
+Convention note: any new top-level `scripts/*.test.mjs` file automatically joins the `images:test`
+suite (its npm script globs one level of `scripts/`), so a new script's tests need no CI wiring,
+and every script it imports must guard its CLI entrypoint with the `pathToFileURL` check the
+existing scripts use, or importing it from a test would run it.
 
 `--verify` also warns when a row's `upload_status` column holds prose rather than a short status
 token; that usually means an unquoted comma in a hand-edited `alt` overflowed into the next column

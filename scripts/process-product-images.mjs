@@ -28,17 +28,21 @@
 // Pure Node fs only. Never shells out, so paths with spaces / parens / unicode are safe.
 
 import sharp from 'sharp';
-import { readdir, stat, mkdir, rm, writeFile, readFile, rename } from 'node:fs/promises';
+import { readdir, stat, mkdir, mkdtemp, rm, writeFile, readFile, rename } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   normalizeName, productForLineGarment, productForHandle, colorwayToAdminValue, altColorProblem,
 } from './lib/photo-naming.mjs';
+import { DECODER_VERSION, decodeToRaw, sharpFromRaw, extractIcc } from './lib/heic.mjs';
 
 // Shopify hard limits (help.shopify.com). Outputs must clear both.
 const MAX_MEGAPIXELS = 20;
 const MAX_BYTES = 20 * 1024 * 1024;
-const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff']);
+// .heic goes through the heic-decode WASM bridge in prepareInput (sharp's libvips cannot decode
+// the iPhone tiled HEICs); .heif is NOT accepted (unverified) and gets the standard skip-warning.
+const INPUT_EXTS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.heic']);
 const DEFAULT_OUT = 'product-images/processed';
 
 // ---------------------------------------------------------------------------
@@ -292,14 +296,59 @@ function altGuardProblems(rows) {
 }
 
 // ---------------------------------------------------------------------------
+// Prepare one source for the sharp pipeline. Non-HEIC inputs pass through as their path. A HEIC
+// is decoded via the heic-decode WASM bridge (sharp's libvips fails on the iPhone tiled HEICs
+// with "bad seek") into an in-memory PNG buffer that CARRIES the file's own embedded ICC profile
+// (extractIcc), so the downstream colour management gamut-maps from the true source space.
+// heic-decode bakes the container's orientation transforms into the decoded pixels (observed on a
+// 10-file iPhone batch: every primary item was stored landscape, 4032x3024 and 5712x4284, each
+// carrying an `irot` angle of 270, and decodeToRaw returned the upright portrait buffer, 3024x4032
+// and 4284x5712, matching the hand-built reference intermediates exactly). So no post-decode
+// rotate belongs here; adding one would transpose every portrait frame. A decode throw (corrupt
+// HEIC) propagates to the caller, which records it as a per-file manifest error, never a batch abort.
+// Exported for tests (opts.decode injects a decoder so no HEIC binary lives in git).
+// ---------------------------------------------------------------------------
+async function prepareInput(srcPath, opts = {}) {
+  if (path.extname(srcPath).toLowerCase() !== '.heic') return { input: srcPath, notes: [] };
+  const buf = await readFile(srcPath);
+  const icc = extractIcc(buf);
+  const raw = await decodeToRaw(buf, opts);
+  const notes = [`heic-decoded (heic-decode ${DECODER_VERSION})`];
+  const s = (await sharpFromRaw(raw)).removeAlpha();
+  let png;
+  if (Buffer.isBuffer(icc)) {
+    // withIccProfile takes a filesystem path; park the extracted profile in a temp dir for the
+    // duration of the encode. The resulting PNG carries the profile, so processOne's metadata
+    // read reports it (the `<profile>->sRGB` note) and the encode gamut-maps from it.
+    const dir = await mkdtemp(path.join(tmpdir(), 'ppi-icc-'));
+    try {
+      const iccPath = path.join(dir, 'source.icc');
+      await writeFile(iccPath, icc);
+      png = await s.withIccProfile(iccPath).png().toBuffer();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  } else {
+    png = await s.png().toBuffer();
+    notes.push(icc === 'nclx'
+      ? 'nclx colour info present, ICC absent; assuming sRGB'
+      : 'no colour info in HEIC; assuming sRGB');
+  }
+  return { input: png, notes };
+}
+
+// ---------------------------------------------------------------------------
 // Process one file. Returns the encode-derived manifest fields. Throws on a real failure.
+// Kept sequential with the caller's per-file loop on purpose: a 48MP HEIC decodes to ~190MB of
+// raw RGBA, so decoding files concurrently would multiply peak memory by the batch size.
 // ---------------------------------------------------------------------------
 async function processOne(srcPath, outPath, { max, quality }) {
   const { size: srcBytes } = await stat(srcPath);
-  const notes = [];
+  const { input, notes: prepNotes } = await prepareInput(srcPath);
+  const notes = [...prepNotes];
 
   // Read metadata from an EXIF-oriented view so before-dims match what a human sees.
-  const meta = await sharp(srcPath).rotate().metadata();
+  const meta = await sharp(input).rotate().metadata();
   const srcProfile = profileName(meta.icc);
   if (srcProfile !== 'sRGB' && srcProfile !== 'no-profile') notes.push(`${srcProfile}->sRGB`);
   if (meta.hasAlpha) notes.push('flattened-alpha');
@@ -308,7 +357,7 @@ async function processOne(srcPath, outPath, { max, quality }) {
   // toColourspace('srgb') + withIccProfile('srgb') imports the embedded profile and gamut-maps
   // (verified: a plain toColourspace alone does NOT convert P3). withIccProfile also drops EXIF.
   const encode = async (q, edge) => {
-    let p = sharp(srcPath).rotate();
+    let p = sharp(input).rotate();
     if (meta.hasAlpha) p = p.flatten({ background: '#ffffff' });
     p = p
       .resize(edge, edge, { fit: 'inside', withoutEnlargement: true })
@@ -692,7 +741,7 @@ async function main() {
 // below runs only when invoked directly.
 export {
   planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
-  profileName, underProductImages,
+  profileName, underProductImages, prepareInput,
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

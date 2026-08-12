@@ -105,8 +105,11 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
      which drives the alt text at step 5.
 
    Also confirm the input location: the finished photos are in `product-images/originals/` (the
-   default) or an explicit `--input-dir <path>` (an external folder with spaces is fine). Do not
-   process the live store's existing media; this pipeline only ingests new files.
+   default) or an explicit `--input-dir <path>` (an external folder with spaces is fine). iPhone
+   `.heic` files are ingested directly (the processor decodes them and honours their embedded
+   colour profile; no manual conversion bridge); `.heif` is not accepted and gets the standard
+   skip-with-warning. Do not process the live store's existing media; this pipeline only ingests
+   new files.
 
    In the same step, run the preflight: `node scripts/upload-product-media.mjs --check-products`
    (read-only, no manifest needed). The attempt is mandatory, the outcome advisory: report it in the

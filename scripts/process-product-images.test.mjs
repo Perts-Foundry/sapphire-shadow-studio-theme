@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import sharp from 'sharp';
 import {
   planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
-  profileName, underProductImages,
+  profileName, underProductImages, prepareInput,
 } from './process-product-images.mjs';
 
 const execFileP = promisify(execFile);
@@ -199,6 +199,76 @@ test('underProductImages contains writes to product-images/ paths only', () => {
   assert.equal(underProductImages('product-images'), true);
   assert.equal(underProductImages('/tmp/elsewhere/out'), false);
   assert.equal(underProductImages('/tmp/product-imagesx/out'), false);
+});
+
+// --- prepareInput (HEIC branch, injected decoder; no HEIC binary in git) -------------------
+const RAW_2X2 = () => ({
+  width: 2,
+  height: 2,
+  data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]).buffer,
+});
+
+test('prepareInput passes non-HEIC inputs through untouched', async () => {
+  assert.deepEqual(await prepareInput('photo.jpg'), { input: 'photo.jpg', notes: [] });
+  assert.deepEqual(await prepareInput('scan.TIF'), { input: 'scan.TIF', notes: [] });
+});
+
+test('prepareInput decodes a HEIC and carries its embedded ICC profile', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'ppi-heic-'));
+  try {
+    // Harvest a REAL sRGB ICC profile from sharp itself, so withIccProfile gets valid bytes.
+    const donor = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ffffff' } })
+      .png().withIccProfile('srgb').toBuffer();
+    const { icc } = await sharp(donor).metadata();
+    assert.ok(icc && icc.length >= 128, 'donor PNG must carry an ICC profile');
+    // Wrap the profile in a colr/prof box inside an otherwise-junk "HEIC" file.
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(8 + 4 + icc.length, 0);
+    head.write('colr', 4);
+    const fake = Buffer.concat([Buffer.alloc(16, 0xab), head, Buffer.from('prof'), icc]);
+    const p = path.join(base, 'fake.heic');
+    await writeFile(p, fake);
+
+    const { input, notes } = await prepareInput(p, { decode: async () => RAW_2X2() });
+    assert.ok(Buffer.isBuffer(input));
+    assert.ok(notes.some((n) => n.startsWith('heic-decoded (heic-decode ')));
+    assert.ok(!notes.some((n) => n.includes('assuming sRGB')));
+    const meta = await sharp(input).metadata();
+    assert.equal(meta.format, 'png');
+    assert.equal(meta.width, 2);
+    assert.equal(meta.hasAlpha, false);
+    assert.ok(meta.icc, 'the embedded profile must ride through to the PNG');
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('prepareInput warns assuming-sRGB when the HEIC carries no ICC, distinguishing nclx', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'ppi-heic-'));
+  try {
+    const bare = path.join(base, 'bare.heic');
+    await writeFile(bare, Buffer.alloc(32, 0xab));
+    const bareResult = await prepareInput(bare, { decode: async () => RAW_2X2() });
+    assert.ok(bareResult.notes.some((n) => n === 'no colour info in HEIC; assuming sRGB'));
+
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(8 + 4 + 7, 0);
+    head.write('colr', 4);
+    const nclx = path.join(base, 'nclx.heic');
+    await writeFile(nclx, Buffer.concat([head, Buffer.from('nclx'), Buffer.alloc(7)]));
+    const nclxResult = await prepareInput(nclx, { decode: async () => RAW_2X2() });
+    assert.ok(nclxResult.notes.some((n) => n === 'nclx colour info present, ICC absent; assuming sRGB'));
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('prepareInput propagates a decoder failure (corrupt HEIC) as a throw', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'ppi-heic-'));
+  try {
+    const p = path.join(base, 'corrupt.heic');
+    await writeFile(p, Buffer.alloc(16, 0xab));
+    await assert.rejects(
+      () => prepareInput(p, { decode: async () => { throw new Error('format not supported'); } }),
+      /format not supported/,
+    );
+  } finally { await rm(base, { recursive: true, force: true }); }
 });
 
 // --- integration: shared-asset manifest round-trip through the real CLI --------------------

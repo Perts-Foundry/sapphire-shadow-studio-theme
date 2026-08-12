@@ -1,59 +1,16 @@
-// HEIC decoding and the pure ingest planner. The iPhone originals are tiled HEICs that sharp
-// 0.35.3's libvips cannot decode ("bad seek"; verified against all 46 launch photos), so decoding
-// goes through heic-decode (WASM libheif) into raw RGBA, which sharp then consumes cleanly.
-// heic-decode returns bare RGBA with the Display P3 profile dropped; the sample gate is the
-// acceptance check for colour fidelity, and a P3 -> sRGB matrix here is the documented fallback
-// if fabric colours look off (any such change must bump chart.styleVersion).
+// The pure ingest planner, plus re-exports of the shared HEIC decode helpers (which moved to
+// scripts/lib/heic.mjs so process-product-images.mjs can ingest HEICs too). This pipeline
+// deliberately DROPS the embedded profile: heic-decode returns bare RGBA with the Display P3
+// profile gone; the sample gate is the acceptance check for colour fidelity, and a P3 -> sRGB
+// matrix here is the documented fallback if fabric colours look off (any such change must bump
+// chart.styleVersion). The product-images pipeline makes the opposite choice and re-attaches the
+// profile via extractIcc; see the shared module's header.
 //
 // The decoder version is part of every ingest-manifest key: a heic-decode bump re-decodes every
 // photo (its output pixels are not guaranteed stable across versions), which changes hero hashes,
 // which changes spec hashes, which republishes charts. Deliberate and documented in the README.
 
-import { createRequire } from 'node:module';
-
-const require_ = createRequire(import.meta.url);
-
-/** The pinned heic-decode version, read from the installed package (not hard-coded twice). */
-export const DECODER_VERSION = require_('heic-decode/package.json').version;
-
-let decodePromise = null;
-async function loadDecoder() {
-  if (!decodePromise) decodePromise = import('heic-decode').then((m) => m.default);
-  return decodePromise;
-}
-
-/**
- * Decode a HEIC buffer to raw RGBA. Throws on undecodable input; callers report and exclude,
- * never guess at content.
- * @param {Buffer} buffer
- * @param {object} [opts]
- * @param {(input: {buffer: Buffer}) => Promise<{width: number, height: number, data: ArrayBufferLike}>}
- *   [opts.decode] - injectable for tests
- * @returns {Promise<{width: number, height: number, data: Buffer, channels: 4}>}
- */
-export async function decodeToRaw(buffer, opts = {}) {
-  const decode = opts.decode ?? (await loadDecoder());
-  const { width, height, data } = await decode({ buffer });
-  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
-    throw new Error(`decoder returned implausible dimensions ${width}x${height}`);
-  }
-  const raw = Buffer.from(data);
-  if (raw.length !== width * height * 4) {
-    throw new Error(`decoder returned ${raw.length} bytes for ${width}x${height} RGBA (expected ${width * height * 4})`);
-  }
-  return { width, height, data: raw, channels: 4 };
-}
-
-/**
- * A sharp instance over decoded raw RGBA. sharp is imported lazily so entry points that must set
- * FONTCONFIG_FILE first (compose.mjs) control initialisation order.
- * @param {{width: number, height: number, data: Buffer}} raw
- * @returns {Promise<import('sharp').Sharp>}
- */
-export async function sharpFromRaw({ data, width, height }) {
-  const { default: sharp } = await import('sharp');
-  return sharp(data, { raw: { width, height, channels: 4 } });
-}
+export { DECODER_VERSION, decodeToRaw, sharpFromRaw } from '../../lib/heic.mjs';
 
 /**
  * Decide what ingest must do, without touching the filesystem. A photo re-decodes when it is new,
