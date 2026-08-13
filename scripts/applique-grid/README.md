@@ -14,18 +14,135 @@ or opens a PR.
 
 | Path | What |
 | --- | --- |
-| `patterns.json` | Committed registry: product snapshot, thread palette, chart params, patterns, published record. Ships as the empty bootstrap sentinel; the first skill run populates it. |
+| `patterns.json` | Committed registry: product snapshot, thread palette, chart params, optional gallery pins, patterns, published record. Ships as the empty bootstrap sentinel; the first skill run populates it. |
 | `ingest.mjs` | Copy + decode the operator's HEICs into colour-managed working cells and previews, keyed by content hash + decoder version + colour-transform version. |
+| `crops.mjs` | The crop workbench: propose a fabric-region box per photo, preview one exactly as the chart will render it, overlay a coordinate grid, screen confirmed crops for backdrop contamination. |
+| `draft.mjs` | The naming gate's working draft, and the only tool that writes the pattern block of `patterns.json`. |
 | `render.mjs` | Composite the brand-styled chart pages (`--sample` for the density gate). |
 | `publish.mjs` | Create / delete / reorder chart media on the live product (dry-run gated). |
 | `apply-options.mjs` | Byte-stable upsert of the registry-derived dropdown into the product template. |
 | `audit.mjs` | Registry vs template vs charts vs live store; `--local` for the offline subset. |
-| `lib/` | Pure logic (registry, layout, crop, naming, chart-svg, options-writer, media-plan) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` wraps the shared `scripts/lib/heic.mjs`: it keeps `planIngest` and owns this pipeline's colour handling (see Colour below). |
+| `lib/` | Pure logic (registry, layout, crop, autocrop, naming, chart-svg, options-writer, media-plan, draft, artifacts, text-diff, review-dir) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` wraps the shared `scripts/lib/heic.mjs`: it keeps `planIngest` and owns this pipeline's colour handling (see Colour below). |
 | `test/` | `npm run applique-grid:test`; goldens regen via `npm run applique-grid:golden:update`. |
+
+**Flags are authoritative in `--help`.** All seven entry points answer it, and `test/help.test.mjs`
+fails if a flag the parser accepts is missing from that text (which is how `--force` came to be
+documented nowhere). This file explains behaviour; `--help` enumerates options.
 
 Image output and manifests are guarded to gitignored `product-images/` paths; binaries never
 enter git, and manifests store **basenames only** (a dev-machine path is sensitive content in
-this public repo; the originals dir is a runtime `--source` flag and nothing else).
+this public repo; the originals dir is a runtime `--source` flag and nothing else). The working
+files the naming gate produces (`draft.json`, `grouping-ledger.md`, `gate-table.md`,
+`contact-sheets/`, `crop-*/`, `last-converged-audit.json`) live there too and are covered by the
+root-anchored `/product-images/` ignore.
+
+## Working files and precedence
+
+Three things describe pipeline state, and they can disagree:
+
+| File | Role | Authority |
+| --- | --- | --- |
+| `product-images/applique/draft.json` | the decisions | **authoritative** |
+| `product-images/applique/grouping-ledger.md` | per-photo notes, rationale, observed fabric text | human-readable only |
+| `audit.mjs --local` output | which step you are on | step pointer only |
+
+On disagreement the draft wins and the ledger is corrected. The `.md` extension diverges from the
+sibling skill's `selection-ledger.txt` deliberately: this ledger is a table.
+
+`APPLIQUE_REVIEW_DIR`, when set, receives a copy of every image the crop tooling writes. It is the
+only write in this module that lands outside a `product-images/` path, so it has its own guard: it
+must be absolute, an existing directory, with no `..` segment, and must resolve outside the repo
+working tree. Unset is a silent no-op. Only the count copied is printed; the resolved value is a
+dev-machine path and never reaches stdout, `gate-table.md`, the ledger, a commit, or a PR.
+
+```bash
+export APPLIQUE_REVIEW_DIR=<your-review-dir>
+```
+
+## The crop workbench
+
+`crops.mjs --propose` detects the fabric region and returns a normalized square box per photo. The
+algorithm (`lib/autocrop.mjs`, pure) is: greyscale local standard deviation via summed-area tables
+plus a saturation channel, each cue normalized by its own **floored** 95th percentile, box-mean
+smoothing at radius 8 so sparse motifs fill their neighbourhood before thresholding, plain Otsu,
+erosion, largest inscribed square on a 200x200 work grid (a square there is a 3:4 box on the
+1200x1600 cell), then a 5 percent inset.
+
+Three of those are load-bearing rather than incidental, and each is pinned by a differential test
+that runs the case twice, once with the constant neutralized:
+
+- **The percentile floors.** On an achromatic print the saturation p95 is chroma noise; dividing by
+  it makes noise the dominant cue and the proposal stops tracking the fabric. The floors also power
+  the absolute-signal guard that returns the null sentinel on a frame with nothing in it.
+- **No Otsu cap.** `Math.min(otsu, 0.18)` was tried and reverted: it lowers the threshold under a
+  cream print's slightly-off-cream tabletop, and the box classifies the entire frame as fabric.
+  `otsuCap` exists only as an injectable parameter defaulting to null so the test can drive the
+  known-bad value. Do not set it.
+- **The smoothing radius.** At radius 1 the mask thresholds to confetti holding almost no square;
+  at radius 4 the square is still materially smaller. A single-run assertion cannot tell 8 from 4,
+  which is why the test runs both.
+
+An unresolvable image returns **null**, which the gate table renders as "manual crop required". A
+plausible-looking wrong box is worse than an admitted failure.
+
+`--preview` renders one crop through `lib/compose.mjs`'s `prepareCellForBox`, the same function
+`render.mjs` composites with, and a test asserts the bytes match. That is the only thing standing
+between the gate and a false approval, so do not inline `coverCrop` + `prepareCell` at either call
+site again.
+
+`--scan` screens a confirmed crop for backdrop contamination: 10x10 tiles of luminance standard
+deviation, flagged when the minimum tile falls below 10. It splits into `tileStats` (needs pixels)
+and `classifyTiles` (pure), so the gate can run it before any registry exists and CI can run it
+against committed matrices with no photos on disk. `render.mjs` runs the same exported function as
+a non-fatal pre-flight. It is a **screen, never an oracle**: calibrated against the 18 launch
+crops it reproduced both operator reports exactly and false-positived once on a genuinely flat
+cream stripe.
+
+`--emit-fixture` regenerates the committed test fixtures from the local photo tree: four archetype
+cells reduced to the work grid by the same box-average the algorithm applies (so a fixture
+reproduces the full-resolution proposal rather than approximating it), the real 18 crops' tile
+matrices, and known-bad corner crops. Each records a source basename and content hash, never a
+path.
+
+## The draft
+
+`draft.json` is the naming gate's record and the resume point across a session boundary, and
+`draft.mjs` is the only tool that writes the pattern block of `patterns.json`.
+
+- `--init-from-registry` imports the committed registry into a draft. It is also the resume path
+  for a run interrupted after the registry write.
+- `--validate` assembles a candidate registry, runs the real `validate()`, prints problems, writes
+  nothing. It also prints the distinct thread list with usage counts and singletons marked, which
+  is how near-duplicate threads are found: mechanically, from a list, not by eye. Consolidating a
+  thread on an existing pattern changes its spec hash and republishes that chart.
+- `--table` prints the narrow `Key | A | B | C | D | E | F` choice table and writes the wide
+  `gate-table.md` verification table, both stamped with a digest of exactly the subset rendered.
+  Rows are keyed by hero filename stem, never an ordinal, because a merge or re-sort silently
+  repoints an ordinal.
+- `--write` MERGES the draft's `threads` and `patterns` into `patterns.json`. `published`, `chart`,
+  and `product` are publish-owned or gate-owned and pass through untouched; the merge asserts that
+  rather than assuming it. It refuses on the default branch, over a dirty `patterns.json`, on a
+  digest mismatch (naming the changed rows), on any validation problem, and on a pattern-set change
+  without `--allow-pattern-set-change`. It prints a unified diff and refuses without `--confirm`,
+  because validity is not approval. The write itself is atomic.
+
+Revert path: `git checkout scripts/applique-grid/patterns.json`, valid until a publish has run on
+top of it.
+
+## Name length
+
+`lib/layout.mjs`'s `nameCharCeiling(chart)` derives the longest pattern name the chart can carry,
+from the cell width at that grid density and from the dropdown's per-line bound. The
+per-character advance constant (0.55 em) is measured, not guessed: rendering all 18 committed
+labels in Inter Bold at size 30 and trimming to the ink extent gives 0.404 to 0.523 em per
+character.
+
+At the shipped 3x3 / 1600-unit config the ceiling is **21 characters**, against a longest committed
+name of **18** ("Terracotta Blossom"). A denser grid tightens it (14 at 4 columns), which is the
+point: those names genuinely would not fit, and the operator should learn that at the naming gate.
+It is a calibrated policy ceiling on realistic mixed-case names, not a rendering guarantee; an
+unusual all-caps name is wider per character than any of these and can still overflow, which is
+what the sample gate's eyes are for.
 
 ## The registry
 
@@ -53,6 +170,16 @@ this public repo; the originals dir is a runtime `--source` flag and nothing els
   identification for later replace / delete; the filename + alt convention is only the fallback
   for unrecorded media, and anything matching just one signal is a suspect that is reported and
   never touched.
+- `gallery.pin_after_charts` (optional) lists media that must stay AFTER the chart block, in
+  declared order. Without it the charts are hard-coded as the contiguous gallery tail, which moves
+  the operator's logo off the end on every publish. Regex validation proves shape only; existence,
+  non-overlap with the chart set, and non-overlap with the delete set are re-checked at plan time,
+  and each failure is a hard stop naming the GID rather than a silent drop. An empty list and an
+  absent key are exactly equivalent.
+- **Unknown keys are rejected by name in every container.** A misspelled `pin_after_chart` would
+  otherwise validate clean, do nothing, and let the next publish undo an Admin fix while the
+  registry looked correct. The same rule keeps a free-text field out of `draft.json`, which the
+  model reads.
 
 ## Spec hashes and filenames
 
@@ -77,21 +204,48 @@ interchangeable and are not:
 Charts are sized by `width_units x scale` with content-derived height; `render.mjs` hard-fails
 above Shopify's 20-megapixel cap and suggests a reduced `--scale`.
 
+`render.mjs --page N` renders one page and **deliberately does not write the charts manifest**, so
+`publish.mjs` refuses until a full render has run. That is also why chart-file pruning refuses
+whenever any chart file is newer than the manifest: a manifest-keyed prune straight after a partial
+render would delete every other page's chart. Unreferenced chart files are reported by the audit
+and on every full render, and deleted only under `render.mjs --prune-charts`; a file the registry
+records in `published` is never a candidate.
+
 ## Publishing model
 
 `publish.mjs --dry-run` computes the full plan (creates with verbatim alts and filenames, deletes
-with reasons, suspects, final gallery order), snapshots the live media list to the gitignored
-output dir, and stores the plan bound to a hash of the live media state. The live run requires
-that stored plan, refuses if live state moved, and consumes it either way; a retry always starts
-from a fresh dry-run and a fresh operator gate.
+with reasons, suspects, target gallery order), snapshots the live media list to the gitignored
+output dir, and stores the plan stamped with version, time, shop, product, a hash of the live media
+state, and the approved reorder verdict. The live run requires that stored plan, refuses anything
+that does not match (including a plan older than 24 hours against otherwise identical live state:
+an approval is a decision about a moment), and consumes it either way; a retry always starts from a
+fresh dry-run and a fresh operator gate. A dry run deletes any existing plan before it starts, so a
+plan left behind by a crashed earlier dry run can never be what a later live run reads.
 
 Execution order is a contract: creates (alt set at create) -> readiness barrier (every create
-READY with verified alt) -> deletes -> reorder to a contiguous gallery tail in page order. A
-failed barrier skips deletes and reorder, prints the surviving plan, and exits non-zero; the
-extra-charts state is ugly but recoverable, a chartless product page is not. Media attached to
-any variant is refused for deletion regardless of signals (charts must never be variant heroes:
-`hide_variants` would un-share them; see `docs/product-media-alt-text.md`). Non-chart media
-relative order is never disturbed.
+READY with verified alt) -> deletes -> reorder. A failed barrier skips deletes and reorder, prints
+the surviving plan, and exits non-zero; the extra-charts state is ugly but recoverable, a chartless
+product page is not. Media attached to any variant is refused for deletion regardless of signals
+(charts must never be variant heroes: `hide_variants` would un-share them; see
+`docs/product-media-alt-text.md`). Non-chart media relative order is never disturbed.
+
+**The reorder verdict is three-valued, because it used to be confidently wrong.** The planner
+simulated post-create positions assuming Shopify appends new media at the end; a real first publish
+printed `reorder not required`, both creates landed mid-gallery, and the next audit reported STALE.
+With creates pending there is no honest verdict before they land, so the dry run reports
+`undetermined until post-create` and prints the TARGET final order: the operator approves the
+destination and the possibility, not a false negative.
+
+After the barrier, `publish.mjs` re-reads the gallery and re-evaluates. It does not simply reorder:
+that would buy correctness by executing a live mutation the operator never approved. It reconciles
+first, scoped so our own creates and deletes are expected while a concurrent Admin edit to any
+untouched media aborts the phase with no reorder attempted; checks the approved target is still
+achievable; snapshots the pre-reorder order; and only then moves anything.
+
+`publish-snapshots/` is the only rollback record for a live media write, so retention only ever
+keeps more: the newest 10 stay whatever their age, the newest always stays, and nothing newer than
+the last converged audit is touched. A green FULL audit writes that watermark; with no watermark on
+record nothing is pruned at all.
 
 Credentials come from the environment; run live steps as
 `node --env-file=.env scripts/applique-grid/publish.mjs` (the repo-root `.env` is the standard,
@@ -112,10 +266,13 @@ patterns gets the same warning.
 
 ## Audit
 
-`audit.mjs --local` (registry schema, template vs derived text, charts manifest vs spec hashes)
-tolerates mid-pipeline staleness: STALE lines exit 0, structural FAILs exit non-zero. The full
-`audit.mjs` treats STALE as drift and exits non-zero: green means registry, template, rendered
-charts, published record, live media, alts, and gallery order all agree. It also WARNs (without
+`audit.mjs --local` (registry schema, template vs derived text, charts manifest vs spec hashes,
+unreferenced chart files) tolerates mid-pipeline staleness: STALE lines exit 0, structural FAILs
+exit non-zero. It is the **step pointer** a resuming session reads, never the record of decisions.
+The full `audit.mjs` treats STALE as drift and exits non-zero: green means registry, template,
+rendered charts, published record, live media, alts, and gallery order (charts followed by any
+pinned media) all agree, and it records the convergence watermark snapshot retention refuses to
+prune past. It also WARNs (without
 failing) about legacy Huddle photo alts that still say Gray / Navy; that predates this module. The
 repo-side vocabulary is now reconciled (`scripts/lib/photo-naming.mjs` and the alt-text doc record
 `Black` / `Grey Heather` / `Classic Navy`), so the remaining drift is live media alts in Admin, and
@@ -169,10 +326,22 @@ the other and the pipeline goes quiet in exactly the wrong way.
 
 ## Tests
 
-`npm run applique-grid:test`: node:test, no network, temp dirs only, and **gated in CI on every
-PR** (a step in `validate.yml`, with the same zero-tests guard as the other tooling suites). The
-cohesion test pins the shipped template's `pattern_options` byte-equal to the shipped registry's
-derived text, except when the registry byte-equals the bootstrap sentinel; an
+`npm run applique-grid:test`: node:test, no network, no HEIC decode, temp dirs only, and **gated in
+CI on every PR** (a step in `validate.yml`, with the same zero-tests guard as the other tooling
+suites). The cohesion test pins the shipped template's `pattern_options` byte-equal to the shipped
+registry's derived text, except when the registry byte-equals the bootstrap sentinel; an
 accidentally-emptied registry fails. That is a cross-file invariant between two committed
 artifacts, so CI is what makes it real: a PR that edits the template or the registry alone goes
-red. Goldens (page-1 SVG, dropdown text) regen via `npm run applique-grid:golden:update`.
+red.
+
+**Between the registry write and `apply-options.mjs`, exactly one test fails: that cohesion check.**
+That is the expected mid-pipeline state, not a regression, and it clears when the template sync
+runs. Diagnosing it from scratch has cost three separate sessions.
+
+Goldens (page-1 SVG, dropdown text, the gate-table format) regen via
+`npm run applique-grid:golden:update`. A golden diff is a defect signal first: explain it before
+regenerating, and if it legitimately must change, regenerate in its own commit with the visual
+reason in the PR body.
+
+The autocrop fixtures under `test/fixtures/autocrop/` and `test/fixtures/scan-tiles.json` come from
+`crops.mjs --emit-fixture` and need the local photo tree; the tests that consume them do not.
