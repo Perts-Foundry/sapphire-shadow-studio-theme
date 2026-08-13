@@ -15,8 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { load as loadRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
 import { balancedPages, pageLayout, compositePlan } from './lib/layout.mjs';
 import { buildChartSvg } from './lib/chart-svg.mjs';
-import { coverCrop } from './lib/crop.mjs';
-import { prepareCell, renderChart, resizeProof } from './lib/compose.mjs';
+import { prepareCellForBox, renderChart, resizeProof } from './lib/compose.mjs';
 import {
   buildChartAlt, chartFilename, chartSpec, colorConflicts, hash8, specHash,
 } from './lib/naming.mjs';
@@ -90,20 +89,53 @@ export function pageArtifacts({ chart, registry, pageDef, ingest }) {
   return { page, pages, patterns: withHashes, spec, specHash: hash, alt, filename };
 }
 
+/**
+ * Backdrop-contamination pre-flight over the page's confirmed crops. Deliberately NON-FATAL and
+ * deliberately the same exported function the gate table calls: rendering worked before this
+ * screen existed and must keep working if the screen throws, and two implementations of the same
+ * screen would tell the operator two different things about one crop.
+ * @param {object} input
+ * @param {Array<object>} input.patterns - the page's patterns (hero + crop)
+ * @param {string} input.cellsDir
+ * @param {(msg: string) => void} [input.warn]
+ * @returns {Promise<Array<{id: string, minSd: number, tile: number, edge: string}>>} the suspects
+ */
+export async function preflightScan({ patterns, cellsDir, warn = console.warn }) {
+  const suspects = [];
+  try {
+    const { scanCrop } = await import('./crops.mjs');
+    for (const p of patterns) {
+      try {
+        const r = await scanCrop({ source: path.join(cellsDir, `${p.hero}.jpg`), box: p.crop });
+        if (r.suspect) suspects.push({ id: p.id, minSd: r.minSd, tile: r.tile, edge: r.edge });
+      } catch (e) {
+        warn(`WARN: crop screen skipped for ${p.id}: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    warn(`WARN: crop screen unavailable (${e.message}); rendering anyway`);
+    return suspects;
+  }
+  for (const s of suspects) {
+    warn(`WARN: ${s.id} has a near-flat tile (min tile sd ${s.minSd.toFixed(1)}, tile ${s.tile}, ${s.edge}); inspect the crop. This is a screen, not a verdict.`);
+  }
+  return suspects;
+}
+
 async function renderPage({ chart, layout, art, scale, outPath, cellsDir }) {
   const svg = buildChartSvg({ chart, layout, page: art.page, pages: art.pages, patterns: art.patterns });
   const plan = compositePlan(layout, scale);
   const cells = [];
   for (let i = 0; i < art.patterns.length; i++) {
     const p = art.patterns[i];
-    const { extract, resize } = coverCrop({
+    const data = await prepareCellForBox({
+      source: path.join(cellsDir, `${p.hero}.jpg`),
       srcWidth: p.cell.cellWidth,
       srcHeight: p.cell.cellHeight,
       box: p.crop,
       targetWidth: plan[i].width,
       targetHeight: plan[i].height,
     });
-    const data = await prepareCell({ source: path.join(cellsDir, `${p.hero}.jpg`), extract, resize });
     cells.push({ data, left: plan[i].left, top: plan[i].top });
   }
   const out = await renderChart({ svg, scale, cells });
@@ -184,6 +216,7 @@ async function main() {
   const manifestCharts = [];
   for (const pageDef of selected) {
     const art = pageArtifacts({ chart, registry, pageDef, ingest });
+    await preflightScan({ patterns: art.patterns, cellsDir });
     const layout = pageLayout({ chart, count: art.patterns.length });
     assertUnderMpCap(layout, scale);
     const outPath = path.join(chartsDir, art.filename);

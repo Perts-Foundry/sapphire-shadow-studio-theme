@@ -7,9 +7,16 @@
 // behind setupFontconfig(), the same rig the size-chart renderer uses.
 
 import { setupFontconfig } from '../../size-chart/lib/fontconfig.mjs';
+import { coverCrop } from './crop.mjs';
 
 let sharpPromise = null;
-async function loadSharp() {
+/**
+ * The module's ONE sharp handle. Exported so every consumer (render, crops) goes through the same
+ * fontconfig-before-first-import ordering; a bare `import sharp` anywhere in this module would
+ * load libvips before FONTCONFIG_FILE is set and silently lose the bundled Inter.
+ * @returns {Promise<import('sharp').default>}
+ */
+export async function loadSharp() {
   if (!sharpPromise) {
     if (!process.env.FONTCONFIG_FILE) process.env.FONTCONFIG_FILE = setupFontconfig();
     sharpPromise = import('sharp').then((m) => m.default);
@@ -33,6 +40,25 @@ export async function prepareCell({ source, extract, resize }) {
     .resize(resize.width, resize.height, { fit: 'fill' })
     .png()
     .toBuffer();
+}
+
+/**
+ * The one path from a normalized crop box to composited cell pixels. render.mjs builds the chart
+ * through this, and crops.mjs `--preview` shows the operator a crop through this, so what the
+ * operator approves is byte-identical to what ships. Do not inline the coverCrop + prepareCell
+ * pair at either call site again; `crops.test.mjs` asserts the two produce the same bytes.
+ * @param {object} input
+ * @param {string | Buffer} input.source - working-cell JPEG path or buffer
+ * @param {number} input.srcWidth - pixel width of that cell
+ * @param {number} input.srcHeight - pixel height of that cell
+ * @param {{left: number, top: number, width: number, height: number}} input.box - normalized crop
+ * @param {number} input.targetWidth
+ * @param {number} input.targetHeight
+ * @returns {Promise<Buffer>} PNG bytes sized exactly targetWidth x targetHeight
+ */
+export async function prepareCellForBox({ source, srcWidth, srcHeight, box, targetWidth, targetHeight }) {
+  const { extract, resize } = coverCrop({ srcWidth, srcHeight, box, targetWidth, targetHeight });
+  return prepareCell({ source, extract, resize });
 }
 
 /**
