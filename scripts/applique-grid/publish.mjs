@@ -22,7 +22,9 @@ import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminClient, missingScopes } from '../blank-inventory/lib/admin.mjs';
-import { load as loadRegistry, save as saveRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
+import {
+  load as loadRegistry, save as saveRegistry, activePatterns, pinnedMedia, REGISTRY_PATH,
+} from './lib/registry.mjs';
 import { buildMediaPlan } from './lib/media-plan.mjs';
 import {
   REQUIRED_SCOPES, fetchProductState, createChart, pollMediaReady, deleteMedia, reorderMedia,
@@ -84,9 +86,20 @@ async function loadDesired({ registry, outDir, manifestPath }) {
   return { charts, chartsDir };
 }
 
+// What the gate reads. The reorder line is deliberately three-valued: with creates pending, the
+// post-create gallery order is not predictable, and the old code's confident "reorder not
+// required" was wrong on the very first publish.
+function reorderLine(plan) {
+  if (plan.reorderVerdict === 'undetermined') {
+    return `reorder: undetermined until post-create (up to ${plan.finalOrder.length} items may move; `
+      + 'relative order of untouched media preserved)';
+  }
+  return `reorder ${plan.reorderVerdict === 'required' ? 'required' : 'not required'}`;
+}
+
 function printPlan(plan, liveColorValues) {
   console.log(`Live Color values: [${liveColorValues.join(', ')}]`);
-  console.log(`\nPlan: ${plan.creates.length} create(s), ${plan.deletes.length} delete(s), ${plan.keeps.length} keep(s), reorder ${plan.reorderRequired ? 'required' : 'not required'}${plan.converged ? ' (converged: nothing to do)' : ''}`);
+  console.log(`\nPlan: ${plan.creates.length} create(s), ${plan.deletes.length} delete(s), ${plan.keeps.length} keep(s), ${reorderLine(plan)}${plan.converged ? ' (converged: nothing to do)' : ''}`);
   for (const c of plan.creates) {
     console.log(`  create  page ${c.page}: ${c.filename}`);
     console.log(`          alt: ${c.alt}`);
@@ -100,8 +113,13 @@ function printPlan(plan, liveColorValues) {
   if (plan.stalePublished.length) {
     console.log(`  stale published record(s) to prune: ${plan.stalePublished.map((e) => e.mediaGid).join(', ')}`);
   }
-  if (plan.reorderRequired) {
-    console.log('  final order:');
+  if (plan.pinned.length) {
+    console.log(`  pinned after the charts (registry gallery.pin_after_charts): ${plan.pinned.join(', ')}`);
+  }
+  // Always printed once the order could move. An "undetermined" verdict is only approvable if the
+  // operator can see the DESTINATION, not just the possibility.
+  if (plan.reorderVerdict !== 'not-required') {
+    console.log('  target final order:');
     plan.finalOrder.forEach((e, i) => console.log(`    ${i + 1}. ${e.kind === 'live' ? e.id : `(new) ${e.filename}`}`));
   }
 }
@@ -156,6 +174,7 @@ async function main() {
     published: registry.published,
     variantAttachedIds: state.variantAttachedIds,
     handle: registry.product.handle,
+    pinned: pinnedMedia(registry),
   });
 
   console.log(`${opts.dryRun ? 'DRY RUN: ' : ''}${state.title} (${registry.product.handle}), scope OK (${REQUIRED_SCOPES.join(', ')}); snapshot: ${snapshotPath}\n`);
@@ -245,7 +264,7 @@ async function main() {
     await writePublished();
     console.error('\nCreate phase failed; deletes and reorder were SKIPPED. Surviving plan:');
     for (const d of plan.deletes) console.error(`  delete  ${d.id} (${d.filename || 'no filename'}): ${d.reason}`);
-    if (plan.reorderRequired) console.error('  reorder to the planned final order');
+    if (plan.reorderVerdict !== 'not-required') console.error('  reorder to the planned final order');
     console.error('\nFailures:');
     failures.forEach((f) => console.error(`  ${f}`));
     console.error('\nRe-run publish.mjs --dry-run and re-gate before a second attempt.');

@@ -20,8 +20,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import {
-  load as loadRegistry, activePatterns, dropdownText, validate, REGISTRY_PATH,
+  load as loadRegistry, activePatterns, dropdownText, pinnedMedia, REGISTRY_PATH,
 } from './lib/registry.mjs';
+import { galleryTailProblem } from './lib/media-plan.mjs';
 import { findAppliqueBlock } from './lib/options-writer.mjs';
 import { splitHeader } from '../size-chart/lib/template-writer.mjs';
 import { buildChartAlt, isChartAlt, isChartFilename } from './lib/naming.mjs';
@@ -159,10 +160,15 @@ async function main() {
       if (!altsMatch) { report('STALE', 'published alts', 'recorded charts do not reflect the current registry; re-render and publish'); publishedOk = false; }
     }
     if (publishedOk && published.length) {
-      const tail = state.media.slice(-published.length).map((m) => m.id);
-      const wanted = published.map((e) => e.mediaGid);
-      if (tail.join('\n') === wanted.join('\n')) report('PASS', 'published charts form the contiguous gallery tail in page order');
-      else report('STALE', 'gallery order', 'charts are not the contiguous tail in page order; re-run publish.mjs (reorder)');
+      const pinned = pinnedMedia(registry);
+      const problem = galleryTailProblem({
+        liveIds: state.media.map((m) => m.id),
+        publishedGids: published.map((e) => e.mediaGid),
+        pinnedGids: pinned,
+      });
+      if (problem) report('STALE', 'gallery order', problem);
+      else if (pinned.length) report('PASS', 'charts, then the pinned media, form the gallery tail in order');
+      else report('PASS', 'published charts form the contiguous gallery tail in page order');
     }
     if (publishedOk && published.length) report('PASS', 'published GIDs, alts, and filenames match live media');
 
