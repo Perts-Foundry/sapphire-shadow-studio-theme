@@ -55,7 +55,9 @@ export function emptyRegistry() {
       title: 'Applique Patterns',
       width_units: 1600,
       scale: 2,
-      styleVersion: 1,
+      // 2: cells are colour-managed to real sRGB at ingest (was: the decoder's bare RGBA, which
+      // read Display P3 numbers as sRGB and rendered the fabric dull). See lib/heic.mjs.
+      styleVersion: 2,
     },
     patterns: [],
     published: [],

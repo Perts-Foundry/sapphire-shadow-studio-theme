@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // Ingest the operator's HEIC pattern photos: copy them out of the source folder (never writing to
-// it), decode via lib/heic.mjs, and produce working cells (long edge 1600, q90) + small previews
-// (~600px, sized for reading during the grouping gate) + an ingest manifest keyed on basename +
-// source content sha256 + decoder version, so a re-shoot under the same basename or a heic-decode
-// bump forces a re-decode and an unchanged photo skips.
+// it), decode into real sRGB (the decode drops the container's embedded profile, so the shared
+// decodeToSrgb re-attaches it and converts; see scripts/lib/heic.mjs's header, and lib/heic.mjs
+// here for what this pipeline layers on top), and produce working cells (long
+// edge 1600, q90) + small previews (~600px, sized for reading during the grouping gate) + an ingest
+// manifest keyed on basename + source content sha256 + decoder version + colour-transform version,
+// so a re-shoot under the same basename, a heic-decode bump, or a change to the colour transform
+// forces a re-decode and an unchanged photo skips.
 //
 // The source directory is a runtime flag only: a dev-machine path is sensitive content in this
 // public repo, so the manifest stores BASENAMES only and the path never lands in any artifact.
@@ -14,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DECODER_VERSION, decodeToRaw, planIngest, sharpFromRaw } from './lib/heic.mjs';
+import { COLOR_TRANSFORM_VERSION, DECODER_VERSION, decodeToSrgb, planIngest, sharpFromDecoded } from './lib/heic.mjs';
 import { load as loadRegistry, REGISTRY_PATH } from './lib/registry.mjs';
 
 const DEFAULT_OUT_DIR = 'product-images/applique';
@@ -81,6 +84,7 @@ async function main() {
     sources,
     previous: manifest.entries,
     decoderVersion: DECODER_VERSION,
+    colorTransformVersion: COLOR_TRANSFORM_VERSION,
     patterns: registry.patterns,
     force: opts.force,
   });
@@ -91,6 +95,7 @@ async function main() {
 
   const failures = [];
   const warnings = [];
+  const colorSources = new Map(); // colour note -> count, summarised instead of printed 46 times
   let decoded = 0;
   for (const basename of plan.decode) {
     const buf = bytesByName.get(basename);
@@ -102,22 +107,26 @@ async function main() {
     const [srcStat, dstStat] = [buf.length, (await stat(copyPath)).size];
     if (srcStat !== dstStat) throw new Error(`copy of ${basename} is ${dstStat} bytes, source is ${srcStat}; aborting`);
 
-    let raw;
+    let photo;
     try {
-      raw = await decodeToRaw(buf);
+      photo = await decodeToSrgb(buf);
     } catch (e) {
       failures.push(`${basename}: ${e.message}`);
       delete manifest.entries[basename]; // a stale cell must not survive a now-undecodable source
       continue;
     }
-    if (raw.width > raw.height) warnings.push(`${basename}: landscape orientation (${raw.width}x${raw.height}); pattern photos are expected portrait`);
+    if (photo.width > photo.height) warnings.push(`${basename}: landscape orientation (${photo.width}x${photo.height}); pattern photos are expected portrait`);
+    colorSources.set(photo.colorNote, (colorSources.get(photo.colorNote) ?? 0) + 1);
+    // An unconverted photo is not a failure, but it is the one case where the cell colour is a
+    // guess, so it goes in front of the operator rather than only into the manifest.
+    if (!photo.converted) warnings.push(`${basename}: ${photo.colorNote}`);
 
     const cellPath = path.join(outDir, 'cells', `${basename}.jpg`);
-    const cellInfo = await (await sharpFromRaw(raw))
+    const cellInfo = await (await sharpFromDecoded(photo))
       .resize(CELL_LONG_EDGE, CELL_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 90, mozjpeg: true, chromaSubsampling: '4:4:4' })
       .toFile(cellPath);
-    await (await sharpFromRaw(raw))
+    await (await sharpFromDecoded(photo))
       .resize(PREVIEW_LONG_EDGE, PREVIEW_LONG_EDGE, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toFile(path.join(outDir, 'previews', `${basename}.jpg`));
@@ -125,8 +134,10 @@ async function main() {
     manifest.entries[basename] = {
       sha256: src.sha256,
       decoderVersion: DECODER_VERSION,
-      width: raw.width,
-      height: raw.height,
+      colorTransformVersion: COLOR_TRANSFORM_VERSION,
+      colorNote: photo.colorNote,
+      width: photo.width,
+      height: photo.height,
       cellWidth: cellInfo.width,
       cellHeight: cellInfo.height,
     };
@@ -137,6 +148,12 @@ async function main() {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   console.log(`Ingested ${names.length} photo(s): ${decoded} decoded, ${plan.skip.length} unchanged (skipped), ${failures.length} failed.`);
+  if (colorSources.size) {
+    console.log(`\nColour (transform ${COLOR_TRANSFORM_VERSION}):`);
+    for (const [note, count] of [...colorSources].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${count} x ${note}`);
+    }
+  }
   if (warnings.length) {
     console.log('\nWarnings:');
     warnings.forEach((w) => console.log(`  ${w}`));
