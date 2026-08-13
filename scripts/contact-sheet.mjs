@@ -18,7 +18,7 @@ import { readdir, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { underProductImages } from './process-product-images.mjs';
-import { decodeToRaw, sharpFromRaw } from './lib/heic.mjs';
+import { decodeToSrgb, sharpFromDecoded } from './lib/heic.mjs';
 
 // .heic is included because selection runs on the ORIGINALS, and an iPhone batch is all HEIC.
 // A sheet that could not read the very inputs the pipeline ingests natively would send the review
@@ -97,14 +97,16 @@ const escapeXml = (s) => String(s)
 // filePaths are absolute (or cwd-relative) paths; layout columns come from the plan.
 // ---------------------------------------------------------------------------
 // A sharp instance for one input frame. sharp/libvips cannot decode iPhone tiled HEICs (the same
-// "bad seek" the shared decoder documents), so those route through the WASM bridge. Thumbnails are
-// for human selection only, so no ICC fidelity is attempted here; the processor does the real
-// colour management at ingest. Raw RGBA carries no EXIF, so .rotate() is a no-op on that path and
-// the decoder's own orientation handling stands.
+// "bad seek" the shared decoder documents), so those route through the WASM bridge, which drops
+// the container's ICC profile. These thumbnails exist for the operator to judge frames BY EYE, so
+// they go through the same decodeToSrgb the processor uses rather than showing Display P3 numbers
+// read as sRGB: the sheet a photo is picked from should not be duller than the photo. It costs one
+// full-size profile conversion per frame, which is seconds on a proofing run that already decodes
+// every original. Raw pixels carry no EXIF, so .rotate() is a no-op on that path and the decoder's
+// own orientation handling stands.
 async function frameSharp(filePath) {
   if (path.extname(filePath).toLowerCase() !== '.heic') return sharp(filePath).rotate();
-  const raw = await decodeToRaw(await readFile(filePath));
-  return sharpFromRaw(raw);
+  return sharpFromDecoded(await decodeToSrgb(await readFile(filePath)));
 }
 
 export async function renderSheet(filePaths, outPath, { columns = 4, cell = 480 } = {}) {

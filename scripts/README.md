@@ -11,11 +11,17 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   round reads one composite per couple dozen frames instead of every frame full-size.
 - `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
   by the pipeline scripts and by the applique-grid naming guard. One source of truth.
-- `lib/heic.mjs`: the shared iPhone-HEIC decoder (`decodeToRaw`, `sharpFromRaw`, `DECODER_VERSION`)
-  plus `extractIcc`. Read by `process-product-images.mjs` and `contact-sheet.mjs`, and re-exported by
-  `applique-grid/lib/heic.mjs`. The two consumers make opposite colour choices deliberately: the
-  product pipeline re-attaches the source ICC profile, applique-grid drops it. Do not add a colour
-  transform here; put it in the caller.
+- `lib/heic.mjs`: the shared iPhone-HEIC decoder (`decodeToRaw`, `sharpFromRaw`, `DECODER_VERSION`,
+  `extractIcc`) **and** the one colour transform all three pipelines use: `decodeToSrgb`, on top of
+  `embedIccProfile` (a hand-written PNG `iCCP` chunk, the tagging step sharp does not offer) and
+  `profileDescription`. Read by `process-product-images.mjs` and `contact-sheet.mjs`, and
+  re-exported by `applique-grid/lib/heic.mjs`. It lives here because the alternative is two
+  hand-rolled CRC-32s drifting apart; what still differs per pipeline is downstream (the product
+  pipeline keeps an sRGB profile on its output JPEG, applique-grid bakes and strips). Change the
+  transform's output pixels and you must bump `applique-grid`'s `COLOR_TRANSFORM_VERSION` with it.
+- `lib/heic.fixtures.mjs`: test-only Display P3 fixtures shared by `lib/heic.test.mjs` and
+  `process-product-images.test.mjs`, so both discriminate a real conversion from a no-op the same
+  way. Not collected by `node --test` and not imported by any production module.
 - `size-chart/`: generate the branded size-chart PNG and insert the on-page Size Chart block from
   a per-blank profile. See [`size-chart/README.md`](size-chart/README.md).
 - `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
@@ -93,7 +99,10 @@ module.
   gamut-maps to sRGB (many phone/camera exports are Display P3 or Adobe RGB; an 8-bit JPEG's
   reported colourspace is not a reliable signal, so the embedded profile is used). The correct
   colour is baked into sRGB pixels, so it survives Shopify's CDN re-encode even if the profile
-  is dropped. A source with no profile is assumed to be sRGB.
+  is dropped. A source with no profile is assumed to be sRGB. A file sharp can open (JPEG / PNG /
+  TIFF) is converted during the encode, from the profile libvips imports with the file; a HEIC
+  arrives from the WASM decoder as bare untagged pixels, so it is converted up front by the shared
+  `decodeToSrgb` and reaches the encode already in sRGB.
 - **Strips EXIF/GPS** (smaller files; removes any camera geolocation before the copy leaves your
   machine), after baking in EXIF orientation.
 - Names each output by the convention above, fixes the `caffine` -> `caffeine` misspelling and the
@@ -159,10 +168,12 @@ node scripts/process-product-images.mjs --rename-map approved-names.csv --rename
 | `--rename-map <csv>` | none | Apply operator-approved names to originals the parser could not confidently name. A CSV with `from,to` columns; each `to` is normalised and must resolve to a clean convention name (an unknown token, a missing field, or a missing index is refused, never renamed). Implies `--rename-originals`; the map wins over the auto name for a listed file. The verified guess is composed and approved by the operator upstream (the `product-images` skill); the script only applies the explicit map and never guesses. |
 
 Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`. An iPhone `.heic` is decoded through the
-heic-decode WASM bridge (`lib/heic.mjs`; sharp's libvips cannot read the tiled iPhone HEICs), its
-own embedded ICC profile is extracted and honoured, and when no profile exists the manifest notes
-record an assuming-sRGB warning (distinguishing "nclx colour info present, ICC absent" from no
-colour info at all). `.heif` is **not** accepted (unverified). Anything else is skipped with a
+heic-decode WASM bridge (`lib/heic.mjs`; sharp's libvips cannot read the tiled iPhone HEICs), which
+drops the container's profile, so `decodeToSrgb` re-attaches the file's **own** extracted profile
+and converts to sRGB before the encode sees a pixel; the manifest note names the profile it came
+from (`Display P3 -> sRGB`). When no profile exists the notes record an assuming-sRGB warning
+instead (distinguishing "nclx colour info present, ICC absent" from no colour info at all), and the
+pixels are left exactly as decoded rather than guessed at. `.heif` is **not** accepted (unverified). Anything else is skipped with a
 warning and logged in the manifest. NTFS alternate-data-stream sidecars (a `name:Zone.Identifier`
 entry beside a file downloaded on Windows, visible on WSL) are ignored silently: no warning, no
 manifest row.
@@ -196,8 +207,10 @@ node scripts/contact-sheet.mjs --input-dir '<dir>' --out 'product-images/contact
 | `--cell <px>` | `480` | Thumbnail box in pixels. Integer >= 64. |
 
 Accepted inputs: `.jpg .jpeg .png .tif .tiff .heic`, matching the processor, so an untouched iPhone
-batch can be reviewed before anything is processed. 24 frames per sheet is a fixed constant, not a
-flag; more frames roll onto `contact-sheet-2.jpg` and so on. There is no `--dry-run`.
+batch can be reviewed before anything is processed. HEIC frames go through the same `decodeToSrgb`
+the processor uses, so a sheet the operator picks photos from is not duller than the photos
+themselves. 24 frames per sheet is a fixed constant, not a flag; more frames roll onto
+`contact-sheet-2.jpg` and so on. There is no `--dry-run`.
 
 ## upload-product-media.mjs
 

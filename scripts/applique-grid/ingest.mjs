@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Ingest the operator's HEIC pattern photos: copy them out of the source folder (never writing to
-// it), decode via lib/heic.mjs into real sRGB (the decode drops the container's embedded profile,
-// so lib/heic.mjs re-attaches it and converts; see its header), and produce working cells (long
+// it), decode into real sRGB (the decode drops the container's embedded profile, so the shared
+// decodeToSrgb re-attaches it and converts; see scripts/lib/heic.mjs's header, and lib/heic.mjs
+// here for what this pipeline layers on top), and produce working cells (long
 // edge 1600, q90) + small previews (~600px, sized for reading during the grouping gate) + an ingest
 // manifest keyed on basename + source content sha256 + decoder version + colour-transform version,
 // so a re-shoot under the same basename, a heic-decode bump, or a change to the colour transform

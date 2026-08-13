@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  COLOR_TRANSFORM_VERSION, DECODER_VERSION, crc32, decodeToRaw, decodeToSrgb, embedIccProfile,
-  planIngest, profileDescription, sharpFromDecoded, sharpFromRaw,
-} from '../lib/heic.mjs';
+import * as applique from '../lib/heic.mjs';
+import * as shared from '../../lib/heic.mjs';
+
+const { COLOR_TRANSFORM_VERSION, DECODER_VERSION, decodeToRaw, planIngest, sharpFromRaw } = applique;
 
 // A 2x2 RGBA buffer: red, green, blue, white.
 const syntheticRaw = () => Buffer.from([
@@ -140,131 +140,15 @@ test('the planner never mutates its inputs (the source side is read-only)', () =
 });
 
 // ---------------------------------------------------------------------------
-// Colour: the transform that lands decoded photos in real sRGB.
+// Colour: the mechanism itself lives in scripts/lib/heic.mjs and is tested there. What this suite
+// still owns is that ingest.mjs's imports resolve to that one implementation, because a re-export
+// that silently drops a name (or a future copy-paste back into this module) would give the two
+// pipelines two colour transforms while COLOR_TRANSFORM_VERSION keeps claiming there is one.
 // ---------------------------------------------------------------------------
-
-/**
- * A real Display P3 profile plus a matching pair of pixel buffers, built from sharp's own built-in
- * profile so the suite stays hermetic and no binary fixture lives in git. `srgb` is the reference
- * colour; `p3` is that same colour encoded in Display P3, which is what heic-decode hands the
- * pipeline once the container's profile has been dropped.
- */
-async function p3Fixture() {
-  const { default: sharp } = await import('sharp');
-  const width = 6;
-  const height = 1;
-  const srgb = Buffer.from([
-    255, 0, 0, 0, 255, 0, 230, 120, 40, 128, 128, 128, 12, 34, 56, 250, 250, 250,
-  ]);
-  const rawOf = (b) => sharp(b, { raw: { width, height, channels: 3 } });
-  const p3 = await rawOf(srgb).withIccProfile('p3').raw().toBuffer();
-  const profile = (await sharp(await rawOf(srgb).withIccProfile('p3').png().toBuffer()).metadata()).icc;
-  return { width, height, srgb, p3, profile };
-}
-
-/** The smallest thing extractIcc accepts: a 'colr' box of the given colour type. */
-function fakeHeic(type, profile = Buffer.alloc(0)) {
-  return Buffer.concat([Buffer.from('colr', 'ascii'), Buffer.from(type, 'ascii'), profile]);
-}
-
-/** heic-decode's shape: RGBA, fully opaque, in a standalone ArrayBuffer. */
-function asRgba(rgb, width, height) {
-  const out = Buffer.alloc(width * height * 4, 255);
-  for (let p = 0; p < width * height; p++) {
-    out[p * 4] = rgb[p * 3];
-    out[p * 4 + 1] = rgb[p * 3 + 1];
-    out[p * 4 + 2] = rgb[p * 3 + 2];
+test('the colour helpers are the shared implementation, not a local copy', () => {
+  for (const name of ['crc32', 'decodeToSrgb', 'embedIccProfile', 'extractIcc', 'profileDescription', 'sharpFromDecoded']) {
+    assert.equal(typeof applique[name], 'function', `${name} must be re-exported for ingest.mjs`);
+    assert.equal(applique[name], shared[name], `${name} must be the shared function, not a copy`);
   }
-  return new Uint8Array(out).buffer;
-}
-
-const maxDelta = (a, b) => {
-  let max = 0;
-  for (let i = 0; i < a.length; i++) max = Math.max(max, Math.abs(a[i] - b[i]));
-  return max;
-};
-
-test('crc32 matches the well-known PNG IEND checksum', () => {
-  assert.equal(crc32(Buffer.from('IEND', 'ascii')), 0xae426082);
-  assert.equal(crc32(Buffer.alloc(0)), 0);
-});
-
-test('the P3 fixture really is a different encoding of the same colours', async () => {
-  const { srgb, p3, profile } = await p3Fixture();
-  assert.ok(Buffer.isBuffer(profile) && profile.length > 100, 'sharp exposes a built-in p3 profile');
-  assert.ok(maxDelta(srgb, p3) > 20, 'the P3 encoding of these colours differs materially from sRGB');
-});
-
-test('decodeToSrgb converts P3 pixels back to the colour they represent', async () => {
-  // The load-bearing test for the whole colour path. It inverts a forward transform sharp itself
-  // performed, so it needs no golden numbers, and it goes red if sharp stops importing an embedded
-  // profile, if the iCCP write breaks, or if the conversion direction inverts.
-  const { width, height, srgb, p3, profile } = await p3Fixture();
-  const decoded = await decodeToSrgb(fakeHeic('prof', profile), {
-    decode: async () => ({ width, height, data: asRgba(p3, width, height) }),
-  });
-  assert.equal(decoded.converted, true);
-  assert.equal(decoded.channels, 3);
-  assert.equal(decoded.width, width);
-  assert.equal(decoded.height, height);
-  assert.match(decoded.colorNote, /P3.*->.*sRGB/);
-  assert.ok(
-    maxDelta(decoded.data, srgb) <= 3,
-    `converted pixels should match the reference sRGB colours (max delta ${maxDelta(decoded.data, srgb)})`,
-  );
-});
-
-test('decodeToSrgb leaves a profile-less photo alone and says so', async () => {
-  const { width, height, srgb } = await p3Fixture();
-  for (const [container, pattern] of [
-    [fakeHeic('nclx'), /nclx colour info present/],
-    [Buffer.from('no colour signalling at all', 'ascii'), /no colour info in the HEIC/],
-  ]) {
-    const decoded = await decodeToSrgb(container, {
-      decode: async () => ({ width, height, data: asRgba(srgb, width, height) }),
-    });
-    assert.equal(decoded.converted, false);
-    assert.equal(decoded.channels, 3);
-    assert.match(decoded.colorNote, pattern);
-    assert.equal(maxDelta(decoded.data, srgb), 0, 'unconverted pixels pass through untouched');
-  }
-});
-
-test('embedIccProfile inserts a readable profile before IDAT and changes no pixel', async () => {
-  const { default: sharp } = await import('sharp');
-  const { width, height, srgb, profile } = await p3Fixture();
-  const plain = await sharp(srgb, { raw: { width, height, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
-  const tagged = embedIccProfile(plain, profile);
-
-  const meta = await sharp(tagged).metadata();
-  assert.ok(meta.icc.equals(profile), 'the profile survives the chunk write byte for byte');
-  assert.ok(tagged.indexOf(Buffer.from('iCCP', 'ascii')) < tagged.indexOf(Buffer.from('IDAT', 'ascii')));
-  assert.equal((await sharp(plain).metadata()).icc, undefined, 'the carrier had no profile to begin with');
-});
-
-test('embedIccProfile refuses inputs it cannot safely tag', async () => {
-  const { default: sharp } = await import('sharp');
-  const { width, height, srgb, profile } = await p3Fixture();
-  const plain = await sharp(srgb, { raw: { width, height, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
-  assert.throws(() => embedIccProfile(Buffer.from('not a png'), profile), /not a PNG/);
-  assert.throws(() => embedIccProfile(plain, Buffer.alloc(0)), /profile is empty/);
-  assert.throws(() => embedIccProfile(embedIccProfile(plain, profile), profile), /already carries a profile/);
-});
-
-test('profileDescription reads the profile name, and returns null rather than guessing', async () => {
-  const { profile } = await p3Fixture();
-  assert.match(profileDescription(profile), /P3/);
-  assert.equal(profileDescription(Buffer.alloc(0)), null);
-  assert.equal(profileDescription(Buffer.alloc(200)), null);
-  assert.equal(profileDescription('not a buffer'), null);
-});
-
-test('sharpFromDecoded carries the converted channel count', async () => {
-  const { width, height, srgb } = await p3Fixture();
-  const png = await (await sharpFromDecoded({ data: srgb, width, height, channels: 3 })).png().toBuffer();
-  const { default: sharp } = await import('sharp');
-  const meta = await sharp(png).metadata();
-  assert.equal(meta.width, width);
-  assert.equal(meta.height, height);
-  assert.equal(meta.channels, 3);
+  assert.match(COLOR_TRANSFORM_VERSION, /^\d+$/);
 });

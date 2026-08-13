@@ -17,25 +17,33 @@
 //   - mozjpeg quality ~85, chroma 4:4:4: the product is fine coloured embroidery text on
 //     fabric; the default 4:2:0 subsampling smears coloured text edges.
 //   - colour-managed to sRGB: sources are frequently Display P3 / Adobe RGB (libvips reports
-//     8-bit JPEGs as space:'srgb' regardless, so the tag is not trustworthy). We honour the
-//     EMBEDDED profile and gamut-map to real sRGB via toColourspace('srgb')+withIccProfile,
-//     baking correct colour into sRGB pixels. That survives Shopify's CDN re-encode even if it
-//     drops the profile; a naive toColourspace alone would relabel P3 as sRGB and desaturate.
+//     8-bit JPEGs as space:'srgb' regardless, so the tag is not trustworthy). Correct colour is
+//     BAKED INTO sRGB pixels, so it survives Shopify's CDN re-encode even if the profile is
+//     dropped, and the output still carries an sRGB profile for anything that reads one. The two
+//     input kinds reach that point differently, and the difference is load-bearing:
+//       * a JPEG/PNG/TIFF goes into sharp as a path, so libvips imports the file's own embedded
+//         profile and toColourspace('srgb') gamut-maps from it.
+//       * a HEIC comes out of the WASM decoder as bare RGBA with the profile stripped, so nothing
+//         downstream can know what space it is in. prepareInput converts it via the shared
+//         decodeToSrgb (scripts/lib/heic.mjs) and hands the encode pixels that ALREADY are sRGB.
+//         Do not "simplify" that back into withIccProfile(sourceProfilePath): on untagged input
+//         that CONVERTS INTO the profile given rather than tagging with it, so the pipeline
+//         round-tripped sRGB -> P3 -> sRGB and shipped P3 pixels relabelled sRGB, visibly
+//         desaturated. That shipped, and this is the fix.
 //   - strip EXIF: withIccProfile keeps only the sRGB profile, so camera EXIF/GPS (home
-//     geolocation) is removed.
+//     geolocation) is removed. The HEIC path never has EXIF to begin with (raw pixels carry none).
 //   - no WebP/AVIF here: Shopify's CDN does that on delivery.
 //
 // Pure Node fs only. Never shells out, so paths with spaces / parens / unicode are safe.
 
 import sharp from 'sharp';
-import { readdir, stat, mkdir, mkdtemp, rm, writeFile, readFile, rename } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, stat, mkdir, rm, writeFile, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   normalizeName, productForLineGarment, productForHandle, colorwayToAdminValue, altColorProblem,
 } from './lib/photo-naming.mjs';
-import { DECODER_VERSION, decodeToRaw, sharpFromRaw, extractIcc } from './lib/heic.mjs';
+import { DECODER_VERSION, decodeToSrgb } from './lib/heic.mjs';
 
 // Shopify hard limits (help.shopify.com). Outputs must clear both.
 const MAX_MEGAPIXELS = 20;
@@ -301,45 +309,37 @@ function altGuardProblems(rows) {
 }
 
 // ---------------------------------------------------------------------------
-// Prepare one source for the sharp pipeline. Non-HEIC inputs pass through as their path. A HEIC
-// is decoded via the heic-decode WASM bridge (sharp's libvips fails on the iPhone tiled HEICs
-// with "bad seek") into an in-memory PNG buffer that CARRIES the file's own embedded ICC profile
-// (extractIcc), so the downstream colour management gamut-maps from the true source space.
+// Prepare one source for the sharp pipeline, returning what sharp() needs to read it: the `input`
+// plus the `inputOptions` that describe it (null for anything sharp can read on its own).
+//
+// Non-HEIC inputs pass through as their path, and sharp imports their embedded profile itself. A
+// HEIC is decoded via the heic-decode WASM bridge (sharp's libvips fails on the iPhone tiled HEICs
+// with "bad seek"), which drops the container's ICC profile, so the shared decodeToSrgb re-attaches
+// the file's OWN profile and converts. What comes back is raw sRGB pixels, handed straight to the
+// encode: no PNG round trip, no profile for the encode to interpret, and (this is the point) the
+// conversion happens exactly once even though the encode may run up to six times in the over-cap
+// retry loop, so no attempt can differ in colour from another.
+//
 // heic-decode bakes the container's orientation transforms into the decoded pixels (observed on a
 // 10-file iPhone batch: every primary item was stored landscape, 4032x3024 and 5712x4284, each
 // carrying an `irot` angle of 270, and decodeToRaw returned the upright portrait buffer, 3024x4032
 // and 4284x5712, matching the hand-built reference intermediates exactly). So no post-decode
-// rotate belongs here; adding one would transpose every portrait frame. A decode throw (corrupt
-// HEIC) propagates to the caller, which records it as a per-file manifest error, never a batch abort.
-// Exported for tests (opts.decode injects a decoder so no HEIC binary lives in git).
+// rotate belongs here; adding one would transpose every portrait frame. Raw pixels carry no
+// orientation tag either, so processOne's `.rotate()` stays a no-op on this path. A decode throw
+// (corrupt HEIC) propagates to the caller, which records it as a per-file manifest error, never a
+// batch abort. Exported for tests (opts.decode injects a decoder so no HEIC binary lives in git).
 // ---------------------------------------------------------------------------
 async function prepareInput(srcPath, opts = {}) {
-  if (path.extname(srcPath).toLowerCase() !== '.heic') return { input: srcPath, notes: [] };
-  const buf = await readFile(srcPath);
-  const icc = extractIcc(buf);
-  const raw = await decodeToRaw(buf, opts);
-  const notes = [`heic-decoded (heic-decode ${DECODER_VERSION})`];
-  const s = (await sharpFromRaw(raw)).removeAlpha();
-  let png;
-  if (Buffer.isBuffer(icc)) {
-    // withIccProfile takes a filesystem path; park the extracted profile in a temp dir for the
-    // duration of the encode. The resulting PNG carries the profile, so processOne's metadata
-    // read reports it (the `<profile>->sRGB` note) and the encode gamut-maps from it.
-    const dir = await mkdtemp(path.join(tmpdir(), 'ppi-icc-'));
-    try {
-      const iccPath = path.join(dir, 'source.icc');
-      await writeFile(iccPath, icc);
-      png = await s.withIccProfile(iccPath).png().toBuffer();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  } else {
-    png = await s.png().toBuffer();
-    notes.push(icc === 'nclx'
-      ? 'nclx colour info present, ICC absent; assuming sRGB'
-      : 'no colour info in HEIC; assuming sRGB');
+  if (path.extname(srcPath).toLowerCase() !== '.heic') {
+    return { input: srcPath, inputOptions: null, notes: [] };
   }
-  return { input: png, notes };
+  const buf = await readFile(srcPath);
+  const { data, width, height, channels, colorNote } = await decodeToSrgb(buf, opts);
+  return {
+    input: data,
+    inputOptions: { raw: { width, height, channels } },
+    notes: [`heic-decoded (heic-decode ${DECODER_VERSION})`, colorNote],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -349,20 +349,25 @@ async function prepareInput(srcPath, opts = {}) {
 // ---------------------------------------------------------------------------
 async function processOne(srcPath, outPath, { max, quality }) {
   const { size: srcBytes } = await stat(srcPath);
-  const { input, notes: prepNotes } = await prepareInput(srcPath);
+  const { input, inputOptions, notes: prepNotes } = await prepareInput(srcPath);
   const notes = [...prepNotes];
+  const open = () => sharp(input, inputOptions ?? {});
 
   // Read metadata from an EXIF-oriented view so before-dims match what a human sees.
-  const meta = await sharp(input).rotate().metadata();
+  const meta = await open().rotate().metadata();
+  // Only the file-path inputs reach here carrying a profile; a HEIC arrives already converted and
+  // reports its own source profile through prepNotes, so this stays 'no-profile' there.
   const srcProfile = profileName(meta.icc);
   if (srcProfile !== 'sRGB' && srcProfile !== 'no-profile') notes.push(`${srcProfile}->sRGB`);
   if (meta.hasAlpha) notes.push('flattened-alpha');
 
-  // One encode attempt at a given quality/edge. Always colour-manages to true sRGB:
+  // One encode attempt at a given quality/edge. Always lands in true sRGB: for a file-path input
   // toColourspace('srgb') + withIccProfile('srgb') imports the embedded profile and gamut-maps
-  // (verified: a plain toColourspace alone does NOT convert P3). withIccProfile also drops EXIF.
+  // (verified: a plain toColourspace alone does NOT convert P3), and for the HEIC path the pixels
+  // are already sRGB, so both calls are the identity and only the sRGB tag is added.
+  // withIccProfile also drops EXIF, which is how camera GPS never reaches the store.
   const encode = async (q, edge) => {
-    let p = sharp(input).rotate();
+    let p = open().rotate();
     if (meta.hasAlpha) p = p.flatten({ background: '#ffffff' });
     p = p
       .resize(edge, edge, { fit: 'inside', withoutEnlargement: true })

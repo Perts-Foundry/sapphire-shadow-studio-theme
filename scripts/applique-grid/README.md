@@ -137,7 +137,7 @@ a local dev tool, which is compatible with this repo; nothing from it ships to t
 
 The decoder returns bare RGBA with the container's embedded profile dropped, so the decoded numbers
 are Display P3 values that every downstream tool reads as sRGB, which renders the fabric duller than
-it is (the operator reported the orange dot print as "more orange in person"). `lib/heic.mjs`'s
+it is (the operator reported the orange dot print as "more orange in person"). The shared
 `decodeToSrgb` re-attaches the file's OWN profile and converts to real sRGB, so cells and previews
 carry the photo's original colour baked into sRGB pixels. Ingest prints what it read per run
 ("46 x Display P3 -> sRGB"), and a photo carrying no ICC profile is passed through unconverted and
@@ -149,11 +149,16 @@ profile and that matrix is exactly its conversion; the difference only shows up 
 not P3 (other hardware, an Adobe RGB export, a settings change), where a hardcoded matrix would
 mis-convert silently. Full reasoning, and why the transform needs a hand-written PNG iCCP chunk
 (sharp's `withIccProfile` on raw input converts INTO the profile instead of tagging with it), is in
-that module's header.
+`scripts/lib/heic.mjs`'s header.
 
-This lives in this module's wrapper, NOT in the shared `scripts/lib/heic.mjs`: the product-images
-pipeline reads the same decoder and makes its own choice, so editing the shared module would
-silently change the colour of every product photo too.
+The transform itself lives in that shared module, and `lib/heic.mjs` here re-exports it. It was
+this module's own for exactly one commit: the product-images pipeline turned out to carry the same
+`withIccProfile`-tags-raw-input bug, and the only alternative to sharing was a second hand-rolled
+CRC-32 and iCCP writer drifting away from this one. What is still this module's is the POLICY
+around it: what the version keys mean, and that ingest bakes the converted pixels into cells and
+strips the profile (product-images keeps an sRGB profile on its output instead). A change to the
+shared transform's output pixels is a change to this pipeline's cells, whatever motivated it, so
+it must bump `COLOR_TRANSFORM_VERSION` and `chart.styleVersion` here.
 
 Two version keys guard it, and both are load-bearing. `COLOR_TRANSFORM_VERSION` is part of every
 ingest-manifest key, so a change to the transform re-decodes every photo instead of skipping cells

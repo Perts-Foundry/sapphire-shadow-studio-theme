@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DECODER_VERSION, decodeToRaw, sharpFromRaw, extractIcc } from './heic.mjs';
+import {
+  DECODER_VERSION, crc32, decodeToRaw, decodeToSrgb, embedIccProfile, extractIcc,
+  profileDescription, sharpFromDecoded, sharpFromRaw,
+} from './heic.mjs';
+import { asRgba, fakeHeic, maxDelta, p3Fixture } from './heic.fixtures.mjs';
 
 // A 2x2 RGBA buffer: red, green, blue, white.
 const syntheticRaw = () => Buffer.from([
@@ -148,4 +152,93 @@ test('extractIcc rejects short and zero-length profiles without out-of-bounds re
   const zero = Buffer.alloc(4);
   zero.writeUInt32BE(0, 0);
   assert.equal(extractIcc(colrBox('prof', zero)), null);
+});
+
+// ---------------------------------------------------------------------------
+// Colour: the transform that lands decoded photos in real sRGB. Both pipelines depend on these.
+// ---------------------------------------------------------------------------
+
+test('crc32 matches the well-known PNG IEND checksum', () => {
+  assert.equal(crc32(Buffer.from('IEND', 'ascii')), 0xae426082);
+  assert.equal(crc32(Buffer.alloc(0)), 0);
+});
+
+test('the P3 fixture really is a different encoding of the same colours', async () => {
+  const { srgb, p3, profile } = await p3Fixture();
+  assert.ok(Buffer.isBuffer(profile) && profile.length > 100, 'sharp exposes a built-in p3 profile');
+  assert.ok(maxDelta(srgb, p3) > 20, 'the P3 encoding of these colours differs materially from sRGB');
+});
+
+test('decodeToSrgb converts P3 pixels back to the colour they represent', async () => {
+  // The load-bearing test for the whole colour path. It inverts a forward transform sharp itself
+  // performed, so it needs no golden numbers, and it goes red if sharp stops importing an embedded
+  // profile, if the iCCP write breaks, or if the conversion direction inverts.
+  const { width, height, srgb, p3, profile } = await p3Fixture();
+  const decoded = await decodeToSrgb(fakeHeic('prof', profile), {
+    decode: async () => ({ width, height, data: asRgba(p3, width, height) }),
+  });
+  assert.equal(decoded.converted, true);
+  assert.equal(decoded.channels, 3);
+  assert.equal(decoded.width, width);
+  assert.equal(decoded.height, height);
+  assert.match(decoded.colorNote, /P3.*->.*sRGB/);
+  assert.ok(
+    maxDelta(decoded.data, srgb) <= 3,
+    `converted pixels should match the reference sRGB colours (max delta ${maxDelta(decoded.data, srgb)})`,
+  );
+});
+
+test('decodeToSrgb leaves a profile-less photo alone and says so', async () => {
+  const { width, height, srgb } = await p3Fixture();
+  for (const [container, pattern] of [
+    [fakeHeic('nclx'), /nclx colour info present/],
+    [Buffer.from('no colour signalling at all', 'ascii'), /no colour info in the HEIC/],
+  ]) {
+    const decoded = await decodeToSrgb(container, {
+      decode: async () => ({ width, height, data: asRgba(srgb, width, height) }),
+    });
+    assert.equal(decoded.converted, false);
+    assert.equal(decoded.channels, 3);
+    assert.match(decoded.colorNote, pattern);
+    assert.equal(maxDelta(decoded.data, srgb), 0, 'unconverted pixels pass through untouched');
+  }
+});
+
+test('embedIccProfile inserts a readable profile before IDAT and changes no pixel', async () => {
+  const { default: sharp } = await import('sharp');
+  const { width, height, srgb, profile } = await p3Fixture();
+  const plain = await sharp(srgb, { raw: { width, height, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+  const tagged = embedIccProfile(plain, profile);
+
+  const meta = await sharp(tagged).metadata();
+  assert.ok(meta.icc.equals(profile), 'the profile survives the chunk write byte for byte');
+  assert.ok(tagged.indexOf(Buffer.from('iCCP', 'ascii')) < tagged.indexOf(Buffer.from('IDAT', 'ascii')));
+  assert.equal((await sharp(plain).metadata()).icc, undefined, 'the carrier had no profile to begin with');
+});
+
+test('embedIccProfile refuses inputs it cannot safely tag', async () => {
+  const { default: sharp } = await import('sharp');
+  const { width, height, srgb, profile } = await p3Fixture();
+  const plain = await sharp(srgb, { raw: { width, height, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+  assert.throws(() => embedIccProfile(Buffer.from('not a png'), profile), /not a PNG/);
+  assert.throws(() => embedIccProfile(plain, Buffer.alloc(0)), /profile is empty/);
+  assert.throws(() => embedIccProfile(embedIccProfile(plain, profile), profile), /already carries a profile/);
+});
+
+test('profileDescription reads the profile name, and returns null rather than guessing', async () => {
+  const { profile } = await p3Fixture();
+  assert.match(profileDescription(profile), /P3/);
+  assert.equal(profileDescription(Buffer.alloc(0)), null);
+  assert.equal(profileDescription(Buffer.alloc(200)), null);
+  assert.equal(profileDescription('not a buffer'), null);
+});
+
+test('sharpFromDecoded carries the converted channel count', async () => {
+  const { width, height, srgb } = await p3Fixture();
+  const png = await (await sharpFromDecoded({ data: srgb, width, height, channels: 3 })).png().toBuffer();
+  const { default: sharp } = await import('sharp');
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, width);
+  assert.equal(meta.height, height);
+  assert.equal(meta.channels, 3);
 });

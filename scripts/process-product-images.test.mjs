@@ -11,6 +11,7 @@ import {
   planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
   profileName, underProductImages, prepareInput,
 } from './process-product-images.mjs';
+import { asRgba, fakeHeic, maxDelta, p3Fixture } from './lib/heic.fixtures.mjs';
 
 const execFileP = promisify(execFile);
 const SCRIPT = fileURLToPath(new URL('./process-product-images.mjs', import.meta.url));
@@ -202,60 +203,65 @@ test('underProductImages contains writes to product-images/ paths only', () => {
 });
 
 // --- prepareInput (HEIC branch, injected decoder; no HEIC binary in git) -------------------
-const RAW_2X2 = () => ({
-  width: 2,
-  height: 2,
-  data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]).buffer,
-});
+// The fixtures come from scripts/lib/heic.fixtures.mjs, shared with the shared module's own suite.
 
 test('prepareInput passes non-HEIC inputs through untouched', async () => {
-  assert.deepEqual(await prepareInput('photo.jpg'), { input: 'photo.jpg', notes: [] });
-  assert.deepEqual(await prepareInput('scan.TIF'), { input: 'scan.TIF', notes: [] });
+  assert.deepEqual(await prepareInput('photo.jpg'), { input: 'photo.jpg', inputOptions: null, notes: [] });
+  assert.deepEqual(await prepareInput('scan.TIF'), { input: 'scan.TIF', inputOptions: null, notes: [] });
 });
 
-test('prepareInput decodes a HEIC and carries its embedded ICC profile', async () => {
+test('prepareInput converts a P3 HEIC into real sRGB pixels, in the right direction', async () => {
+  // The load-bearing colour test. Its predecessor harvested an sRGB donor profile and asserted
+  // only that a profile was present, which sRGB -> sRGB passes whether or not anything converted:
+  // that is exactly how the shipped no-op round trip (P3 in, P3 out, relabelled sRGB) went
+  // unnoticed. This one starts from the P3 ENCODING of known sRGB colours and asserts the pixels
+  // land back on those colours, so it fails if the conversion is skipped, doubled, or inverted.
   const base = await mkdtemp(path.join(tmpdir(), 'ppi-heic-'));
   try {
-    // Harvest a REAL sRGB ICC profile from sharp itself, so withIccProfile gets valid bytes.
-    const donor = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#ffffff' } })
-      .png().withIccProfile('srgb').toBuffer();
-    const { icc } = await sharp(donor).metadata();
-    assert.ok(icc && icc.length >= 128, 'donor PNG must carry an ICC profile');
-    // Wrap the profile in a colr/prof box inside an otherwise-junk "HEIC" file.
-    const head = Buffer.alloc(8);
-    head.writeUInt32BE(8 + 4 + icc.length, 0);
-    head.write('colr', 4);
-    const fake = Buffer.concat([Buffer.alloc(16, 0xab), head, Buffer.from('prof'), icc]);
+    const { width, height, srgb, p3, profile } = await p3Fixture();
+    assert.ok(maxDelta(srgb, p3) > 20, 'the fixture must actually differ from sRGB');
     const p = path.join(base, 'fake.heic');
-    await writeFile(p, fake);
+    await writeFile(p, fakeHeic('prof', profile));
 
-    const { input, notes } = await prepareInput(p, { decode: async () => RAW_2X2() });
+    const { input, inputOptions, notes } = await prepareInput(p, {
+      decode: async () => ({ width, height, data: asRgba(p3, width, height) }),
+    });
     assert.ok(Buffer.isBuffer(input));
+    assert.deepEqual(inputOptions, { raw: { width, height, channels: 3 } });
     assert.ok(notes.some((n) => n.startsWith('heic-decoded (heic-decode ')));
-    assert.ok(!notes.some((n) => n.includes('assuming sRGB')));
-    const meta = await sharp(input).metadata();
-    assert.equal(meta.format, 'png');
-    assert.equal(meta.width, 2);
+    assert.ok(notes.some((n) => /P3.*->.*sRGB/.test(n)), `notes should name the conversion: ${notes.join('; ')}`);
+    assert.ok(
+      maxDelta(input, srgb) <= 3,
+      `decoded P3 pixels should land on the reference sRGB colours (max delta ${maxDelta(input, srgb)})`,
+    );
+
+    // And the buffer really is what sharp reads back: no alpha, no profile left to reinterpret.
+    const meta = await sharp(input, inputOptions).metadata();
+    assert.equal(meta.width, width);
     assert.equal(meta.hasAlpha, false);
-    assert.ok(meta.icc, 'the embedded profile must ride through to the PNG');
+    assert.equal(meta.icc, undefined);
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 
-test('prepareInput warns assuming-sRGB when the HEIC carries no ICC, distinguishing nclx', async () => {
+test('prepareInput leaves a profile-less HEIC unconverted and says so, distinguishing nclx', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'ppi-heic-'));
   try {
+    const { width, height, srgb } = await p3Fixture();
+    const decode = async () => ({ width, height, data: asRgba(srgb, width, height) });
+
     const bare = path.join(base, 'bare.heic');
     await writeFile(bare, Buffer.alloc(32, 0xab));
-    const bareResult = await prepareInput(bare, { decode: async () => RAW_2X2() });
-    assert.ok(bareResult.notes.some((n) => n === 'no colour info in HEIC; assuming sRGB'));
+    const bareResult = await prepareInput(bare, { decode });
+    assert.ok(bareResult.notes.some((n) => /no colour info in the HEIC; pixels assumed sRGB/.test(n)));
+    // Assuming P3 on an actually-sRGB source over-saturates as visibly as the bug this replaced,
+    // so an absent profile must leave every pixel exactly where it was.
+    assert.equal(maxDelta(bareResult.input, srgb), 0);
 
-    const head = Buffer.alloc(8);
-    head.writeUInt32BE(8 + 4 + 7, 0);
-    head.write('colr', 4);
     const nclx = path.join(base, 'nclx.heic');
-    await writeFile(nclx, Buffer.concat([head, Buffer.from('nclx'), Buffer.alloc(7)]));
-    const nclxResult = await prepareInput(nclx, { decode: async () => RAW_2X2() });
-    assert.ok(nclxResult.notes.some((n) => n === 'nclx colour info present, ICC absent; assuming sRGB'));
+    await writeFile(nclx, fakeHeic('nclx'));
+    const nclxResult = await prepareInput(nclx, { decode });
+    assert.ok(nclxResult.notes.some((n) => /nclx colour info present, ICC absent/.test(n)));
+    assert.equal(maxDelta(nclxResult.input, srgb), 0);
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 
