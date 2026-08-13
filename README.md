@@ -171,6 +171,7 @@ Upstream Horizon files carrying intentional local changes. Taking theirs on any 
 | `sections/featured-product-information.liquid` | Same guard. |
 | `sections/header.liquid` | Organization JSON-LD removed (now `snippets/structured-data.liquid`) and the `index`-guarded visually-hidden `<h1>` removed (the hero supplies the homepage heading). |
 | `snippets/meta-tags.liquid` | `og:image` forced to `https:`; the `twitter:site` tag removed along with its broken handle parse. |
+| `blocks/email-signup.liquid` | Input text and placeholder colors read `--color-input-text` / `--color-input-text-rgb` instead of upstream's hardcoded `rgb(255 255 255)`, which rendered white-on-white on the light-scheme password page. |
 
 ## Development and contributing
 
