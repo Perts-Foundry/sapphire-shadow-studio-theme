@@ -23,12 +23,25 @@ import { balancedPages } from './lib/layout.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 
-function parseArgs(argv) {
-  const opts = { dryRun: false, guard: true };
+export const HELP = `Usage: node scripts/applique-grid/apply-options.mjs [options]
+
+Byte-stable upsert of the registry-derived dropdown into the product template, on the current
+feature branch. It never commits, pushes, or opens a PR.
+
+Options:
+  --dry-run   Print the derived text and whether the template would change; write nothing.
+  --no-guard  Skip the shopify-sync in-flight-edit check. The Admin customizer also writes this
+              template, so an unreconciled in-flight edit normally blocks the write.
+  --help      This text.
+`;
+
+export function parseArgs(argv) {
+  const opts = { dryRun: false, guard: true, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
     a = a.slice(2);
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'dry-run') { opts.dryRun = true; continue; }
     if (a === 'no-guard') { opts.guard = false; continue; }
     throw new Error(`Unknown option --${a}`);
@@ -93,6 +106,7 @@ function publishStalenessWarning(registry) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const registry = await loadRegistry(REGISTRY_PATH);
   const text = dropdownText(registry); // empty registry -> defined empty string, still byte-stable
 

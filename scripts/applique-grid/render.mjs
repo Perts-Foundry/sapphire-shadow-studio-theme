@@ -26,8 +26,27 @@ const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 const MP_CAP = 20e6; // Shopify's 20-megapixel media upload cap
 const SAMPLE_GRIDS = ['3x3', '4x5']; // default density candidates at the sample gate
 
-function parseArgs(argv) {
-  const opts = { sample: false, page: null, scale: null, outDir: DEFAULT_OUT_DIR, grids: [], pruneCharts: false };
+export const HELP = `Usage: node scripts/applique-grid/render.mjs [options]
+
+Composites the numbered chart pages from the registry plus the ingested working cells. Runs the
+backdrop screen as a non-fatal pre-flight and hard-fails above Shopify's 20-megapixel cap.
+
+Options:
+  --sample          Render page 1 at candidate densities plus a mobile proof, for the density gate.
+  --grid CxR        Extra density candidate for --sample (default ${SAMPLE_GRIDS.join(' and ')}); repeatable.
+  --page N          Render only page N. NOTE: this deliberately skips the charts manifest write, so
+                    publish.mjs will refuse until a full render has run.
+  --scale N         Override chart.scale (>= 1).
+  --prune-charts    Delete chart files nothing references. Refused after a partial --page render,
+                    and never applied to a file the registry records in published.
+  --out-dir <dir>   Working directory (default ${DEFAULT_OUT_DIR}; must be under product-images/).
+  --help            This text.
+`;
+
+export function parseArgs(argv) {
+  const opts = {
+    sample: false, page: null, scale: null, outDir: DEFAULT_OUT_DIR, grids: [], pruneCharts: false, help: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -35,6 +54,7 @@ function parseArgs(argv) {
     let val;
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'sample') { opts.sample = true; continue; }
     if (a === 'prune-charts') { opts.pruneCharts = true; continue; }
     if (a === 'page') { opts.page = Number(val ?? argv[++i]); continue; }
@@ -43,6 +63,7 @@ function parseArgs(argv) {
     if (a === 'grid') { opts.grids.push(val ?? argv[++i]); continue; }
     throw new Error(`Unknown option --${a}`);
   }
+  if (opts.help) return opts;
   if (opts.page !== null && (!Number.isInteger(opts.page) || opts.page < 1)) throw new Error('--page must be a positive integer');
   if (opts.scale !== null && !(Number.isFinite(opts.scale) && opts.scale >= 1)) throw new Error('--scale must be a number >= 1');
   if (opts.grids.length && !opts.sample) throw new Error('--grid only applies with --sample');
@@ -191,6 +212,7 @@ async function reportChartFiles({ chartsDir, registry, manifestCharts, prune }) 
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
   if (!OUT_DIR_RE.test(outDir)) {
     throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);

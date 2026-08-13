@@ -36,8 +36,22 @@ import { paginate, pageArtifacts } from './render.mjs';
 const SHOP_DOMAIN = 'sapphire-shadow-studio.myshopify.com';
 const DEFAULT_OUT_DIR = 'product-images/applique';
 
-function parseArgs(argv) {
-  const opts = { dryRun: false, manifest: null, outDir: DEFAULT_OUT_DIR };
+export const HELP = `Usage: node --env-file=.env scripts/applique-grid/publish.mjs [options]
+
+The ONE entry point in this module that writes to the LIVE store. A live run requires a stored,
+stamped, operator-approved dry-run plan, and consumes it either way.
+
+Options:
+  --dry-run          Compute and print the full plan, store it stamped, write nothing.
+  --manifest <path>  Charts manifest (default <out-dir>/charts/manifest.json).
+  --out-dir <dir>    Working directory (default ${DEFAULT_OUT_DIR}).
+  --help             This text.
+
+Credentials come from the environment, never argv; secret-shaped options are refused by name.
+`;
+
+export function parseArgs(argv) {
+  const opts = { dryRun: false, manifest: null, outDir: DEFAULT_OUT_DIR, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -48,6 +62,7 @@ function parseArgs(argv) {
     if (/^(token|secret|client-secret|password|api-key)$/i.test(a)) {
       throw new Error(`--${a} refused: secrets come from the env file (node --env-file=...), never argv`);
     }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'dry-run') { opts.dryRun = true; continue; }
     if (a === 'manifest') { opts.manifest = val ?? argv[++i]; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
@@ -273,6 +288,7 @@ async function pruneSnapshots(outDir) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
   const manifestPath = opts.manifest ? path.resolve(opts.manifest) : path.join(outDir, 'charts', 'manifest.json');
   const planPath = path.join(outDir, 'publish-plan.json');

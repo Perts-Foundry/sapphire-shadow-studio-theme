@@ -36,8 +36,22 @@ const DEFAULT_OUT_DIR = 'product-images/applique';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 
-function parseArgs(argv) {
-  const opts = { local: false, outDir: DEFAULT_OUT_DIR };
+export const HELP = `Usage: node --env-file=.env scripts/applique-grid/audit.mjs [options]
+
+Registry vs template vs rendered charts vs the live store. Read-only: it never fixes anything, and
+nothing here edits live state or the template to silence a finding.
+
+Options:
+  --local          Offline subset only (registry schema, template, charts manifest, chart files).
+                   Mid-pipeline STALE lines exit 0; structural FAILs do not. This is the step
+                   pointer a resuming session reads, not the record of decisions (that is
+                   product-images/applique/draft.json).
+  --out-dir <dir>  Working directory (default ${DEFAULT_OUT_DIR}).
+  --help           This text.
+`;
+
+export function parseArgs(argv) {
+  const opts = { local: false, outDir: DEFAULT_OUT_DIR, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -45,6 +59,7 @@ function parseArgs(argv) {
     let val;
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'local') { opts.local = true; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
     throw new Error(`Unknown option --${a}`);
@@ -75,6 +90,7 @@ function expectedAlts(registry) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
   const results = []; // { level: 'PASS'|'STALE'|'FAIL'|'WARN', name, detail }
   const report = (level, name, detail = '') => {
