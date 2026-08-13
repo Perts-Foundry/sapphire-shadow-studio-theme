@@ -57,7 +57,9 @@ export function emptyRegistry() {
       scale: 2,
       // 2: cells are colour-managed to real sRGB at ingest (was: the decoder's bare RGBA, which
       // read Display P3 numbers as sRGB and rendered the fabric dull). See lib/heic.mjs.
-      styleVersion: 2,
+      // 3: the cell label is two lines, with the thread on its own line as "Thread: x" (was: a
+      // bare "(x)" parenthetical, which reads as the fabric's colour next to a fabric photo).
+      styleVersion: 3,
     },
     patterns: [],
     published: [],
@@ -247,9 +249,14 @@ export function activePatterns(reg) {
     .map((p, i) => ({ ...p, number: i + 1 }));
 }
 
-/** The dropdown lines, one per active pattern: "7. Sunset Bloom (white)". */
+/**
+ * The dropdown lines, one per active pattern: "7. Sunset Bloom (white thread)". The word "thread"
+ * is part of the line, not decoration: the customer picks from this list with no photo beside it,
+ * and a bare "(white)" next to a product whose Color option is also a colour word reads as the
+ * garment or the fabric. The charts spell it out the same way (lib/chart-svg.mjs).
+ */
 export function dropdownLines(reg) {
-  return activePatterns(reg).map((p) => `${p.number}. ${p.name} (${p.thread})`);
+  return activePatterns(reg).map((p) => `${p.number}. ${p.name} (${p.thread} thread)`);
 }
 
 /**

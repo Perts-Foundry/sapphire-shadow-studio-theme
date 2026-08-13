@@ -46,7 +46,8 @@ test('pageLayout cells sit inside the canvas and do not overlap', () => {
   assert.equal(layout.cells.length, 5);
   for (const c of layout.cells) {
     assert.ok(c.x >= 0 && c.x + c.width <= layout.width, `cell ${c.index} inside horizontally`);
-    assert.ok(c.y >= 0 && c.labelY <= layout.height, `cell ${c.index} + label inside vertically`);
+    assert.ok(c.y >= 0 && c.threadLabelY <= layout.height, `cell ${c.index} + both label lines inside vertically`);
+    assert.ok(c.labelY > c.y + c.height && c.threadLabelY > c.labelY, `cell ${c.index} label lines ordered below the photo`);
   }
   for (const a of layout.cells) {
     for (const b of layout.cells) {
@@ -55,6 +56,15 @@ test('pageLayout cells sit inside the canvas and do not overlap', () => {
         && a.y < b.y + b.height && b.y < a.y + a.height;
       assert.ok(!overlap, `cells ${a.index} and ${b.index} overlap`);
     }
+  }
+});
+
+test('pageLayout: a row advance clears both label lines before the next row', () => {
+  const layout = pageLayout({ chart: fixture.chart, count: 5 }); // 3x2 grid
+  const firstRow = layout.cells.filter((c) => c.y === layout.cells[0].y);
+  const nextRowTop = Math.min(...layout.cells.filter((c) => c.y > layout.cells[0].y).map((c) => c.y));
+  for (const c of firstRow) {
+    assert.ok(c.threadLabelY < nextRowTop, `cell ${c.index} thread line clears the next row`);
   }
 });
 

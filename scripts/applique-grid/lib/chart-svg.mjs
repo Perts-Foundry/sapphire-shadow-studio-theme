@@ -50,13 +50,18 @@ export function buildChartSvg({ chart, layout, page, pages, patterns }) {
   parts.push(`<line x1="${header.marginX}" y1="${header.dividerY}" x2="${W - header.marginX}" y2="${header.dividerY}" stroke="${ACCENT}" stroke-width="3"/>`);
 
   // Cells: keyline frame (2px, drawn 3px outside the photo rect so the composite cannot cover
-  // it), panel fill underneath, and the numbered label.
+  // it), panel fill underneath, and the two-line label. The thread gets its own line, spelled out
+  // as "Thread: x" rather than a bare parenthetical, because a colour word beside a fabric photo
+  // otherwise reads as the fabric's colour and not the stitching's.
   layout.cells.forEach((cell, i) => {
     const p = patterns[i];
     parts.push(`<rect x="${cell.x - 3}" y="${cell.y - 3}" width="${cell.width + 6}" height="${cell.height + 6}" `
       + `fill="${PANEL}" stroke="${ACCENT}" stroke-opacity="0.65" stroke-width="2" rx="8"/>`);
-    parts.push(text(`${p.number}. ${p.name} (${p.thread})`, {
+    parts.push(text(`${p.number}. ${p.name}`, {
       x: cell.labelX, y: cell.labelY, size: 30, weight: 700, fill: WHITE,
+    }));
+    parts.push(text(`Thread: ${p.thread}`, {
+      x: cell.labelX, y: cell.threadLabelY, size: 26, weight: 400, fill: BODY,
     }));
   });
 
