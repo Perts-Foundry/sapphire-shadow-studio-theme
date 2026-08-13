@@ -15,12 +15,12 @@ or opens a PR.
 | Path | What |
 | --- | --- |
 | `patterns.json` | Committed registry: product snapshot, thread palette, chart params, patterns, published record. Ships as the empty bootstrap sentinel; the first skill run populates it. |
-| `ingest.mjs` | Copy + decode the operator's HEICs into working cells and previews, keyed by content hash + decoder version. |
+| `ingest.mjs` | Copy + decode the operator's HEICs into colour-managed working cells and previews, keyed by content hash + decoder version + colour-transform version. |
 | `render.mjs` | Composite the brand-styled chart pages (`--sample` for the density gate). |
 | `publish.mjs` | Create / delete / reorder chart media on the live product (dry-run gated). |
 | `apply-options.mjs` | Byte-stable upsert of the registry-derived dropdown into the product template. |
 | `audit.mjs` | Registry vs template vs charts vs live store; `--local` for the offline subset. |
-| `lib/` | Pure logic (registry, layout, crop, naming, chart-svg, options-writer, media-plan) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` is a thin wrapper: it keeps `planIngest` and re-exports the decode helpers from the shared `scripts/lib/heic.mjs`. |
+| `lib/` | Pure logic (registry, layout, crop, naming, chart-svg, options-writer, media-plan) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` wraps the shared `scripts/lib/heic.mjs`: it keeps `planIngest` and owns this pipeline's colour handling (see Colour below). |
 | `test/` | `npm run applique-grid:test`; goldens regen via `npm run applique-grid:golden:update`. |
 
 Image output and manifests are guarded to gitignored `product-images/` paths; binaries never
@@ -60,10 +60,19 @@ Every chart filename embeds the first 8 hex chars of its spec hash
 (`<handle>-applique-pattern-chart-<n>-of-<total>-<hash8>.jpg`). The spec covers the page's
 patterns (number, id, name, thread, hero content hash, crop), every grid param, and
 `styleVersion`. **Any visual change to the renderer (palette, font, geometry, ICC handling) must
-bump `chart.styleVersion`** so existing charts republish. A `heic-decode` version bump has the
-same effect deliberately: decoded pixels are not guaranteed stable across versions, so the ingest
-manifest keys on basename + source sha256 + decoder version, a bump re-decodes everything, hero
-hashes move, and every chart republishes.
+bump `chart.styleVersion`** so existing charts republish.
+
+Two separate mechanisms, and it is worth being precise about which one does what, because they look
+interchangeable and are not:
+
+- The **ingest manifest key** (basename + source sha256 + decoder version + colour-transform
+  version) decides what gets **re-decoded**. A `heic-decode` bump or a colour-transform change
+  re-decodes every photo, because neither one's output pixels are stable across the change.
+- The **spec hash** decides what gets **republished**. Its "hero content hash" is the sha256 of the
+  SOURCE photo, not of the decoded cell, so a re-decode alone moves nothing: fresh pixels land in
+  the cells, the spec hash stays put, and `publish.mjs` sees no work to do. `styleVersion` is the
+  only lever that republishes charts whose source photos have not changed, which is why a decoder
+  bump and a colour change both need one.
 
 Charts are sized by `width_units x scale` with content-derived height; `render.mjs` hard-fails
 above Shopify's 20-megapixel cap and suggests a reduced `--scale`.
@@ -124,12 +133,33 @@ verified to declare **no install scripts** at the pinned versions; re-verify on 
 heic-decode is MIT; libheif-js ships a WASM build of libheif (LGPL-3.0), used here unmodified as
 a local dev tool, which is compatible with this repo; nothing from it ships to the storefront.
 
-The decoder returns bare RGBA: the iPhone's Display P3 profile is dropped, slightly shifting
-saturation. The sample gate is the acceptance check; the documented fallback is a P3-to-sRGB
-matrix, which is a visual change and therefore a `styleVersion` bump. Put that matrix in this
-module's own wrapper, NOT in the shared `scripts/lib/heic.mjs`: the product-images pipeline reads
-the same decoder and deliberately preserves the source profile instead, so editing the shared
-module would silently change the colour of every product photo too.
+## Colour
+
+The decoder returns bare RGBA with the container's embedded profile dropped, so the decoded numbers
+are Display P3 values that every downstream tool reads as sRGB, which renders the fabric duller than
+it is (the operator reported the orange dot print as "more orange in person"). `lib/heic.mjs`'s
+`decodeToSrgb` re-attaches the file's OWN profile and converts to real sRGB, so cells and previews
+carry the photo's original colour baked into sRGB pixels. Ingest prints what it read per run
+("46 x Display P3 -> sRGB"), and a photo carrying no ICC profile is passed through unconverted and
+WARNED about rather than guessed at.
+
+The per-file profile is used rather than a hardcoded Display P3 matrix. Measured against the 46
+launch photos the two agree to within 1/255 per channel, because all 46 carry Apple's Display P3
+profile and that matrix is exactly its conversion; the difference only shows up on a source that is
+not P3 (other hardware, an Adobe RGB export, a settings change), where a hardcoded matrix would
+mis-convert silently. Full reasoning, and why the transform needs a hand-written PNG iCCP chunk
+(sharp's `withIccProfile` on raw input converts INTO the profile instead of tagging with it), is in
+that module's header.
+
+This lives in this module's wrapper, NOT in the shared `scripts/lib/heic.mjs`: the product-images
+pipeline reads the same decoder and makes its own choice, so editing the shared module would
+silently change the colour of every product photo too.
+
+Two version keys guard it, and both are load-bearing. `COLOR_TRANSFORM_VERSION` is part of every
+ingest-manifest key, so a change to the transform re-decodes every photo instead of skipping cells
+that still hold the old colour. Spec hashes cover the SOURCE photo hash, not cell pixels, so a
+colour change must ALSO bump `chart.styleVersion` or no chart ever republishes. Change one without
+the other and the pipeline goes quiet in exactly the wrong way.
 
 ## Tests
 

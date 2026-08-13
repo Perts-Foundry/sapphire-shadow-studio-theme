@@ -67,9 +67,11 @@ tell the operator you saw it.
 3. **Sample gate (STOP).** `node scripts/applique-grid/render.mjs --sample` renders page 1 at the
    candidate densities (default 3x3 and 4x5; add `--grid CxR` for others) plus a ~400px mobile
    proof each, printing per-candidate pixel dimensions and megapixels. The operator picks the
-   density and approves style, crops, orientation, and colour fidelity (the decoder drops the
-   iPhone P3 profile; if fabric colours look off, the fallback is a P3-to-sRGB matrix in
-   `lib/heic.mjs`, which bumps `styleVersion`). Record the chosen `chart` params in the registry.
+   density and approves style, crops, orientation, and colour fidelity (ingest colour-manages each
+   photo from its own embedded profile into real sRGB and prints what it read, so a photo reported
+   as unconverted is the one whose colour is a guess; see `lib/heic.mjs`). Any change to that
+   transform bumps both `COLOR_TRANSFORM_VERSION` and `styleVersion`. Record the chosen `chart`
+   params in the registry.
 
 4. **Batch render.** `node scripts/applique-grid/render.mjs`. Report pages, dimensions, and the
    verbatim alt text per chart.

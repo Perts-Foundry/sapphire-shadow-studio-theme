@@ -2,8 +2,10 @@
 //   - scripts/process-product-images.mjs ingests iPhone .heic product photos directly, honouring
 //     the file's own embedded ICC profile (extractIcc below) so the colour pipeline gamut-maps
 //     from the true source space instead of assuming sRGB.
-//   - scripts/applique-grid/lib/heic.mjs re-exports the decode helpers for the applique ingest,
-//     which deliberately DROPS the profile (documented there; its sample gate is the colour check).
+//   - scripts/applique-grid/lib/heic.mjs wraps the decode helpers for the applique ingest and does
+//     its own colour management on top of them (decodeToSrgb there), because that pipeline bakes
+//     sRGB pixels into working cells rather than handing tagged images on. Its header is the
+//     reference for how a raw buffer gets tagged with a profile at all.
 //
 // Why not sharp directly: the iPhone originals are tiled HEICs that sharp 0.35.3's libvips cannot
 // decode ("bad seek"; verified against all 46 applique launch photos), so decoding goes through
