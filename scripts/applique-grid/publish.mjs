@@ -43,6 +43,7 @@ stamped, operator-approved dry-run plan, and consumes it either way.
 
 Options:
   --dry-run          Compute and print the full plan, store it stamped, write nothing.
+  --approved <token> The approval token printed by --dry-run. REQUIRED for a live run.
   --manifest <path>  Charts manifest (default <out-dir>/charts/manifest.json).
   --out-dir <dir>    Working directory (default ${DEFAULT_OUT_DIR}).
   --help             This text.
@@ -51,7 +52,7 @@ Credentials come from the environment, never argv; secret-shaped options are ref
 `;
 
 export function parseArgs(argv) {
-  const opts = { dryRun: false, manifest: null, outDir: DEFAULT_OUT_DIR, help: false };
+  const opts = { dryRun: false, approved: null, manifest: null, outDir: DEFAULT_OUT_DIR, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -64,6 +65,7 @@ export function parseArgs(argv) {
     }
     if (a === 'help') { opts.help = true; continue; }
     if (a === 'dry-run') { opts.dryRun = true; continue; }
+    if (a === 'approved') { opts.approved = val ?? argv[++i]; continue; }
     if (a === 'manifest') { opts.manifest = val ?? argv[++i]; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
     throw new Error(`Unknown option --${a}`);
@@ -81,6 +83,50 @@ export function liveStateHash(media) {
 // a decision about a moment, and "the gallery has not changed in a week" is not the same thing as
 // "the operator said yes to this a moment ago".
 export const PLAN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The approval token for a plan: a short digest of exactly what the dry run printed.
+ *
+ * Freshness is not consent. Before this, the only thing standing between a dry run and the
+ * irreversible live write was a file the SAME session had just written, so a run could gate itself
+ * by inference. The token has to travel through the operator (it is printed by --dry-run and typed
+ * back as --approved), which is a step no amount of self-persuasion can perform.
+ * @param {object} input
+ * @param {string} input.shop
+ * @param {string} input.handle
+ * @param {string} input.liveStateHash
+ * @param {object} input.plan
+ * @returns {string} 12 hex chars
+ */
+export function approvalToken({ shop, handle, liveStateHash: liveHash, plan }) {
+  return createHash('sha256')
+    .update(JSON.stringify({ shop, handle, liveStateHash: liveHash, plan }))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+/**
+ * Why the supplied --approved token may not execute this stored plan, or null when it may. Kept
+ * separate from planStampProblem because the two answer different questions: that one asks whether
+ * the plan is still current, this one asks whether a human said yes to it.
+ * @param {object} input
+ * @param {string | null} input.supplied - the --approved value
+ * @param {object} input.stored - the parsed publish-plan.json
+ * @returns {string | null}
+ */
+export function approvalProblem({ supplied, stored }) {
+  const expected = stored?.approvalToken;
+  if (typeof expected !== 'string' || !expected) {
+    return 'stored plan carries no approval token; it predates this rail. Re-run --dry-run and re-gate';
+  }
+  if (!supplied) {
+    return 'a live run requires --approved <token>, the token printed by --dry-run and confirmed by the operator';
+  }
+  if (supplied.trim().toLowerCase() !== expected) {
+    return `--approved ${supplied} does not match the stored plan's token; the approval was for a different plan. Re-run --dry-run and re-gate`;
+  }
+  return null;
+}
 
 /**
  * Why a stored dry-run plan may not be executed, or null when it may. Pure, so the refusals are
@@ -151,6 +197,24 @@ export function reconcileLiveState({ before, after, createdIds, deletedIds }) {
 }
 
 /**
+ * Do these two id lists hold exactly the same items with the same multiplicities?
+ * @param {string[]} a
+ * @param {string[]} b
+ * @returns {boolean}
+ */
+export function sameMultiset(a, b) {
+  if (a.length !== b.length) return false;
+  const counts = new Map();
+  for (const id of a) counts.set(id, (counts.get(id) ?? 0) + 1);
+  for (const id of b) {
+    const n = counts.get(id);
+    if (!n) return false;
+    counts.set(id, n - 1);
+  }
+  return true;
+}
+
+/**
  * Phase 3, re-evaluated against ACTUAL state. The naive fix for the mid-gallery-create bug was to
  * re-read and just reorder, which buys correctness by executing a live gallery mutation the
  * operator never approved. So this re-reads, reconciles against what this run itself did, checks
@@ -183,8 +247,11 @@ export async function reorderPhase({
   const rec = reconcileLiveState({ before, after, createdIds, deletedIds });
   if (!rec.ok) return { status: 'aborted', reason: `${rec.reason}; no reorder was attempted` };
 
+  // MULTISET equality, not set membership: `every(includes)` plus a length check cannot see a
+  // duplicate, so a target of [A, A, C] against live [A, B, C] scored "achievable" and the reorder
+  // issued would have dropped B out of the approved order entirely.
   const actualIds = after.map((m) => m.id);
-  const same = targetIds.length === actualIds.length && targetIds.every((id) => actualIds.includes(id));
+  const same = sameMultiset(targetIds, actualIds);
   if (!same) {
     return {
       status: 'aborted',
@@ -353,24 +420,41 @@ async function main() {
   console.log(`${opts.dryRun ? 'DRY RUN: ' : ''}${state.title} (${registry.product.handle}), scope OK (${REQUIRED_SCOPES.join(', ')}); snapshot: ${snapshotPath}\n`);
   printPlan(plan, state.liveColorValues);
 
+  const liveHash = liveStateHash(state.media);
+
   if (opts.dryRun) {
     // The stamp is what a live run checks: shop, product, freshness, live state, the approved
-    // reorder verdict, and the plan itself.
+    // reorder verdict, and the plan itself. The token is what the OPERATOR checks.
+    const token = approvalToken({
+      shop: SHOP_DOMAIN, handle: registry.product.handle, liveStateHash: liveHash, plan,
+    });
     await writeFile(planPath, `${JSON.stringify({
       version: 1,
       stampedAt: new Date().toISOString(),
       shop: SHOP_DOMAIN,
       handle: registry.product.handle,
-      liveStateHash: liveStateHash(state.media),
+      liveStateHash: liveHash,
       reorderVerdict: plan.reorderVerdict,
+      approvalToken: token,
       plan,
     }, null, 2)}\n`);
     console.log(`\nNo writes performed. Plan stored: ${planPath}`);
-    console.log('Next: on explicit operator approval of THIS plan, re-run without --dry-run.');
+    console.log(`Approval token for THIS plan: ${token}`);
+    console.log('Next: present the plan above to the operator. Only after they approve it, run:');
+    console.log(`  node --env-file=.env scripts/applique-grid/publish.mjs --approved ${token}`);
     return;
   }
 
-  // Live run: require the stored dry-run plan and a byte-identical live state + plan.
+  // Live run: require the stored dry-run plan, a byte-identical live state + plan, AND the token
+  // the operator was shown. Refuse a token-less invocation BEFORE consuming the plan: that is a
+  // mistake, not an execution attempt, and burning the plan would cost a gate round trip.
+  if (!opts.approved) {
+    throw new Error(
+      'a live run requires --approved <token>, the token printed by --dry-run and confirmed by the operator.\n'
+      + 'The stored plan proves freshness, never consent. Nothing was read or written.',
+    );
+  }
+
   let stored;
   try {
     stored = JSON.parse(await readFile(planPath, 'utf8'));
@@ -378,11 +462,15 @@ async function main() {
     throw new Error(`no stored dry-run plan at ${planPath}; run publish.mjs --dry-run and gate on it first`);
   }
   await rm(planPath); // consumed either way: any retry starts from a fresh dry-run + fresh gate
+
+  const consentProblem = approvalProblem({ supplied: opts.approved, stored });
+  if (consentProblem) throw new Error(consentProblem);
+
   const stampProblem = planStampProblem({
     stored,
     shop: SHOP_DOMAIN,
     handle: registry.product.handle,
-    liveHash: liveStateHash(state.media),
+    liveHash,
     plan,
     nowMs: Date.now(),
   });

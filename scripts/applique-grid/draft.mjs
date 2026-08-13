@@ -24,9 +24,11 @@
 //   - atomic write: a truncated patterns.json breaks every other tool in this module.
 
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { atomicWrite } from './lib/atomic-write.mjs';
+import { outDirProblem } from './lib/out-dir.mjs';
 import {
   CANDIDATE_ANGLES, candidateRegistry, detailTable, digestProblems, draftProblems, emptyDraft,
   keyFor, narrowTable, tableDigest, tableRows, threadUsage, validationProblems,
@@ -39,7 +41,6 @@ import { unifiedDiff } from './lib/text-diff.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const DEFAULT_OUT_DIR = 'product-images/applique';
-const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 const LEDGER_NAME = 'grouping-ledger.md';
 
 export const HELP = `Usage: node scripts/applique-grid/draft.mjs <mode> [options]
@@ -103,58 +104,92 @@ function git(args, cwd = REPO_ROOT) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
+export const CONVENTIONAL_DEFAULTS = ['main', 'master'];
+
 /**
- * The repository's default branch name, best effort. Falls back through the conventional names,
- * because a wrong answer here must fail CLOSED (refusing a legitimate branch) rather than open.
+ * Every branch name that must be treated as the default, so the refusal fails CLOSED.
+ *
+ * Returning a single best-effort NAME was fail-OPEN, which is the opposite of what the guard
+ * promises. `symbolic-ref` fails whenever origin/HEAD is unset (a fresh clone-less repo, a remote
+ * added by hand), and the old fallback then returned the first conventional name that existed
+ * LOCALLY. In a repo whose real default is `master` but which also carries a stale local `main`,
+ * that answered "main", so `--write` ran happily on `master`, the actual default branch.
+ *
+ * With origin/HEAD available the answer is exact and the list has one entry. Without it, every
+ * conventional name is refused: the cost of being wrong is that the operator renames a branch, and
+ * the cost of the old behaviour was an unreviewed commit on the default branch.
  * @param {(args: string[]) => string} [run]
- * @returns {string}
+ * @returns {string[]} non-empty
  */
-export function defaultBranch(run = git) {
+export function defaultBranchNames(run = git) {
   try {
-    return run(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\//, '');
-  } catch {
-    for (const name of ['main', 'master']) {
-      try { run(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]); return name; } catch { /* next */ }
-    }
-    return 'main';
-  }
+    const name = run(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\//, '');
+    if (name) return [name];
+  } catch { /* fall through to the closed answer */ }
+  return [...CONVENTIONAL_DEFAULTS];
 }
 
 /**
  * Why the working tree is not in a state where patterns.json may be rewritten, or null.
  * @param {object} input
  * @param {string} input.branch - current branch
- * @param {string} input.defaultName - the repo's default branch
+ * @param {string[]} input.defaultNames - every name that must be treated as the default
  * @param {string} input.status - `git status --porcelain -- patterns.json` output
  * @returns {string | null}
  */
-export function treeProblem({ branch, defaultName, status }) {
+export function treeProblem({ branch, defaultNames, status }) {
   if (!branch || branch === 'HEAD') return 'HEAD is detached; check out a feature branch before writing the registry';
-  if (branch === defaultName) {
+  if ((defaultNames ?? []).includes(branch)) {
     return `refusing to write patterns.json on the default branch (${branch}); create a feature branch first`;
   }
   if (status.trim()) return 'patterns.json already has uncommitted changes; commit or discard them so this diff stands alone';
   return null;
 }
 
-// ---------------------------------------------------------------------------
+// The untouchables are publish-owned (`published`) or gate-owned (`chart`, `product`). A merge that
+// moved any of them would be a live-store regression issued by a local command.
+export const UNTOUCHABLE_KEYS = ['published', 'chart', 'product'];
 
 /**
- * Write via a temp file in the SAME directory, then rename. A failure anywhere before the rename
- * leaves the target untouched; a truncated patterns.json would break every other tool here. The fs
- * calls are injectable so the mid-write failure is testable rather than assumed.
- * @param {string} target
- * @param {string} contents
- * @param {{writeFile?: Function, rename?: Function, suffix?: string}} [io]
- * @returns {Promise<void>}
+ * Why --write must refuse, or null when it may proceed. Every rail here used to be an inline
+ * conditional in main(), where deleting it left the whole suite green: `treeProblem` was tested and
+ * its CALL SITE was not, which is the "pure helper green, wiring dead" failure exactly.
+ *
+ * --confirm is deliberately NOT here: it is checked after the diff is printed, because the diff is
+ * the thing being confirmed.
+ * @param {object} input
+ * @param {string | null} input.tree - treeProblem's verdict
+ * @param {object} input.existing - the committed registry
+ * @param {object} input.next - the candidate registry
+ * @param {boolean} input.allowPatternSetChange
+ * @returns {string | null}
  */
-export async function atomicWrite(target, contents, io = {}) {
-  const w = io.writeFile ?? writeFile;
-  const r = io.rename ?? rename;
-  const tmp = `${target}.tmp-${io.suffix ?? process.pid}`;
-  await w(tmp, contents);
-  await r(tmp, target);
+export function writeRefusal({ tree, existing, next, allowPatternSetChange }) {
+  if (tree) return tree;
+
+  const before = new Set((existing.patterns ?? []).map((p) => p.id));
+  const after = new Set((next.patterns ?? []).map((p) => p.id));
+  const added = [...after].filter((id) => !before.has(id));
+  const removed = [...before].filter((id) => !after.has(id));
+  if ((added.length || removed.length) && !allowPatternSetChange) {
+    const named = [...added.map((i) => `+${i}`), ...removed.map((i) => `-${i}`)].join(', ');
+    return `the draft changes the pattern set (${added.length} added, ${removed.length} removed: ${named}).\n`
+      + 'Re-run with --allow-pattern-set-change if that is intended.';
+  }
+
+  for (const key of UNTOUCHABLE_KEYS) {
+    if (JSON.stringify(next[key]) !== JSON.stringify(existing[key])) {
+      return `internal: --write would change ${key}, which is publish-owned or gate-owned and must pass through untouched`;
+    }
+  }
+  return null;
 }
+
+// ---------------------------------------------------------------------------
+
+// Re-exported so this tool's own import site and its tests name one implementation; lib/registry's
+// save() uses the same one.
+export { atomicWrite };
 
 const draftPath = (outDir) => path.join(outDir, 'draft.json');
 
@@ -290,10 +325,9 @@ async function modeWrite({ outDir, confirm, allowPatternSetChange }) {
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
   const tree = treeProblem({
     branch,
-    defaultName: defaultBranch(),
+    defaultNames: defaultBranchNames(),
     status: git(['status', '--porcelain', '--', path.relative(REPO_ROOT, REGISTRY_PATH)]),
   });
-  if (tree) throw new Error(tree);
 
   const stale = digestProblems(draft);
   if (stale.length) throw new Error(`the approved gate table no longer describes this draft:\n  - ${stale.join('\n  - ')}`);
@@ -302,23 +336,8 @@ async function modeWrite({ outDir, confirm, allowPatternSetChange }) {
   if (problems.length) throw new Error(`draft does not assemble into a valid registry:\n  - ${problems.join('\n  - ')}`);
 
   const next = candidateRegistry(draft, existing);
-  const before = new Set((existing.patterns ?? []).map((p) => p.id));
-  const after = new Set(next.patterns.map((p) => p.id));
-  const added = [...after].filter((id) => !before.has(id));
-  const removed = [...before].filter((id) => !after.has(id));
-  if ((added.length || removed.length) && !allowPatternSetChange) {
-    throw new Error(
-      `the draft changes the pattern set (${added.length} added, ${removed.length} removed: ${[...added.map((i) => `+${i}`), ...removed.map((i) => `-${i}`)].join(', ')}).\n`
-      + 'Re-run with --allow-pattern-set-change if that is intended.',
-    );
-  }
-
-  // Structural untouchables, asserted rather than assumed.
-  for (const key of ['published', 'chart', 'product']) {
-    if (JSON.stringify(next[key]) !== JSON.stringify(existing[key])) {
-      throw new Error(`internal: --write would change ${key}, which is publish-owned or gate-owned and must pass through untouched`);
-    }
-  }
+  const refusal = writeRefusal({ tree, existing, next, allowPatternSetChange });
+  if (refusal) throw new Error(refusal);
 
   const serialized = serialize(next);
   const diff = unifiedDiff(raw, serialized, {
@@ -357,9 +376,8 @@ async function main() {
   if (opts.help) { console.log(HELP); return; }
 
   const outDir = path.resolve(opts.outDir);
-  if (!OUT_DIR_RE.test(outDir)) {
-    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
-  }
+  const outProblem = outDirProblem(outDir);
+  if (outProblem) throw new Error(outProblem);
 
   if (opts.initFromRegistry) return modeInit({ outDir });
   if (opts.validate) return modeValidate({ outDir });

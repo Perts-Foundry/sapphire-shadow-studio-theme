@@ -18,6 +18,7 @@ import {
   AUTOCROP_DEFAULTS, SCAN_TILES, SUSPECT_SD, classifyTiles, proposeBox, tileStats,
 } from './lib/autocrop.mjs';
 import { loadSharp, prepareCellForBox } from './lib/compose.mjs';
+import { outDirProblem } from './lib/out-dir.mjs';
 import { pageLayout, compositePlan } from './lib/layout.mjs';
 import { load as loadRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
 import { REVIEW_DIR_ENV, copyToReviewDir, resolveReviewDir } from './lib/review-dir.mjs';
@@ -26,7 +27,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const FIXTURES_DIR = path.join(HERE, 'test', 'fixtures');
 const DEFAULT_OUT_DIR = 'product-images/applique';
-const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 
 // Which real photo stands in for which algorithm archetype in the committed fixtures. Fixed here
 // so --emit-fixture is reproducible and a fixture's provenance is reviewable in the diff.
@@ -463,9 +463,8 @@ async function main() {
   if (opts.help) { console.log(HELP); return; }
 
   const outDir = path.resolve(opts.outDir);
-  if (!OUT_DIR_RE.test(outDir)) {
-    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
-  }
+  const outProblem = outDirProblem(outDir);
+  if (outProblem) throw new Error(outProblem);
 
   const { dir: reviewDir, problem } = await resolveReviewDir({ repoRoot: REPO_ROOT });
   if (problem) throw new Error(problem);

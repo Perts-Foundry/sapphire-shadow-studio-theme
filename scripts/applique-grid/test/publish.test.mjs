@@ -7,7 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  PLAN_MAX_AGE_MS, liveStateHash, planStampProblem, reconcileLiveState, reorderPhase,
+  PLAN_MAX_AGE_MS, approvalProblem, approvalToken, liveStateHash, parseArgs, planStampProblem,
+  reconcileLiveState, reorderPhase, sameMultiset,
 } from '../publish.mjs';
 
 const gid = (n) => `gid://shopify/MediaImage/${n}`;
@@ -200,6 +201,26 @@ test('an approved target that is no longer achievable stops with the named diver
   assert.deepEqual(h.calls.reorder, []);
 });
 
+test('a target with a DUPLICATE is not achievable, even at the right length', async () => {
+  // The membership check this replaced (`every(includes)` plus a length compare) could not see a
+  // duplicate: target [1, 1, 9] against live [1, 2, 9] scored achievable, and the reorder issued
+  // would have dropped media 2 out of the approved order entirely.
+  const h = harness({ after: [media(1), media(2), media(9)] });
+  const r = await h.run({ targetIds: [gid(1), gid(1), gid(9)] });
+  assert.equal(r.status, 'aborted');
+  assert.match(r.reason, /differs from the approved plan/);
+  assert.deepEqual(h.calls.reorder, [], 'no live mutation may be issued for an unachievable target');
+  assert.deepEqual(h.calls.snapshots, []);
+});
+
+test('sameMultiset counts, and is order-insensitive', () => {
+  assert.equal(sameMultiset(['a', 'b'], ['b', 'a']), true);
+  assert.equal(sameMultiset(['a', 'a', 'c'], ['a', 'b', 'c']), false);
+  assert.equal(sameMultiset(['a', 'b', 'c'], ['a', 'a', 'c']), false);
+  assert.equal(sameMultiset(['a'], ['a', 'a']), false);
+  assert.equal(sameMultiset([], []), true);
+});
+
 test('a reorder that throws leaves the pre-reorder snapshot behind', async () => {
   const calls = { snapshots: [] };
   await assert.rejects(() => reorderPhase({
@@ -213,4 +234,91 @@ test('a reorder that throws leaves the pre-reorder snapshot behind', async () =>
     log: () => {},
   }), /productReorderMedia userError/);
   assert.deepEqual(calls.snapshots, ['pre-reorder'], 'the rollback record exists before the mutation is issued');
+});
+
+// ---------------------------------------------------------------------------
+// The argv rail. The file header calls it load-bearing ("argv never carries a secret"), and it was
+// the one guard here with no test at all: `if (false)` on the secret check survived the suite.
+// ---------------------------------------------------------------------------
+
+test('secret-shaped options are refused BY NAME, and the value is never echoed', () => {
+  for (const flag of ['token', 'secret', 'client-secret', 'password', 'api-key']) {
+    // Deliberately not token-shaped: a realistic `shpat_`-prefixed hex string would trip the
+    // repo's Gitleaks scan, and the assertion only needs a value to look for in the message.
+    const value = 'SYNTHETIC-NOT-A-REAL-CREDENTIAL';
+    for (const argv of [[`--${flag}=${value}`], [`--${flag}`, value]]) {
+      assert.throws(
+        () => parseArgs(argv),
+        (e) => {
+          assert.match(e.message, /refused: secrets come from the env file/);
+          assert.ok(e.message.includes(flag), 'the refusal must name the option');
+          assert.ok(!e.message.includes(value), 'the refusal must not echo the supplied secret');
+          return true;
+        },
+        `--${flag} must be refused`,
+      );
+    }
+  }
+  // Case-insensitive, so --TOKEN is not a way around it.
+  assert.throws(() => parseArgs(['--TOKEN=x']), /refused: secrets come from the env file/);
+});
+
+test('an unknown option is refused rather than ignored', () => {
+  assert.throws(() => parseArgs(['--nope']), /Unknown option --nope/);
+  assert.throws(() => parseArgs(['--dry-run', '--publish-everything']), /Unknown option --publish-everything/);
+  assert.equal(parseArgs(['--dry-run']).dryRun, true);
+  assert.equal(parseArgs([]).dryRun, false);
+});
+
+test('--approved is parsed in both spellings and defaults to null', () => {
+  assert.equal(parseArgs([]).approved, null);
+  assert.equal(parseArgs(['--approved', 'abc123def456']).approved, 'abc123def456');
+  assert.equal(parseArgs(['--approved=abc123def456']).approved, 'abc123def456');
+});
+
+// ---------------------------------------------------------------------------
+// The approval token. Freshness is not consent: before this, the only thing between a dry run and
+// the irreversible live write was a file the SAME session had just written.
+// ---------------------------------------------------------------------------
+
+const TOKEN_INPUT = {
+  shop: 'sapphire-shadow-studio.myshopify.com',
+  handle: 'huddle-crewneck',
+  liveStateHash: 'abc',
+  plan: PLAN,
+};
+
+test('approvalToken is stable, short, and moves when any input moves', () => {
+  const t = approvalToken(TOKEN_INPUT);
+  assert.match(t, /^[0-9a-f]{12}$/);
+  assert.equal(t, approvalToken({ ...TOKEN_INPUT }), 'same inputs must give the same token');
+
+  for (const [key, value] of Object.entries({
+    shop: 'other.myshopify.com',
+    handle: 'other-product',
+    liveStateHash: 'def',
+    plan: { ...PLAN, reorderVerdict: 'required' },
+  })) {
+    assert.notEqual(approvalToken({ ...TOKEN_INPUT, [key]: value }), t, `${key} must change the token`);
+  }
+});
+
+test('a live run with no --approved is refused, and a wrong token is refused by comparison', () => {
+  const token = approvalToken(TOKEN_INPUT);
+  const stored = stamp({ approvalToken: token });
+
+  assert.match(approvalProblem({ supplied: null, stored }), /requires --approved/);
+  assert.match(approvalProblem({ supplied: '', stored }), /requires --approved/);
+  assert.match(approvalProblem({ supplied: 'deadbeefcafe', stored }), /does not match the stored plan's token/);
+  assert.equal(approvalProblem({ supplied: token, stored }), null);
+  // Typed by a human, so surrounding space and case are tolerated; nothing else is.
+  assert.equal(approvalProblem({ supplied: `  ${token.toUpperCase()}  `, stored }), null);
+});
+
+test('a stored plan with no token is refused rather than treated as approved', () => {
+  // Fail closed on the shape that predates this rail: a plan left on disk by an older build must
+  // not execute just because it is fresh.
+  for (const stored of [stamp(), stamp({ approvalToken: '' }), stamp({ approvalToken: 42 })]) {
+    assert.match(approvalProblem({ supplied: 'anything', stored }), /carries no approval token/);
+  }
 });

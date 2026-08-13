@@ -76,6 +76,39 @@ test('a spec change replaces: create the new, delete the recorded old', () => {
   assert.match(p.deletes[0].reason, /recorded chart \(page 1\) no longer matches/);
 });
 
+test('a deletes-only plan is NOT converged', () => {
+  // publish.mjs short-circuits on `converged && !stalePublished.length` with "nothing to write", so
+  // dropping the deletes term from converged would leave a superseded chart live indefinitely and
+  // print a success line while doing it.
+  const p = plan({
+    desired: [],
+    live: [liveChart(5, 1, 1, 'o')],
+    published: [publishedEntry(5, 1, 1, 'o')],
+  });
+  assert.equal(p.creates.length, 0);
+  assert.equal(p.deletes.length, 1);
+  assert.equal(p.reorderVerdict, 'not-required');
+  assert.equal(p.converged, false, 'pending deletes are work; converged must not ignore them');
+});
+
+test('the charts segment is ordered by PAGE, not by keep-then-create', () => {
+  // Every other fixture happens to feed keeps and creates already in page order, so the sort had no
+  // discriminating input: removing it left the suite green while the gallery showed chart 2 first.
+  const p = plan({
+    desired: [desiredChart(1, 2, 'n'), desiredChart(2, 2, 'o')],
+    live: [photo(7, 'sleeve.jpg'), liveChart(5, 2, 2, 'o')],
+    published: [publishedEntry(5, 2, 2, 'o')],
+  });
+  assert.equal(p.creates.length, 1, 'page 1 is new');
+  assert.equal(p.keeps.length, 1, 'page 2 is unchanged');
+
+  assert.deepEqual(p.finalOrder, [
+    { kind: 'live', id: gid(7) },
+    { kind: 'create', filename: p.creates[0].filename },
+    { kind: 'live', id: gid(5) },
+  ], 'the created page-1 chart must precede the kept page-2 chart, and the photo keeps its place');
+});
+
 test('page-count transition 3 -> 2 deletes page 3 and replaces pages 1-2', () => {
   const p = plan({
     desired: [desiredChart(1, 2, 'd'), desiredChart(2, 2, 'e')],

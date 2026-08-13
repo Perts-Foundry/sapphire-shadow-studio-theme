@@ -10,11 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CANDIDATE_ANGLES, candidateProblem, candidateRegistry, detailTable, digestProblems,
+  CANDIDATE_ANGLES, candidateProblem, candidateRegistry, cell, detailTable, digestProblems,
   draftProblems, emptyDraft, keyFor, narrowTable, tableDigest, tableRows, threadUsage,
   validationProblems,
 } from '../lib/draft.mjs';
-import { atomicWrite, defaultBranch, parseArgs, treeProblem, HELP } from '../draft.mjs';
+import {
+  atomicWrite, defaultBranchNames, parseArgs, treeProblem, writeRefusal,
+  CONVENTIONAL_DEFAULTS, HELP, UNTOUCHABLE_KEYS,
+} from '../draft.mjs';
 import { serialize, validate, REGISTRY_PATH } from '../lib/registry.mjs';
 import { unifiedDiff } from '../lib/text-diff.mjs';
 
@@ -270,23 +273,127 @@ test('a draft with no digest at all cannot be written', () => {
 // ---------------------------------------------------------------------------
 
 test('--write refuses on the default branch, detached HEAD, and a dirty registry', () => {
-  assert.match(treeProblem({ branch: 'main', defaultName: 'main', status: '' }), /default branch \(main\)/);
-  assert.match(treeProblem({ branch: 'HEAD', defaultName: 'main', status: '' }), /detached/);
+  assert.match(treeProblem({ branch: 'main', defaultNames: ['main'], status: '' }), /default branch \(main\)/);
+  assert.match(treeProblem({ branch: 'HEAD', defaultNames: ['main'], status: '' }), /detached/);
   assert.match(
-    treeProblem({ branch: 'feat/x', defaultName: 'main', status: ' M scripts/applique-grid/patterns.json\n' }),
+    treeProblem({ branch: 'feat/x', defaultNames: ['main'], status: ' M scripts/applique-grid/patterns.json\n' }),
     /already has uncommitted changes/,
   );
-  assert.equal(treeProblem({ branch: 'feat/x', defaultName: 'main', status: '' }), null);
+  assert.equal(treeProblem({ branch: 'feat/x', defaultNames: ['main'], status: '' }), null);
 });
 
-test('defaultBranch prefers origin/HEAD and falls back closed', () => {
-  assert.equal(defaultBranch(() => 'origin/trunk'), 'trunk');
-  assert.equal(defaultBranch((args) => {
+test('treeProblem refuses EVERY name the default could be, not just the first', () => {
+  // The fail-closed half of the defaultBranchNames fix: with origin/HEAD unavailable, both
+  // conventional names are refused, so a repo whose real default is master is still protected.
+  assert.match(treeProblem({ branch: 'master', defaultNames: CONVENTIONAL_DEFAULTS, status: '' }), /default branch \(master\)/);
+  assert.match(treeProblem({ branch: 'main', defaultNames: CONVENTIONAL_DEFAULTS, status: '' }), /default branch \(main\)/);
+  assert.equal(treeProblem({ branch: 'feat/x', defaultNames: CONVENTIONAL_DEFAULTS, status: '' }), null);
+});
+
+test('defaultBranchNames is exact with origin/HEAD and fails CLOSED without it', () => {
+  assert.deepEqual(defaultBranchNames(() => 'origin/trunk'), ['trunk']);
+
+  // The regression this replaced: origin/HEAD unavailable in a repo whose real default is master
+  // but which also carries a stale local main. The old code answered "main", so treeProblem let
+  // --write run on master, the actual default branch. Now both names are refused.
+  const noOriginHead = (args) => {
     if (args[0] === 'symbolic-ref') throw new Error('no origin/HEAD');
-    if (args.includes('refs/heads/main')) throw new Error('no main');
     return '';
-  }), 'master');
-  assert.equal(defaultBranch(() => { throw new Error('not a repo'); }), 'main');
+  };
+  assert.deepEqual(defaultBranchNames(noOriginHead), ['main', 'master']);
+  assert.match(
+    treeProblem({ branch: 'master', defaultNames: defaultBranchNames(noOriginHead), status: '' }),
+    /default branch \(master\)/,
+  );
+
+  assert.deepEqual(defaultBranchNames(() => { throw new Error('not a repo'); }), ['main', 'master']);
+  // An empty symbolic-ref answer is not an answer.
+  assert.deepEqual(defaultBranchNames(() => ''), ['main', 'master']);
+});
+
+test('writeRefusal covers every rail that used to live inline in main()', () => {
+  const base = {
+    published: [], chart: { columns: 3 }, product: { handle: 'h' },
+    patterns: [{ id: 'a' }, { id: 'b' }],
+  };
+  const same = { ...base, patterns: [{ id: 'a' }, { id: 'b' }] };
+
+  // treeProblem's verdict passes straight through, which is the wiring that was dead.
+  assert.equal(
+    writeRefusal({ tree: 'dirty tree', existing: base, next: same, allowPatternSetChange: false }),
+    'dirty tree',
+  );
+  assert.equal(writeRefusal({ tree: null, existing: base, next: same, allowPatternSetChange: false }), null);
+
+  const dropped = { ...base, patterns: [{ id: 'a' }] };
+  const added = { ...base, patterns: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] };
+  assert.match(
+    writeRefusal({ tree: null, existing: base, next: dropped, allowPatternSetChange: false }),
+    /changes the pattern set \(0 added, 1 removed: -b\)/,
+  );
+  assert.match(
+    writeRefusal({ tree: null, existing: base, next: added, allowPatternSetChange: false }),
+    /changes the pattern set \(1 added, 0 removed: \+c\)/,
+  );
+  assert.equal(writeRefusal({ tree: null, existing: base, next: dropped, allowPatternSetChange: true }), null);
+
+  for (const key of UNTOUCHABLE_KEYS) {
+    const mutated = { ...same, [key]: { tampered: true } };
+    assert.match(
+      writeRefusal({ tree: null, existing: base, next: mutated, allowPatternSetChange: true }),
+      new RegExp(`internal: --write would change ${key}`),
+      `${key} must be structurally untouchable`,
+    );
+  }
+});
+
+test('a pipe in a filename cannot forge a row in either gate table', () => {
+  // `|` is legal in a filename on macOS and Linux, and both tables are artifacts the operator
+  // approves from and the model later re-reads. An unescaped one splits the row.
+  assert.equal(cell('a|b'), 'a\\|b');
+  assert.equal(cell('a\nb'), 'a b');
+  assert.equal(cell('a\r\n\tb'), 'a b');
+  assert.equal(cell(null), '');
+
+  const rows = [{
+    key: 'IMG_0001',
+    candidates: ['ok', 'x | y', 'c', 'd', 'e', 'f'],
+    name: 'Fine',
+    thread: 'White',
+    hero: 'evil|name.heic',
+    sources: ['evil|name.heic'],
+    crop: { left: 0.1, top: 0.1, width: 0.4 },
+  }];
+
+  const narrow = narrowTable(rows);
+  for (const line of narrow.split('\n').slice(2)) {
+    assert.equal(
+      line.split(/(?<!\\)\|/).length - 2, CANDIDATE_ANGLES.length + 1,
+      `a forged cell boundary got through: ${line}`,
+    );
+  }
+
+  const detail = detailTable({ rows, draft: { ...emptyDraft(), threads: ['White'] }, colorValues: [] });
+  const dataRow = detail.split('\n').find((l) => l.startsWith('| IMG_0001 '));
+  assert.ok(dataRow, 'the row must be present to be checked');
+  assert.equal(dataRow.split(/(?<!\\)\|/).length - 2, 8, 'the detail table has exactly eight columns');
+  assert.ok(dataRow.includes('evil\\|name.heic'), 'the pipe must be escaped, not stripped');
+});
+
+test('--confirm gates the write, and gates it BEFORE the write happens', () => {
+  // A structural test, deliberately. The confirm check has to sit after the diff is printed (the
+  // diff is the thing being confirmed) and before atomicWrite, and modeWrite reaches neither
+  // without a git repo whose registry path is this module's own. Scanning the source kills the
+  // mutation that matters (`if (false)`, or deleting the guard) without pretending to be an
+  // end-to-end test. The wiring around it is still only exercised by a real run.
+  const src = readFileSync(path.join(HERE, '..', 'draft.mjs'), 'utf8');
+  const guard = src.indexOf('if (!confirm)');
+  const write = src.indexOf('await atomicWrite(REGISTRY_PATH');
+  assert.ok(guard !== -1, '--confirm must be checked by name');
+  assert.ok(write !== -1, 'the registry write must go through atomicWrite');
+  assert.ok(guard < write, 'the confirm gate must precede the write, not follow it');
+  assert.match(src.slice(guard, write), /Validity is not approval/);
+  assert.match(src.slice(guard, write), /process\.exitCode = 1/, 'a refused write must exit non-zero');
 });
 
 test('parseArgs requires exactly one mode and refuses unknown options', () => {

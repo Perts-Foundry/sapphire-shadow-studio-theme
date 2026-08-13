@@ -18,12 +18,12 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { COLOR_TRANSFORM_VERSION, DECODER_VERSION, decodeToSrgb, planIngest, sharpFromDecoded } from './lib/heic.mjs';
+import { outDirProblem } from './lib/out-dir.mjs';
 import { load as loadRegistry, REGISTRY_PATH } from './lib/registry.mjs';
 
 const DEFAULT_OUT_DIR = 'product-images/applique';
 const CELL_LONG_EDGE = 1600;
 const PREVIEW_LONG_EDGE = 600;
-const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 
 export const HELP = `Usage: node scripts/applique-grid/ingest.mjs --source '<dir>' [options]
 
@@ -73,9 +73,8 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
-  if (!OUT_DIR_RE.test(outDir)) {
-    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
-  }
+  const outProblem = outDirProblem(outDir);
+  if (outProblem) throw new Error(outProblem);
   const sourceDir = path.resolve(opts.source);
 
   const registry = await loadRegistry(REGISTRY_PATH);

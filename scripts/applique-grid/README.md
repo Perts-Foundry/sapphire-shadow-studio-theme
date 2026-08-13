@@ -16,13 +16,17 @@ or opens a PR.
 | --- | --- |
 | `patterns.json` | Committed registry: product snapshot, thread palette, chart params, optional gallery pins, patterns, published record. Ships as the empty bootstrap sentinel; the first skill run populates it. |
 | `ingest.mjs` | Copy + decode the operator's HEICs into colour-managed working cells and previews, keyed by content hash + decoder version + colour-transform version. |
-| `crops.mjs` | The crop workbench: propose a fabric-region box per photo, preview one exactly as the chart will render it, overlay a coordinate grid, screen confirmed crops for backdrop contamination. |
+| `crops.mjs` | The crop workbench: propose a fabric-region box per photo, preview one exactly as the chart will render it, sheet all the proposals for one-glance review, overlay a coordinate grid, screen confirmed crops for backdrop contamination, emit test fixtures. |
 | `draft.mjs` | The naming gate's working draft, and the only tool that writes the pattern block of `patterns.json`. |
 | `render.mjs` | Composite the brand-styled chart pages (`--sample` for the density gate). |
 | `publish.mjs` | Create / delete / reorder chart media on the live product (dry-run gated). |
 | `apply-options.mjs` | Byte-stable upsert of the registry-derived dropdown into the product template. |
 | `audit.mjs` | Registry vs template vs charts vs live store; `--local` for the offline subset. |
-| `lib/` | Pure logic (registry, layout, crop, autocrop, naming, chart-svg, options-writer, media-plan, draft, artifacts, text-diff, review-dir) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` wraps the shared `scripts/lib/heic.mjs`: it keeps `planIngest` and owns this pipeline's colour handling (see Colour below). |
+| `lib/` | Pure logic (registry, layout, crop, autocrop, naming, chart-svg, options-writer, media-plan, draft, artifacts, text-diff, review-dir, out-dir, atomic-write) plus the sharp (`compose`, `heic`) and network (`media`) executors. `lib/heic.mjs` wraps the shared `scripts/lib/heic.mjs`: it keeps `planIngest` and owns this pipeline's colour handling (see Colour below). |
+
+Two cross-module dependencies, so a signature change in either is a break here: `lib/heic.mjs`
+wraps `scripts/lib/heic.mjs`, and `crops.mjs --sheet` calls `planSheet` / `renderSheet` from
+`scripts/contact-sheet.mjs`. Those two exports are a shared API, not private helpers.
 | `test/` | `npm run applique-grid:test`; goldens regen via `npm run applique-grid:golden:update`. |
 
 **Flags are authoritative in `--help`.** All seven entry points answer it, and `test/help.test.mjs`
@@ -49,11 +53,15 @@ Three things describe pipeline state, and they can disagree:
 On disagreement the draft wins and the ledger is corrected. The `.md` extension diverges from the
 sibling skill's `selection-ledger.txt` deliberately: this ledger is a table.
 
-`APPLIQUE_REVIEW_DIR`, when set, receives a copy of every image the crop tooling writes. It is the
-only write in this module that lands outside a `product-images/` path, so it has its own guard: it
-must be absolute, an existing directory, with no `..` segment, and must resolve outside the repo
-working tree. Unset is a silent no-op. Only the count copied is printed; the resolved value is a
-dev-machine path and never reaches stdout, `gate-table.md`, the ledger, a commit, or a PR.
+`APPLIQUE_REVIEW_DIR`, when set, receives a copy of every REVIEW image the crop tooling writes
+(`--preview`, `--grid`, `--sheet`; `--emit-fixture` writes to the repo's own test fixtures and is
+deliberately not copied). It is the only write in this module that lands outside a
+`product-images/` path, so it has its own guard: it must be absolute, an existing directory, with
+no `..` segment, and must resolve outside the repo working tree **after symlink resolution**. That
+last clause is load-bearing: the shape check is lexical, so a link whose own path is outside the
+tree but which points into it used to pass, and review images landed in the public working tree.
+Unset is a silent no-op. Only the count copied is printed; the resolved value is a dev-machine path
+and never reaches stdout, `gate-table.md`, the ledger, a commit, or a PR.
 
 ```bash
 export APPLIQUE_REVIEW_DIR=<your-review-dir>
@@ -89,6 +97,14 @@ plausible-looking wrong box is worse than an admitted failure.
 `render.mjs` composites with, and a test asserts the bytes match. That is the only thing standing
 between the gate and a false approval, so do not inline `coverCrop` + `prepareCell` at either call
 site again.
+
+`--sheet` renders every proposed crop into contact sheets (via `planSheet` / `renderSheet` from
+`scripts/contact-sheet.mjs`), so the crop review round reads `ceil(N / 24)` images rather than N.
+Use it first, then `--preview` the individual boxes that the sheet leaves in doubt.
+
+`--grid <hero>` overlays a 0.05-step coordinate grid on one photo, which is what makes a hand-nudged
+box a reading rather than a guess. Note the collision: `render.mjs --grid` takes a `CxR` density and
+is a different thing entirely.
 
 `--scan` screens a confirmed crop for backdrop contamination: 10x10 tiles of luminance standard
 deviation, flagged when the minimum tile falls below 10. It splits into `tileStats` (needs pixels)
@@ -143,6 +159,13 @@ point: those names genuinely would not fit, and the operator should learn that a
 It is a calibrated policy ceiling on realistic mixed-case names, not a rendering guarantee; an
 unusual all-caps name is wider per character than any of these and can still overflow, which is
 what the sample gate's eyes are for.
+
+**It is a `validate()` failure, not gate advice.** `lib/registry.mjs` enforces it, so an over-length
+name FAILs `audit.mjs --local` and is refused by `draft.mjs --write`. The ceiling is derived from
+the registry's own `chart` params, which means a chart-density change alone can invalidate names
+that were legal when they were written: dropping to 4 columns makes the committed 18-character
+"Terracotta Blossom" fail. That is why step 3's density choice re-opens the naming gate rather than
+silently shortening anything.
 
 ## The registry
 
@@ -222,6 +245,15 @@ an approval is a decision about a moment), and consumes it either way; a retry a
 fresh dry-run and a fresh operator gate. A dry run deletes any existing plan before it starts, so a
 plan left behind by a crashed earlier dry run can never be what a later live run reads.
 
+**The stored plan proves freshness, never consent**, so it is not by itself enough to run. The dry
+run also prints an **approval token**, a 12-hex-character digest of exactly the plan it printed, and
+the live run requires it back as `--approved <token>`. That is the one part of the gate that cannot
+be satisfied by a process talking to itself: the token has to travel out to the operator and back
+through the command line. Without it the live run refuses before reading or consuming anything, so
+a mistyped invocation costs nothing. A token that does not match the stored plan consumes the plan
+and refuses, because an approval for a different plan is not an approval for this one. Whitespace
+and case are tolerated (a human types it); nothing else is.
+
 Execution order is a contract: creates (alt set at create) -> readiness barrier (every create
 READY with verified alt) -> deletes -> reorder. A failed barrier skips deletes and reorder, prints
 the surviving plan, and exits non-zero; the extra-charts state is ugly but recoverable, a chartless
@@ -240,7 +272,9 @@ After the barrier, `publish.mjs` re-reads the gallery and re-evaluates. It does 
 that would buy correctness by executing a live mutation the operator never approved. It reconciles
 first, scoped so our own creates and deletes are expected while a concurrent Admin edit to any
 untouched media aborts the phase with no reorder attempted; checks the approved target is still
-achievable; snapshots the pre-reorder order; and only then moves anything.
+achievable, as a **multiset** comparison rather than set membership (a length check plus
+`every(includes)` cannot see a duplicate, and would have issued a reorder that silently dropped an
+untouched media out of the gallery); snapshots the pre-reorder order; and only then moves anything.
 
 `publish-snapshots/` is the only rollback record for a live media write, so retention only ever
 keeps more: the newest 10 stay whatever their age, the newest always stays, and nothing newer than

@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +17,7 @@ import { pageLayout, compositePlan } from '../lib/layout.mjs';
 import { reviewDirShapeProblem, resolveReviewDir, copyToReviewDir, REVIEW_DIR_ENV } from '../lib/review-dir.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MODULE_DIR = path.join(HERE, '..');
 const FIXTURES = path.join(HERE, 'fixtures');
 const registry = JSON.parse(readFileSync(path.join(FIXTURES, 'registry.fixture.json'), 'utf8'));
 
@@ -216,7 +217,7 @@ test('APPLIQUE_REVIEW_DIR: nonexistent and not-a-directory are rejected by name'
     await mkdir(good);
     const ok = await resolveReviewDir({ repoRoot, env: { [REVIEW_DIR_ENV]: good } });
     assert.equal(ok.problem, null);
-    assert.equal(ok.dir, good);
+    assert.equal(ok.dir, await realpath(good));
 
     const src = path.join(root, 'img.txt');
     await writeFile(src, 'pixels');
@@ -224,5 +225,51 @@ test('APPLIQUE_REVIEW_DIR: nonexistent and not-a-directory are rejected by name'
     assert.equal(await readFile(path.join(good, 'crop-previews', 'img.txt'), 'utf8'), 'pixels');
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('APPLIQUE_REVIEW_DIR: a symlink pointing INTO the repo is refused', async () => {
+  // The shape check is lexical, so a link whose own path is outside the tree but which resolves
+  // inside it passed clean, and review images landed in the public working tree. That is the exact
+  // thing this guard exists to prevent, so the containment check is re-run against the real path.
+  const root = await mkdtemp(path.join(os.tmpdir(), 'applique-review-link-'));
+  try {
+    const repoRoot = path.join(root, 'checkout');
+    const inside = path.join(repoRoot, 'inside');
+    await mkdir(inside, { recursive: true });
+
+    const link = path.join(root, 'drop');
+    await symlink(inside, link, 'dir');
+
+    // Lexically it looks fine, which is precisely why the lexical check is not sufficient.
+    assert.equal(reviewDirShapeProblem(link, repoRoot), null);
+
+    const r = await resolveReviewDir({ repoRoot, env: { [REVIEW_DIR_ENV]: link } });
+    assert.equal(r.dir, null, 'a link into the repo must not resolve to a usable dir');
+    assert.match(r.problem, /OUTSIDE the repo/);
+
+    // A link to a genuinely outside directory still works, and resolves to the real path.
+    const elsewhere = path.join(root, 'real-drop');
+    await mkdir(elsewhere);
+    const goodLink = path.join(root, 'good-link');
+    await symlink(elsewhere, goodLink, 'dir');
+    const good = await resolveReviewDir({ repoRoot, env: { [REVIEW_DIR_ENV]: goodLink } });
+    assert.equal(good.problem, null);
+    assert.equal(good.dir, await realpath(elsewhere));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the review dir is reported as a COUNT, never as a path', () => {
+  // The resolved value is a dev-machine path and this repo is public, so the one line the tool
+  // prints must carry no path at all. Asserted against the source, because the print sits in a
+  // main()-only branch that needs a photo tree to reach.
+  const src = readFileSync(path.join(MODULE_DIR, 'crops.mjs'), 'utf8');
+  const lines = src.split('\n').filter((l) => /console\.log\(.*[Cc]opied/.test(l));
+  assert.ok(lines.length > 0, 'the copy report line must exist to be checked');
+  for (const line of lines) {
+    assert.match(line, /\$\{n\}|\$\{copied\}|\$\{count\}/, `the copy report must interpolate a count: ${line}`);
+    assert.doesNotMatch(line, /\$\{dir\}|\$\{reviewDir\}|process\.env/, `the copy report must not carry the path: ${line}`);
   }
 });

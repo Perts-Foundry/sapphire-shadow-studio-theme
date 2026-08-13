@@ -1,5 +1,56 @@
 # Release Notes
 
+## applique-grid: consent is now a token, and four fail-open guards closed (unreleased)
+
+### What changed
+
+Pre-PR review of the tooling branch surfaced four guards that were open in a way
+their own comments said they were not, plus one gate whose strength was inverted
+relative to its blast radius. All five are mechanisms here, not prose.
+
+**The live publish gate had no consent step.** The only thing between a dry run
+and the irreversible live write was `publish-plan.json`, a file the same process
+had just written, valid for 24 hours. That checks freshness, which is not the
+same question as whether anyone said yes; a process could satisfy it by talking
+to itself. Meanwhile the *reversible* local registry write did have `--confirm`.
+`--dry-run` now prints a 12-character approval token for exactly the plan it
+printed, and the live run requires it back as `--approved <token>`. The token has
+to travel out to the operator and return through argv, which is the one step no
+amount of self-persuasion performs. A token-less live run refuses before reading
+or consuming anything, so a mistyped command costs no gate round trip.
+
+**`defaultBranch()` failed open.** When `origin/HEAD` was unset it returned the
+first conventional name that existed *locally*, so in a repo whose real default is
+`master` but which also carries a stale local `main`, it answered `main` and
+`draft.mjs --write` ran happily on `master`. It now returns every name that must be
+refused, and refuses all of them when it cannot be certain. The cost of being wrong
+is renaming a branch; the cost of the old behaviour was an unreviewed commit on the
+default branch.
+
+**`lib/registry.mjs`'s `save()` was a plain `writeFile`.** `publish.mjs` calls it
+immediately after the live media writes, to record the new chart GIDs, which makes
+it the highest-stakes write in the module: a truncation there loses the mapping from
+published charts to live media and the next publish would re-create them with nothing
+to reconcile against. It is now the same atomic temp-file-plus-rename that `draft.mjs`
+already used for the reversible write. The implementation is shared rather than
+duplicated, so there is one of it.
+
+**The reorder's "target still achievable" check was set membership.** A length
+compare plus `every(includes)` cannot see a duplicate, so a target of `[A, A, C]`
+against a live `[A, B, C]` scored achievable and the reorder issued would have dropped
+B out of the gallery entirely. It is a multiset comparison now.
+
+**`APPLIQUE_REVIEW_DIR`'s containment check was lexical only.** A symlink whose own
+path sits outside the repo but which points into it passed clean, and review images
+landed in the public working tree, which is the exact thing that guard exists to
+prevent. The check now re-runs against the resolved real path.
+
+Also: the `--out-dir` containment rule was a module-private regex in four entry
+points, unreachable from a test, so deleting it outright left the whole suite green.
+It is one exported function with its own cases now, and a subprocess test per tool
+pins the call sites. Markdown cells in both gate tables escape `|`, which is legal in
+a filename and could otherwise forge a row in the artifact the operator approves from.
+
 ## applique-grid: pinned gallery media and a corrected reorder verdict (unreleased)
 
 ### What changed

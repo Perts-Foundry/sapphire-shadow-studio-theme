@@ -8,14 +8,29 @@
 // body, or an issue comment; only the COUNT of files copied is reported. The README example stays
 // symbolic (`export APPLIQUE_REVIEW_DIR=<your-review-dir>`) for the same reason.
 
-import { copyFile, mkdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export const REVIEW_DIR_ENV = 'APPLIQUE_REVIEW_DIR';
 
+const OUTSIDE_MSG = `${REVIEW_DIR_ENV} must resolve OUTSIDE the repo working tree `
+  + '(it is a dev-machine path, and this repo is public)';
+
 /**
- * Why a review-dir value is unusable, or null when it is fine. Path-shape rules only; existence is
- * checked by resolveReviewDir, which owns the fs calls.
+ * Is this absolute path inside the repo tree? Shared by the lexical check and the post-realpath
+ * one so "outside the tree" has a single definition.
+ * @param {string} resolved
+ * @param {string} repoRoot
+ * @returns {boolean}
+ */
+export function isInsideRepo(resolved, repoRoot) {
+  const rel = path.relative(path.resolve(repoRoot), path.resolve(resolved));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Why a review-dir value is unusable, or null when it is fine. Path-shape rules only; existence and
+ * the SYMLINK check are resolveReviewDir's, which owns the fs calls.
  * @param {string} value - the raw environment value
  * @param {string} repoRoot - absolute path of the repo working tree
  * @returns {string | null}
@@ -25,12 +40,7 @@ export function reviewDirShapeProblem(value, repoRoot) {
   if (!raw.trim()) return `${REVIEW_DIR_ENV} is set but empty`;
   if (raw.split(/[\\/]/).includes('..')) return `${REVIEW_DIR_ENV} must not contain a ".." segment`;
   if (!path.isAbsolute(raw)) return `${REVIEW_DIR_ENV} must be an absolute path`;
-  const resolved = path.resolve(raw);
-  const root = path.resolve(repoRoot);
-  const rel = path.relative(root, resolved);
-  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
-    return `${REVIEW_DIR_ENV} must resolve OUTSIDE the repo working tree (it is a dev-machine path, and this repo is public)`;
-  }
+  if (isInsideRepo(raw, repoRoot)) return OUTSIDE_MSG;
   return null;
 }
 
@@ -55,7 +65,19 @@ export async function resolveReviewDir({ repoRoot, env = process.env }) {
     return { dir: null, problem: `${REVIEW_DIR_ENV} does not exist; create the directory first` };
   }
   if (!info.isDirectory()) return { dir: null, problem: `${REVIEW_DIR_ENV} is not a directory` };
-  return { dir: resolved, problem: null };
+
+  // The shape check is LEXICAL, so a symlink whose own path sits outside the tree but which points
+  // INTO it passed cleanly, and review images landed in the public working tree. Re-check against
+  // the real path; `stat` above already followed the link, so this adds no new trust.
+  let real;
+  try {
+    real = await realpath(resolved);
+  } catch {
+    return { dir: null, problem: `${REVIEW_DIR_ENV} could not be resolved to a real path` };
+  }
+  if (isInsideRepo(real, repoRoot)) return { dir: null, problem: OUTSIDE_MSG };
+
+  return { dir: real, problem: null };
 }
 
 /**

@@ -241,16 +241,33 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {Array<object>} rows
  * @returns {string}
  */
+/**
+ * Make a value safe to sit in a markdown table cell.
+ *
+ * Filenames reach these tables, and `|` is a legal filename character on macOS and Linux. An
+ * unescaped one splits the row and can forge a plausible extra line in the artifact the operator
+ * approves from and the model later re-reads, which is an injection surface in the one place this
+ * pipeline treats as authoritative. Newlines and tabs get the same treatment for the same reason.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function cell(value) {
+  return String(value ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/[\r\n\t]+/g, ' ');
+}
+
 export function narrowTable(rows) {
+  const safe = rows.map((r) => ({ key: cell(r.key), candidates: r.candidates.map(cell) }));
   const widths = [
-    Math.max(3, ...rows.map((r) => r.key.length)),
-    ...CANDIDATE_ANGLES.map((_, i) => Math.max(1, ...rows.map((r) => r.candidates[i].length))),
+    Math.max(3, ...safe.map((r) => r.key.length)),
+    ...CANDIDATE_ANGLES.map((_, i) => Math.max(1, ...safe.map((r) => r.candidates[i].length))),
   ];
   const line = (cells) => `| ${cells.map((c, i) => pad(c, widths[i])).join(' | ')} |`;
   return [
     line(['Key', ...CANDIDATE_ANGLES.map((a) => a.letter)]),
     `|${widths.map((w) => '-'.repeat(w + 2)).join('|')}|`,
-    ...rows.map((r) => line([r.key, ...r.candidates])),
+    ...safe.map((r) => line([r.key, ...r.candidates])),
   ].join('\n');
 }
 
@@ -290,7 +307,9 @@ export function detailTable({
       .map((v, i) => [CANDIDATE_ANGLES[i].letter, candidateProblem(v, colorValues, nameCeiling)])
       .filter(([, p]) => p)
       .map(([letter, p]) => `${letter}: ${p}`);
-    out.push(`| ${r.key} | ${r.name ?? '(not chosen)'} | ${r.thread ?? '(none)'} | ${r.hero} | ${r.sources.join(', ')} | ${crop} | ${clear} | ${guards.length ? guards.join('; ') : 'ok'} |`);
+    out.push(`| ${cell(r.key)} | ${cell(r.name ?? '(not chosen)')} | ${cell(r.thread ?? '(none)')} `
+      + `| ${cell(r.hero)} | ${cell(r.sources.join(', '))} | ${cell(crop)} | ${cell(clear)} `
+      + `| ${guards.length ? cell(guards.join('; ')) : 'ok'} |`);
   }
   out.push('');
   out.push('## Naming angles');

@@ -13,6 +13,7 @@ import { readdir, readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { classifyChartFiles } from './lib/artifacts.mjs';
+import { outDirProblem } from './lib/out-dir.mjs';
 import { load as loadRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
 import { balancedPages, pageLayout, compositePlan } from './lib/layout.mjs';
 import { buildChartSvg } from './lib/chart-svg.mjs';
@@ -22,7 +23,6 @@ import {
 } from './lib/naming.mjs';
 
 const DEFAULT_OUT_DIR = 'product-images/applique';
-const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 const MP_CAP = 20e6; // Shopify's 20-megapixel media upload cap
 const SAMPLE_GRIDS = ['3x3', '4x5']; // default density candidates at the sample gate
 
@@ -214,9 +214,8 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
-  if (!OUT_DIR_RE.test(outDir)) {
-    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
-  }
+  const outProblem = outDirProblem(outDir);
+  if (outProblem) throw new Error(outProblem);
 
   const registry = await loadRegistry(REGISTRY_PATH);
   const actives = activePatterns(registry);

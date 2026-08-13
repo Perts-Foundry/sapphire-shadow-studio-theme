@@ -7,9 +7,10 @@
 // verbatim property strings, so renumbering is safe for history and chatty for charts (most spec
 // hashes change), which is correct and documented in the README.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { atomicWrite } from './atomic-write.mjs';
 import { charsetProblem, nameColorProblem } from './naming.mjs';
 import { nameCharCeiling } from './layout.mjs';
 import { MAX_OPTION_LINE } from './options-writer.mjs';
@@ -307,10 +308,18 @@ export async function load(registryPath = REGISTRY_PATH) {
   return assertValid(JSON.parse(raw));
 }
 
-/** Validate, then write byte-stably. */
-export async function save(registryPath, reg) {
+/**
+ * Validate, then write byte-stably and ATOMICALLY. publish.mjs calls this immediately after the
+ * live media writes, to record the new chart GIDs, so it is the highest-stakes write in the
+ * module: a truncated patterns.json there loses the mapping from published charts to live media
+ * and the next publish would re-create them with nothing to reconcile against.
+ * @param {string} registryPath
+ * @param {object} reg
+ * @param {object} [io] - injectable fs calls, for testing the mid-write failure
+ */
+export async function save(registryPath, reg, io = {}) {
   assertValid(reg);
-  await writeFile(registryPath, serialize(reg));
+  await atomicWrite(registryPath, serialize(reg), io);
 }
 
 /**

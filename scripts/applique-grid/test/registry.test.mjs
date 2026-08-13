@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  validate, assertValid, load, activePatterns, dropdownLines, dropdownText,
+  validate, assertValid, load, save, activePatterns, dropdownLines, dropdownText,
   emptyRegistry, serialize, EMPTY_SENTINEL, isEmptySentinel, deriveId, pinnedMedia,
 } from '../lib/registry.mjs';
 
@@ -232,4 +232,59 @@ test('unknown keys are rejected in every container, not just gallery', () => {
   expectProblem((r) => { r.chart.gutter = 4; }, 'chart: unknown key "gutter"');
   expectProblem((r) => { r.patterns[0].notes = 'free text'; }, 'unknown key "notes"');
   expectProblem((r) => { r.patterns[0].crop.rotate = 90; }, 'crop: unknown key "rotate"');
+  expectProblem((r) => {
+    r.published = [{
+      page: 1,
+      filename: 'chart-1-of-1-aaaaaaaa.jpg',
+      mediaGid: 'gid://shopify/MediaImage/1',
+      alt: 'Applique pattern chart 1 of 1',
+      specHash: 'a'.repeat(64),
+      caption: 'free text',
+    }];
+  }, 'published[0]: unknown key "caption"');
+});
+
+// ---------------------------------------------------------------------------
+// save() is the highest-stakes write in the module: publish.mjs calls it immediately after the
+// live media writes, to record the new chart GIDs. It was a plain writeFile while the REVERSIBLE
+// local write in draft.mjs was atomic, which is the wrong way round.
+// ---------------------------------------------------------------------------
+
+test('save() writes atomically: temp file first, rename second', async () => {
+  const reg = fixture();
+  const calls = [];
+  await save('/registry/patterns.json', reg, {
+    writeFile: async (p, contents) => { calls.push(['write', p, contents.length]); },
+    rename: async (from, to) => { calls.push(['rename', from, to]); },
+    suffix: 'test',
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].slice(0, 2), ['write', '/registry/patterns.json.tmp-test']);
+  assert.deepEqual(calls[1], ['rename', '/registry/patterns.json.tmp-test', '/registry/patterns.json']);
+  assert.equal(calls[0][2], serialize(reg).length, 'the temp file carries the full serialized registry');
+});
+
+test('save() leaves the target untouched when the temp write fails', async () => {
+  let renamed = false;
+  await assert.rejects(
+    () => save('/registry/patterns.json', fixture(), {
+      writeFile: async () => { throw new Error('ENOSPC'); },
+      rename: async () => { renamed = true; },
+    }),
+    /ENOSPC/,
+  );
+  assert.equal(renamed, false, 'a failed temp write must never reach the rename');
+});
+
+test('save() validates BEFORE it writes anything', async () => {
+  const bad = fixture();
+  bad.patterns[0].thread = 'Not A Thread';
+  let touched = false;
+  await assert.rejects(
+    () => save('/registry/patterns.json', bad, {
+      writeFile: async () => { touched = true; },
+      rename: async () => { touched = true; },
+    }),
+  );
+  assert.equal(touched, false, 'an invalid registry must not reach the filesystem at all');
 });
