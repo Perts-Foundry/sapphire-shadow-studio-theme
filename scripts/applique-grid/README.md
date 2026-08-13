@@ -94,7 +94,8 @@ any variant is refused for deletion regardless of signals (charts must never be 
 relative order is never disturbed.
 
 Credentials come from the environment; run live steps as
-`node --env-file=<gitignored secrets file> scripts/applique-grid/publish.mjs`. Secret-shaped argv
+`node --env-file=.env scripts/applique-grid/publish.mjs` (the repo-root `.env` is the standard,
+gitignored secrets file; see [`../README.md`](../README.md) > Credentials). Secret-shaped argv
 options are refused by name, the shop domain is a compile-time constant asserted at startup, and
 the shared Admin client (`scripts/blank-inventory/lib/admin.mjs`) redacts the token from every
 error. Required scopes: `write_products` + `write_files`, verified each run; a passing scope

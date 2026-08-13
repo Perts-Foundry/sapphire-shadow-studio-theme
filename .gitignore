@@ -4,6 +4,14 @@
 .claude/*
 !.claude/skills/
 
+# Admin API credentials. `.env` is the standard secrets file every script here reads via
+# `node --env-file=.env ...` (SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, MYSHOPIFY_DOMAIN).
+# Deliberately UNANCHORED and covering variants: a `.env` anywhere in this public repo is a
+# credential leak, and the file existed as a convention before any rule ignored it.
+.env
+.env.*
+!.env.example
+
 # npm
 node_modules/
 npm-debug.log

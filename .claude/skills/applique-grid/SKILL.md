@@ -80,7 +80,7 @@ tell the operator you saw it.
    plan: creates with verbatim alts and filenames, deletes with reasons, suspects with reasons,
    live Color values, and the final gallery order. A passing scope check is capability, not
    authorization; the live run happens only on an explicit yes to THIS plan, via
-   `node --env-file=<secrets file> scripts/applique-grid/publish.mjs`. On any partial failure, or
+   `node --env-file=.env scripts/applique-grid/publish.mjs`. On any partial failure, or
    when live state no longer matches the approved dry-run, the tool stops; a second attempt
    requires a fresh dry-run and a fresh gate approval (the earlier yes does not carry over). The
    operator then spot-checks the gallery manually via the admin Preview link (browser use is
@@ -94,7 +94,7 @@ tell the operator you saw it.
    modified; commit, push, PR, and the `deploy` comment are the operator's normal flow, outside
    the skill.
 
-7. **Audit.** `node --env-file=<secrets file> scripts/applique-grid/audit.mjs` green closes the
+7. **Audit.** `node --env-file=.env scripts/applique-grid/audit.mjs` green closes the
    loop. On red, present the drift verbatim; the operator chooses the remediation (normally
    re-running the affected steps). Never edit live state or the template to silence an audit.
    Later runs (spot checks, post-deploy verification) start here.
@@ -135,8 +135,8 @@ edit other products; or fix the legacy Gray/Navy alt-text drift the audit report
 
 - **No em dashes (U+2014)** anywhere: registry, names, chart labels, commits, PR text.
 - **Public repo.** No dev-machine paths (the originals dir stays a runtime flag), no tokens
-  (env file only, gitignored), no personal metadata. Image binaries and manifests stay in
-  gitignored `product-images/`.
+  (the gitignored repo-root `.env` only, read via `--env-file=.env`), no personal metadata. Image
+  binaries and manifests stay in gitignored `product-images/`.
 - **Feature-branch only**; never edit `main`, the live theme, or `shopify-sync` directly.
 - **No AI attribution** in commits or PRs.
 - Scope checks are capability, not authorization: every live write sits behind its gate.

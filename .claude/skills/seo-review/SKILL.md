@@ -108,7 +108,9 @@ judgment work the operator iterates on); touch Google Search Console or Bing Web
 - **No em dashes (U+2014)** anywhere, including report text and proposed copy.
 - **The token and the storefront password are never printed, logged, or committed.** The token is
   minted at runtime from `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET`; `STORE_PW` stays in the
-  environment. If a command needs a secret, reference the env var name, never the value.
+  environment. Both come from the gitignored repo-root `.env` via `node --env-file=.env ...` (see
+  `scripts/README.md` > Credentials). If a command needs a secret, reference the env var name,
+  never the value.
 - **Public repo.** Findings quote storefront metadata, which is public by definition, but keep
   bodies, cookie values, and any Admin data beyond SEO fields out of reports, commits, and PR
   text. Run artifacts live in the state dir outside the repo; never point `SEO_REVIEW_STATE_DIR`

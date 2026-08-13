@@ -40,6 +40,31 @@ The `product-images` Claude skill (`.claude/skills/product-images/`) drives the 
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it
 runs.
 
+## Credentials
+
+Every script here that reaches the Admin API reads its credentials from the environment, and the
+standard place to keep them is a **`.env` file at the repo root**, passed explicitly:
+
+```bash
+node --env-file=.env scripts/<tool>.mjs
+```
+
+```
+MYSHOPIFY_DOMAIN=<store>.myshopify.com
+SHOPIFY_CLIENT_ID=<custom app client id>
+SHOPIFY_CLIENT_SECRET=<custom app client secret>
+```
+
+`.env.example` records those names with no values. Rules that go with it:
+
+- **`.env` is gitignored** (`.env`, `.env.*`, except `.env.example`). This repo is public; a
+  committed credential is a rotation event, not a cleanup.
+- **Never on argv.** The Admin token is minted at runtime by exchanging the client id/secret, is
+  redacted from logs and errors, and is never written to a manifest, plan artifact, or commit.
+  `applique-grid/publish.mjs` refuses secret-shaped flags outright.
+- `--env-file` is deliberately explicit rather than auto-loaded, so a live-write tool cannot pick
+  up credentials by accident.
+
 ## process-product-images.mjs
 
 Batch-processes raw product photos into Shopify-upload-ready JPEGs plus a `manifest.csv`, so they

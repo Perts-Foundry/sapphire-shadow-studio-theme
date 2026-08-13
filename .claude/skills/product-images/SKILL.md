@@ -289,8 +289,9 @@ the operator explicitly approves it (the step 2 approved-name apply or the step 
   processed, and the manifest) is gitignored and never enters a PR; treat the manifest as a local
   convenience, not a reviewable record.
 - **The write token is never committed, never printed, never written to the manifest.** The uploader
-  mints it at runtime from `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` and redacts it from logs; do
-  not paste it anywhere.
+  mints it at runtime from `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET`, read from the gitignored
+  repo-root `.env` via `node --env-file=.env ...` (see `scripts/README.md` > Credentials), and
+  redacts it from logs; do not paste it anywhere.
 - **Bounded live-write authority:** create/update product media and its alt text, and (opt-in) append
   a variant hero. Never delete media, never edit other product/variant fields.
 - **No em dashes (U+2014)** anywhere, including any warning or report text.
