@@ -18,15 +18,30 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { COLOR_TRANSFORM_VERSION, DECODER_VERSION, decodeToSrgb, planIngest, sharpFromDecoded } from './lib/heic.mjs';
+import { outDirProblem } from './lib/out-dir.mjs';
 import { load as loadRegistry, REGISTRY_PATH } from './lib/registry.mjs';
 
 const DEFAULT_OUT_DIR = 'product-images/applique';
 const CELL_LONG_EDGE = 1600;
 const PREVIEW_LONG_EDGE = 600;
-const OUT_DIR_RE = /(^|[\\/])product-images([\\/]|$)/;
 
-function parseArgs(argv) {
-  const opts = { source: null, outDir: DEFAULT_OUT_DIR, force: false };
+export const HELP = `Usage: node scripts/applique-grid/ingest.mjs --source '<dir>' [options]
+
+Copies the operator's HEIC pattern photos out of the source folder (never writing to it), decodes
+them into real sRGB, and produces working cells, small previews, and the ingest manifest.
+
+Options:
+  --source <dir>   The originals folder. Required, and a runtime flag only: a dev-machine path is
+                   sensitive content in this public repo, so it never lands in any artifact.
+  --out-dir <dir>  Working directory (default ${DEFAULT_OUT_DIR}; must be under product-images/).
+  --force          Re-decode every photo even when its manifest key is unchanged. Needed after a
+                   change that alters decoded pixels without changing the source hash, decoder
+                   version, or colour-transform version.
+  --help           This text.
+`;
+
+export function parseArgs(argv) {
+  const opts = { source: null, outDir: DEFAULT_OUT_DIR, force: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -34,11 +49,13 @@ function parseArgs(argv) {
     let val;
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'force') { opts.force = true; continue; }
     if (a === 'source') { opts.source = val ?? argv[++i]; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
     throw new Error(`Unknown option --${a}`);
   }
+  if (opts.help) return opts;
   if (!opts.source) throw new Error("Missing --source '<dir>' (the operator's HEIC folder; quoted if it has spaces)");
   return opts;
 }
@@ -54,10 +71,10 @@ async function readManifest(manifestPath) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
-  if (!OUT_DIR_RE.test(outDir)) {
-    throw new Error(`--out-dir must be under a 'product-images/' directory (got ${outDir}); refusing to write elsewhere.`);
-  }
+  const outProblem = outDirProblem(outDir);
+  if (outProblem) throw new Error(outProblem);
   const sourceDir = path.resolve(opts.source);
 
   const registry = await loadRegistry(REGISTRY_PATH);

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { balancedPages, pageLayout, compositePlan } from '../lib/layout.mjs';
+import {
+  balancedPages, pageLayout, compositePlan, cellWidth, nameCharCeiling,
+  LABEL_EM_PER_CHAR, LABEL_FONT_SIZE, LABEL_PREFIX_RESERVE,
+} from '../lib/layout.mjs';
+import { REGISTRY_PATH } from '../lib/registry.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'registry.fixture.json'), 'utf8'));
@@ -110,4 +114,41 @@ test('compositePlan offsets against the fixture registry', () => {
 test('compositePlan rejects a sub-1 scale', () => {
   const layout = pageLayout({ chart: fixture.chart, count: 2 });
   assert.throws(() => compositePlan(layout, 0.5), /scale/);
+});
+
+// ---------------------------------------------------------------------------
+// The label ceiling: derived from geometry, not picked.
+// ---------------------------------------------------------------------------
+
+test('cellWidth is the same arithmetic pageLayout places cells with', () => {
+  for (const columns of [2, 3, 4, 5]) {
+    const chart = { ...fixture.chart, columns, rows: 3 };
+    assert.equal(pageLayout({ chart, count: 1 }).cells[0].width, cellWidth(chart));
+  }
+});
+
+test('the name ceiling tightens as the grid densifies, and never goes below 1', () => {
+  const at = (columns) => nameCharCeiling({ columns, width_units: 1600 }, 255);
+  assert.equal(at(3), 21);
+  assert.ok(at(2) > at(3) && at(3) > at(4) && at(4) > at(5), 'denser grids must carry shorter names');
+  assert.ok(nameCharCeiling({ columns: 40, width_units: 800 }, 255) >= 1);
+});
+
+test('the shipped registry clears its own ceiling, with headroom', () => {
+  // The plan's rule: measure the real names first, or audit.mjs --local goes red and draft.mjs
+  // --write refuses on already-committed data.
+  const registry = JSON.parse(readFileSync(REGISTRY_PATH, 'utf8'));
+  const ceiling = nameCharCeiling(registry.chart, 255);
+  const longest = registry.patterns.map((p) => p.name).sort((a, b) => b.length - a.length)[0];
+  assert.equal(longest, 'Terracotta Blossom');
+  assert.equal(longest.length, 18);
+  assert.ok(ceiling > longest.length, `ceiling ${ceiling} must exceed the longest committed name`);
+  assert.ok(ceiling - longest.length >= 3, 'and with headroom, not by one character');
+});
+
+test('the ceiling also respects the dropdown line bound, so a wide chart cannot escape it', () => {
+  // A 2-column chart at a huge canvas is bounded by the cart line-item property length, not pixels.
+  const wide = nameCharCeiling({ columns: 1, width_units: 100000 }, 255);
+  assert.equal(wide, 255 - LABEL_PREFIX_RESERVE - ' (Light Purple thread)'.length);
+  assert.ok(wide < Math.floor(cellWidth({ columns: 1, width_units: 100000 }) / (LABEL_FONT_SIZE * LABEL_EM_PER_CHAR)));
 });

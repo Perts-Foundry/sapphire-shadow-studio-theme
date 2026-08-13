@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "defaults": {
+    "grid": 200,
+    "sdRadius": 2,
+    "sdFloor": 8,
+    "satFloor": 25,
+    "smoothRadius": 8,
+    "otsuCap": null,
+    "erodeRadius": 2,
+    "inset": 0.05,
+    "minSide": 10,
+    "minSignal": 0.5
+  },
+  "archetypes": [
+    {
+      "archetype": "achromatic-paw",
+      "file": "achromatic-paw.png",
+      "grid": 200,
+      "sourceBasename": "IMG_0883.heic",
+      "sourceSha256": "3da8c93fa80152fe3bc549107d4c739a1888c4afc3bac7f27e91ef26ccf66cb4",
+      "fullResolutionProposal": {
+        "left": 0.3675,
+        "top": 0.1425,
+        "width": 0.585,
+        "height": 0.585,
+        "size": 0.585,
+        "diagnostics": {
+          "grid": 200,
+          "signal": 1,
+          "side": 130,
+          "threshold": 0.3686,
+          "coverage": 0.6989,
+          "sdP95": 78.9214,
+          "satP95": 6.4792
+        }
+      },
+      "confirmedCrop": {
+        "left": 0.37,
+        "top": 0.14,
+        "width": 0.585,
+        "height": 0.585
+      }
+    },
+    {
+      "archetype": "sparse-bee",
+      "file": "sparse-bee.png",
+      "grid": 200,
+      "sourceBasename": "IMG_0889.heic",
+      "sourceSha256": "b90df8b6929ca61e076a6bce0ca44e617add39eba75e7c1cce18cdb148954250",
+      "fullResolutionProposal": {
+        "left": 0.4618,
+        "top": 0.3717,
+        "width": 0.3915,
+        "height": 0.3915,
+        "size": 0.3915,
+        "diagnostics": {
+          "grid": 200,
+          "signal": 1,
+          "side": 87,
+          "threshold": 0.502,
+          "coverage": 0.4628,
+          "sdP95": 23.4474,
+          "satP95": 153.6875
+        }
+      },
+      "confirmedCrop": {
+        "left": 0.465,
+        "top": 0.37,
+        "width": 0.395,
+        "height": 0.395
+      }
+    },
+    {
+      "archetype": "cream-print",
+      "file": "cream-print.png",
+      "grid": 200,
+      "sourceBasename": "IMG_0888.heic",
+      "sourceSha256": "44bad267344dda943fd4364af6336ff4023d2a1a5c35fbc218918d3f0c538023",
+      "fullResolutionProposal": {
+        "left": 0.1565,
+        "top": 0.3915,
+        "width": 0.567,
+        "height": 0.567,
+        "size": 0.567,
+        "diagnostics": {
+          "grid": 200,
+          "signal": 1,
+          "side": 126,
+          "threshold": 0.6667,
+          "coverage": 0.6615,
+          "sdP95": 17.9555,
+          "satP95": 24.1042
+        }
+      },
+      "confirmedCrop": {
+        "left": 0.16,
+        "top": 0.335,
+        "width": 0.43,
+        "height": 0.43
+      }
+    },
+    {
+      "archetype": "youll-live",
+      "file": "youll-live.png",
+      "grid": 200,
+      "sourceBasename": "IMG_0886.heic",
+      "sourceSha256": "ad77a0d2ed5e9edd605d6ed9ae625286e1fcd9d2fed05b9a45ab13a1e1f75627",
+      "fullResolutionProposal": {
+        "left": 0.2655,
+        "top": 0.3405,
+        "width": 0.369,
+        "height": 0.369,
+        "size": 0.369,
+        "diagnostics": {
+          "grid": 200,
+          "signal": 1,
+          "side": 82,
+          "threshold": 0.3608,
+          "coverage": 0.5298,
+          "sdP95": 48.4984,
+          "satP95": 28.1875
+        }
+      },
+      "confirmedCrop": {
+        "left": 0.4,
+        "top": 0.45,
+        "width": 0.36,
+        "height": 0.36
+      }
+    }
+  ]
+}

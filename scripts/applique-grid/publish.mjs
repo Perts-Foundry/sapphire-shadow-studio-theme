@@ -18,12 +18,15 @@
 //     anything executes.
 
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminClient, missingScopes } from '../blank-inventory/lib/admin.mjs';
-import { load as loadRegistry, save as saveRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
-import { buildMediaPlan } from './lib/media-plan.mjs';
+import {
+  load as loadRegistry, save as saveRegistry, activePatterns, pinnedMedia, REGISTRY_PATH,
+} from './lib/registry.mjs';
+import { buildMediaPlan, evaluateReorder } from './lib/media-plan.mjs';
+import { selectSnapshotsToPrune } from './lib/artifacts.mjs';
 import {
   REQUIRED_SCOPES, fetchProductState, createChart, pollMediaReady, deleteMedia, reorderMedia,
 } from './lib/media.mjs';
@@ -33,8 +36,23 @@ import { paginate, pageArtifacts } from './render.mjs';
 const SHOP_DOMAIN = 'sapphire-shadow-studio.myshopify.com';
 const DEFAULT_OUT_DIR = 'product-images/applique';
 
-function parseArgs(argv) {
-  const opts = { dryRun: false, manifest: null, outDir: DEFAULT_OUT_DIR };
+export const HELP = `Usage: node --env-file=.env scripts/applique-grid/publish.mjs [options]
+
+The ONE entry point in this module that writes to the LIVE store. A live run requires a stored,
+stamped, operator-approved dry-run plan, and consumes it either way.
+
+Options:
+  --dry-run          Compute and print the full plan, store it stamped, write nothing.
+  --approved <token> The approval token printed by --dry-run. REQUIRED for a live run.
+  --manifest <path>  Charts manifest (default <out-dir>/charts/manifest.json).
+  --out-dir <dir>    Working directory (default ${DEFAULT_OUT_DIR}).
+  --help             This text.
+
+Credentials come from the environment, never argv; secret-shaped options are refused by name.
+`;
+
+export function parseArgs(argv) {
+  const opts = { dryRun: false, approved: null, manifest: null, outDir: DEFAULT_OUT_DIR, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -45,7 +63,9 @@ function parseArgs(argv) {
     if (/^(token|secret|client-secret|password|api-key)$/i.test(a)) {
       throw new Error(`--${a} refused: secrets come from the env file (node --env-file=...), never argv`);
     }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'dry-run') { opts.dryRun = true; continue; }
+    if (a === 'approved') { opts.approved = val ?? argv[++i]; continue; }
     if (a === 'manifest') { opts.manifest = val ?? argv[++i]; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
     throw new Error(`Unknown option --${a}`);
@@ -54,9 +74,201 @@ function parseArgs(argv) {
 }
 
 // The stored dry-run plan binds to the exact live media state it was computed against.
-function liveStateHash(media) {
+export function liveStateHash(media) {
   const canon = media.map((m) => `${m.id}\t${m.alt}\t${m.filename}`).join('\n');
   return createHash('sha256').update(canon).digest('hex');
+}
+
+// A stored plan older than this is refused even against byte-identical live state: an approval is
+// a decision about a moment, and "the gallery has not changed in a week" is not the same thing as
+// "the operator said yes to this a moment ago".
+export const PLAN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The approval token for a plan: a short digest of exactly what the dry run printed.
+ *
+ * Freshness is not consent. Before this, the only thing standing between a dry run and the
+ * irreversible live write was a file the SAME session had just written, so a run could gate itself
+ * by inference. The token has to travel through the operator (it is printed by --dry-run and typed
+ * back as --approved), which is a step no amount of self-persuasion can perform.
+ * @param {object} input
+ * @param {string} input.shop
+ * @param {string} input.handle
+ * @param {string} input.liveStateHash
+ * @param {object} input.plan
+ * @returns {string} 12 hex chars
+ */
+export function approvalToken({ shop, handle, liveStateHash: liveHash, plan }) {
+  return createHash('sha256')
+    .update(JSON.stringify({ shop, handle, liveStateHash: liveHash, plan }))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+/**
+ * Why the supplied --approved token may not execute this stored plan, or null when it may. Kept
+ * separate from planStampProblem because the two answer different questions: that one asks whether
+ * the plan is still current, this one asks whether a human said yes to it.
+ * @param {object} input
+ * @param {string | null} input.supplied - the --approved value
+ * @param {object} input.stored - the parsed publish-plan.json
+ * @returns {string | null}
+ */
+export function approvalProblem({ supplied, stored }) {
+  const expected = stored?.approvalToken;
+  if (typeof expected !== 'string' || !expected) {
+    return 'stored plan carries no approval token; it predates this rail. Re-run --dry-run and re-gate';
+  }
+  if (!supplied) {
+    return 'a live run requires --approved <token>, the token printed by --dry-run and confirmed by the operator';
+  }
+  if (supplied.trim().toLowerCase() !== expected) {
+    return `--approved ${supplied} does not match the stored plan's token; the approval was for a different plan. Re-run --dry-run and re-gate`;
+  }
+  return null;
+}
+
+/**
+ * Why a stored dry-run plan may not be executed, or null when it may. Pure, so the refusals are
+ * unit-testable without a store.
+ * @param {object} input
+ * @param {object} input.stored - the parsed publish-plan.json
+ * @param {string} input.shop
+ * @param {string} input.handle
+ * @param {string} input.liveHash - hash of live media as it reads NOW
+ * @param {object} input.plan - the plan as recomputed NOW
+ * @param {number} input.nowMs
+ * @returns {string | null}
+ */
+export function planStampProblem({ stored, shop, handle, liveHash, plan, nowMs }) {
+  if (!stored || typeof stored !== 'object') return 'stored plan is not an object';
+  if (stored.version !== 1) return `stored plan version ${JSON.stringify(stored.version)} is not 1`;
+  if (stored.shop !== shop) return `stored plan was computed against ${stored.shop}, not ${shop}`;
+  if (stored.handle !== handle) return `stored plan was computed for product "${stored.handle}", not "${handle}"`;
+  const stampedAt = Date.parse(stored.stampedAt ?? '');
+  if (!Number.isFinite(stampedAt)) return 'stored plan has no usable stampedAt';
+  const ageMs = nowMs - stampedAt;
+  if (ageMs < 0) return 'stored plan is stamped in the future; the clock or the file is wrong';
+  if (ageMs > PLAN_MAX_AGE_MS) {
+    return `stored plan is ${(ageMs / 3600000).toFixed(1)}h old (limit ${PLAN_MAX_AGE_MS / 3600000}h); re-run --dry-run and re-gate`;
+  }
+  if (stored.liveStateHash !== liveHash) return 'live media state changed since the approved dry-run; re-run --dry-run and re-gate';
+  if (stored.reorderVerdict !== plan.reorderVerdict) {
+    return `stored plan approved reorder verdict "${stored.reorderVerdict}", but this run computes "${plan.reorderVerdict}"; re-run --dry-run and re-gate`;
+  }
+  if (JSON.stringify(stored.plan) !== JSON.stringify(plan)) {
+    return 'the computed plan changed since the approved dry-run; re-run --dry-run and re-gate';
+  }
+  return null;
+}
+
+/**
+ * Does the live gallery, re-read after the creates landed, hold exactly what this run put there
+ * and nothing else? Scoped deliberately: our OWN creates and deletes are expected, so they do not
+ * trip it, while a concurrent Admin edit to any untouched media does. Pure.
+ * @param {object} input
+ * @param {Array<{id: string, alt: string, filename: string}>} input.before - media at plan time
+ * @param {Array<{id: string, alt: string, filename: string}>} input.after - media re-read now
+ * @param {string[]} input.createdIds
+ * @param {Set<string>} input.deletedIds
+ * @returns {{ok: true} | {ok: false, reason: string}}
+ */
+export function reconcileLiveState({ before, after, createdIds, deletedIds }) {
+  const expected = new Set([
+    ...before.filter((m) => !deletedIds.has(m.id)).map((m) => m.id),
+    ...createdIds,
+  ]);
+  const actual = new Set(after.map((m) => m.id));
+  const missing = [...expected].filter((id) => !actual.has(id));
+  const extra = [...actual].filter((id) => !expected.has(id));
+  if (missing.length) return { ok: false, reason: `media missing from the gallery since this run started: ${missing.join(', ')}` };
+  if (extra.length) return { ok: false, reason: `unexpected media appeared in the gallery since this run started: ${extra.join(', ')}` };
+
+  const afterById = new Map(after.map((m) => [m.id, m]));
+  const created = new Set(createdIds);
+  for (const m of before) {
+    if (deletedIds.has(m.id) || created.has(m.id)) continue;
+    const now = afterById.get(m.id);
+    if (now.alt !== m.alt || now.filename !== m.filename) {
+      return { ok: false, reason: `media ${m.id} was edited elsewhere while this run was in flight (alt or filename changed)` };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Do these two id lists hold exactly the same items with the same multiplicities?
+ * @param {string[]} a
+ * @param {string[]} b
+ * @returns {boolean}
+ */
+export function sameMultiset(a, b) {
+  if (a.length !== b.length) return false;
+  const counts = new Map();
+  for (const id of a) counts.set(id, (counts.get(id) ?? 0) + 1);
+  for (const id of b) {
+    const n = counts.get(id);
+    if (!n) return false;
+    counts.set(id, n - 1);
+  }
+  return true;
+}
+
+/**
+ * Phase 3, re-evaluated against ACTUAL state. The naive fix for the mid-gallery-create bug was to
+ * re-read and just reorder, which buys correctness by executing a live gallery mutation the
+ * operator never approved. So this re-reads, reconciles against what this run itself did, checks
+ * the approved target is still achievable, snapshots the pre-reorder order, and only then moves
+ * anything. Any failure returns without calling reorder at all.
+ *
+ * The client is injected rather than constructed, so a fake can drive every branch.
+ * @param {object} input
+ * @param {() => Promise<Array<{id: string, alt: string, filename: string}>>} input.readLiveOrder
+ * @param {(targetIds: string[]) => Promise<void>} input.reorder
+ * @param {(media: Array<object>, label: string) => Promise<string>} input.writeSnapshot
+ * @param {Array<{id: string, alt: string, filename: string}>} input.before
+ * @param {string[]} input.createdIds
+ * @param {Set<string>} input.deletedIds
+ * @param {string[]} input.targetIds - the approved final order, resolved to live GIDs
+ * @param {(msg: string) => void} [input.log]
+ * @returns {Promise<{status: 'converged' | 'reordered' | 'aborted', reason?: string,
+ *   snapshotPath?: string, moves?: number}>}
+ */
+export async function reorderPhase({
+  readLiveOrder, reorder, writeSnapshot, before, createdIds, deletedIds, targetIds, log = console.log,
+}) {
+  let after;
+  try {
+    after = await readLiveOrder();
+  } catch (e) {
+    return { status: 'aborted', reason: `could not re-read the gallery after the create barrier (${e.message}); no reorder was attempted` };
+  }
+
+  const rec = reconcileLiveState({ before, after, createdIds, deletedIds });
+  if (!rec.ok) return { status: 'aborted', reason: `${rec.reason}; no reorder was attempted` };
+
+  // MULTISET equality, not set membership: `every(includes)` plus a length check cannot see a
+  // duplicate, so a target of [A, A, C] against live [A, B, C] scored "achievable" and the reorder
+  // issued would have dropped B out of the approved order entirely.
+  const actualIds = after.map((m) => m.id);
+  const same = sameMultiset(targetIds, actualIds);
+  if (!same) {
+    return {
+      status: 'aborted',
+      reason: 'reorder needed but the resulting order differs from the approved plan; re-run --dry-run',
+    };
+  }
+
+  const { required, moves } = evaluateReorder(actualIds, targetIds);
+  if (!required) {
+    log('reorder: not needed after the creates landed (the gallery is already in the approved order)');
+    return { status: 'converged', moves: 0 };
+  }
+
+  const snapshotPath = await writeSnapshot(after, 'pre-reorder');
+  log(`reorder: ${moves.length} item(s) move; pre-reorder order snapshotted to ${snapshotPath}`);
+  await reorder(targetIds);
+  return { status: 'reordered', moves: moves.length, snapshotPath };
 }
 
 // Recompute the desired charts from the registry + ingest manifest and require the rendered
@@ -84,9 +296,20 @@ async function loadDesired({ registry, outDir, manifestPath }) {
   return { charts, chartsDir };
 }
 
+// What the gate reads. The reorder line is deliberately three-valued: with creates pending, the
+// post-create gallery order is not predictable, and the old code's confident "reorder not
+// required" was wrong on the very first publish.
+function reorderLine(plan) {
+  if (plan.reorderVerdict === 'undetermined') {
+    return `reorder: undetermined until post-create (up to ${plan.finalOrder.length} items may move; `
+      + 'relative order of untouched media preserved)';
+  }
+  return `reorder ${plan.reorderVerdict === 'required' ? 'required' : 'not required'}`;
+}
+
 function printPlan(plan, liveColorValues) {
   console.log(`Live Color values: [${liveColorValues.join(', ')}]`);
-  console.log(`\nPlan: ${plan.creates.length} create(s), ${plan.deletes.length} delete(s), ${plan.keeps.length} keep(s), reorder ${plan.reorderRequired ? 'required' : 'not required'}${plan.converged ? ' (converged: nothing to do)' : ''}`);
+  console.log(`\nPlan: ${plan.creates.length} create(s), ${plan.deletes.length} delete(s), ${plan.keeps.length} keep(s), ${reorderLine(plan)}${plan.converged ? ' (converged: nothing to do)' : ''}`);
   for (const c of plan.creates) {
     console.log(`  create  page ${c.page}: ${c.filename}`);
     console.log(`          alt: ${c.alt}`);
@@ -100,14 +323,39 @@ function printPlan(plan, liveColorValues) {
   if (plan.stalePublished.length) {
     console.log(`  stale published record(s) to prune: ${plan.stalePublished.map((e) => e.mediaGid).join(', ')}`);
   }
-  if (plan.reorderRequired) {
-    console.log('  final order:');
+  if (plan.pinned.length) {
+    console.log(`  pinned after the charts (registry gallery.pin_after_charts): ${plan.pinned.join(', ')}`);
+  }
+  // Always printed once the order could move. An "undetermined" verdict is only approvable if the
+  // operator can see the DESTINATION, not just the possibility.
+  if (plan.reorderVerdict !== 'not-required') {
+    console.log('  target final order:');
     plan.finalOrder.forEach((e, i) => console.log(`    ${i + 1}. ${e.kind === 'live' ? e.id : `(new) ${e.filename}`}`));
   }
 }
 
+// Retention over the snapshot dir. These are the only rollback record for a live media write, so
+// the rule can only ever keep more: the newest 10 stay whatever their age, the newest always
+// stays, and nothing after the last converged audit is touched. With no converged audit on record,
+// nothing is pruned at all.
+async function pruneSnapshots(outDir) {
+  const dir = path.join(outDir, 'publish-snapshots');
+  let lastConvergedAtMs = null;
+  try {
+    const marker = JSON.parse(await readFile(path.join(outDir, 'last-converged-audit.json'), 'utf8'));
+    const at = Date.parse(marker.convergedAt ?? '');
+    if (Number.isFinite(at)) lastConvergedAtMs = at;
+  } catch { /* no watermark: nothing is prunable, which is the safe direction */ }
+
+  const names = await readdir(dir).catch(() => []);
+  const { prune } = selectSnapshotsToPrune({ names, keep: 10, lastConvergedAtMs });
+  for (const n of prune) await rm(path.join(dir, n), { force: true });
+  if (prune.length) console.log(`Pruned ${prune.length} snapshot(s) older than the last converged audit.`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
   const manifestPath = opts.manifest ? path.resolve(opts.manifest) : path.join(outDir, 'charts', 'manifest.json');
   const planPath = path.join(outDir, 'publish-plan.json');
@@ -115,6 +363,10 @@ async function main() {
   if (process.env.MYSHOPIFY_DOMAIN && process.env.MYSHOPIFY_DOMAIN !== SHOP_DOMAIN) {
     throw new Error(`MYSHOPIFY_DOMAIN is ${process.env.MYSHOPIFY_DOMAIN}, but this tool only publishes to ${SHOP_DOMAIN}`);
   }
+
+  // A dry run starts from nothing: a plan left behind by a crashed or abandoned earlier dry run
+  // must never be the thing a later live run reads.
+  if (opts.dryRun) await rm(planPath, { force: true });
 
   const registry = await loadRegistry(REGISTRY_PATH);
   const { charts: desired, chartsDir } = await loadDesired({ registry, outDir, manifestPath });
@@ -131,13 +383,19 @@ async function main() {
     throw new Error(`product GID drift for "${registry.product.handle}": live ${state.id} != recorded ${registry.product.gid}`);
   }
 
-  // Snapshot the live media list before anything executes (dry runs snapshot too; cheap).
+  // Snapshot the live media list before anything executes (dry runs snapshot too; cheap). These
+  // are the ONLY rollback record for a live media write, so the phase 3 re-read snapshots too.
   await mkdir(path.join(outDir, 'publish-snapshots'), { recursive: true });
-  const snapshotPath = path.join(
-    outDir, 'publish-snapshots',
-    `live-media-${new Date().toISOString().replace(/[:.]/g, '-')}-${opts.dryRun ? 'dry-run' : 'live'}.json`,
-  );
-  await writeFile(snapshotPath, `${JSON.stringify({ takenAt: new Date().toISOString(), media: state.media }, null, 2)}\n`);
+  const writeSnapshot = async (media, label) => {
+    const p = path.join(
+      outDir, 'publish-snapshots',
+      `live-media-${new Date().toISOString().replace(/[:.]/g, '-')}-${label}.json`,
+    );
+    await writeFile(p, `${JSON.stringify({ takenAt: new Date().toISOString(), label, media }, null, 2)}\n`);
+    return p;
+  };
+  const snapshotPath = await writeSnapshot(state.media, opts.dryRun ? 'dry-run' : 'live');
+  await pruneSnapshots(outDir);
 
   // Colour guards against the LIVE values: the committed snapshot must agree, and no planned alt
   // may bind to any value.
@@ -156,19 +414,47 @@ async function main() {
     published: registry.published,
     variantAttachedIds: state.variantAttachedIds,
     handle: registry.product.handle,
+    pinned: pinnedMedia(registry),
   });
 
   console.log(`${opts.dryRun ? 'DRY RUN: ' : ''}${state.title} (${registry.product.handle}), scope OK (${REQUIRED_SCOPES.join(', ')}); snapshot: ${snapshotPath}\n`);
   printPlan(plan, state.liveColorValues);
 
+  const liveHash = liveStateHash(state.media);
+
   if (opts.dryRun) {
-    await writeFile(planPath, `${JSON.stringify({ liveStateHash: liveStateHash(state.media), plan }, null, 2)}\n`);
+    // The stamp is what a live run checks: shop, product, freshness, live state, the approved
+    // reorder verdict, and the plan itself. The token is what the OPERATOR checks.
+    const token = approvalToken({
+      shop: SHOP_DOMAIN, handle: registry.product.handle, liveStateHash: liveHash, plan,
+    });
+    await writeFile(planPath, `${JSON.stringify({
+      version: 1,
+      stampedAt: new Date().toISOString(),
+      shop: SHOP_DOMAIN,
+      handle: registry.product.handle,
+      liveStateHash: liveHash,
+      reorderVerdict: plan.reorderVerdict,
+      approvalToken: token,
+      plan,
+    }, null, 2)}\n`);
     console.log(`\nNo writes performed. Plan stored: ${planPath}`);
-    console.log('Next: on explicit operator approval of THIS plan, re-run without --dry-run.');
+    console.log(`Approval token for THIS plan: ${token}`);
+    console.log('Next: present the plan above to the operator. Only after they approve it, run:');
+    console.log(`  node --env-file=.env scripts/applique-grid/publish.mjs --approved ${token}`);
     return;
   }
 
-  // Live run: require the stored dry-run plan and a byte-identical live state + plan.
+  // Live run: require the stored dry-run plan, a byte-identical live state + plan, AND the token
+  // the operator was shown. Refuse a token-less invocation BEFORE consuming the plan: that is a
+  // mistake, not an execution attempt, and burning the plan would cost a gate round trip.
+  if (!opts.approved) {
+    throw new Error(
+      'a live run requires --approved <token>, the token printed by --dry-run and confirmed by the operator.\n'
+      + 'The stored plan proves freshness, never consent. Nothing was read or written.',
+    );
+  }
+
   let stored;
   try {
     stored = JSON.parse(await readFile(planPath, 'utf8'));
@@ -176,10 +462,19 @@ async function main() {
     throw new Error(`no stored dry-run plan at ${planPath}; run publish.mjs --dry-run and gate on it first`);
   }
   await rm(planPath); // consumed either way: any retry starts from a fresh dry-run + fresh gate
-  if (stored.liveStateHash !== liveStateHash(state.media)
-    || JSON.stringify(stored.plan) !== JSON.stringify(plan)) {
-    throw new Error('live media state (or the computed plan) changed since the approved dry-run; re-run --dry-run and re-gate');
-  }
+
+  const consentProblem = approvalProblem({ supplied: opts.approved, stored });
+  if (consentProblem) throw new Error(consentProblem);
+
+  const stampProblem = planStampProblem({
+    stored,
+    shop: SHOP_DOMAIN,
+    handle: registry.product.handle,
+    liveHash,
+    plan,
+    nowMs: Date.now(),
+  });
+  if (stampProblem) throw new Error(stampProblem);
 
   if (plan.converged && !plan.stalePublished.length) {
     console.log('\nAlready converged; nothing to write.');
@@ -245,7 +540,7 @@ async function main() {
     await writePublished();
     console.error('\nCreate phase failed; deletes and reorder were SKIPPED. Surviving plan:');
     for (const d of plan.deletes) console.error(`  delete  ${d.id} (${d.filename || 'no filename'}): ${d.reason}`);
-    if (plan.reorderRequired) console.error('  reorder to the planned final order');
+    if (plan.reorderVerdict !== 'not-required') console.error('  reorder to the planned final order');
     console.error('\nFailures:');
     failures.forEach((f) => console.error(`  ${f}`));
     console.error('\nRe-run publish.mjs --dry-run and re-gate before a second attempt.');
@@ -266,13 +561,33 @@ async function main() {
     return;
   }
 
-  // Phase 3: reorder to the contiguous gallery tail.
+  // Phase 3: reorder, re-evaluated against the gallery as it actually reads now. The dry run could
+  // not know where Shopify would place the creates, so the approved artifact was the TARGET order;
+  // this is where that target meets reality.
   const targetIds = plan.finalOrder.map((e) => (e.kind === 'live' ? e.id : createdByFilename.get(e.filename).id));
+  let outcome;
   try {
-    await reorderMedia(client, { productId: state.id, targetIds });
+    outcome = await reorderPhase({
+      readLiveOrder: async () => (await fetchProductState(client, registry.product.handle)).media,
+      reorder: (ids) => reorderMedia(client, { productId: state.id, targetIds: ids }),
+      writeSnapshot,
+      before: state.media,
+      createdIds: readyCreates.map((r) => r.id),
+      deletedIds: new Set(deleteIds),
+      targetIds,
+    });
   } catch (e) {
     await writePublished(new Set(deleteIds));
     console.error(`\nReorder failed: ${e.message}`);
+    console.error('The pre-reorder gallery order is in publish-snapshots/ if a partial move needs undoing.');
+    process.exitCode = 1;
+    return;
+  }
+  if (outcome.status === 'aborted') {
+    await writePublished(new Set(deleteIds));
+    console.error(`\nReorder ABORTED: ${outcome.reason}`);
+    console.error('Creates and deletes are done and recorded; only the ordering is outstanding.');
+    console.error('Re-run publish.mjs --dry-run and re-gate.');
     process.exitCode = 1;
     return;
   }

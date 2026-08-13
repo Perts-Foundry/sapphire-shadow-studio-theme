@@ -5,8 +5,11 @@
 // patterns, one discontinued interleaved, on a 3x2 grid so page 1 carries a trailing empty
 // cell):
 //
-//   fixtures/page-1.svg           chart page 1's SVG, text-reviewable brand output
-//   fixtures/pattern-options.txt  the derived dropdown text
+//   fixtures/page-1.svg            chart page 1's SVG, text-reviewable brand output
+//   fixtures/pattern-options.txt   the derived dropdown text
+//   fixtures/gate-table.golden.md  the naming gate's verification surface, over a synthetic
+//                                  2-pattern draft (deliberately not the real 18, so the format is
+//                                  pinned without coupling to production goldens)
 //
 // Not a test file (no `.test.mjs`), so `node --test` does not pick it up.
 
@@ -17,6 +20,7 @@ import { activePatterns } from '../lib/registry.mjs';
 import { dropdownText } from '../lib/registry.mjs';
 import { balancedPages, pageLayout } from '../lib/layout.mjs';
 import { buildChartSvg } from '../lib/chart-svg.mjs';
+import { detailTable, emptyDraft, keyFor, tableRows } from '../lib/draft.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
@@ -33,3 +37,28 @@ console.log(`Regenerated ${path.join(FIXTURES, 'page-1.svg')}`);
 
 writeFileSync(path.join(FIXTURES, 'pattern-options.txt'), `${dropdownText(fixture)}\n`);
 console.log(`Regenerated ${path.join(FIXTURES, 'pattern-options.txt')}`);
+
+// Kept byte-identical to draft.test.mjs's `twoPattern()`; the test asserts against this file.
+const draft = {
+  ...emptyDraft(),
+  threads: [...fixture.threads],
+  patterns: fixture.patterns.slice(0, 2).map((p) => ({
+    id: p.id,
+    name: p.name,
+    thread: p.thread,
+    status: p.status,
+    sources: [...p.sources],
+    hero: p.hero,
+    crop: { ...p.crop },
+    position: p.position,
+  })),
+};
+draft.patterns[0].candidates = { descriptive: 'Scattered Paws', evocative: 'Midnight Steps', modern: 'Paws' };
+draft.patterns[1].candidates = { descriptive: 'Busy Bees', playful: 'Bee Kind', trade: 'Apis Mellifera' };
+writeFileSync(path.join(FIXTURES, 'gate-table.golden.md'), detailTable({
+  rows: tableRows(draft),
+  draft,
+  colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
+  clearance: { [keyFor(draft.patterns[0].hero)]: { minSd: 5.2, tile: 91, edge: 'bottom-left', suspect: true } },
+}));
+console.log(`Regenerated ${path.join(FIXTURES, 'gate-table.golden.md')}`);

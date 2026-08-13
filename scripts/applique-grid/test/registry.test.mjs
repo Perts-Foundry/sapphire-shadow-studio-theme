@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  validate, assertValid, load, activePatterns, dropdownLines, dropdownText,
-  emptyRegistry, serialize, EMPTY_SENTINEL, isEmptySentinel, deriveId,
+  validate, assertValid, load, save, activePatterns, dropdownLines, dropdownText,
+  emptyRegistry, serialize, EMPTY_SENTINEL, isEmptySentinel, deriveId, pinnedMedia,
 } from '../lib/registry.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -144,4 +144,147 @@ test('assertValid throws with every problem listed', () => {
 
 test('load() on a nonexistent path throws', async () => {
   await assert.rejects(() => load(path.join(HERE, 'fixtures', 'does-not-exist.json')));
+});
+
+// ---------------------------------------------------------------------------
+// gallery.pin_after_charts: media that must stay AFTER the chart block.
+// ---------------------------------------------------------------------------
+
+const LOGO = 'gid://shopify/MediaImage/44400000000001';
+
+test('gallery is optional, and an absent gallery pins nothing', () => {
+  const reg = fixture();
+  assert.equal(reg.gallery, undefined);
+  assert.deepEqual(validate(reg), []);
+  assert.deepEqual(pinnedMedia(reg), []);
+  assert.deepEqual(pinnedMedia(emptyRegistry()), []);
+  assert.deepEqual(pinnedMedia(null), []);
+});
+
+test('an empty pin list is exactly equivalent to an absent gallery', () => {
+  const reg = fixture();
+  reg.gallery = { pin_after_charts: [] };
+  assert.deepEqual(validate(reg), []);
+  assert.deepEqual(pinnedMedia(reg), []);
+});
+
+test('a well-formed pin list validates and preserves declared order', () => {
+  const reg = fixture();
+  const second = 'gid://shopify/MediaImage/44400000000002';
+  reg.gallery = { pin_after_charts: [LOGO, second] };
+  assert.deepEqual(validate(reg), []);
+  assert.deepEqual(pinnedMedia(reg), [LOGO, second]);
+});
+
+test('a malformed pinned GID is rejected, naming the offending value', () => {
+  expectProblem((r) => { r.gallery = { pin_after_charts: ['44400000000001'] }; }, '"44400000000001"');
+  expectProblem((r) => { r.gallery = { pin_after_charts: ['gid://shopify/Product/1'] }; }, 'MediaImage');
+  expectProblem((r) => { r.gallery = { pin_after_charts: LOGO }; }, 'must be an array');
+  expectProblem((r) => { r.gallery = []; }, 'gallery must be an object');
+});
+
+test('a duplicated pinned GID is rejected, naming the duplicate', () => {
+  expectProblem((r) => { r.gallery = { pin_after_charts: [LOGO, LOGO] }; }, `duplicate GID(s): ${LOGO}`);
+});
+
+test('a pinned GID that is also a published chart is rejected', () => {
+  expectProblem((r) => {
+    r.published = [{
+      page: 1,
+      filename: 'x-applique-pattern-chart-1-of-1-aaaaaaaa.jpg',
+      mediaGid: LOGO,
+      alt: 'Applique pattern chart 1 of 1: patterns 1-1, A',
+      specHash: 'a'.repeat(64),
+    }];
+    r.gallery = { pin_after_charts: [LOGO] };
+  }, 'is a published chart');
+});
+
+test('an unknown key under gallery is rejected BY NAME, never ignored', () => {
+  // The whole point: `pin_after_chart` must not validate clean while doing nothing, because the
+  // next publish would then move the pinned media and undo the operator's Admin fix.
+  expectProblem((r) => { r.gallery = { pin_after_chart: [LOGO] }; }, 'unknown key "pin_after_chart"');
+});
+
+test('a name longer than the chart density carries is rejected, with both numbers named', () => {
+  expectProblem((r) => { r.patterns[0].name = 'A'.repeat(60); }, 'is 60 characters; the 3-column chart carries at most');
+  // The ceiling is derived from the chart, so densifying the grid can invalidate existing names.
+  // That is the point: the operator should learn it at the gate, not from a rendered chart.
+  const reg = fixture();
+  reg.patterns[0].name = 'Terracotta Blossoming'; // exactly 21: the 3-column ceiling
+  assert.equal(reg.patterns[0].name.length, 21);
+  assert.deepEqual(validate(reg), []);
+  reg.chart = { ...reg.chart, columns: 5, rows: 2 };
+  assert.ok(validate(reg).some((p) => /carries at most/.test(p)));
+});
+
+test('the ceiling is skipped when the chart params are themselves invalid', () => {
+  const reg = fixture();
+  reg.chart = { ...reg.chart, width_units: 10 };
+  const problems = validate(reg);
+  assert.ok(problems.some((p) => /width_units/.test(p)));
+  assert.ok(!problems.some((p) => /carries at most/.test(p)), 'one broken field must not cascade into 10 name errors');
+});
+
+test('unknown keys are rejected in every container, not just gallery', () => {
+  expectProblem((r) => { r.notAKey = 1; }, 'registry: unknown key "notAKey"');
+  expectProblem((r) => { r.product.vendor = 'x'; }, 'product: unknown key "vendor"');
+  expectProblem((r) => { r.chart.gutter = 4; }, 'chart: unknown key "gutter"');
+  expectProblem((r) => { r.patterns[0].notes = 'free text'; }, 'unknown key "notes"');
+  expectProblem((r) => { r.patterns[0].crop.rotate = 90; }, 'crop: unknown key "rotate"');
+  expectProblem((r) => {
+    r.published = [{
+      page: 1,
+      filename: 'chart-1-of-1-aaaaaaaa.jpg',
+      mediaGid: 'gid://shopify/MediaImage/1',
+      alt: 'Applique pattern chart 1 of 1',
+      specHash: 'a'.repeat(64),
+      caption: 'free text',
+    }];
+  }, 'published[0]: unknown key "caption"');
+});
+
+// ---------------------------------------------------------------------------
+// save() is the highest-stakes write in the module: publish.mjs calls it immediately after the
+// live media writes, to record the new chart GIDs. It was a plain writeFile while the REVERSIBLE
+// local write in draft.mjs was atomic, which is the wrong way round.
+// ---------------------------------------------------------------------------
+
+test('save() writes atomically: temp file first, rename second', async () => {
+  const reg = fixture();
+  const calls = [];
+  await save('/registry/patterns.json', reg, {
+    writeFile: async (p, contents) => { calls.push(['write', p, contents.length]); },
+    rename: async (from, to) => { calls.push(['rename', from, to]); },
+    suffix: 'test',
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].slice(0, 2), ['write', '/registry/patterns.json.tmp-test']);
+  assert.deepEqual(calls[1], ['rename', '/registry/patterns.json.tmp-test', '/registry/patterns.json']);
+  assert.equal(calls[0][2], serialize(reg).length, 'the temp file carries the full serialized registry');
+});
+
+test('save() leaves the target untouched when the temp write fails', async () => {
+  let renamed = false;
+  await assert.rejects(
+    () => save('/registry/patterns.json', fixture(), {
+      writeFile: async () => { throw new Error('ENOSPC'); },
+      rename: async () => { renamed = true; },
+    }),
+    /ENOSPC/,
+  );
+  assert.equal(renamed, false, 'a failed temp write must never reach the rename');
+});
+
+test('save() validates BEFORE it writes anything', async () => {
+  const bad = fixture();
+  bad.patterns[0].thread = 'Not A Thread';
+  let touched = false;
+  await assert.rejects(
+    () => save('/registry/patterns.json', bad, {
+      writeFile: async () => { touched = true; },
+      rename: async () => { touched = true; },
+    }),
+  );
+  assert.equal(touched, false, 'an invalid registry must not reach the filesystem at all');
 });

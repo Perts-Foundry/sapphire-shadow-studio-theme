@@ -7,10 +7,13 @@
 // verbatim property strings, so renumbering is safe for history and chatty for charts (most spec
 // hashes change), which is correct and documented in the README.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { atomicWrite } from './atomic-write.mjs';
 import { charsetProblem, nameColorProblem } from './naming.mjs';
+import { nameCharCeiling } from './layout.mjs';
+import { MAX_OPTION_LINE } from './options-writer.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,11 +24,43 @@ export const STATUSES = ['active', 'discontinued'];
 
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PRODUCT_GID_RE = /^gid:\/\/shopify\/Product\/\d+$/;
-const MEDIA_GID_RE = /^gid:\/\/shopify\/MediaImage\/\d+$/;
+export const MEDIA_GID_RE = /^gid:\/\/shopify\/MediaImage\/\d+$/;
 const SPEC_HASH_RE = /^[0-9a-f]{64}$/;
 // Manifests and the registry hold photo BASENAMES only; a path separator means someone recorded a
 // dev-machine path, which must never enter this public repo.
 const BASENAME_RE = /^[^/\\]+\.(heic|heif)$/i;
+
+// Every key this schema knows, per container. Anything else is REJECTED BY NAME rather than
+// ignored: a misspelled `pin_after_chart` that silently does nothing would let the next publish
+// move the operator's pinned media and undo an Admin fix, with the registry looking correct.
+const KNOWN_KEYS = {
+  '': ['version', 'product', 'threads', 'chart', 'gallery', 'patterns', 'published'],
+  product: ['handle', 'gid', 'colorValues'],
+  chart: ['columns', 'rows', 'cell_aspect', 'cell_fit', 'title', 'width_units', 'scale', 'styleVersion'],
+  gallery: ['pin_after_charts'],
+  pattern: ['id', 'name', 'thread', 'status', 'sources', 'hero', 'crop', 'position'],
+  crop: ['left', 'top', 'width', 'height'],
+  published: ['page', 'filename', 'mediaGid', 'alt', 'specHash'],
+};
+
+function pushUnknownKeys(obj, kind, label, push) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+  const allowed = new Set(KNOWN_KEYS[kind]);
+  for (const k of Object.keys(obj)) {
+    if (!allowed.has(k)) push(`${label}: unknown key ${JSON.stringify(k)} (allowed: ${KNOWN_KEYS[kind].join(', ')})`);
+  }
+}
+
+/**
+ * The media GIDs pinned AFTER the chart block, in declared order. Absent `gallery` and an empty
+ * list return the same value, so a truthiness bug on an empty array cannot flip gallery ordering.
+ * @param {object} reg
+ * @returns {string[]}
+ */
+export function pinnedMedia(reg) {
+  const list = reg?.gallery?.pin_after_charts;
+  return Array.isArray(list) ? list.slice() : [];
+}
 
 /** The kebab-case id a pattern name derives to; uniqueness is enforced on this too. Apostrophes
  * are stripped (not hyphenated) so a possessive reads naturally: "Willow's Path" -> willows-path. */
@@ -90,12 +125,14 @@ export function validate(reg) {
 
   if (!reg || typeof reg !== 'object') return ['registry is not an object'];
   if (reg.version !== 1) push(`version must be 1, got ${JSON.stringify(reg.version)}`);
+  pushUnknownKeys(reg, '', 'registry', push);
 
   // product
   const product = reg.product;
   if (!product || typeof product !== 'object') {
     push('product is missing');
   } else {
+    pushUnknownKeys(product, 'product', 'product', push);
     if (!ID_RE.test(product.handle ?? '')) push(`product.handle must be kebab-case, got ${JSON.stringify(product.handle)}`);
     if (!PRODUCT_GID_RE.test(product.gid ?? '')) push(`product.gid must look like gid://shopify/Product/<id>, got ${JSON.stringify(product.gid)}`);
     if (!Array.isArray(product.colorValues) || !product.colorValues.length || product.colorValues.some((v) => typeof v !== 'string' || !v.trim())) {
@@ -103,6 +140,12 @@ export function validate(reg) {
     }
   }
   const colorValues = Array.isArray(product?.colorValues) ? product.colorValues : [];
+  // Derived from the chart geometry these patterns will actually render at, so a denser grid
+  // tightens it. Only computable when the chart params themselves are sane.
+  const ceiling = Number.isInteger(reg.chart?.columns) && reg.chart.columns > 0
+    && Number.isFinite(reg.chart?.width_units) && reg.chart.width_units >= 800
+    ? nameCharCeiling(reg.chart, MAX_OPTION_LINE)
+    : null;
 
   // threads
   if (!Array.isArray(reg.threads)) {
@@ -122,6 +165,7 @@ export function validate(reg) {
   if (!chart || typeof chart !== 'object') {
     push('chart is missing');
   } else {
+    pushUnknownKeys(chart, 'chart', 'chart', push);
     const posInt = (v) => Number.isInteger(v) && v > 0;
     if (!posInt(chart.columns)) push('chart.columns must be a positive integer');
     if (!posInt(chart.rows)) push('chart.rows must be a positive integer');
@@ -132,6 +176,35 @@ export function validate(reg) {
     if (!(Number.isFinite(chart.width_units) && chart.width_units >= 800)) push('chart.width_units must be a number >= 800');
     if (!(Number.isFinite(chart.scale) && chart.scale >= 1)) push('chart.scale must be a number >= 1');
     if (!posInt(chart.styleVersion)) push('chart.styleVersion must be a positive integer');
+  }
+
+  // gallery (optional). Media pinned AFTER the chart block, in declared order: the operator's logo
+  // sits last in the live gallery, and without this the charts are hard-coded as the contiguous
+  // tail, so every publish would move them past the logo and silently undo the Admin fix.
+  if (reg.gallery !== undefined) {
+    if (!reg.gallery || typeof reg.gallery !== 'object' || Array.isArray(reg.gallery)) {
+      push('gallery must be an object');
+    } else {
+      pushUnknownKeys(reg.gallery, 'gallery', 'gallery', push);
+      const pins = reg.gallery.pin_after_charts;
+      if (pins !== undefined) {
+        if (!Array.isArray(pins)) {
+          push('gallery.pin_after_charts must be an array of MediaImage GIDs');
+        } else {
+          // Shape only. It proves the value LOOKS like a media GID; it proves nothing about
+          // existence, and buildMediaPlan re-checks against live media and the chart set.
+          pins.forEach((g, i) => {
+            if (!MEDIA_GID_RE.test(g ?? '')) push(`gallery.pin_after_charts[${i}]: ${JSON.stringify(g)} must look like gid://shopify/MediaImage/<id>`);
+          });
+          const dups = pins.filter((g, i) => pins.indexOf(g) !== i);
+          if (dups.length) push(`gallery.pin_after_charts has duplicate GID(s): ${[...new Set(dups)].join(', ')}`);
+          const chartGids = new Set((Array.isArray(reg.published) ? reg.published : []).map((e) => e?.mediaGid));
+          for (const g of pins) {
+            if (chartGids.has(g)) push(`gallery.pin_after_charts: ${g} is a published chart; a chart cannot also be pinned after the charts`);
+          }
+        }
+      }
+    }
   }
 
   // patterns
@@ -146,6 +219,8 @@ export function validate(reg) {
   reg.patterns.forEach((p, i) => {
     const label = `patterns[${i}]${p?.id ? ` (${p.id})` : ''}`;
     if (!p || typeof p !== 'object') { push(`${label} is not an object`); return; }
+    pushUnknownKeys(p, 'pattern', label, push);
+    pushUnknownKeys(p.crop, 'crop', `${label}: crop`, push);
 
     if (!ID_RE.test(p.id ?? '')) push(`${label}: id must be kebab-case`);
     else if (ids.has(p.id)) push(`${label}: duplicate id "${p.id}"`);
@@ -159,6 +234,9 @@ export function validate(reg) {
       else derivedIds.set(derived, p.id ?? `#${i}`);
       const colorProblem = nameColorProblem(p.name, colorValues);
       if (colorProblem) push(`${label}: ${colorProblem}`);
+      if (ceiling !== null && String(p.name).length > ceiling) {
+        push(`${label}: name "${p.name}" is ${String(p.name).length} characters; the ${reg.chart.columns}-column chart carries at most ${ceiling}`);
+      }
     }
 
     const threadProblem = charsetProblem(p.thread, `${label}: thread`);
@@ -198,6 +276,7 @@ export function validate(reg) {
     reg.published.forEach((e, i) => {
       const label = `published[${i}]`;
       if (!e || typeof e !== 'object') { push(`${label} is not an object`); return; }
+      pushUnknownKeys(e, 'published', label, push);
       if (!Number.isInteger(e.page) || e.page <= 0) push(`${label}: page must be a positive integer`);
       if (typeof e.filename !== 'string' || !e.filename || /[/\\]/.test(e.filename)) push(`${label}: filename must be a bare basename`);
       if (!MEDIA_GID_RE.test(e.mediaGid ?? '')) push(`${label}: mediaGid must look like gid://shopify/MediaImage/<id>`);
@@ -229,10 +308,18 @@ export async function load(registryPath = REGISTRY_PATH) {
   return assertValid(JSON.parse(raw));
 }
 
-/** Validate, then write byte-stably. */
-export async function save(registryPath, reg) {
+/**
+ * Validate, then write byte-stably and ATOMICALLY. publish.mjs calls this immediately after the
+ * live media writes, to record the new chart GIDs, so it is the highest-stakes write in the
+ * module: a truncated patterns.json there loses the mapping from published charts to live media
+ * and the next publish would re-create them with nothing to reconcile against.
+ * @param {string} registryPath
+ * @param {object} reg
+ * @param {object} [io] - injectable fs calls, for testing the mid-write failure
+ */
+export async function save(registryPath, reg, io = {}) {
   assertValid(reg);
-  await writeFile(registryPath, serialize(reg));
+  await atomicWrite(registryPath, serialize(reg), io);
 }
 
 /**

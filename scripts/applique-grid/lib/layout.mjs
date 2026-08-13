@@ -21,6 +21,20 @@ const LABEL2_BASELINE = 84;  // cell bottom -> thread-line baseline (the "Thread
 const ROW_ADVANCE = 148;     // cell bottom -> next row top (two label lines + breathing room)
 const BOTTOM_MARGIN = 64;    // below the last thread-line baseline
 
+// The name-line type, mirrored from chart-svg.mjs. Kept here because the ceiling below is derived
+// from geometry, and geometry lives in this file.
+export const LABEL_FONT_SIZE = 30;
+
+// Measured, not guessed. Rendering all 18 committed labels in Inter Bold at size 30 and trimming
+// to the ink extent gives 0.404 to 0.523 em per character; 0.55 carries roughly 5 percent over the
+// widest real name. This is a CALIBRATED POLICY CEILING on realistic mixed-case names, not a
+// rendering guarantee: an unusual all-caps name is wider per character than any of these and can
+// still overflow, which is what the sample gate's eyes are for.
+export const LABEL_EM_PER_CHAR = 0.55;
+
+// Reserved for the "999. " number prefix, so the ceiling below bounds the NAME.
+export const LABEL_PREFIX_RESERVE = 5;
+
 /**
  * Split n items into ceil(n / cap) pages that differ in size by at most one, larger pages first.
  * 18 at cap 9 -> [9, 9]; 20 at cap 9 -> [7, 7, 6]; 10 at cap 9 -> [5, 5].
@@ -36,6 +50,36 @@ export function balancedPages(n, cap) {
   const base = Math.floor(n / count);
   const rem = n % count;
   return Array.from({ length: count }, (_, i) => (i < rem ? base + 1 : base));
+}
+
+/**
+ * The pixel width of one cell at these chart params. Exported because the label ceiling derives
+ * from it, and a second copy of this arithmetic would drift from the one that places the cells.
+ * @param {{columns: number, width_units: number}} chart
+ * @returns {number}
+ */
+export function cellWidth({ columns, width_units: W }) {
+  return Math.floor((W - 2 * M - (columns - 1) * CELL_GAP) / columns);
+}
+
+/**
+ * The longest pattern NAME these chart params can carry, in characters. Derived from two real
+ * bounds rather than picked: the cell width at this grid density, and the per-line ceiling on the
+ * dropdown, whose lines become cart line-item property values.
+ *
+ * At the shipped 3x3 / 1600-unit config this computes to 21, against a longest committed name of
+ * 18 ("Terracotta Blossom"). A denser grid tightens it, which is the point: at 4 columns those
+ * names genuinely would not fit, and the operator should learn that at the naming gate rather than
+ * from a rendered chart.
+ * @param {{columns: number, width_units: number}} chart
+ * @param {number} [maxOptionLine] - the dropdown's per-line ceiling
+ * @returns {number}
+ */
+export function nameCharCeiling(chart, maxOptionLine = 255) {
+  const fromChart = Math.floor(cellWidth(chart) / (LABEL_FONT_SIZE * LABEL_EM_PER_CHAR)) - LABEL_PREFIX_RESERVE;
+  // "18. <name> (Light Purple thread)": the prefix reserve plus the longest plausible thread suffix.
+  const fromDropdown = maxOptionLine - LABEL_PREFIX_RESERVE - ' (Light Purple thread)'.length;
+  return Math.max(1, Math.min(fromChart, fromDropdown));
 }
 
 /**
@@ -58,7 +102,7 @@ export function pageLayout({ chart, count }) {
   const cap = columns * rows;
   if (count > cap) throw new Error(`page has ${count} cells but the ${columns}x${rows} grid holds ${cap}`);
 
-  const cellW = Math.floor((W - 2 * M - (columns - 1) * CELL_GAP) / columns);
+  const cellW = cellWidth({ columns, width_units: W });
   const cellH = Math.round(cellW / aspect);
   const gridTop = TOP + DY_GRID;
   const rowsUsed = Math.ceil(count / columns);

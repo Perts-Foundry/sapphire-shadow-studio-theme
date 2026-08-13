@@ -15,13 +15,15 @@
 //            when legacy Huddle photo alts still say Gray/Navy. In full mode, STALE is drift and the
 //            exit is non-zero: green means everything converged.
 
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import {
-  load as loadRegistry, activePatterns, dropdownText, validate, REGISTRY_PATH,
+  load as loadRegistry, activePatterns, dropdownText, pinnedMedia, REGISTRY_PATH,
 } from './lib/registry.mjs';
+import { galleryTailProblem } from './lib/media-plan.mjs';
+import { classifyChartFiles } from './lib/artifacts.mjs';
 import { findAppliqueBlock } from './lib/options-writer.mjs';
 import { splitHeader } from '../size-chart/lib/template-writer.mjs';
 import { buildChartAlt, isChartAlt, isChartFilename } from './lib/naming.mjs';
@@ -34,8 +36,22 @@ const DEFAULT_OUT_DIR = 'product-images/applique';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 
-function parseArgs(argv) {
-  const opts = { local: false, outDir: DEFAULT_OUT_DIR };
+export const HELP = `Usage: node --env-file=.env scripts/applique-grid/audit.mjs [options]
+
+Registry vs template vs rendered charts vs the live store. Read-only: it never fixes anything, and
+nothing here edits live state or the template to silence a finding.
+
+Options:
+  --local          Offline subset only (registry schema, template, charts manifest, chart files).
+                   Mid-pipeline STALE lines exit 0; structural FAILs do not. This is the step
+                   pointer a resuming session reads, not the record of decisions (that is
+                   product-images/applique/draft.json).
+  --out-dir <dir>  Working directory (default ${DEFAULT_OUT_DIR}).
+  --help           This text.
+`;
+
+export function parseArgs(argv) {
+  const opts = { local: false, outDir: DEFAULT_OUT_DIR, help: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -43,6 +59,7 @@ function parseArgs(argv) {
     let val;
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
+    if (a === 'help') { opts.help = true; continue; }
     if (a === 'local') { opts.local = true; continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
     throw new Error(`Unknown option --${a}`);
@@ -73,6 +90,7 @@ function expectedAlts(registry) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { console.log(HELP); return; }
   const outDir = path.resolve(opts.outDir);
   const results = []; // { level: 'PASS'|'STALE'|'FAIL'|'WARN', name, detail }
   const report = (level, name, detail = '') => {
@@ -123,6 +141,29 @@ async function main() {
       if (e.code === 'ENOENT') report('STALE', 'charts manifest', 'render/ingest output not present on this machine');
       else report('FAIL', 'charts manifest', e.message);
     }
+
+    // 3b. Rendered chart files nothing references. Report only: this audit never deletes, and a
+    // stale chart file is harmless clutter (every filename embeds its own spec hash).
+    try {
+      const chartsDir = path.join(outDir, 'charts');
+      const names = (await readdir(chartsDir)).filter((n) => n.endsWith('.jpg'));
+      const files = await Promise.all(names.map(async (name) => ({
+        name, mtimeMs: (await stat(path.join(chartsDir, name))).mtimeMs,
+      })));
+      const manifest = JSON.parse(await readFile(path.join(chartsDir, 'manifest.json'), 'utf8'));
+      const { stale, prunable, reason } = classifyChartFiles({
+        files,
+        manifestFilenames: (manifest.charts ?? []).map((c) => c.filename),
+        publishedFilenames: registry.published.map((e) => e.filename),
+        manifestMtimeMs: (await stat(path.join(chartsDir, 'manifest.json'))).mtimeMs,
+      });
+      if (!stale.length) report('PASS', 'no unreferenced chart files on disk');
+      else {
+        report('WARN', 'unreferenced chart file(s)', `${stale.length} (${stale.join(', ')}); ${prunable ? 'remove with render.mjs --prune-charts' : `pruning is NOT safe right now: ${reason}`}`);
+      }
+    } catch (e) {
+      if (e.code !== 'ENOENT') report('FAIL', 'chart files', e.message);
+    }
   }
 
   // 4+. Live checks.
@@ -159,10 +200,15 @@ async function main() {
       if (!altsMatch) { report('STALE', 'published alts', 'recorded charts do not reflect the current registry; re-render and publish'); publishedOk = false; }
     }
     if (publishedOk && published.length) {
-      const tail = state.media.slice(-published.length).map((m) => m.id);
-      const wanted = published.map((e) => e.mediaGid);
-      if (tail.join('\n') === wanted.join('\n')) report('PASS', 'published charts form the contiguous gallery tail in page order');
-      else report('STALE', 'gallery order', 'charts are not the contiguous tail in page order; re-run publish.mjs (reorder)');
+      const pinned = pinnedMedia(registry);
+      const problem = galleryTailProblem({
+        liveIds: state.media.map((m) => m.id),
+        publishedGids: published.map((e) => e.mediaGid),
+        pinnedGids: pinned,
+      });
+      if (problem) report('STALE', 'gallery order', problem);
+      else if (pinned.length) report('PASS', 'charts, then the pinned media, form the gallery tail in order');
+      else report('PASS', 'published charts form the contiguous gallery tail in page order');
     }
     if (publishedOk && published.length) report('PASS', 'published GIDs, alts, and filenames match live media');
 
@@ -201,6 +247,15 @@ async function main() {
     console.log('Offline audit passed with STALE items (expected mid-pipeline; the full audit treats them as drift).');
   } else {
     console.log('Audit green.');
+    // A green FULL audit is the only moment the live gallery is known to match the record, so it
+    // is the watermark snapshot retention refuses to prune past. A local audit proves nothing
+    // about live state and deliberately does not move it.
+    if (!opts.local) {
+      await writeFile(
+        path.join(outDir, 'last-converged-audit.json'),
+        `${JSON.stringify({ version: 1, convergedAt: new Date().toISOString() }, null, 2)}\n`,
+      ).catch((e) => console.warn(`WARN: could not record the convergence watermark (${e.message})`));
+    }
   }
 }
 

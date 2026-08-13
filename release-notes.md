@@ -1,5 +1,124 @@
 # Release Notes
 
+## applique-grid: consent is now a token, and four fail-open guards closed (unreleased)
+
+### What changed
+
+Pre-PR review of the tooling branch surfaced four guards that were open in a way
+their own comments said they were not, plus one gate whose strength was inverted
+relative to its blast radius. All five are mechanisms here, not prose.
+
+**The live publish gate had no consent step.** The only thing between a dry run
+and the irreversible live write was `publish-plan.json`, a file the same process
+had just written, valid for 24 hours. That checks freshness, which is not the
+same question as whether anyone said yes; a process could satisfy it by talking
+to itself. Meanwhile the *reversible* local registry write did have `--confirm`.
+`--dry-run` now prints a 12-character approval token for exactly the plan it
+printed, and the live run requires it back as `--approved <token>`. The token has
+to travel out to the operator and return through argv, which is the one step no
+amount of self-persuasion performs. A token-less live run refuses before reading
+or consuming anything, so a mistyped command costs no gate round trip.
+
+**`defaultBranch()` failed open.** When `origin/HEAD` was unset it returned the
+first conventional name that existed *locally*, so in a repo whose real default is
+`master` but which also carries a stale local `main`, it answered `main` and
+`draft.mjs --write` ran happily on `master`. It now returns every name that must be
+refused, and refuses all of them when it cannot be certain. The cost of being wrong
+is renaming a branch; the cost of the old behaviour was an unreviewed commit on the
+default branch.
+
+**`lib/registry.mjs`'s `save()` was a plain `writeFile`.** `publish.mjs` calls it
+immediately after the live media writes, to record the new chart GIDs, which makes
+it the highest-stakes write in the module: a truncation there loses the mapping from
+published charts to live media and the next publish would re-create them with nothing
+to reconcile against. It is now the same atomic temp-file-plus-rename that `draft.mjs`
+already used for the reversible write. The implementation is shared rather than
+duplicated, so there is one of it.
+
+**The reorder's "target still achievable" check was set membership.** A length
+compare plus `every(includes)` cannot see a duplicate, so a target of `[A, A, C]`
+against a live `[A, B, C]` scored achievable and the reorder issued would have dropped
+B out of the gallery entirely. It is a multiset comparison now.
+
+**`APPLIQUE_REVIEW_DIR`'s containment check was lexical only.** A symlink whose own
+path sits outside the repo but which points into it passed clean, and review images
+landed in the public working tree, which is the exact thing that guard exists to
+prevent. The check now re-runs against the resolved real path.
+
+Also: the `--out-dir` containment rule was a module-private regex in four entry
+points, unreachable from a test, so deleting it outright left the whole suite green.
+It is one exported function with its own cases now, and a subprocess test per tool
+pins the call sites. Markdown cells in both gate tables escape `|`, which is legal in
+a filename and could otherwise forge a row in the artifact the operator approves from.
+
+## applique-grid: pinned gallery media and a corrected reorder verdict (unreleased)
+
+### What changed
+
+Two defects in `scripts/applique-grid/`'s publish path, both of which produced a
+confident wrong answer against irreversible live writes.
+
+**The charts were hard-coded as the contiguous gallery tail.** The operator wants
+the logo last, so the audit showed a permanent STALE line and the next publish
+would have moved the charts past the logo and silently undone their Admin fix.
+The registry now takes an optional `gallery.pin_after_charts`, and the desired
+order becomes untouched live media (minus the pinned), then the charts in page
+order, then the pinned media in declared order. With the key absent the computed
+order is byte-identical to before, which a test locks against every existing
+ordering fixture.
+
+Regex validation of a pinned GID proves shape, not existence, so each way this
+could go quietly wrong is a hard stop naming the GID: absent from live media,
+overlapping the chart set (re-checked at plan time, since the registry can be
+hand-edited in between), overlapping the delete set, duplicated, malformed. An
+empty list and an absent key are exactly equivalent. Unknown keys are now
+rejected by name throughout the registry, because a misspelled `pin_after_chart`
+would otherwise validate clean, do nothing, and let the next publish undo the fix
+while the registry looked correct.
+
+**The first publish computed `reorder not required` and was wrong.** The planner
+simulated post-create gallery positions on the assumption that Shopify appends
+new media at the end. The real run disproved it: the dry run said no reorder was
+needed, both creates landed mid-gallery, and the next audit reported STALE.
+
+With creates pending there is no honest verdict to give before they land, so the
+dry run now reports `undetermined until post-create` and prints the TARGET final
+order. The operator approves a destination and a possibility rather than a false
+negative.
+
+### Why the fix is not "re-read and reorder"
+
+The naive fix buys correctness by executing a live gallery mutation the operator
+never approved, which is what the plan/approve/execute split exists to prevent.
+So after the readiness barrier `publish.mjs` re-reads, reconciles, checks the
+approved target is still achievable, snapshots, and only then moves anything.
+Every failure path returns without issuing a reorder at all.
+
+Reconciliation is scoped so it still catches foreign drift while tolerating our
+own writes: the re-read set must be exactly (plan-time media minus our deletes)
+plus our creates, and every untouched media must still carry the alt and filename
+it had at plan time. A concurrent Admin edit trips it; a CDN-rewritten filename on
+one of our own creates does not.
+
+The stored dry-run plan is now stamped with version, time, shop, product, the
+live-state hash, and the approved reorder verdict, and a live run refuses
+anything that does not match, including a plan older than 24 hours against
+otherwise identical live state.
+
+### Deploy impact
+
+None on the storefront. `patterns.json` gains an optional key, and the dropdown
+text derived from it is unchanged (a test asserts the regenerated template diffs
+empty). The live gallery is already in the order the new rule wants, so adding
+the logo GID to `gallery.pin_after_charts` turns the audit's gallery-order line
+PASS with no live write.
+
+### Rollback
+
+Revert the commit. Adding the registry field touches no live state, and if a
+reorder has already fired, the pre-reorder gallery order is in
+`product-images/applique/publish-snapshots/`.
+
 ## Custom Orders redesign + FAQ section color-scheme migration (unreleased)
 
 ### What changed
