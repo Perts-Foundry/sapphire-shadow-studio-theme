@@ -215,14 +215,21 @@ export function digestProblems(draft) {
 
 /**
  * Guard problems for one candidate name, or null. Wraps the same rules registry validation
- * applies, so an approved name cannot fail validation afterwards and re-open the gate.
+ * applies, INCLUDING the label ceiling, so an approved name cannot fail validation afterwards and
+ * re-open the most expensive gate in the pipeline.
  * @param {string} value
  * @param {string[]} colorValues
+ * @param {number | null} [ceiling] - max name length at this chart's density
  * @returns {string | null}
  */
-export function candidateProblem(value, colorValues) {
+export function candidateProblem(value, colorValues, ceiling = null) {
   if (!value || value === 'n/a') return null;
-  return charsetProblem(value, 'name') ?? nameColorProblem(value, colorValues);
+  const basic = charsetProblem(value, 'name') ?? nameColorProblem(value, colorValues);
+  if (basic) return basic;
+  if (ceiling !== null && value.length > ceiling) {
+    return `name "${value}" is ${value.length} characters; this chart density carries at most ${ceiling}`;
+  }
+  return null;
 }
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -257,9 +264,12 @@ export function narrowTable(rows) {
  * @param {Record<string, {minSd: number, tile: number, edge: string, suspect: boolean} | null>}
  *   [input.clearance] - keyed by row key; null or absent renders as n/a
  * @param {string} [input.ledgerName]
+ * @param {number | null} [input.nameCeiling]
  * @returns {string}
  */
-export function detailTable({ rows, draft, colorValues, clearance = {}, ledgerName = 'grouping-ledger.md' }) {
+export function detailTable({
+  rows, draft, colorValues, clearance = {}, ledgerName = 'grouping-ledger.md', nameCeiling = null,
+}) {
   const digest = tableDigest(draft);
   const out = [];
   out.push('# Applique naming gate: detail');
@@ -277,7 +287,7 @@ export function detailTable({ rows, draft, colorValues, clearance = {}, ledgerNa
     const clear = c ? `${c.minSd.toFixed(1)} (tile ${c.tile}, ${c.edge})${c.suspect ? ' SUSPECT' : ''}` : 'n/a';
     const crop = r.crop ? `${r.crop.left}, ${r.crop.top}, ${r.crop.width}` : 'manual crop required';
     const guards = r.candidates
-      .map((v, i) => [CANDIDATE_ANGLES[i].letter, candidateProblem(v, colorValues)])
+      .map((v, i) => [CANDIDATE_ANGLES[i].letter, candidateProblem(v, colorValues, nameCeiling)])
       .filter(([, p]) => p)
       .map(([letter, p]) => `${letter}: ${p}`);
     out.push(`| ${r.key} | ${r.name ?? '(not chosen)'} | ${r.thread ?? '(none)'} | ${r.hero} | ${r.sources.join(', ')} | ${crop} | ${clear} | ${guards.length ? guards.join('; ') : 'ok'} |`);

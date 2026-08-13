@@ -18,7 +18,7 @@
 //     anything executes.
 
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminClient, missingScopes } from '../blank-inventory/lib/admin.mjs';
@@ -26,6 +26,7 @@ import {
   load as loadRegistry, save as saveRegistry, activePatterns, pinnedMedia, REGISTRY_PATH,
 } from './lib/registry.mjs';
 import { buildMediaPlan, evaluateReorder } from './lib/media-plan.mjs';
+import { selectSnapshotsToPrune } from './lib/artifacts.mjs';
 import {
   REQUIRED_SCOPES, fetchProductState, createChart, pollMediaReady, deleteMedia, reorderMedia,
 } from './lib/media.mjs';
@@ -251,6 +252,25 @@ function printPlan(plan, liveColorValues) {
   }
 }
 
+// Retention over the snapshot dir. These are the only rollback record for a live media write, so
+// the rule can only ever keep more: the newest 10 stay whatever their age, the newest always
+// stays, and nothing after the last converged audit is touched. With no converged audit on record,
+// nothing is pruned at all.
+async function pruneSnapshots(outDir) {
+  const dir = path.join(outDir, 'publish-snapshots');
+  let lastConvergedAtMs = null;
+  try {
+    const marker = JSON.parse(await readFile(path.join(outDir, 'last-converged-audit.json'), 'utf8'));
+    const at = Date.parse(marker.convergedAt ?? '');
+    if (Number.isFinite(at)) lastConvergedAtMs = at;
+  } catch { /* no watermark: nothing is prunable, which is the safe direction */ }
+
+  const names = await readdir(dir).catch(() => []);
+  const { prune } = selectSnapshotsToPrune({ names, keep: 10, lastConvergedAtMs });
+  for (const n of prune) await rm(path.join(dir, n), { force: true });
+  if (prune.length) console.log(`Pruned ${prune.length} snapshot(s) older than the last converged audit.`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const outDir = path.resolve(opts.outDir);
@@ -292,6 +312,7 @@ async function main() {
     return p;
   };
   const snapshotPath = await writeSnapshot(state.media, opts.dryRun ? 'dry-run' : 'live');
+  await pruneSnapshots(outDir);
 
   // Colour guards against the LIVE values: the committed snapshot must agree, and no planned alt
   // may bind to any value.

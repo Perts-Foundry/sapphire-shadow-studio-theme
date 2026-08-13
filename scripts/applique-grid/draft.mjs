@@ -31,6 +31,8 @@ import {
   CANDIDATE_ANGLES, candidateRegistry, detailTable, digestProblems, draftProblems, emptyDraft,
   keyFor, narrowTable, tableDigest, tableRows, threadUsage, validationProblems,
 } from './lib/draft.mjs';
+import { nameCharCeiling } from './lib/layout.mjs';
+import { MAX_OPTION_LINE } from './lib/options-writer.mjs';
 import { load as loadRegistry, serialize, REGISTRY_PATH } from './lib/registry.mjs';
 import { unifiedDiff } from './lib/text-diff.mjs';
 
@@ -252,12 +254,16 @@ async function modeTable({ outDir }) {
   const digest = tableDigest(draft);
   draft.tableDigest = digest;
   await writeDraft(outDir, draft);
+  // Over-length candidates are flagged BEFORE the operator sees them, so an approved name cannot
+  // fail validation afterwards and re-open the most expensive gate in the pipeline.
+  const nameCeiling = nameCharCeiling(registry.chart, MAX_OPTION_LINE);
   const detailPath = path.join(outDir, 'gate-table.md');
   await writeFile(detailPath, detailTable({
-    rows, draft, colorValues: registry.product.colorValues, clearance, ledgerName: LEDGER_NAME,
+    rows, draft, colorValues: registry.product.colorValues, clearance, ledgerName: LEDGER_NAME, nameCeiling,
   }));
 
   console.log(`Naming angles: ${CANDIDATE_ANGLES.map((a) => `${a.letter} ${a.label}`).join(', ')}. "n/a" is a legal cell.`);
+  console.log(`Name ceiling at this chart density (${registry.chart.columns} columns): ${nameCeiling} characters.`);
   console.log(`Digest: ${digest.digest}\n`);
   console.log(narrowTable(rows));
   console.log(`\nFull detail (thread, hero, sources, crop, edge clearance, guards): ${detailPath}`);

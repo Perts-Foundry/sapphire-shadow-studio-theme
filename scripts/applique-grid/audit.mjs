@@ -15,7 +15,7 @@
 //            when legacy Huddle photo alts still say Gray/Navy. In full mode, STALE is drift and the
 //            exit is non-zero: green means everything converged.
 
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
@@ -23,6 +23,7 @@ import {
   load as loadRegistry, activePatterns, dropdownText, pinnedMedia, REGISTRY_PATH,
 } from './lib/registry.mjs';
 import { galleryTailProblem } from './lib/media-plan.mjs';
+import { classifyChartFiles } from './lib/artifacts.mjs';
 import { findAppliqueBlock } from './lib/options-writer.mjs';
 import { splitHeader } from '../size-chart/lib/template-writer.mjs';
 import { buildChartAlt, isChartAlt, isChartFilename } from './lib/naming.mjs';
@@ -124,6 +125,29 @@ async function main() {
       if (e.code === 'ENOENT') report('STALE', 'charts manifest', 'render/ingest output not present on this machine');
       else report('FAIL', 'charts manifest', e.message);
     }
+
+    // 3b. Rendered chart files nothing references. Report only: this audit never deletes, and a
+    // stale chart file is harmless clutter (every filename embeds its own spec hash).
+    try {
+      const chartsDir = path.join(outDir, 'charts');
+      const names = (await readdir(chartsDir)).filter((n) => n.endsWith('.jpg'));
+      const files = await Promise.all(names.map(async (name) => ({
+        name, mtimeMs: (await stat(path.join(chartsDir, name))).mtimeMs,
+      })));
+      const manifest = JSON.parse(await readFile(path.join(chartsDir, 'manifest.json'), 'utf8'));
+      const { stale, prunable, reason } = classifyChartFiles({
+        files,
+        manifestFilenames: (manifest.charts ?? []).map((c) => c.filename),
+        publishedFilenames: registry.published.map((e) => e.filename),
+        manifestMtimeMs: (await stat(path.join(chartsDir, 'manifest.json'))).mtimeMs,
+      });
+      if (!stale.length) report('PASS', 'no unreferenced chart files on disk');
+      else {
+        report('WARN', 'unreferenced chart file(s)', `${stale.length} (${stale.join(', ')}); ${prunable ? 'remove with render.mjs --prune-charts' : `pruning is NOT safe right now: ${reason}`}`);
+      }
+    } catch (e) {
+      if (e.code !== 'ENOENT') report('FAIL', 'chart files', e.message);
+    }
   }
 
   // 4+. Live checks.
@@ -207,6 +231,15 @@ async function main() {
     console.log('Offline audit passed with STALE items (expected mid-pipeline; the full audit treats them as drift).');
   } else {
     console.log('Audit green.');
+    // A green FULL audit is the only moment the live gallery is known to match the record, so it
+    // is the watermark snapshot retention refuses to prune past. A local audit proves nothing
+    // about live state and deliberately does not move it.
+    if (!opts.local) {
+      await writeFile(
+        path.join(outDir, 'last-converged-audit.json'),
+        `${JSON.stringify({ version: 1, convergedAt: new Date().toISOString() }, null, 2)}\n`,
+      ).catch((e) => console.warn(`WARN: could not record the convergence watermark (${e.message})`));
+    }
   }
 }
 

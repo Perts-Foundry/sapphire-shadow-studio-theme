@@ -9,9 +9,10 @@
 // repo). The 20-megapixel Shopify upload cap is enforced here as a hard fail with a suggested
 // reduced --scale, before any pixels are pushed.
 
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readdir, readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { classifyChartFiles } from './lib/artifacts.mjs';
 import { load as loadRegistry, activePatterns, REGISTRY_PATH } from './lib/registry.mjs';
 import { balancedPages, pageLayout, compositePlan } from './lib/layout.mjs';
 import { buildChartSvg } from './lib/chart-svg.mjs';
@@ -26,7 +27,7 @@ const MP_CAP = 20e6; // Shopify's 20-megapixel media upload cap
 const SAMPLE_GRIDS = ['3x3', '4x5']; // default density candidates at the sample gate
 
 function parseArgs(argv) {
-  const opts = { sample: false, page: null, scale: null, outDir: DEFAULT_OUT_DIR, grids: [] };
+  const opts = { sample: false, page: null, scale: null, outDir: DEFAULT_OUT_DIR, grids: [], pruneCharts: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i];
     if (!a.startsWith('--')) continue;
@@ -35,6 +36,7 @@ function parseArgs(argv) {
     const eq = a.indexOf('=');
     if (eq !== -1) { val = a.slice(eq + 1); a = a.slice(0, eq); }
     if (a === 'sample') { opts.sample = true; continue; }
+    if (a === 'prune-charts') { opts.pruneCharts = true; continue; }
     if (a === 'page') { opts.page = Number(val ?? argv[++i]); continue; }
     if (a === 'scale') { opts.scale = Number(val ?? argv[++i]); continue; }
     if (a === 'out-dir') { opts.outDir = val ?? argv[++i]; continue; }
@@ -156,6 +158,37 @@ function assertUnderMpCap(layout, scale) {
   }
 }
 
+// Report (and, only on --prune-charts, delete) chart files nothing references. `published` is
+// consulted as well as the manifest: a file recorded as live is never a prune candidate, whatever
+// the manifest says.
+async function reportChartFiles({ chartsDir, registry, manifestCharts, prune }) {
+  const names = (await readdir(chartsDir)).filter((n) => n.endsWith('.jpg'));
+  if (!names.length) return;
+  const files = await Promise.all(names.map(async (name) => ({
+    name, mtimeMs: (await stat(path.join(chartsDir, name))).mtimeMs,
+  })));
+  const { stale, prunable, reason } = classifyChartFiles({
+    files,
+    manifestFilenames: manifestCharts.map((c) => c.filename),
+    publishedFilenames: registry.published.map((e) => e.filename),
+    // The manifest is written after this runs, so "now" is what the fresh charts are dated against.
+    manifestMtimeMs: Date.now(),
+  });
+  if (!stale.length) return;
+  console.log(`\n${stale.length} unreferenced chart file(s) on disk:`);
+  stale.forEach((n) => console.log(`  ${n}`));
+  if (!prune) {
+    console.log('Reported only. Delete them with --prune-charts once the current charts are confirmed.');
+    return;
+  }
+  if (!prunable) {
+    console.log(`--prune-charts refused: ${reason}`);
+    return;
+  }
+  for (const n of stale) await rm(path.join(chartsDir, n));
+  console.log(`Pruned ${stale.length} unreferenced chart file(s).`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const outDir = path.resolve(opts.outDir);
@@ -234,6 +267,12 @@ async function main() {
     console.log(`Wrote ${outPath}  (${out.width}x${out.height}, ${mp(out.width, out.height).toFixed(1)}MP)`);
     console.log(`  alt: ${art.alt}`);
   }
+
+  // Unreferenced chart files: reported on every full render, deleted only when asked. A prune
+  // keyed on the manifest right after `--page N` (which deliberately skips the manifest write)
+  // would delete every other page's chart, so the mtime rule refuses exactly that case.
+  if (opts.page === null) await reportChartFiles({ chartsDir, registry, manifestCharts, prune: opts.pruneCharts });
+  else if (opts.pruneCharts) console.log('\n--prune-charts ignored: a partial --page render does not establish which charts are current.');
 
   // A partial --page render still records a full-run manifest only if every page was rendered.
   if (opts.page === null) {

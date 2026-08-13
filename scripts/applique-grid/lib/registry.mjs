@@ -11,6 +11,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { charsetProblem, nameColorProblem } from './naming.mjs';
+import { nameCharCeiling } from './layout.mjs';
+import { MAX_OPTION_LINE } from './options-writer.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -137,6 +139,12 @@ export function validate(reg) {
     }
   }
   const colorValues = Array.isArray(product?.colorValues) ? product.colorValues : [];
+  // Derived from the chart geometry these patterns will actually render at, so a denser grid
+  // tightens it. Only computable when the chart params themselves are sane.
+  const ceiling = Number.isInteger(reg.chart?.columns) && reg.chart.columns > 0
+    && Number.isFinite(reg.chart?.width_units) && reg.chart.width_units >= 800
+    ? nameCharCeiling(reg.chart, MAX_OPTION_LINE)
+    : null;
 
   // threads
   if (!Array.isArray(reg.threads)) {
@@ -225,6 +233,9 @@ export function validate(reg) {
       else derivedIds.set(derived, p.id ?? `#${i}`);
       const colorProblem = nameColorProblem(p.name, colorValues);
       if (colorProblem) push(`${label}: ${colorProblem}`);
+      if (ceiling !== null && String(p.name).length > ceiling) {
+        push(`${label}: name "${p.name}" is ${String(p.name).length} characters; the ${reg.chart.columns}-column chart carries at most ${ceiling}`);
+      }
     }
 
     const threadProblem = charsetProblem(p.thread, `${label}: thread`);

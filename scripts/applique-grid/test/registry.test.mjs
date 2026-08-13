@@ -206,6 +206,26 @@ test('an unknown key under gallery is rejected BY NAME, never ignored', () => {
   expectProblem((r) => { r.gallery = { pin_after_chart: [LOGO] }; }, 'unknown key "pin_after_chart"');
 });
 
+test('a name longer than the chart density carries is rejected, with both numbers named', () => {
+  expectProblem((r) => { r.patterns[0].name = 'A'.repeat(60); }, 'is 60 characters; the 3-column chart carries at most');
+  // The ceiling is derived from the chart, so densifying the grid can invalidate existing names.
+  // That is the point: the operator should learn it at the gate, not from a rendered chart.
+  const reg = fixture();
+  reg.patterns[0].name = 'Terracotta Blossoming'; // exactly 21: the 3-column ceiling
+  assert.equal(reg.patterns[0].name.length, 21);
+  assert.deepEqual(validate(reg), []);
+  reg.chart = { ...reg.chart, columns: 5, rows: 2 };
+  assert.ok(validate(reg).some((p) => /carries at most/.test(p)));
+});
+
+test('the ceiling is skipped when the chart params are themselves invalid', () => {
+  const reg = fixture();
+  reg.chart = { ...reg.chart, width_units: 10 };
+  const problems = validate(reg);
+  assert.ok(problems.some((p) => /width_units/.test(p)));
+  assert.ok(!problems.some((p) => /carries at most/.test(p)), 'one broken field must not cascade into 10 name errors');
+});
+
 test('unknown keys are rejected in every container, not just gallery', () => {
   expectProblem((r) => { r.notAKey = 1; }, 'registry: unknown key "notAKey"');
   expectProblem((r) => { r.product.vendor = 'x'; }, 'product: unknown key "vendor"');
