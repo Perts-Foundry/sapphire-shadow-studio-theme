@@ -9,7 +9,24 @@
       "Classic Navy"
     ]
   },
-  "threads": [],
+  "threads": [
+    "White",
+    "Golden",
+    "Black",
+    "Sage",
+    "Burgundy",
+    "Light Blue",
+    "Light Purple",
+    "Dark Blue",
+    "Green",
+    "Dark Green",
+    "Light Orange",
+    "Navy",
+    "Blue",
+    "Teal",
+    "Purple",
+    "Aqua"
+  ],
   "chart": {
     "columns": 3,
     "rows": 3,
@@ -18,8 +35,358 @@
     "title": "Applique Patterns",
     "width_units": 1600,
     "scale": 2,
-    "styleVersion": 2
+    "styleVersion": 3
   },
-  "patterns": [],
-  "published": []
+  "patterns": [
+    {
+      "id": "scattered-paws",
+      "name": "Scattered Paws",
+      "thread": "White",
+      "status": "active",
+      "sources": [
+        "IMG_0882.heic",
+        "IMG_0883.heic"
+      ],
+      "hero": "IMG_0883.heic",
+      "crop": {
+        "left": 0.37,
+        "top": 0.14,
+        "width": 0.585,
+        "height": 0.585
+      },
+      "position": 10
+    },
+    {
+      "id": "busy-bees",
+      "name": "Busy Bees",
+      "thread": "Golden",
+      "status": "active",
+      "sources": [
+        "IMG_0889.heic",
+        "IMG_0890.heic"
+      ],
+      "hero": "IMG_0889.heic",
+      "crop": {
+        "left": 0.465,
+        "top": 0.37,
+        "width": 0.395,
+        "height": 0.395
+      },
+      "position": 20
+    },
+    {
+      "id": "rubber-duckie",
+      "name": "Rubber Duckie",
+      "thread": "Black",
+      "status": "active",
+      "sources": [
+        "IMG_0907.heic",
+        "IMG_0908.heic",
+        "IMG_0909.heic"
+      ],
+      "hero": "IMG_0908.heic",
+      "crop": {
+        "left": 0.61,
+        "top": 0.39,
+        "width": 0.355,
+        "height": 0.355
+      },
+      "position": 30
+    },
+    {
+      "id": "spring-meadow",
+      "name": "Spring Meadow",
+      "thread": "Sage",
+      "status": "active",
+      "sources": [
+        "IMG_0930.heic",
+        "IMG_0931.heic"
+      ],
+      "hero": "IMG_0931.heic",
+      "crop": {
+        "left": 0.3,
+        "top": 0.43,
+        "width": 0.41,
+        "height": 0.41
+      },
+      "position": 40
+    },
+    {
+      "id": "cottage-garden",
+      "name": "Cottage Garden",
+      "thread": "Burgundy",
+      "status": "active",
+      "sources": [
+        "IMG_0884.heic",
+        "IMG_0885.heic"
+      ],
+      "hero": "IMG_0885.heic",
+      "crop": {
+        "left": 0.085,
+        "top": 0.37,
+        "width": 0.435,
+        "height": 0.435
+      },
+      "position": 50
+    },
+    {
+      "id": "teacup-floral",
+      "name": "Teacup Floral",
+      "thread": "Light Blue",
+      "status": "active",
+      "sources": [
+        "IMG_0888.heic"
+      ],
+      "hero": "IMG_0888.heic",
+      "crop": {
+        "left": 0.16,
+        "top": 0.335,
+        "width": 0.43,
+        "height": 0.43
+      },
+      "position": 60
+    },
+    {
+      "id": "lilac-bloom",
+      "name": "Lilac Bloom",
+      "thread": "Light Purple",
+      "status": "active",
+      "sources": [
+        "IMG_0897.heic",
+        "IMG_0898.heic"
+      ],
+      "hero": "IMG_0898.heic",
+      "crop": {
+        "left": 0.535,
+        "top": 0.31,
+        "width": 0.4,
+        "height": 0.4
+      },
+      "position": 70
+    },
+    {
+      "id": "terracotta-blossom",
+      "name": "Terracotta Blossom",
+      "thread": "White",
+      "status": "active",
+      "sources": [
+        "IMG_0904.heic",
+        "IMG_0905.heic"
+      ],
+      "hero": "IMG_0905.heic",
+      "crop": {
+        "left": 0.22,
+        "top": 0.37,
+        "width": 0.485,
+        "height": 0.485
+      },
+      "position": 80
+    },
+    {
+      "id": "midnight-rose",
+      "name": "Midnight Rose",
+      "thread": "Dark Blue",
+      "status": "active",
+      "sources": [
+        "IMG_0902.heic",
+        "IMG_0903.heic"
+      ],
+      "hero": "IMG_0903.heic",
+      "crop": {
+        "left": 0.225,
+        "top": 0.33,
+        "width": 0.53,
+        "height": 0.53
+      },
+      "position": 90
+    },
+    {
+      "id": "echeveria",
+      "name": "Echeveria",
+      "thread": "Sage",
+      "status": "active",
+      "sources": [
+        "IMG_0917.heic",
+        "IMG_0918.heic",
+        "IMG_0919.heic"
+      ],
+      "hero": "IMG_0918.heic",
+      "crop": {
+        "left": 0.355,
+        "top": 0.4,
+        "width": 0.405,
+        "height": 0.405
+      },
+      "position": 100
+    },
+    {
+      "id": "mini-shamrocks",
+      "name": "Mini Shamrocks",
+      "thread": "Green",
+      "status": "active",
+      "sources": [
+        "IMG_0910.heic",
+        "IMG_0911.heic"
+      ],
+      "hero": "IMG_0911.heic",
+      "crop": {
+        "left": 0.52,
+        "top": 0.465,
+        "width": 0.35,
+        "height": 0.35
+      },
+      "position": 110
+    },
+    {
+      "id": "clover-field",
+      "name": "Clover Field",
+      "thread": "Dark Green",
+      "status": "active",
+      "sources": [
+        "IMG_0912.heic",
+        "IMG_0913.heic",
+        "IMG_0914.heic",
+        "IMG_0915.heic",
+        "IMG_0916.heic"
+      ],
+      "hero": "IMG_0914.heic",
+      "crop": {
+        "left": 0.28,
+        "top": 0.47,
+        "width": 0.435,
+        "height": 0.435
+      },
+      "position": 120
+    },
+    {
+      "id": "sunset-polka",
+      "name": "Sunset Polka",
+      "thread": "Light Orange",
+      "status": "active",
+      "sources": [
+        "IMG_0891.heic",
+        "IMG_0892.heic"
+      ],
+      "hero": "IMG_0891.heic",
+      "crop": {
+        "left": 0.125,
+        "top": 0.36,
+        "width": 0.43,
+        "height": 0.43
+      },
+      "position": 130
+    },
+    {
+      "id": "forever-stripes",
+      "name": "Forever Stripes",
+      "thread": "Navy",
+      "status": "active",
+      "sources": [
+        "IMG_0906.heic"
+      ],
+      "hero": "IMG_0906.heic",
+      "crop": {
+        "left": 0.195,
+        "top": 0.42,
+        "width": 0.315,
+        "height": 0.315
+      },
+      "position": 140
+    },
+    {
+      "id": "twinkle-twinkle",
+      "name": "Twinkle Twinkle",
+      "thread": "Blue",
+      "status": "active",
+      "sources": [
+        "IMG_0920.heic",
+        "IMG_0921.heic",
+        "IMG_0922.heic",
+        "IMG_0923.heic",
+        "IMG_0924.heic",
+        "IMG_0925.heic"
+      ],
+      "hero": "IMG_0925.heic",
+      "crop": {
+        "left": 0.105,
+        "top": 0.395,
+        "width": 0.505,
+        "height": 0.505
+      },
+      "position": 150
+    },
+    {
+      "id": "psychedelic-swirl",
+      "name": "Psychedelic Swirl",
+      "thread": "Teal",
+      "status": "active",
+      "sources": [
+        "IMG_0899.heic",
+        "IMG_0900.heic",
+        "IMG_0901.heic"
+      ],
+      "hero": "IMG_0901.heic",
+      "crop": {
+        "left": 0.515,
+        "top": 0.35,
+        "width": 0.425,
+        "height": 0.425
+      },
+      "position": 160
+    },
+    {
+      "id": "mardi-gras",
+      "name": "Mardi Gras",
+      "thread": "Purple",
+      "status": "active",
+      "sources": [
+        "IMG_0926.heic",
+        "IMG_0927.heic",
+        "IMG_0928.heic",
+        "IMG_0929.heic"
+      ],
+      "hero": "IMG_0927.heic",
+      "crop": {
+        "left": 0.295,
+        "top": 0.56,
+        "width": 0.405,
+        "height": 0.405
+      },
+      "position": 170
+    },
+    {
+      "id": "youll-live",
+      "name": "You'll Live",
+      "thread": "Aqua",
+      "status": "active",
+      "sources": [
+        "IMG_0886.heic",
+        "IMG_0887.heic"
+      ],
+      "hero": "IMG_0886.heic",
+      "crop": {
+        "left": 0.4,
+        "top": 0.45,
+        "width": 0.36,
+        "height": 0.36
+      },
+      "position": 180
+    }
+  ],
+  "published": [
+    {
+      "page": 1,
+      "filename": "huddle-crewneck-applique-pattern-chart-1-of-2-08b470d0.jpg",
+      "mediaGid": "gid://shopify/MediaImage/44407381688620",
+      "alt": "Applique pattern chart 1 of 2: patterns 1-9, Scattered Paws, Busy Bees, Rubber Duckie, Spring Meadow, Cottage Garden, Teacup Floral, Lilac Bloom, Terracotta Blossom, Midnight Rose",
+      "specHash": "08b470d0138f1cab5ce7c4b4a76bb7941c17fa14b340e7bc62407964b22a753b"
+    },
+    {
+      "page": 2,
+      "filename": "huddle-crewneck-applique-pattern-chart-2-of-2-88628735.jpg",
+      "mediaGid": "gid://shopify/MediaImage/44407381721388",
+      "alt": "Applique pattern chart 2 of 2: patterns 10-18, Echeveria, Mini Shamrocks, Clover Field, Sunset Polka, Forever Stripes, Twinkle Twinkle, Psychedelic Swirl, Mardi Gras, You'll Live",
+      "specHash": "886287355c4a6477d24b7a56af4d8f0cb564a29f64edf50849de5925c304c313"
+    }
+  ]
 }

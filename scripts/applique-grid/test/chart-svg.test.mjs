@@ -30,11 +30,26 @@ test('eyebrow, title, and page indicator are present', () => {
   assert.match(svg, /Chart 1 of 2/);
 });
 
-test('every label is rendered with number, name, and thread', () => {
+test('every label is rendered with number, name, and a spelled-out thread line', () => {
   const { svg } = build(hostilePatterns);
-  assert.match(svg, /1\. Salt &amp; Pepper \(white\)/);
-  assert.match(svg, /2\. A &lt;b&gt; Weave \(grey &amp; blue\)/);
-  assert.match(svg, /3\. Willow's Path \(black\)/);
+  assert.match(svg, /1\. Salt &amp; Pepper</);
+  assert.match(svg, /2\. A &lt;b&gt; Weave</);
+  assert.match(svg, /3\. Willow's Path</);
+  // The thread is its own line and says so; a bare "(white)" beside a fabric photo reads as the
+  // fabric's colour instead of the stitching's.
+  assert.match(svg, /Thread: white</);
+  assert.match(svg, /Thread: grey &amp; blue</);
+  assert.match(svg, /Thread: black</);
+  assert.ok(!/\(white\)/.test(svg), 'no bare thread parenthetical survives');
+});
+
+test('name and thread lines sit on the layout baselines, thread below the name', () => {
+  const { svg, layout } = build(hostilePatterns);
+  layout.cells.forEach((cell) => {
+    assert.ok(cell.threadLabelY > cell.labelY, `cell ${cell.index}: thread line below the name line`);
+    assert.match(svg, new RegExp(`<text x="${cell.labelX}" y="${cell.labelY}"`));
+    assert.match(svg, new RegExp(`<text x="${cell.labelX}" y="${cell.threadLabelY}"`));
+  });
 });
 
 test('XML special characters never appear raw', () => {

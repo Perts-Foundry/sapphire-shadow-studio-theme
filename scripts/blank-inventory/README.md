@@ -86,7 +86,9 @@ node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose --blan
 node scripts/blank-inventory/blank-inventory.mjs untag --variant gid://shopify/ProductVariant/123
 ```
 
-Env: `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`. The working directory (plan
+Env: `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, from the repo-root `.env`
+via `node --env-file=.env ...` (see [`../README.md`](../README.md) > Credentials). The working
+directory (plan
 artifacts, receipts, the body map) defaults **outside the repo** at `~/.local/state/blank-inventory/`
 (override with `BLANK_INVENTORY_DIR`); it holds real blank ids, so it must never sit inside this
 public checkout. A stray `.blank-inventory/` in the tree makes the tool warn and refuse writes until

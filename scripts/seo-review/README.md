@@ -95,6 +95,8 @@ edit here.
 - **Password and token hygiene**: `STORE_PW` is read from the environment and never printed;
   the Admin token is minted at runtime from `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET`, held
   in memory, and redacted from fatal errors. Page bodies and cookie values are never logged.
+  All of these come from the repo-root `.env` via `node --env-file=.env ...`
+  (see [`../README.md`](../README.md) > Credentials).
 - **Extraction is hand-rolled** (`lib/extract.mjs`): the repo's only runtime dep is sharp and node
   has no DOMParser. Every extractor targets Shopify-rendered markup, tolerates attribute order,
   and is fixture-tested. If a check misfires on real markup, fix the extractor and add the

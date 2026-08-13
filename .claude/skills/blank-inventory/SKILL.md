@@ -197,7 +197,8 @@ actions are the operator's); or write to any variant outside the approved plan a
   inside the checkout is a leak: the tool warns on every command and refuses writes until it is moved.
   Never paste working-directory contents into a commit, PR, or issue; refer to artifacts by path.
 - **The token is never printed and never written to disk.** It is minted at runtime from
-  `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` and redacted from every error.
+  `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` (the gitignored repo-root `.env`, read via
+  `node --env-file=.env ...`; see `scripts/README.md` > Credentials) and redacted from every error.
 - **Scopes are verified, not assumed** (`write_products` + `write_inventory`). If either is missing,
   stop and have the operator apply the change in Admin; do not work around it.
 - **No em dashes (U+2014)** anywhere, including report text.

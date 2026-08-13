@@ -123,10 +123,12 @@ test('numbering skips discontinued and follows position order', () => {
   assert.ok(!actives.some((p) => p.id === 'retired-rose'));
 });
 
-test('dropdown line format is "n. Name (thread)"', () => {
+test('dropdown line format is "n. Name (thread thread)", naming the thread outright', () => {
   const lines = dropdownLines(fixture());
-  assert.equal(lines[0], '1. Sunset Bloom (white)');
-  assert.equal(lines[2], '3. Night Garden (black)'); // number 3 is the pattern AFTER the discontinued one
+  assert.equal(lines[0], '1. Sunset Bloom (white thread)');
+  assert.equal(lines[2], '3. Night Garden (black thread)'); // number 3 is the pattern AFTER the discontinued one
+  // A bare colour parenthetical would read as the garment's colour, not the stitching's.
+  assert.ok(!lines.some((l) => /\((?!.*\bthread\b)/.test(l)), 'every parenthetical names the thread');
 });
 
 test('empty registry derives the defined empty dropdown text', () => {

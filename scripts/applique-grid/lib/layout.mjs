@@ -16,9 +16,10 @@ const DY_SUBTITLE = 162;     // "Chart n of m" baseline
 const DY_DIVIDER = 206;      // rule under the header
 const DY_GRID = 268;         // divider -> first cell row top
 const CELL_GAP = 36;         // horizontal gap between cells
-const LABEL_BASELINE = 46;   // cell bottom -> label baseline
-const ROW_ADVANCE = 110;     // cell bottom -> next row top (label strip + breathing room)
-const BOTTOM_MARGIN = 64;    // below the last label baseline
+const LABEL_BASELINE = 46;   // cell bottom -> name-line baseline
+const LABEL2_BASELINE = 84;  // cell bottom -> thread-line baseline (the "Thread: x" second line)
+const ROW_ADVANCE = 148;     // cell bottom -> next row top (two label lines + breathing room)
+const BOTTOM_MARGIN = 64;    // below the last thread-line baseline
 
 /**
  * Split n items into ceil(n / cap) pages that differ in size by at most one, larger pages first.
@@ -48,7 +49,7 @@ export function balancedPages(n, cap) {
  *   width: number, height: number,
  *   header: {eyebrowY: number, titleY: number, subtitleY: number, dividerY: number, marginX: number},
  *   cells: Array<{index: number, x: number, y: number, width: number, height: number,
- *                 labelX: number, labelY: number}>
+ *                 labelX: number, labelY: number, threadLabelY: number}>
  * }}
  */
 export function pageLayout({ chart, count }) {
@@ -76,11 +77,12 @@ export function pageLayout({ chart, count }) {
       height: cellH,
       labelX: x,
       labelY: y + cellH + LABEL_BASELINE,
+      threadLabelY: y + cellH + LABEL2_BASELINE,
     });
   }
 
   const lastRowBottom = gridTop + (rowsUsed - 1) * (cellH + ROW_ADVANCE) + cellH;
-  const height = lastRowBottom + LABEL_BASELINE + BOTTOM_MARGIN;
+  const height = lastRowBottom + LABEL2_BASELINE + BOTTOM_MARGIN;
 
   return {
     width: W,
