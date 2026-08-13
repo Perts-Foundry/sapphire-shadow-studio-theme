@@ -37,6 +37,11 @@
     "scale": 2,
     "styleVersion": 3
   },
+  "gallery": {
+    "pin_after_charts": [
+      "gid://shopify/MediaImage/43299747856684"
+    ]
+  },
   "patterns": [
     {
       "id": "scattered-paws",
