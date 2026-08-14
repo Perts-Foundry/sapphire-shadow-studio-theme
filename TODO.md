@@ -36,7 +36,9 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   is Google's coin flip. Revisit with real Search Console data after launch, not before.
 - [ ] **Variant SKUs: review the identifier and its lifecycle before adopting one.** Deferred on
   2026-07-29 rather than dropped. All 343 variants have a null SKU today. Three things to settle
-  before any backfill.
+  before any backfill. (Re-checked 2026-08-13: the count is now 431 across the six products, and every
+  one is still null. The figures below are the 2026-07-29 ones; re-verify uniqueness against 431 before
+  adopting the scheme.)
   1. **The SEO justification was overstated.** This was filed under SEO on the premise that Merchant
      Center and free listings need a per-variant identifier. Google's required field is `id`, which
      Shopify already populates from the variant ID; SKU maps to the optional `mpn`, and made-to-order
@@ -180,6 +182,116 @@ mitigation for the hero mobile crop shipped separately in `sections/hero.liquid`
 - [ ] **Optional: set the hero video's alt text in admin.** Won't clear the Lighthouse `image-alt`
   finding (the `video_tag` poster `<img>` is Shopify-internal; see `THEME_CHECK_NON_ACTIONABLE.md`),
   but it does give the `<video>` element a proper `aria-label` for screen readers. Admin (video media alt).
+
+**Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
+/ consistency pass over all six product templates and the other 15 templates, cross-checked against
+read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
+menus) through the `scripts/blank-inventory/lib/admin.mjs` token client. Nothing was changed. Items
+already tracked above are not repeated here: the brand logo SVG in every gallery, null variant SKUs,
+the empty `/blogs/news`, and attaching one hero image per colour.
+
+Verified clean in the same pass, so nobody re-audits them: the six product templates are structurally
+identical (same block trees, same gallery settings with `hide_variants: true`, same accordion row ids
+and headings, `anchor_id: "SizeChart"` on all five apparel templates); the Huddle applique dropdown
+matches `scripts/applique-grid/patterns.json` exactly, all 18 entries, so the old "3. Test"
+placeholder is gone; all three size-chart tables match their profiles cell for cell; alt-text colour
+binding is correct on every product (three photos bound per colour, charts and size guides and group
+shots correctly shared); every product has a `templateSuffix` that resolves; the FAQ's shipping claims
+match the live rates exactly, territories included; the footer social block and the theme settings
+agree, so `sameAs` is accurate; the `#away-from-studio` FAQ anchor is intact.
+
+- [ ] **All 431 variants weigh 0 lb while Express is weight-tiered.** The live rate table on the
+  General profile prices Express at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9), and $80 (9+).
+  Every variant on all six products reports `0 POUNDS`, so every order of any size buys the $20 tier
+  and the tiering above it is unreachable. Economy is priced on cart total, not weight, so it is
+  unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
+  per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
+  the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
+- [ ] **42 variants are sold out at launch.** Verified live via `availableForSale`: Lead II Crewneck
+  16 (Grey Heather M and Classic Navy M across all 8 designs), Huddle Crewneck 8 (the same two
+  colour/size pairs across 4 designs), Shift Fuel 2 (Grey Heather M, Classic Navy M), Quarter-Zip 8
+  (Grey Heather XS across 8 designs), women's Vest 8 (Black 2XL across 8 designs). Medium is the
+  highest-demand size on three of them. These are real blank shortages fanned out by the
+  inventory-sync Flow, not dead option combinations. Admin (restock the blanks, or hide the sizes).
+- [ ] **No default `templates/product.json`.** All six products carry a matching suffix today, so all
+  six render, but a new product, or a suffix cleared in Admin, has no template behind it. The absence
+  is recorded as a fact in `docs/shopify-mcp-notes.md` and has never been an action item. Decide
+  between shipping a generic default (cloned from Shift Fuel, the least product-specific of the five)
+  and accepting the gap with a note in the product-creation checklist. Related doc drift:
+  `THEME_CHECK_NON_ACTIONABLE.md` still names `templates/product.json` as the file carrying the three
+  Judge.me JSONMissingBlock findings, in the finding header and again under "Notes for Future
+  Developers"; those blocks now live in all six per-product templates.
+- [ ] **The About page references a file that does not exist.** `templates/page.about.json` sets
+  `team_member_3_image` to `shopify://shop_images/Kitkat-Rory.jpg`, and no file by that name is in
+  Files (all 77 enumerated). The block falls back to `placeholder_svg_tag`. Team members 1 and 2 have
+  no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
+  under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
+  plus possibly the template.
+- [ ] **The gift card product has no description and one piece of media.** `descriptionHtml` is empty,
+  and `product.gift-card.json` renders `{{ closest.product.description }}`, so that block is blank on
+  the page. Its only media is the 500x500 `SSS-Square-White-BG-svg.svg` logo. It is the one product
+  page with neither body copy nor a photograph; the accordion carries the whole page. Admin (product
+  description plus a gift-card image).
+- [ ] **The contact form is nearly unreachable.** The main menu is Home / Catalog / FAQ / About /
+  Custom Orders?, with no Contact entry, and the footer's Contact link points at
+  `shopify://policies/contact-information` (the policy text), not at `/pages/contact`. The actual
+  form is reachable only from body links inside three FAQ answers and the two Custom Orders CTAs.
+  Either repoint the footer link or add a menu entry. Admin (menu) plus `sections/footer-group.json`.
+- [ ] **The announcement bar contradicts the real shipping rates.** Slide 2 reads "$8.00 Flat Rate
+  Shipping **for All Items**"; $8 is the under-$75 rate only, and slide 3 immediately says free over
+  $75. "for All Items" is the wrong half of the sentence to emphasise. `sections/header-group.json`,
+  admin-synced.
+- [ ] **Copy says "Expedited shipping", checkout says "Express".** All five apparel templates'
+  Shipping and Turnaround accordion and two FAQ answers use "Expedited"; the live rate is named
+  "Express". Rename one side. Cheapest fix is the Admin rate name, since the word appears in seven
+  template locations. Repo plus Admin.
+- [ ] **The women's vest gallery is thinner than every other product's.** Two garment photos (flat and
+  angled), where the crewnecks and the quarter-zip each carry flat / closeup / angled per colour plus
+  a group shot. The vest is black-only, so the colour coverage is complete; what is missing is the
+  closeup, which is the shot that shows the embroidery, and any styled or group shot. Photography.
+- [ ] **Stored SEO titles are null on all four collections and all five pages.** Descriptions are set
+  everywhere; only the titles are empty, so they render as the resource title with no keyword control.
+  Products all have both. This is the `collection-seo-title-missing` / page-equivalent WARN the
+  `seo-review` skill reports, recorded here so it is not rediscovered each run. Admin.
+- [ ] **`featured` and `healthcare` sort by best-selling with zero sales.** Card order on the homepage
+  grid and both collection pages is therefore arbitrary at launch and will reshuffle itself as the
+  first orders land. `MANUAL` on `featured` at minimum, so the homepage leads with the intended
+  product. Admin (collection sort).
+- [ ] **Three of the four collections have no collection image**, and the "Catalog" menu entry points
+  at `/collections`, which renders all four as cards. Only The Vitals Collection has an image; the
+  other three fall back to a product photo or a placeholder. That page also shows Featured and All
+  Products alongside the two real collections, which is the collection-list equivalent of the
+  duplicate-grid problem already tracked above. Admin (collection images, or point Catalog at
+  `/collections/all`).
+- [ ] **The `all-products` smart collection's rules are junk that happens to work.** They are
+  `VARIANT_PRICE > -1` OR `VARIANT_INVENTORY < 0`, matching on any condition: the first rule catches
+  everything and the second matches nothing. Flipping the match to "all conditions" in Admin would
+  empty the collection silently. Replace with a single honest rule, or make it manual. Note the footer
+  "All Products" link points at `/collections/all` (Shopify's built-in), not at this collection, so
+  the blast radius today is the collection-list page. Admin.
+- [ ] **`snippets/meta-tags.liquid:14` emits `<meta name="theme-color" content="">`.** An empty
+  `content` is not a valid colour, so the tag does nothing except ship on every page. Either give it a
+  brand colour from the active scheme or delete it. Repo.
+- [ ] **Confirm the Admin social sharing image is set.** `meta-tags.liquid` emits `og:image` only when
+  `page_image` resolves, and outside products and articles that comes from Online Store > Preferences,
+  which the theme cannot fall back for. `social-seo-logo.png` (1200x628) is sitting in Files unused as
+  far as the theme can tell, which suggests the intent exists and the assignment may not. Verify in
+  Admin; if it is unset, the homepage and every page share a link preview with no image. Carried over
+  from the 2026-08-02 audit, still unverified from the repo side. Admin (Online Store preferences).
+- [ ] **The vacation-mode date defaults still read "August 15".** Vacation mode is off and
+  `config/settings_data.json` carries none of the vacation keys, so the schema defaults are what a
+  future enable starts from: `vacation_popup_body`, `vacation_checkbox_terms`,
+  `vacation_shipping_message`, and `vacation_processing_date` all say August 15. Either refresh the
+  defaults to a neutral placeholder or treat this as the standing reminder that all four move together
+  before any enable (see CLAUDE.md > Theme settings). `config/settings_schema.json`.
+- [ ] **Three cosmetic drifts between otherwise identical product templates.** Shift Fuel's
+  `request_combination_001` has `padding-block-start: 8` where the other four have 0; Shift Fuel's
+  Returns Policy body is the only one whose first section has no `<h5>` heading, so it opens with a
+  bare paragraph where the others open with "Final Sale"; the gift card's
+  `return-policy-acknowledgment` overrides `property_label` to "Customer confirm final sale" where
+  every other product takes the schema default, so its orders record the acknowledgment under a
+  different key. None of these are visible bugs; they are the kind of drift that makes the next
+  template diff noisy. Repo.
 
 ## Size-chart tooling
 
