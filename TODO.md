@@ -142,9 +142,10 @@ several of the pass's other findings.
   $75. "for All Items" is the wrong half of the sentence to emphasise. `sections/header-group.json`,
   admin-synced.
 - [ ] **Copy says "Expedited shipping", checkout says "Express".** All five apparel templates'
-  Shipping and Turnaround accordion and two FAQ answers use "Expedited"; the live rate is named
-  "Express". Rename one side. Cheapest fix is the Admin rate name, since the word appears in seven
-  template locations. Repo plus Admin.
+  Shipping and Turnaround accordion and three FAQ answers use "Expedited"; the live rate is named
+  "Express". Rename one side. Cheapest fix is the Admin rate name, since the word appears in eight
+  template locations (five product templates plus three occurrences in `templates/page.faq.json`;
+  re-counted 2026-08-15). Repo plus Admin.
 - [ ] **Stored SEO titles are null on all four collections and all five pages.** Descriptions are set
   everywhere; only the titles are empty, so they render as the resource title with no keyword control.
   Products all have both. This is the `collection-seo-title-missing` / page-equivalent WARN the
@@ -195,20 +196,7 @@ Deferred findings from pre-PR reviews.
 
 ### Important
 
-- [ ] **[AR-2]** Duplicated `withRetry` helper. Originally filed as six identical IIFEs across `deploy.yml`, `shopify-sync-auto-deploy.yml`, and `dependabot-auto-deploy.yml`, deliberately inlined to avoid cross-branch script-availability dependencies on back-dated PRs. **Re-checked 2026-08-14: those two auto-deploy workflows no longer exist**, and the helper is now defined three times, all inside `deploy.yml` (lines 1099, 1367, 1571). The cross-branch objection therefore no longer applies: this is now plain in-file duplication, and a single definition hoisted within the file (or a shared script loaded via `actions/github-script`'s `script-file`) is uncontroversial. (architecture-reviewer, 2026-05-03; re-scoped 2026-08-14). Related: `validate.yml` carries its own copy of the per-step capture boilerplate (code-reviewer, 2026-07-16).
-- [ ] **[AR-5]** Preview push has no retry/timeout, unlike live push. A transient blip during a preview push fails the PR. Wrap with a 2-attempt loop and `timeout --kill-after=10s 5m`. (architecture-reviewer, 2026-05-03)
-- [ ] **[AR-10]** Dependabot major-version regex matches "Bump foo from X.Y.Z to A.B.C" but misses grouped PR titles ("Bump the github-actions group with N updates"). The dependabot config now groups all bumps; a major bump in a group ships unattended. Parse PR body for grouped PRs, or treat any grouped PR as requiring `auto-deploy-major` label. (architecture-reviewer, 2026-05-03)
-- [ ] **[AR-13]** Preview deploy uses `cancel-in-progress: true`; a fast push-storm can leave the preview theme partially uploaded. Either change to `cancel-in-progress: false` and accept queueing, or document the partial-push trade-off. (architecture-reviewer, 2026-05-03)
-- [ ] **[CR-15]** `check_exit` in `validate.yml` treats a missing `exit_code` as a `::warning::`, not a failure, so a check that never recorded a result still merges green. Near-unreachable today (every step is `set +e` and always writes its code), but it covers `gitleaks`, where a silently skipped secret scan is worth more than a warning. (code-reviewer, 2026-07-16)
-- [ ] **[SA-9]** Consider adding an aggregate-style required-status check whose conclusion rolls up the four required jobs; would let branch protection require a single `validate` check instead of four. (security-auditor, 2026-05-03)
-
-### Suggestions
-
-- [ ] **[CR-13]** Accept common permutations of the `deploy` comment. The trigger uses strict equality, so `Deploy`, `/deploy`, and `deploy ` (trailing space) silently do nothing: no reaction, no error, no explanation. Phone keyboards auto-capitalise the first word, and a trailing space is invisible, so the accidental-miss rate is real on the repo's most-used command. Normalise the comment body instead of documenting the sharp edge: trim surrounding whitespace, lowercase, and allow an optional leading slash. Keep it an equality test on the normalised whole body, never a substring match, so the word `deploy` inside ordinary PR prose still cannot trigger a live push. (code-reviewer, 2026-05-03; re-scoped 2026-08-14)
-- [ ] **[DS-10]** README "Branches and themes" table doesn't enumerate the four required checks on `main`. (doc-sync-checker, 2026-05-03)
-- [ ] **[DS-13]** Smoke-test default paths are duplicated in README, release-notes, and the action default. Composite action says "commit it to CLAUDE.md as a permanent fixture"; CLAUDE.md doesn't mention them. Pick one source of truth. (doc-sync-checker, 2026-05-03)
-- [ ] **[DS-15]** `.github/zizmor.yml`'s suppressions carry no rationale, so a suppressed Actions-security finding cannot be told apart from a considered judgment. Record the reason as a comment beside each suppression in the config file itself, where it cannot drift from what it explains, and reference the file from CLAUDE.md rather than restating the reasons there. Same shape as the existing `THEME_CHECK_NON_ACTIONABLE.md` precedent. (doc-sync-checker, 2026-05-03; re-scoped 2026-08-14). **Status 2026-08-15: the config-file half is already done** (`.github/zizmor.yml` carries a 40-line rationale for its single suppression, verified accurate against `deploy.yml`'s committer-identity handling). Only the CLAUDE.md pointer is outstanding, and it was declined on 2026-08-15; decide whether to close this out as won't-do.
-- [ ] **[SA-7]** Consider `defaults.run.shell: 'bash --noprofile --norc -euo pipefail {0}'` at workflow root for forward-looking defence against future steps inheriting a non-clean shell. (security-auditor, 2026-05-03)
+- [ ] **[SA-9]** Aggregate required-status check. Filed when `main` required four separate contexts. The single-`validate`-job consolidation since then already delivers the practical outcome: `main` requires exactly one context, `validate / validate`, whose final status gate rolls up all twelve steps. What is still open is whether that is the arrangement to keep, and any change lands in the private infrastructure repo (`ci_check_contexts`), not here. (security-auditor, 2026-05-03; re-scoped 2026-08-15)
 
 ### Architecture gaps (longer-horizon)
 

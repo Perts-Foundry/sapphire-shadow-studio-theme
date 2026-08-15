@@ -1,5 +1,107 @@
 # Release Notes
 
+## Ten CI/workflow and docs backlog items cleared (unreleased)
+
+### What changed
+
+Ten more `TODO.md` entries, all repo-local and needing no Admin access: seven
+workflow changes and three docs items, two of which were close-outs rather than
+edits. The reasoning worth keeping is below.
+
+**`withRetry` is now a file, because `github-script` steps do not share scope
+([AR-2]).** Three steps in `deploy.yml`'s `deploy` job (Post deploy report,
+Squash merge, Report failure) each carried a byte-identical copy of the helper
+plus its `RETRYABLE` / `isTransient` preamble. GitHub Actions does not support
+YAML anchors, and two `github-script` steps in the same job share no JS scope,
+so hoisting inside the file was not available: the only single definition is a
+file, `.github/scripts/with-retry.js`, `require`d per step. Two things about
+that require are load-bearing. The path must be absolute
+(`path.resolve(process.env.GITHUB_WORKSPACE, ...)`); a relative `require`
+resolves against `actions/github-script`'s own directory, not the workspace.
+And it exports `makeWithRetry(core)` rather than `withRetry`, because the
+helper's only external dependency is `core.warning`, which does not exist at
+module load. The trust position is unchanged, not widened: the same step
+already dynamically imports `report-format.mjs` from the same checkout into the
+same token-holding process.
+
+**Preview pushes now retry with a timeout, and the retry is always addressed by
+theme ID ([AR-5]).** Live mode had 3 attempts at `timeout --kill-after=10s 8m`;
+preview had neither, so one transient blip failed the PR. Preview now gets 2
+attempts at 5m, proportionate to `preview.yml`'s 15-minute job budget. The trap
+this had to avoid is the one the pre-existing exit-97 retry already documented:
+retrying with `--unpublished` would create a SECOND `pr-N-preview` theme, which
+the duplicate-name guard then refuses on every later run, permanently. So the
+loop resolves a target ID before any retry, from the push report and, failing
+that, from a fresh `theme list` lookup by name, because a create attempt killed
+by `timeout` may still have registered the theme.
+
+**Preview `cancel-in-progress: true` is a decision, now recorded beside itself
+([AR-13]).** A cancelled preview push can leave the theme partially uploaded,
+but the state is self-healing (the next run pushes the whole tree) and the theme
+is an unpublished draft with no customer exposure, so queueing a push-storm buys
+nothing. The cleanup job stays `false` for the opposite reason: a cancelled
+delete leaks a theme that nothing sweeps up. The two settings differ on purpose;
+the comment exists so the next reader does not "fix" the asymmetry.
+
+**The `deploy` comment trigger is two checks, and only one of them is
+authoritative ([CR-13]).** A YAML `if:` expression cannot trim or lowercase, so
+the workflow-level condition is a cheap allow-list of exact bodies covering the
+real miss cases (auto-capitalised `Deploy`, an invisible trailing space,
+`/deploy`). The real match is re-asserted in JS in the gate job's first step,
+which normalises (`trim().toLowerCase().replace(/^\//, '')`) and `setFailed`s on
+anything that is not exactly `deploy`. Both layers are equality tests on the
+WHOLE body. Never relax either to a substring match: the word `deploy` in
+ordinary PR prose would then push to the live theme.
+
+**A missing `exit_code` in `validate.yml` now fails instead of warning
+([CR-15]).** It covers twelve steps, `gitleaks` among them, and a secret scan
+that silently recorded no result must not merge green on a warning. It is
+near-unreachable today because every step is `set +e` and always writes its
+code, which is exactly why changing it costs nothing and closes the case where
+one stops doing so.
+
+**`defaults.run.shell` is behaviour-changing, and the audit is the work
+([SA-7]).** All four workflows now run steps under
+`bash --noprofile --norc -euo pipefail {0}`. GitHub's default is `bash -e {0}`,
+so the delta is `-u` and `-o pipefail`. Every existing `run:` block was read
+against it first: `deploy.yml` and `sync.yml` steps already set `-euo pipefail`
+themselves, and `validate.yml`'s capture steps open with `set +e`, which clears
+`-e` but deliberately does NOT clear `-u` or `-o pipefail`. Their pipelines
+(`grep | tail | grep`) and unset reads (`${TESTS_RUN:-0}`) were checked
+individually. Composite actions declare their own shell and are untouched; the
+composite's `set +e` comment already explains why its own `-e` must be cleared.
+
+**[AR-10] was verified fixed, not dropped.** The grouped-Dependabot gap the item
+describes is closed in `deploy.yml`: the gate reads `update-type:
+version-update:semver-*` commit trailers across every commit on the PR as the
+PRIMARY signal (authoritative for grouped updates), keeps the `Bump|Updates X
+from A to B` title regex as SECONDARY, and fails closed when neither yields a
+severity. That is stronger than what the item asked for.
+
+**[DS-15] closed as won't-do.** `.github/zizmor.yml` already carries a 40-line
+rationale for its single `dangerous-triggers` suppression, verified accurate
+against `deploy.yml`'s gate. The outstanding half was a CLAUDE.md pointer, and
+it was declined: the rationale lives beside what it explains, and a second
+location is a thing that can drift out of agreement with the first.
+
+**[DS-10] was stale, so it was re-scoped rather than implemented.** It asked
+README to enumerate the four required checks on `main`; `main` has required
+exactly one, `validate / validate`, since the single-`validate`-job
+consolidation. The README row now says "exactly one" and names where the context
+string is actually configured (the private infrastructure repo's
+`ci_check_contexts`), which is the part that can silently break: rename the
+`validate` job or workflow here and `main` requires a check that no longer
+reports. The same staleness ran through [SA-9], whose entry was re-scoped in
+place rather than closed.
+
+**Smoke-test paths: the action input default is the single source ([DS-13]).**
+README restated the list; it now links the composite action's `smoke-paths`
+input instead, the same treatment [DS-17] gave the CLI version. The
+`release-notes.md` mention stays as written because it is a historical record of
+what shipped then, not a second live copy. The item's third leg was already
+gone: the composite action no longer carries the "commit it to CLAUDE.md as a
+permanent fixture" instruction that would have created a third copy.
+
 ## Ten fast backlog items cleared in one pass (unreleased)
 
 ### What changed

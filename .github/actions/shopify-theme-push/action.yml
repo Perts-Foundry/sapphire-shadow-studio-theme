@@ -355,35 +355,80 @@ runs:
               echo "push_exit_code=99" >> "$GITHUB_OUTPUT"
               exit 1
             fi
-            EXIT_CODE=0
+            TARGET_ID=""
             if [ "$COUNT" -eq 1 ]; then
-              EXISTING_ID=$(jq -r '.[0].id' <<<"$MATCHES")
-              echo "Reusing theme ${EXISTING_ID}"
-              run_push_attempt npx shopify theme push --theme "$EXISTING_ID" --json
-            else
-              # `--unpublished --theme <name>` creates a new unpublished
-              # theme with the given name in one non-interactive step. The
-              # earlier two-step pattern (`--unpublished` then `theme rename`)
-              # fails in CI because plain `--unpublished` prompts for a name,
-              # and the prompt aborts under SHOPIFY_CLI_TTY=0.
-              echo "Creating new unpublished theme: ${THEME_NAME}"
-              run_push_attempt npx shopify theme push --unpublished --theme "$THEME_NAME" --json
+              TARGET_ID=$(jq -r '.[0].id' <<<"$MATCHES")
+              echo "Reusing theme ${TARGET_ID}"
             fi
 
-            # One immediate retry when assets were rejected, for the same
-            # schema-then-template ordering reason as live mode. The retry is
-            # always addressed by theme ID, never by `--unpublished`: repeating
-            # the create flag would create a SECOND pr-N-preview theme, which
-            # the duplicate-name guard above then refuses on every later run.
-            if [ "$EXIT_CODE" -eq 97 ]; then
-              RETRY_ID=$(jq -r '.theme.id // empty' push.json 2>/dev/null)
-              if [ -n "$RETRY_ID" ]; then
-                echo "::warning::Push left rejected assets; retrying once against theme ${RETRY_ID}"
-                run_push_attempt npx shopify theme push --theme "$RETRY_ID" --json
+            # 2-attempt loop with a per-attempt timeout, mirroring live mode's
+            # shape (live gets 3 x 8m; a preview theme is a draft with no
+            # customer exposure and preview.yml's job budget is 15 minutes, so
+            # 2 x 5m is the proportionate version). Before this, a transient
+            # blip or a hung CLI failed the PR outright.
+            #
+            # Every attempt after the theme is known is addressed by ID, never
+            # by `--unpublished`: repeating the create flag would create a
+            # SECOND pr-N-preview theme, which the duplicate-name guard above
+            # then refuses on every later run. A create attempt that dies
+            # mid-flight may still have created the theme, so the ID is
+            # re-resolved from the push report and, failing that, from a fresh
+            # `theme list` before any retry.
+            ATTEMPTS=2
+            EXIT_CODE=1
+            for i in $(seq 1 $ATTEMPTS); do
+              echo "::group::Preview theme push attempt ${i}/${ATTEMPTS}"
+              if [ -n "$TARGET_ID" ]; then
+                run_push_attempt timeout --kill-after=10s 5m npx shopify theme push --theme "$TARGET_ID" --json
               else
-                echo "::warning::Push left rejected assets and the report carried no theme ID; not retrying."
+                # `--unpublished --theme <name>` creates a new unpublished
+                # theme with the given name in one non-interactive step. The
+                # earlier two-step pattern (`--unpublished` then `theme rename`)
+                # fails in CI because plain `--unpublished` prompts for a name,
+                # and the prompt aborts under SHOPIFY_CLI_TTY=0.
+                echo "Creating new unpublished theme: ${THEME_NAME}"
+                run_push_attempt timeout --kill-after=10s 5m npx shopify theme push --unpublished --theme "$THEME_NAME" --json
               fi
-            fi
+              echo "::endgroup::"
+
+              if [ -z "$TARGET_ID" ]; then
+                TARGET_ID=$(jq -r '.theme.id // empty' push.json 2>/dev/null)
+              fi
+              if [ "$EXIT_CODE" -eq 0 ]; then
+                break
+              fi
+              if [ "$i" -ge "$ATTEMPTS" ]; then
+                break
+              fi
+
+              if [ -z "$TARGET_ID" ]; then
+                # Re-resolve by name: the failed create may have got far enough
+                # to register the theme, and a second `--unpublished` would
+                # duplicate it.
+                if npx shopify theme list --json > themes-retry.json 2>/dev/null; then
+                  TARGET_ID=$(jq -r --arg n "$THEME_NAME" '[.[] | select(.name==$n)][0].id // empty' themes-retry.json 2>/dev/null)
+                fi
+              fi
+
+              if [ "$EXIT_CODE" -eq 97 ]; then
+                # Rejected assets are not a transient network condition, so no
+                # backoff. The retry is worth one immediate pass because of the
+                # ordering case: a schema change and a JSON template that
+                # depends on it fail when uploaded together (the template is
+                # validated against the schema version already stored on the
+                # theme, not the one in the same batch). The schema landed in
+                # this attempt, so the template validates on the next one.
+                if [ -z "$TARGET_ID" ]; then
+                  echo "::warning::Push left rejected assets and no theme ID could be resolved; not retrying."
+                  break
+                fi
+                echo "::warning::Push attempt ${i} left rejected assets; retrying immediately against theme ${TARGET_ID}"
+                continue
+              fi
+
+              echo "::warning::Preview push attempt ${i} failed (exit ${EXIT_CODE}); retrying in 30s"
+              sleep 30
+            done
 
             capture_push_output --rejections rejections.txt push.json push.err
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"

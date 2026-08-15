@@ -63,14 +63,34 @@ run-name: >-
 
 permissions: {}
 
+# Strict shell for every `run:` step in this workflow. GitHub's default is
+# `bash -e {0}`; the delta here is `-u` (unset variable is an error) and
+# `-o pipefail` (a pipeline fails if any stage does), so a future step cannot
+# read an unset secret as an empty string or pass a broken pipeline off as
+# success. Steps that must survive a non-zero command still clear `-e` with
+# their own `set +e`; that does NOT clear `-u` or `-o pipefail`, which is the
+# point. Composite actions declare their own shell and are unaffected.
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
 jobs:
   gate:
     name: gate
     # Workflow-level pre-filter. Rejects two failure classes before any runner
     # spins up:
     #   (a) issue_comment events that are NOT on a PR (github.event.issue.pull_request
-    #       is null for plain issue comments) or whose body is not `deploy`
-    #       or whose author_association is below COLLABORATOR.
+    #       is null for plain issue comments) or whose body is not an accepted
+    #       spelling of `deploy` or whose author_association is below COLLABORATOR.
+    #
+    # On the accepted spellings: a YAML `if:` expression cannot trim or
+    # lowercase, so the cheap pre-filter is an equality test against a small
+    # allow-list covering the real miss cases (phone keyboards auto-capitalise
+    # the first word; a trailing space is invisible; `/deploy` reads like a
+    # slash command). The `Normalise deploy comment` step below re-asserts the
+    # match properly in JS and fails the gate on anything else. Both are
+    # equality tests on the WHOLE body, never a substring match, so the word
+    # `deploy` inside ordinary PR prose still cannot trigger a live push.
     #   (b) workflow_run events whose triggering Validate ran from a push
     #       (push: main or push: shopify-sync) rather than a PR. validate.yml
     #       fires on both pull_request and push; only the pull_request flavor
@@ -78,7 +98,7 @@ jobs:
     if: |
       (github.event_name == 'issue_comment'
         && github.event.issue.pull_request
-        && github.event.comment.body == 'deploy'
+        && contains(fromJSON('["deploy", "Deploy", "DEPLOY", "/deploy", "/Deploy", "/DEPLOY", "deploy ", "Deploy ", "DEPLOY ", "/deploy ", "/Deploy ", "/DEPLOY ", " deploy", " Deploy", " deploy "]'), github.event.comment.body)
         && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association))
       || (github.event_name == 'workflow_run'
         && github.event.workflow_run.event == 'pull_request'
@@ -112,6 +132,23 @@ jobs:
       # deploy path (theme_scope runs whenever pr_number resolves).
       theme_touched: ${{ steps.theme_scope.outputs.theme_touched }}
     steps:
+      # Authoritative form of the comment-trigger match. The workflow-level
+      # `if:` is a cheap allow-list pre-filter; this normalises the body the
+      # way the allow-list cannot (trim, lowercase, drop one leading slash)
+      # and fails the gate if the result is not exactly `deploy`. It stays an
+      # equality test on the whole normalised body: no substring match, so
+      # prose containing the word `deploy` can never reach the live push.
+      - name: Normalise deploy comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const raw = context.payload.comment.body || '';
+            const normalised = raw.trim().toLowerCase().replace(/^\//, '');
+            if (normalised !== 'deploy') {
+              core.setFailed(`Comment body did not normalise to \`deploy\` (got ${JSON.stringify(normalised)}); refusing to deploy.`);
+            }
+
       - name: React with eyes
         if: github.event_name == 'issue_comment'
         continue-on-error: true
@@ -1088,26 +1125,12 @@ jobs:
           script: |
             const { pathToFileURL } = require('node:url');
             const path = require('node:path');
-            const RETRYABLE = new Set([500, 502, 503, 504]);
-            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
-            const isTransient = (err) => {
-              if (NON_RETRYABLE.has(err.status)) return false;
-              if (RETRYABLE.has(err.status)) return true;
-              const m = err.message || '';
-              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
-            };
-            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
-              for (let i = 1; i <= attempts; i++) {
-                try { return await fn(); }
-                catch (err) {
-                  if (i < attempts && isTransient(err)) {
-                    const wait = delayMs * Math.pow(2, i - 1);
-                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
-                    await new Promise(r => setTimeout(r, wait));
-                  } else { throw err; }
-                }
-              }
-            };
+            // Shared helper; see .github/scripts/with-retry.js for why it is a
+            // file and why the path must be absolute.
+            const { makeWithRetry } = require(
+              path.resolve(process.env.GITHUB_WORKSPACE, '.github/scripts/with-retry.js')
+            );
+            const withRetry = makeWithRetry(core);
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -1356,26 +1379,10 @@ jobs:
           TRIGGER_PATH: ${{ needs.gate.outputs.trigger_path }}
         with:
           script: |
-            const RETRYABLE = new Set([500, 502, 503, 504]);
-            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
-            const isTransient = (err) => {
-              if (NON_RETRYABLE.has(err.status)) return false;
-              if (RETRYABLE.has(err.status)) return true;
-              const m = err.message || '';
-              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
-            };
-            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
-              for (let i = 1; i <= attempts; i++) {
-                try { return await fn(); }
-                catch (err) {
-                  if (i < attempts && isTransient(err)) {
-                    const wait = delayMs * Math.pow(2, i - 1);
-                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
-                    await new Promise(r => setTimeout(r, wait));
-                  } else { throw err; }
-                }
-              }
-            };
+            // Shared helper; see .github/scripts/with-retry.js.
+            const withRetry = require(
+              require('node:path').resolve(process.env.GITHUB_WORKSPACE, '.github/scripts/with-retry.js')
+            ).makeWithRetry(core);
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -1560,26 +1567,10 @@ jobs:
           script: |
             const { pathToFileURL } = require('node:url');
             const path = require('node:path');
-            const RETRYABLE = new Set([500, 502, 503, 504]);
-            const NON_RETRYABLE = new Set([400, 401, 403, 404, 405, 409, 422]);
-            const isTransient = (err) => {
-              if (NON_RETRYABLE.has(err.status)) return false;
-              if (RETRYABLE.has(err.status)) return true;
-              const m = err.message || '';
-              return /Unexpected end of JSON|ECONNRESET|ETIMEDOUT|socket hang up|network|fetch failed/.test(m);
-            };
-            const withRetry = async (fn, { attempts = 3, delayMs = 2000, label = 'API call' } = {}) => {
-              for (let i = 1; i <= attempts; i++) {
-                try { return await fn(); }
-                catch (err) {
-                  if (i < attempts && isTransient(err)) {
-                    const wait = delayMs * Math.pow(2, i - 1);
-                    core.warning(`${label} attempt ${i}/${attempts} failed: ${err.message}. Retrying in ${wait}ms.`);
-                    await new Promise(r => setTimeout(r, wait));
-                  } else { throw err; }
-                }
-              }
-            };
+            // Shared helper; see .github/scripts/with-retry.js.
+            const withRetry = require(
+              path.resolve(process.env.GITHUB_WORKSPACE, '.github/scripts/with-retry.js')
+            ).makeWithRetry(core);
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
