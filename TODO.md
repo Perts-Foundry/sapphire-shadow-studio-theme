@@ -167,18 +167,6 @@ several of the pass's other findings.
   far as the theme can tell, which suggests the intent exists and the assignment may not. Verify in
   Admin; if it is unset, the homepage and every page share a link preview with no image. Carried over
   from the 2026-08-02 audit, still unverified from the repo side. Admin (Online Store preferences).
-- [ ] **Two product-template differences are intentional; do not refile them as drift.** The third,
-  Shift Fuel's `request_combination_001` `padding-block-start`, was real and is fixed. The other two
-  are correct as they stand and were re-filed once already:
-  1. **Shift Fuel's Returns Policy body has no `<h5>Final Sale</h5>`** because Shift Fuel is not
-     final sale. It is the only apparel product with a 14-day return, and correspondingly the only
-     one with no `return-policy-acknowledgment` block. Adding the heading would state the opposite of
-     the policy.
-  2. **The gift card's `return-policy-acknowledgment` overrides `property_label`** on purpose. The
-     garment-vs-gift-card split is documented in that block's own `{% doc %}`, and the value is a
-     live cart line-item property key: changing it splits the acknowledgment across orders placed
-     either side of the change.
-
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent
