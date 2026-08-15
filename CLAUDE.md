@@ -69,6 +69,12 @@ README documents the workflow surface (`validate` / `preview` / `deploy` / `sync
 
 Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
 
+### Backlog hygiene (`TODO.md`)
+
+`TODO.md` is the single repo-wide backlog and holds **only work that still needs doing**. When an item lands, **delete it from `TODO.md`**; never tick it, never leave a checked-off entry, and never add a "Done" section. The file should read as a list of open actions and nothing else.
+
+Reasoning that outlives the task does not get deleted with it: if the work produced a corrected mistake, a cross-layer contract, a non-obvious constraint, or a decision worth knowing the "why" of, write that into `release-notes.md` in the same change, then remove the `TODO.md` entry. A durable rule about how to work in this repo belongs in this file instead. This applies to items resolved as "won't do" as much as to shipped ones.
+
 ### Admin-side edits
 
 Admin Customize/Code edits go on the `EDIT HERE - Admin Sync` theme, never live (README's "Branches and themes" covers the shopify-sync mechanics). Claude-specific: auto-deploy on the reconcile PR halts with a sticky skip-comment on signed-commit-identity failure, PR-opener mismatch, HEAD drift, stale base, missing-main-commits, or an out-of-scope diff (touches `.github/` or `layout/theme.liquid`, or exceeds a LOC threshold defined in `deploy.yml`'s `gate` job). A hand-opened shopify-sync PR by anyone other than the configured PAT owner fails the PR-opener check and must be deployed via `deploy` comment.

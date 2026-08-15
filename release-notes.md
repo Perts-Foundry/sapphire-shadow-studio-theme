@@ -1,5 +1,147 @@
 # Release Notes
 
+## Backlog triage: completed work moved out of TODO.md (unreleased)
+
+### What changed
+
+`TODO.md` now holds only items that still need action. Completed entries are
+deleted from it rather than ticked, so the backlog never accumulates a history
+section. The write-ups that were carrying real reasoning are preserved here.
+
+**Per-variant image matching for colours.** Shipped as an alt-text filter. The
+gallery shows photos whose alt text names the selected `Color` option value, plus
+photos naming no value at all (group shots and design-only shots), and falls back
+to the full gallery for a colour with nothing of its own rather than rendering
+empty. Driven by one global `color_option_name` setting with blank as the kill
+switch, mirroring `size_option_name`. Both gallery surfaces render
+`product-media-gallery-content.liquid`, so no block schema and no product template
+changed. The contract is `docs/product-media-alt-text.md`. The `alt` column in
+`product-images/processed/manifest.csv` is where the strings are drafted, but that
+path is gitignored on purpose, so it is a local convenience only: nothing in the
+repo or in CI can catch wrong alt text, and Admin holds the only live copy.
+
+*The original note was wrong about the mechanism.* It claimed the theme already
+did the swap, reading that off `snippets/product-media-gallery-content.liquid:30`
+and `snippets/card-gallery.liquid:88` filtering on
+`where: 'attached_to_variant?', true`. They do filter on it, but Shopify caps a
+variant at one attached media (`PRODUCT_VARIANT_ALREADY_HAS_MEDIA`), so attachment
+expresses one hero per colour and can never express "all three black photos".
+`hide_variants: true` was a no-op only because nothing was attached yet; with
+heroes attached it would have hidden the other colours' heroes and left every one
+of their secondary photos in the carousel. Recorded because the mistake is the
+useful part: "the plumbing exists" was read off a filter that answers a different
+question than the one being asked, and acting on it would have bought a day of
+Admin work for the wrong result.
+
+Photography coverage at the time, by *filename* colour: the crewnecks had black /
+blue / gray, the quarter-zip black / blue / gray, the women's vest black only.
+Those are not the Admin option values: every product's values are `Black` /
+`Grey Heather` / `Classic Navy` (the vest, `Black` only; the repo vocabulary was
+reconciled to these on 2026-08-11, though the live media alts written on
+2026-07-17 still say the old `Gray` / `Navy`), and the `blue-*` files are the
+Classic Navy ones. All 53 media across the five products were alt-tagged on
+2026-07-17. Huddle is deliberately left unbound because its colour and design are
+locked 1:1, so filtering by colour would hide the shopper's chosen design.
+
+**Return-policy acknowledgement before add-to-cart.** Shipped as a terms summary
+(merchant-editable `richtext`) plus one required "I agree" checkbox, wired together
+with `aria-describedby`, and a policy link outside the label. The checkbox unticks
+itself on any option change, which is what lets the
+`properties[Return policy acknowledged]` value name the confirmed size honestly:
+the box can only ever be ticked for the variant on screen. Unticking re-hides
+accelerated checkout and is announced in a polite live region. Blank `terms` hides
+the block entirely (hence `"tag": null`, so no empty element trips the fail-closed
+`:has()` rule). Validation renders as visible text with `aria-invalid`, not just
+the native bubble.
+
+*The original note had gap (1) backwards*: it called for adding the block to
+`product.shift-fuel-crewneck.json`. That is the one product with no personalization
+and a plain 14-day return window, so it is the one product the checkbox must not
+appear on. The real inconsistency was `product.huddle-crewneck.json`, which carried
+the checkbox while its own Returns Policy accordion promised a 14-day return.
+Recorded because the mistake is the useful part: block placement, not block
+content, is what expresses the policy.
+
+**Gift card template.** Added `templates/product.gift-card.json` (cloned from the
+Huddle crewneck, then stripped of garment framing: no size chart, no applique, no
+combination request). Keeps the native recipient form via `gift_card_form: true`
+and a gift-card-specific acknowledgement and accordion.
+
+**Size-guide link at the size selector.** `snippets/size-guide-link.liquid` plus
+`assets/size-guide-link.js` render a real `<a href="#SizeChart">` beside the size
+option on both variant-picker styles; it opens the accordion row, scrolls, and
+moves focus to the summary. The size option is identified by a global
+`size_option_name` setting resolved through `snippets/size-option-position.liquid`,
+shared with the acknowledgement block because a theme block cannot read another
+block's settings. `_accordion-row.liquid` gained an optional `anchor_id` setting,
+emitted as `SizeChart` by `table-block.mjs`, so it survives `apply-size-chart.mjs`
+(a hand-edited value would be upserted away). `accordion-custom.js` gained a
+`data-latched-open` latch so a row opened this way is not slammed shut by the 750px
+breakpoint handler, and it honours a direct `#SizeChart` page load.
+
+*Cross-layer contract*: the anchor literal is duplicated across the generator, the
+Liquid, and the link's href, because the theme has no build step.
+`test/anchor-contract.test.mjs` is the only thing holding those together; the
+goldens cannot, since they compare the generator to its own output.
+
+**Size-chart tooling, completed follow-ups.** "Choosing your size" guidance ships
+in both the accordion and the PNG intro (deciding measurement, between-sizes
+tie-breaker, no-reference-garment path, and a contact-us help line). *Correction
+(2026-07-16):* that paragraph was originally claimed to be garment independent and
+living once in `copy.md`. The vests disproved it: the paragraph named chest (the
+women's vest measures bust) and named sleeve (a vest has none). It was split. The
+tie-breaker and help line stayed shared, the deciding measurement became the
+`{{deciding_label}}` token, and the measure-yourself instruction moved onto the
+columns that can support it.
+
+Also landed: column-driven generalisation (profiles declare their own ordered
+`columns` and pick a `garment` silhouette, with the quarter-zip and women's
+microfleece vest onboarded end to end); a vertical-rhythm pass deriving PNG canvas
+height from content with per-garment `garmentTop` collar extents; per-garment
+accordion prose composed from each column's `explain` so a measurement is explained
+if and only if the blank has that column (adding `garment_noun` and `decides_size`
+to the schema); and the unisex microfleece vest profile dropped, since only the
+women's vest launched.
+
+**Deferred CI findings closed 2026-05-05.** `[AR-4]` and `[AR-6 / IR-1]`: the
+composite action gained `mode: delete-preview`, routing preview cleanup through it
+and removing the hardcoded `@shopify/cli` version; the install pattern consolidated
+into a `setup-shopify-cli` composite action shared by `shopify-theme-push` and
+`validate.yml`. `[CR-8]` landed alongside them. `[IR-5]` and `[SA-12]` went
+obsolete when `drift-watch.yml` was deleted; `[SA-8]`'s surviving half is covered
+by `validate.yml`'s `SHELLCHECK_OPTS: "-e SC2016 -e SC2317"`.
+
+**Default `templates/product.json` gap accepted (2026-08-14).** Every product this
+store sells is expected to carry its own custom template rather than fall back to a
+generic one, so the absence is intentional. The standing obligation it creates:
+assigning a template suffix is a required step when creating any product, because
+nothing renders behind a cleared or unset suffix.
+
+**Size-chart scope: deliberately excluded (operator decision, 2026-07-14).** These
+were considered and dropped; they are not backlog gaps. Returns / exchange line in
+the chart (handled by the return-policy-acknowledgment block near the buy buttons,
+do not duplicate). Made-by-hand measurement-tolerance line (skipped). Model /
+on-body fit reference photo, imp 4 (photography and merchandising, out of tooling
+scope; add a "model is X tall, wears M" gallery caption when on-body shots exist).
+Aggregate runs-small / true / large review subscore, imp 3 (cold-start; revisit
+once review volume exists). No-tape string-and-ruler fallback, imp 3 (redundant
+with the "measure a top you already own" method that is already the primary
+instruction). Pre-purchase / add-to-cart size nudge, imp 2 (covered by the existing
+return-policy-acknowledgment block; avoid extra checkout friction).
+
+**Pre-launch review (2026-08-13): verified clean.** Recorded so nobody re-audits
+these. The six product templates are structurally identical (same block trees, same
+gallery settings with `hide_variants: true`, same accordion row ids and headings,
+`anchor_id: "SizeChart"` on all five apparel templates). The Huddle applique
+dropdown matches `scripts/applique-grid/patterns.json` exactly, all 18 entries, so
+the old "3. Test" placeholder is gone. All three size-chart tables match their
+profiles cell for cell. Alt-text colour binding is correct on every product (three
+photos bound per colour, charts and size guides and group shots correctly shared).
+Every product has a `templateSuffix` that resolves. The FAQ's shipping claims match
+the live rates exactly, territories included. The footer social block and the theme
+settings agree, so `sameAs` is accurate. The `#away-from-studio` FAQ anchor is
+intact.
+
 ## applique-grid: consent is now a token, and four fail-open guards closed (unreleased)
 
 ### What changed
