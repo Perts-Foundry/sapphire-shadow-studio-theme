@@ -118,8 +118,6 @@ Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
-Before proposing fixes for zizmor findings on the workflows, check `.github/zizmor.yml` first; the rationale for each suppression lives there.
-
 ## Development commands
 
 ```bash
@@ -144,8 +142,6 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 ### Directory structure
 
 README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
-
-**Two product-template differences are deliberate; do not normalise them.** Shift Fuel's Returns Policy body has no `<h5>Final Sale</h5>` because Shift Fuel is not final sale: it is the only apparel product with a 14-day return, and the only one with no `return-policy-acknowledgment` block. The gift card's `return-policy-acknowledgment` overrides `property_label` per the garment-vs-gift-card split documented in that block's `{% doc %}`, and the value is a live cart line-item property key, so changing it splits the acknowledgment across orders. Both have been filed as template drift twice.
 
 ### Structured data
 
