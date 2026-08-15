@@ -12,7 +12,7 @@ All genuinely actionable issues have been resolved. The remaining findings docum
 
 ### Suppressed-via-config
 
-As of the CI/CD cutover (2026-05-03), the JSONMissingBlock check is **disabled in `.theme-check.yml`** so that the 3 known false-positive errors from Judge.me Reviews app blocks do not block PRs under the new `--fail-level error` CI gate. The findings are still documented below for historical context. Re-enable the check if Judge.me is uninstalled.
+As of the CI/CD cutover (2026-05-03), the JSONMissingBlock check is **disabled in `.theme-check.yml`** so that the known false-positive errors from Judge.me Reviews app blocks do not block PRs under `validate.yml`'s `--fail-level error` gate. The findings are still documented below for historical context. Re-enable the check if Judge.me is uninstalled.
 
 The MatchingTranslations check is also **disabled** as of the comment-driven deploy refactor (2026-05-04). Horizon ships a wide locale matrix and Shopify's translators add keys at different paces per language, so non-English locale files legitimately drift behind `en.default.json` between upstream merges. The newer Shopify CLI's theme-check engine (used by `validate.yml`) flags this as cross-locale key mismatch errors; the older `Shopify/theme-check-action@v2.2.0` did not. Canonical source is `en.default.json`; stale-but-non-empty translations in other locales are acceptable for a downstream theme.
 
@@ -23,16 +23,21 @@ The MatchingTranslations check is also **disabled** as of the comment-driven dep
 ### 1. JSONMissingBlock - Judge.me Reviews App Blocks
 
 **Severity:** Disabled in `.theme-check.yml` (was Error)
-**Count:** 3 occurrences
-**File:** `templates/product.json`
+**Count:** 3 block types, repeated once per product template
+**Files:** every `templates/product.*.json` (one per product; there is no shared `templates/product.json`)
 
 #### Details
 
+Each per-product template carries the same three Judge.me app-block references. Line numbers differ per
+template, so locate them by block type rather than by line:
+
 ```
-Line 138: shopify://apps/judge-me-reviews/blocks/preview_badge/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
-Line 425: shopify://apps/judge-me-reviews/blocks/medals/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
-Line 429: shopify://apps/judge-me-reviews/blocks/review_widget/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
+shopify://apps/judge-me-reviews/blocks/preview_badge/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
+shopify://apps/judge-me-reviews/blocks/medals/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
+shopify://apps/judge-me-reviews/blocks/review_widget/61ccd3b1-a9f2-4160-9fe9-4fec8413e5d8
 ```
+
+Find every occurrence with `git grep -n judge-me-reviews templates/`.
 
 #### Why Not Actionable
 
@@ -381,7 +386,7 @@ as 1529 ms of load delay for a file that downloads in under a millisecond.
 
 ### When to Revisit This Document
 
-- **Judge.me app removed:** If the Judge.me Reviews app is uninstalled, remove the app block references from `templates/product.json` to eliminate the 3 JSONMissingBlock errors
+- **Judge.me app removed:** If the Judge.me Reviews app is uninstalled, remove the app block references from every `templates/product.*.json` to eliminate the JSONMissingBlock errors
 - **Theme Check updates:** Future versions of Theme Check may fix the false positive detection, reducing warnings
 - **Code refactoring:** If refactoring snippets, consider the context where they're used to avoid introducing actual undefined object issues
 

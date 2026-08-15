@@ -1,5 +1,90 @@
 # Release Notes
 
+## Ten fast backlog items cleared in one pass (unreleased)
+
+### What changed
+
+Ten `TODO.md` entries that needed no Admin access and no product decision, cleared
+together: two stale docs, two missing CI comments, the vacation date placeholders,
+one real gallery defect, one template padding drift, and the size-chart table's
+accessibility gap. The reasoning worth keeping is below.
+
+**Gallery counts must come from the rendered set, not the filtered set ([CR-16]).**
+`snippets/product-media-gallery-content.liquid` built `sorted_media` well below the
+two places that size the slideshow against it, so the counter threshold
+(`> 15` switches dots to a counter) and the `--single-media` class both read
+`filtered_media.size`. That is the wrong number whenever `hide_variants: true`: the
+sort loop `continue`s past any media whose `src` is in `variant_images`, so
+`sorted_media` can be strictly smaller than `filtered_media`. A two-item filtered
+set could render one slide while still getting arrows and no `--single-media`
+class. The fix is a hoist, not new logic: the `sorted_media` block depends only on
+`filtered_media`, `selected_variant_media`, `block_settings.hide_variants`, and
+`variant_images`, all assigned by the end of the colour-filter block, so it moves
+up unchanged and both consumers repoint to `sorted_media.size`. The contract to
+keep: **anything that sizes the gallery reads `sorted_media`.** `filtered_media` is
+an intermediate, and reading it downstream is the bug, not a shortcut.
+`has_image_drop` and `is_single_column` already read `sorted_media` and were
+correct.
+
+**Two of the three "cosmetic template drifts" were not drift.** Only Shift Fuel's
+`request_combination_001` `padding-block-start: 8` was real (now 0, matching the
+other four apparel templates). The other two are load-bearing and were re-filed
+once already, so they are recorded here and in `TODO.md` rather than left to be
+rediscovered. Shift Fuel has no `<h5>Final Sale</h5>` in its Returns Policy body
+because it is not final sale: it is the only apparel product with a 14-day return
+and correspondingly the only one with no `return-policy-acknowledgment` block.
+The gift card's `property_label` override is the documented garment-vs-gift-card
+split (see that block's own `{% doc %}`), and the value is a live cart line-item
+property key, so changing it splits the acknowledgment across orders placed either
+side of the change. The lesson generalises: on these templates, "make them
+identical" is not automatically the right diff.
+
+**`--ignore-scripts` in the composite action, from verified facts ([CR-12]).** The
+TODO text was partly stale. `esbuild` and `@ast-grep/napi` are *transitive* deps of
+`@shopify/cli`, not direct ones, and their platform binaries arrive as
+`optionalDependencies` (per-platform packages npm resolves at install time), not
+via a postinstall download. `esbuild` is the only entry in `package-lock.json` with
+`hasInstallScript`. `sharp` is a direct devDependency but ships no install script at
+the pinned version, so the flag is a no-op for it. The reason the flag stays is that
+this job holds the Shopify token; re-check `hasInstallScript` across the lockfile
+after a dependency bump rather than assuming the list is still accurate.
+
+**README version numbers were removed rather than synced ([DS-17], decided
+2026-08-14).** The "At a glance" table restated the CLI version and the Node
+floor; both had drifted (`3.94.3` vs `4.6.0`, `>=20` vs `>=22.12.0` with CI on 22).
+Restating a number that lives in `package.json` guarantees it drifts again on the
+next Dependabot bump, and no CI check would catch it. Both now point at
+`package.json`'s `engines` / devDependency instead of quoting a value.
+`release-notes.md`'s historical `3.94.3` mention is a record of what shipped and
+stays as it is.
+
+**Vacation date defaults are now `[SET DATE]`.** `settings_data.json` holds no
+`vacation_*` key, so the four schema defaults in `config/settings_schema.json` are
+literally what a future enable starts from. A plausible-looking date can ship by
+accident; a placeholder cannot. `vacation_processing_date` is stamped onto each
+order as the term the customer agreed to, so a stale value there is wrong on the
+order record, not just in copy.
+
+**The `theme-color` meta tag was deleted, not filled in.** It shipped with
+`content=""`, which is not a valid colour, so it did nothing on every page render.
+Nothing usable is in Liquid scope at that point in `snippets/meta-tags.liquid`: the
+colour-scheme snippets render after it and emit CSS custom properties, not a
+Liquid-readable value. A comment in its place records that re-adding it means
+sourcing a literal colour.
+
+**`blocks/table.liquid` row headers keep the data-cell styling.** Each body row's
+first cell is now `<th scope="row">`, plus an optional visually-hidden `<caption>`.
+Two constraints worth knowing before touching this file again. (1) The `<th>` must
+be styled back to `font-weight: inherit; text-align: start` or the size chart
+visibly changes; the semantics are for screen readers, not for looks. (2) The
+`[data-columns="N"] .table-block__cell:nth-child(n+N+1)` hiding rules match on
+`nth-child`, which is element-type-agnostic, so they keep working across the
+`<td>`-to-`<th>` change. The setting ids (`column_count`, `show_header`,
+`stripe_rows`, `colN_heading`, `rMcN`) and the 8x6 ceiling are generated by
+`scripts/size-chart/lib/table-block.mjs` and compared against the shipped templates
+by its golden tests; adding an optional `caption` setting changes no generated JSON,
+so those tests stay green.
+
 ## Backlog triage: completed work moved out of TODO.md (unreleased)
 
 ### What changed

@@ -13,8 +13,8 @@ The interesting part of this repo is not the theme; it is the deploy model. `mai
 | | |
 |---|---|
 | Stack | Liquid + theme blocks. No build step; files in `assets/` ship as-is. |
-| Tooling | Shopify CLI pinned at `@shopify/cli` `3.94.3` (devDependency) |
-| Runtime | Node `>=20`, npm |
+| Tooling | Shopify CLI pinned as the `@shopify/cli` devDependency in `package.json` |
+| Runtime | Node and npm, at the version `package.json`'s `engines` field requires |
 | Deploy model | Comment `deploy` on a green PR (plus auto-deploy for `shopify-sync` reconcile and Dependabot PRs) |
 | Live theme | `#181702754604` (disconnected from GitHub; only the deploy workflow writes to it) |
 | Workflows | `validate`, `preview`, `sync`, `deploy` (in `.github/workflows/`) |
@@ -22,7 +22,7 @@ The interesting part of this repo is not the theme; it is the deploy model. `mai
 
 ## Prerequisites
 
-- **Node `>=20`** and npm. The Shopify CLI is pinned in `package.json` / `package-lock.json`; run it through `npm`/`npx`, never a globally installed CLI, so local and CI match.
+- **Node and npm**, at the version required by `package.json`'s `engines` field (CI installs the same version). The Shopify CLI is pinned in `package.json` / `package-lock.json`; run it through `npm`/`npx`, never a globally installed CLI, so local and CI match.
 - **A Shopify store with a Custom App token.** Local pushes and CI both authenticate with an Admin API access token (`shpat_...`) that has `read_themes` and `write_themes` scopes. See [Secrets and variables](#secrets-and-variables) for setup.
 - **Repo write access (or higher)** and the `gh` CLI (or the GitHub UI) to comment `deploy` on a PR, the only path code takes to the live theme.
 

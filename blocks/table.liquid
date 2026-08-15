@@ -3,6 +3,10 @@
   Supports 2, 3, or 4 columns with optional header row and alternating row colors.
   Rows with all-blank cells are automatically hidden.
 
+  Accessibility: the first cell of every body row is a `<th scope="row">`, styled to look
+  like a data cell, so screen readers announce the row label with each value. The optional
+  caption setting renders a visually hidden `<caption>` naming the table.
+
   @example
   {% content_for 'block', type: 'table', id: 'size-chart' %}
 {% enddoc %}
@@ -22,6 +26,9 @@
 >
   <div class="table-block__scroll">
     <table class="table-block__table">
+      {% if block.settings.caption != blank %}
+        <caption class="table-block__caption">{{ block.settings.caption }}</caption>
+      {% endif %}
       {% if block.settings.show_header %}
         <thead>
           <tr class="table-block__row">
@@ -37,7 +44,7 @@
       <tbody>
         {% unless block.settings.r1c1 == blank and block.settings.r1c2 == blank and block.settings.r1c3 == blank and block.settings.r1c4 == blank and block.settings.r1c5 == blank and block.settings.r1c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r1c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r1c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r1c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r1c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r1c4 }}</td>
@@ -47,7 +54,7 @@
         {% endunless %}
         {% unless block.settings.r2c1 == blank and block.settings.r2c2 == blank and block.settings.r2c3 == blank and block.settings.r2c4 == blank and block.settings.r2c5 == blank and block.settings.r2c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r2c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r2c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r2c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r2c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r2c4 }}</td>
@@ -57,7 +64,7 @@
         {% endunless %}
         {% unless block.settings.r3c1 == blank and block.settings.r3c2 == blank and block.settings.r3c3 == blank and block.settings.r3c4 == blank and block.settings.r3c5 == blank and block.settings.r3c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r3c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r3c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r3c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r3c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r3c4 }}</td>
@@ -67,7 +74,7 @@
         {% endunless %}
         {% unless block.settings.r4c1 == blank and block.settings.r4c2 == blank and block.settings.r4c3 == blank and block.settings.r4c4 == blank and block.settings.r4c5 == blank and block.settings.r4c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r4c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r4c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r4c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r4c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r4c4 }}</td>
@@ -77,7 +84,7 @@
         {% endunless %}
         {% unless block.settings.r5c1 == blank and block.settings.r5c2 == blank and block.settings.r5c3 == blank and block.settings.r5c4 == blank and block.settings.r5c5 == blank and block.settings.r5c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r5c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r5c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r5c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r5c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r5c4 }}</td>
@@ -87,7 +94,7 @@
         {% endunless %}
         {% unless block.settings.r6c1 == blank and block.settings.r6c2 == blank and block.settings.r6c3 == blank and block.settings.r6c4 == blank and block.settings.r6c5 == blank and block.settings.r6c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r6c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r6c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r6c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r6c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r6c4 }}</td>
@@ -97,7 +104,7 @@
         {% endunless %}
         {% unless block.settings.r7c1 == blank and block.settings.r7c2 == blank and block.settings.r7c3 == blank and block.settings.r7c4 == blank and block.settings.r7c5 == blank and block.settings.r7c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r7c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r7c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r7c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r7c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r7c4 }}</td>
@@ -107,7 +114,7 @@
         {% endunless %}
         {% unless block.settings.r8c1 == blank and block.settings.r8c2 == blank and block.settings.r8c3 == blank and block.settings.r8c4 == blank and block.settings.r8c5 == blank and block.settings.r8c6 == blank %}
           <tr class="table-block__row">
-            <td class="table-block__cell">{{ block.settings.r8c1 }}</td>
+            <th class="table-block__cell" scope="row">{{ block.settings.r8c1 }}</th>
             <td class="table-block__cell">{{ block.settings.r8c2 }}</td>
             <td class="table-block__cell">{{ block.settings.r8c3 }}</td>
             <td class="table-block__cell">{{ block.settings.r8c4 }}</td>
@@ -141,6 +148,20 @@
     border-collapse: collapse;
   }
 
+  /* Visually hidden, still announced: clip-path rather than display:none, which
+     would take the caption out of the accessibility tree entirely. */
+  .table-block__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .table-block__cell {
     padding-block: 0.8rem;
     padding-inline: 1.1rem;
@@ -152,6 +173,13 @@
 
   .table-block__cell:last-child {
     border-inline-end: none;
+  }
+
+  /* Row headers are <th> for screen readers only; keep them looking like data
+     cells rather than inheriting the browser's bold + centred <th> defaults. */
+  tbody .table-block__cell {
+    font-weight: inherit;
+    text-align: start;
   }
 
   .table-block__cell--header {
@@ -219,6 +247,12 @@
         }
       ],
       "default": "3"
+    },
+    {
+      "type": "text",
+      "id": "caption",
+      "label": "t:settings.table_caption",
+      "info": "t:info.table_caption"
     },
     {
       "type": "checkbox",

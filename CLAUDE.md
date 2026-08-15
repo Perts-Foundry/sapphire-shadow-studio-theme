@@ -118,6 +118,8 @@ Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
+Before proposing fixes for zizmor findings on the workflows, check `.github/zizmor.yml` first; the rationale for each suppression lives there.
+
 ## Development commands
 
 ```bash

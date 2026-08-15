@@ -2430,7 +2430,7 @@
         "type": "richtext",
         "id": "vacation_popup_body",
         "label": "Popup Body",
-        "default": "<p>You can still browse and order as usual, but orders placed while we're away will begin processing after <strong>August 15</strong>. Thanks for your patience! <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
+        "default": "<p>You can still browse and order as usual, but orders placed while we're away will begin processing after <strong>[SET DATE]</strong>. Thanks for your patience! <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
@@ -2438,7 +2438,7 @@
         "id": "vacation_checkbox_terms",
         "label": "Checkbox Terms",
         "info": "Leave blank to hide the product-page checkbox.",
-        "default": "<p><strong>Please note:</strong> we're away from the studio right now. Orders placed now will begin processing after <strong>August 15</strong>. <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
+        "default": "<p><strong>Please note:</strong> we're away from the studio right now. Orders placed now will begin processing after <strong>[SET DATE]</strong>. <a href=\"/pages/faq#away-from-studio\">Learn more in our FAQ</a>.</p>",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
@@ -2461,14 +2461,14 @@
         "id": "vacation_processing_date",
         "label": "Processing Date",
         "info": "Recorded in the acknowledgment on each order (\"Yes - processing begins after ...\"). Keep it matching the date in the messages above.",
-        "default": "August 15",
+        "default": "[SET DATE]",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       },
       {
         "type": "text",
         "id": "vacation_shipping_message",
         "label": "Shipping Note",
-        "default": "Ships after August 15",
+        "default": "Ships after [SET DATE]",
         "visible_if": "{{ settings.vacation_mode_enabled }}"
       }
     ]

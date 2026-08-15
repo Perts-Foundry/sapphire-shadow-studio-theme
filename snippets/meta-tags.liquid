@@ -11,10 +11,13 @@
   name="view-transition"
   content="same-origin"
 >
-<meta
-  name="theme-color"
-  content=""
->
+{%- comment -%}
+  No `theme-color` meta tag: it shipped with `content=""`, which is not a valid
+  colour, so browsers ignored it on every page render. Nothing usable is in
+  Liquid scope here either. The colour schemes render after this snippet and
+  emit CSS custom properties, not a Liquid-readable value. Re-adding it means
+  sourcing a literal colour, not filling this tag back in blank.
+{%- endcomment -%}
 
 {%- liquid
   assign og_title = page_title | default: shop.name

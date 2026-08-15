@@ -20,4 +20,16 @@ runs:
 
     - name: Install Shopify CLI
       shell: bash
+      # `--ignore-scripts` blocks lifecycle scripts (preinstall/install/postinstall)
+      # from every package in the tree, so a compromised dependency cannot
+      # execute code in a job that holds the Shopify token. Nothing here needs
+      # those scripts: `esbuild` is the only package in the lockfile with
+      # `hasInstallScript` (a transitive dep of `@shopify/cli`), and both it and
+      # `@ast-grep/napi` get their platform binaries from `optionalDependencies`
+      # (per-platform packages npm resolves at install time), not from a
+      # postinstall download. `sharp`, the one direct devDependency with native
+      # code, likewise ships no install script at the pinned version. Re-check
+      # with `node -e` over `package-lock.json` for `hasInstallScript` after a
+      # dependency bump; if something genuinely needs a lifecycle script, install
+      # it in a job with no secrets rather than dropping this flag.
       run: npm ci --ignore-scripts

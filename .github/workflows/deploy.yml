@@ -1632,6 +1632,11 @@ jobs:
             } else if (pushExit !== '0') {
               failStage = 'Theme push (shopify theme push --live)';
               errorDetail = pushOutput || 'Push exited non-zero. See the workflow run.';
+            // Order matters: every pushExit arm above must be checked before
+            // this one. The smoke step only runs after a successful push, so a
+            // failed push leaves smokeExit unset (or stale), and testing it
+            // first would report a smoke failure for a deploy that never
+            // reached the storefront.
             } else if (smokeExit !== '0') {
               failStage = 'Smoke test (live theme is currently serving this SHA)';
               // Raw smokeOutput no longer embedded here: rendered as its own
