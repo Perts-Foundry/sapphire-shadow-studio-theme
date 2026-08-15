@@ -14,6 +14,23 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
+- [ ] **Add an accessibility check to CI (contrast, at minimum).** `validate.yml`'s twelve steps
+  include no accessibility check of any kind, so a failing colour scheme ships silently: the
+  `sss-dark-scheme` accent sat at 3.86:1 on the navy until 2026-08-15 and only a hand-run Lighthouse
+  audit surfaced it. **The precedent is `perts-foundry-website`**, whose `validate.yml` runs
+  `pa11y-ci` as a hard-failing WCAG 2.1 AA gate; copy the reporting shape from there.
+  What does not port is the plumbing, and that is the whole difficulty. That repo Hugo-builds to
+  `public/`, serves it on localhost, and crawls itself, needing no secret and no network. Liquid
+  renders server-side, so this repo has no local build target: the only rendered HTML is behind the
+  password-gated storefront or a `pr-N-preview` theme. Pointing pa11y at a preview URL means giving
+  `preview.yml` the `STOREFRONT_PASSWORD` secret, which today lives only in `deploy.yml` and only in
+  the `deploy` job, so this trades away part of the secret isolation described in `CLAUDE.md`'s
+  deploy-gate section. Decide that trade before building anything.
+  The cheap fallback if the trade is refused: lint `color_schemes` in `config/settings_data.json`
+  directly, which is plain JSON and needs no browser. It catches strictly less (scheme-level pairs
+  only, nothing about what actually composites on the page), and its one non-obvious part is the
+  pairing map, since `primary` is measured against `background` while `primary_button_text` is
+  measured against `primary_button_background`, and the two can fail in opposite directions.
 - [ ] **SEO: return-policy structured data.** Deferred, and the reason matters because the obvious
   one is wrong. It is blocked by Shopify's `structured_data` filter not being extensible, **not** by
   the return policy varying per product. `MerchantReturnPolicy` does not need to be store-wide, and
@@ -68,10 +85,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   derived purely from each variant's own options so it needs no lookup state. It is orthogonal to
   `custom.inventory_blank_sku`, which identifies the shared blank garment rather than the finished
   piece, so the two do not collide.
-- [ ] **Footer link touch targets are 121x15 CSS pixels.** Well under the 44x44 minimum in the
-  accessibility rules, across all ten links in the footer links row. Pre-existing, found 2026-07-29
-  while adding a footer link. The breadcrumb fix is the pattern to copy: `padding-block` with an
-  equal negative `margin-block`, which buys height without changing visual density.
 
 - [ ] **Attach one hero image per colour in Admin.** Separate from the shipped alt-text gallery
   filter, which never touches it: `variant.image` drives cart line-item thumbnails and collection
@@ -88,24 +101,10 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   that colour's media in Admin to lead with the close-up. Confirm on the storefront first. Admin
   (media order) plus copy.
 
-**Homepage review (2026-07-20).** Findings from a live desktop (1440px) and mobile (390px)
-review of the storefront homepage. All of these live in admin-owned config (`config/settings_data.json`
-color schemes, `templates/index.json` section settings), so they are recorded here rather than
-edited in a repo PR, which the sync model would clobber. The theme-code `object-fit: contain`
-mitigation for the hero mobile crop shipped separately in `sections/hero.liquid`.
+**Homepage review (2026-07-20).** What is left of a live desktop (1440px) and mobile (390px) review
+of the storefront homepage. It lives in admin-owned config, so it is recorded here rather than edited
+in a repo PR, which the sync model would clobber.
 
-- [ ] **Fix primary-button contrast (WCAG AA fail).** White text on `#007dd5`
-  (`config/settings_data.json:471`) is 4.29:1 (needs 4.5:1); affects the hero "Shop all" and
-  footer "Sign up" buttons. Darken to about `#0071c2` or darker. Admin (color scheme).
-- [ ] **Fix the featured-collection heading order (Lighthouse `heading-order`).** The homepage
-  jumps from the hero `<h1>` straight to the grid's `<h3>`, skipping `<h2>`, which breaks
-  heading-level navigation for screen-reader users and is flagged by Lighthouse. Change that
-  wrapper to `<h2>`. Admin (section block settings).
-- [ ] **Curate the featured-collection heading label.** "Products" is just the "all" collection
-  title and says nothing; use a real merchandising label. While in there, confirm the configured
-  "View all" link actually renders. Admin (section block settings).
-- [ ] **Add a hero headline/tagline.** The hero text block is empty; the only messaging is
-  baked into the photo. Add a concise tagline heading for messaging and SEO. Admin (hero text block).
 - [ ] **Optional: set the hero video's alt text in admin.** Won't clear the Lighthouse `image-alt`
   finding (the `video_tag` poster `<img>` is Shopify-internal; see `THEME_CHECK_NON_ACTIONABLE.md`),
   but it does give the `<video>` element a proper `aria-label` for screen readers. Admin (video media alt).
@@ -162,12 +161,7 @@ several of the pass's other findings.
   empty the collection silently. Replace with a single honest rule, or make it manual. Note the footer
   "All Products" link points at `/collections/all` (Shopify's built-in), not at this collection, so
   the blast radius today is the collection-list page. Admin.
-- [ ] **Confirm the Admin social sharing image is set.** `meta-tags.liquid` emits `og:image` only when
-  `page_image` resolves, and outside products and articles that comes from Online Store > Preferences,
-  which the theme cannot fall back for. `social-seo-logo.png` (1200x628) is sitting in Files unused as
-  far as the theme can tell, which suggests the intent exists and the assignment may not. Verify in
-  Admin; if it is unset, the homepage and every page share a link preview with no image. Carried over
-  from the 2026-08-02 audit, still unverified from the repo side. Admin (Online Store preferences).
+
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent

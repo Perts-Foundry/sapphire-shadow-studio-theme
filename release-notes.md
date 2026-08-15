@@ -1,5 +1,68 @@
 # Release Notes
 
+## Footer touch targets, dark-scheme contrast, and three stale findings retired (unreleased)
+
+### What changed
+
+`blocks/footer-policy-links.liquid` gives each policy link its own 44px touch
+target. Separately and outside this branch, the `sss-dark-scheme` colour scheme
+had six values corrected in Admin and reconciled through `shopify-sync`. Three
+"Homepage review (2026-07-20)" backlog entries and the `og:image` entry turned
+out to describe states that no longer exist and were deleted after visual
+confirmation on the PR preview theme. Two pieces of reasoning outlive the tasks.
+
+**The breadcrumb negative-margin pattern does not generalise to a wrapping
+list.** `.breadcrumbs__link` in `assets/base.css` buys its 44px target with
+`padding-block` plus an equal negative `margin-block`, so the hit box grows
+while the line box, and therefore the visual density, stays put. The footer
+backlog entry recommended copying it, and that recommendation was wrong for a
+reason worth stating plainly: breadcrumbs never wrap. The footer links do. A hit
+box that bleeds past its line box has nothing to collide with on a single row,
+but on a wrapping list it overlaps the row beneath it, and with a 15px line in a
+44px box across an 8px row gap the overlap is about 21px. The top row would
+swallow taps aimed at the row below, which is a worse accessibility outcome than
+the small target it set out to fix. The pattern here is the opposite trade:
+`min-block-size` on an `inline-flex` anchor, with the list's row gap dropped to
+zero so the padded boxes tile rather than overlap. Visual spacing between
+wrapped rows goes from 8px to roughly 29px and the footer grows; that is the
+cost of a compliant target on a list that wraps, and it is not avoidable by
+being cleverer about margins. A comment in the block's stylesheet says so, since
+the next reader will otherwise "fix" it back to the breadcrumb pattern.
+
+**`primary` and `primary_button_background` are separate scheme variables whose
+contrast fixes move in opposite directions.** `snippets/color-schemes.liquid`
+renders them as genuinely distinct CSS variables, and `#007dd5` occupied five
+slots in `sss-dark-scheme` at once: the accent, the primary button background
+and border, and the selected-variant background and border. A single
+find-and-replace across those five would have been wrong, because the two roles
+are measured against different backdrops. The button and variant fields sit
+*under white text*, so raising their ratio means going darker (`#0071c2`, 4.29
+to 5.07). The accent is *text on the `#071e3f` navy*, so darkening it makes it
+worse (3.86 to 3.27); it had to go lighter instead (`#3399e0`, 3.86 to 5.35),
+absorbing the shade that had been the hover state, with hover stepping one
+lighter again (`#66b3ea`, 7.26) to stay distinct. The general rule: measure each
+colour field against what it actually renders on, not against the scheme's
+nominal background. Nothing in CI checks any of this, which is why an
+accessibility CI check is now its own backlog entry. Worth knowing when that
+entry is picked up: the sibling `perts-foundry-website` repo already runs
+`pa11y-ci` as a hard-failing WCAG 2.1 AA gate, but it can only do so because
+Hugo gives it a local build to serve and crawl. Liquid renders server-side, so
+there is no equivalent local target here, and the honest options are a preview
+theme URL (which needs `STOREFRONT_PASSWORD` in a workflow that does not have it
+today) or a JSON-level lint of `color_schemes` that catches less.
+
+The two `selected_variant_*` values were latent rather than live when fixed. No
+product template uses `sss-dark-scheme` today (all six use `scheme-1`, whose
+selected-variant pair is 21:1), so no swatch on the storefront was failing. They
+were corrected anyway so the scheme is not a trap if it is ever applied to a
+product page.
+
+One note on the reconcile diff, recorded because it was not caused by the colour
+edit and will confuse whoever bisects for it later: the same `shopify-sync` PR
+also reordered the three `social_*_link` keys within `current` (same values) and
+**deleted** `secondary_color` and `ternary_color` from the chat app-embed block
+settings. Neither was intended by the colour-scheme change.
+
 ## Ten CI/workflow and docs backlog items cleared (unreleased)
 
 ### What changed
