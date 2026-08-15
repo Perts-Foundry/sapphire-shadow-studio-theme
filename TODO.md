@@ -126,12 +126,6 @@ several of the pass's other findings.
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
-- [ ] **`THEME_CHECK_NON_ACTIONABLE.md` names a file that does not exist.** It still cites
-  `templates/product.json` as the file carrying the three Judge.me JSONMissingBlock findings, in the
-  finding header and again under "Notes for Future Developers". Those blocks now live in all six
-  per-product templates. Fix the same-file wording nit in the same pass: that doc calls the
-  `--fail-level error` gate "the new CI gate" without naming `validate.yml`, and it is no longer new
-  (was [DS-11], doc-sync-checker, 2026-05-03). Repo.
 - [ ] **The About page references a file that does not exist.** `templates/page.about.json` sets
   `team_member_3_image` to `shopify://shop_images/Kitkat-Rory.jpg`, and no file by that name is in
   Files (all 77 enumerated). The block falls back to `placeholder_svg_tag`. Team members 1 and 2 have
@@ -167,34 +161,12 @@ several of the pass's other findings.
   empty the collection silently. Replace with a single honest rule, or make it manual. Note the footer
   "All Products" link points at `/collections/all` (Shopify's built-in), not at this collection, so
   the blast radius today is the collection-list page. Admin.
-- [ ] **`snippets/meta-tags.liquid:14` emits `<meta name="theme-color" content="">`.** An empty
-  `content` is not a valid colour, so the tag does nothing except ship on every page. Either give it a
-  brand colour from the active scheme or delete it. Repo.
 - [ ] **Confirm the Admin social sharing image is set.** `meta-tags.liquid` emits `og:image` only when
   `page_image` resolves, and outside products and articles that comes from Online Store > Preferences,
   which the theme cannot fall back for. `social-seo-logo.png` (1200x628) is sitting in Files unused as
   far as the theme can tell, which suggests the intent exists and the assignment may not. Verify in
   Admin; if it is unset, the homepage and every page share a link preview with no image. Carried over
   from the 2026-08-02 audit, still unverified from the repo side. Admin (Online Store preferences).
-- [ ] **The vacation-mode date defaults still read "August 15".** Vacation mode is off and
-  `config/settings_data.json` carries none of the vacation keys, so the schema defaults are what a
-  future enable starts from: `vacation_popup_body`, `vacation_checkbox_terms`,
-  `vacation_shipping_message`, and `vacation_processing_date` all say August 15. **Decided
-  2026-08-14: replace all four defaults with an obvious placeholder such as `[SET DATE]`**, rather
-  than carrying this as a standing reminder. A plausible-looking date can ship by accident; a
-  placeholder cannot, and `vacation_processing_date` is stamped onto each order as the term the
-  customer agreed to, so a stale value is wrong on the order record and not just in copy. The four
-  still move together before any enable (see CLAUDE.md > Theme settings).
-  `config/settings_schema.json`.
-- [ ] **Three cosmetic drifts between otherwise identical product templates.** Shift Fuel's
-  `request_combination_001` has `padding-block-start: 8` where the other four have 0; Shift Fuel's
-  Returns Policy body is the only one whose first section has no `<h5>` heading, so it opens with a
-  bare paragraph where the others open with "Final Sale"; the gift card's
-  `return-policy-acknowledgment` overrides `property_label` to "Customer confirm final sale" where
-  every other product takes the schema default, so its orders record the acknowledgment under a
-  different key. None of these are visible bugs; they are the kind of drift that makes the next
-  template diff noisy. Repo.
-
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent
@@ -202,8 +174,6 @@ wording lives in `scripts/size-chart/copy.md`; per-garment data and per-measurem
 `scripts/size-chart/profiles/<blank>.json`; the on-page accordion and the PNG both regenerate from
 those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1 (nice-to-have) to
 5 (decisive for choosing a size / avoiding a wrong-size order).
-
-### High priority
 
 - [ ] **Fabric & care block (imp 4/3).** Add an optional `fabric` object to the profile schema
   (`pre_shrunk` bool + `care` string + weight / composition / stretch) and render a compact
@@ -219,12 +189,6 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
   column at all (no derived circumference, no fits-chest range), so it is the blank this would help
   most.
 
-### Medium / polish
-
-- [ ] **Table accessibility (imp 3).** In `blocks/table.liquid`, make each data row's first cell a
-  `<th scope="row">` (currently a `<td>`) and add a `<caption>` / `<figcaption>` naming the chart.
-  Already a semantic table with `<th scope="col">` headers; this closes the remaining gap.
-
 ## Deferred review findings
 
 Deferred findings from pre-PR reviews.
@@ -236,18 +200,14 @@ Deferred findings from pre-PR reviews.
 - [ ] **[AR-10]** Dependabot major-version regex matches "Bump foo from X.Y.Z to A.B.C" but misses grouped PR titles ("Bump the github-actions group with N updates"). The dependabot config now groups all bumps; a major bump in a group ships unattended. Parse PR body for grouped PRs, or treat any grouped PR as requiring `auto-deploy-major` label. (architecture-reviewer, 2026-05-03)
 - [ ] **[AR-13]** Preview deploy uses `cancel-in-progress: true`; a fast push-storm can leave the preview theme partially uploaded. Either change to `cancel-in-progress: false` and accept queueing, or document the partial-push trade-off. (architecture-reviewer, 2026-05-03)
 - [ ] **[CR-15]** `check_exit` in `validate.yml` treats a missing `exit_code` as a `::warning::`, not a failure, so a check that never recorded a result still merges green. Near-unreachable today (every step is `set +e` and always writes its code), but it covers `gitleaks`, where a silently skipped secret scan is worth more than a warning. (code-reviewer, 2026-07-16)
-- [ ] **[CR-16]** `snippets/product-media-gallery-content.liquid` reads `filtered_media.size` for the counter threshold and the single-media class *before* `sorted_media` is built, so with `hide_variants: true` the counts can exceed what actually renders: a shared photo that is also some variant's attached image gets skipped by the sort loop, and a two-item filtered set can render one slide with arrows and no `--single-media` class. Pre-existing in kind (the code read the even-further-off `selected_product.media.size` before the colour filter landed), and `filtered_media.size` is a strict improvement. The real fix is hoisting the `sorted_media` build above the threshold checks, which is pure assign-reordering with no side effects. Deliberately left out of the colour-filter PR to keep that diff to one concern. (code-reviewer, 2026-07-16)
-- [ ] **[DS-17]** `README.md` "At a glance" says the Shopify CLI is pinned at `3.94.3`; `package.json` says `4.5.1`. Dependabot has bumped the dependency twice without touching the prose. **Decided 2026-08-14: drop the version number from the README prose** rather than adding a sync check. `package.json` is authoritative, the prose adds nothing it does not already carry, and any restated number drifts again on the next bump. (doc-sync-checker, 2026-07-16)
 - [ ] **[SA-9]** Consider adding an aggregate-style required-status check whose conclusion rolls up the four required jobs; would let branch protection require a single `validate` check instead of four. (security-auditor, 2026-05-03)
 
 ### Suggestions
 
-- [ ] **[AR-12]** Smoke-test step's `if: success() && inputs.mode == 'live'` (now fixed) means failure-ladder ordering is load-bearing. Add a one-line comment noting "pushExit must be checked before smokeExit." (architecture-reviewer, 2026-05-03)
-- [ ] **[CR-12]** Add comment in composite action explaining why `--ignore-scripts` is safe (esbuild + @ast-grep/napi use optionalDependencies for platform binaries). (code-reviewer, 2026-05-03). Note 2026-07-16: sharp 0.35.3 ships no install script at all, so `--ignore-scripts` is a no-op for it; its binaries arrive as plain optionalDependencies.
 - [ ] **[CR-13]** Accept common permutations of the `deploy` comment. The trigger uses strict equality, so `Deploy`, `/deploy`, and `deploy ` (trailing space) silently do nothing: no reaction, no error, no explanation. Phone keyboards auto-capitalise the first word, and a trailing space is invisible, so the accidental-miss rate is real on the repo's most-used command. Normalise the comment body instead of documenting the sharp edge: trim surrounding whitespace, lowercase, and allow an optional leading slash. Keep it an equality test on the normalised whole body, never a substring match, so the word `deploy` inside ordinary PR prose still cannot trigger a live push. (code-reviewer, 2026-05-03; re-scoped 2026-08-14)
 - [ ] **[DS-10]** README "Branches and themes" table doesn't enumerate the four required checks on `main`. (doc-sync-checker, 2026-05-03)
 - [ ] **[DS-13]** Smoke-test default paths are duplicated in README, release-notes, and the action default. Composite action says "commit it to CLAUDE.md as a permanent fixture"; CLAUDE.md doesn't mention them. Pick one source of truth. (doc-sync-checker, 2026-05-03)
-- [ ] **[DS-15]** `.github/zizmor.yml`'s suppressions carry no rationale, so a suppressed Actions-security finding cannot be told apart from a considered judgment. Record the reason as a comment beside each suppression in the config file itself, where it cannot drift from what it explains, and reference the file from CLAUDE.md rather than restating the reasons there. Same shape as the existing `THEME_CHECK_NON_ACTIONABLE.md` precedent. (doc-sync-checker, 2026-05-03; re-scoped 2026-08-14)
+- [ ] **[DS-15]** `.github/zizmor.yml`'s suppressions carry no rationale, so a suppressed Actions-security finding cannot be told apart from a considered judgment. Record the reason as a comment beside each suppression in the config file itself, where it cannot drift from what it explains, and reference the file from CLAUDE.md rather than restating the reasons there. Same shape as the existing `THEME_CHECK_NON_ACTIONABLE.md` precedent. (doc-sync-checker, 2026-05-03; re-scoped 2026-08-14). **Status 2026-08-15: the config-file half is already done** (`.github/zizmor.yml` carries a 40-line rationale for its single suppression, verified accurate against `deploy.yml`'s committer-identity handling). Only the CLAUDE.md pointer is outstanding, and it was declined on 2026-08-15; decide whether to close this out as won't-do.
 - [ ] **[SA-7]** Consider `defaults.run.shell: 'bash --noprofile --norc -euo pipefail {0}'` at workflow root for forward-looking defence against future steps inheriting a non-clean shell. (security-auditor, 2026-05-03)
 
 ### Architecture gaps (longer-horizon)
