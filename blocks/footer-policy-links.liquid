@@ -19,12 +19,25 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 8px 24px;
+    /* No row gap: the links carry their own 44px height, which supplies the
+       vertical separation between wrapped rows. */
+    gap: 0 24px;
     margin: 0;
     padding: 0;
   }
 
+  /*
+   * The 44px minimum touch target comes from the link box itself, not from the
+   * negative-margin trick used by .breadcrumbs__link in assets/base.css.
+   * Breadcrumbs never wrap, so an oversized hit box there can safely bleed past
+   * the line box; this list does wrap, and bled hit boxes on adjacent rows would
+   * overlap by roughly 21px, making the top row swallow taps meant for the row
+   * below it.
+   */
   .footer-links__link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 44px;
     color: var(--color-foreground-muted);
     text-decoration: none;
     font-size: var(--font-size, 0.75rem);
@@ -42,7 +55,7 @@
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       justify-items: center;
-      gap: 8px 16px;
+      gap: 0 16px;
     }
   }
 {% endstylesheet %}
