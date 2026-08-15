@@ -23,6 +23,17 @@ on:
 
 permissions: {}
 
+# Strict shell for every `run:` step in this workflow. GitHub's default is
+# `bash -e {0}`; the delta here is `-u` (unset variable is an error) and
+# `-o pipefail` (a pipeline fails if any stage does), so a future step cannot
+# read an unset secret as an empty string or pass a broken pipeline off as
+# success. Steps that must survive a non-zero command still clear `-e` with
+# their own `set +e`; that does NOT clear `-u` or `-o pipefail`, which is the
+# point. Composite actions declare their own shell and are unaffected.
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
 concurrency:
   group: validate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -719,10 +730,16 @@ jobs:
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
+          # An empty code fails closed. Every step above is `set +e` and always
+          # writes its code, so this is near-unreachable today; it covers the
+          # case where one stops doing so. It includes `gitleaks`, where a
+          # secret scan that silently never recorded a result must not merge
+          # green on a warning.
           check_exit() {
             local name="$1" code="$2"
             if [ -z "$code" ]; then
-              echo "::warning::${name} was skipped"
+              echo "::error::${name} recorded no exit code (step skipped or never wrote one)"
+              FAILED=1
             elif [ "$code" != "0" ]; then
               echo "::error::${name} failed"
               FAILED=1

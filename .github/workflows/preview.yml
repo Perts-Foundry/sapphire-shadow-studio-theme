@@ -6,6 +6,17 @@ on:
 
 permissions: {}
 
+# Strict shell for every `run:` step in this workflow. GitHub's default is
+# `bash -e {0}`; the delta here is `-u` (unset variable is an error) and
+# `-o pipefail` (a pipeline fails if any stage does), so a future step cannot
+# read an unset secret as an empty string or pass a broken pipeline off as
+# success. Steps that must survive a non-zero command still clear `-e` with
+# their own `set +e`; that does NOT clear `-u` or `-o pipefail`, which is the
+# point. Composite actions declare their own shell and are unaffected.
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
 jobs:
   deploy-preview:
     # Skip Dependabot PRs: Dependabot-triggered workflows run with a separate
@@ -30,6 +41,15 @@ jobs:
       pull-requests: write
     concurrency:
       group: preview-deploy-pr-${{ github.event.pull_request.number }}
+      # Deliberately `true`, decided rather than defaulted. Cancelling mid-push
+      # can leave the preview theme partially uploaded, but that state is
+      # self-healing: the next run pushes the whole tree, and the run that
+      # cancelled this one is by definition already queued. The preview theme
+      # is an unpublished draft with no customer exposure, so a partial state
+      # between two pushes costs nothing, while queueing every run of a
+      # push-storm burns CI minutes for no safety gain. The cleanup job below
+      # is `false` for the opposite reason: a cancelled delete leaks a theme
+      # that nothing sweeps up.
       cancel-in-progress: true
     outputs:
       theme_id: ${{ steps.push.outputs.theme-id }}
