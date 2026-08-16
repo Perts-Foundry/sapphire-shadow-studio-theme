@@ -235,3 +235,81 @@ test('originOf extracts an origin and tolerates junk', () => {
   assert.equal(originOf('https://a.example/x?y=1'), 'https://a.example');
   assert.equal(originOf('not a url'), null);
 });
+
+/** The password flow, up to but not including the preview probe. */
+function authedFetch(previewHandler) {
+  return async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) return previewHandler();
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+}
+
+test('a throttled preview probe is retried rather than read as a challenge', async () => {
+  // The storefront is behind Cloudflare bot management, so a 429 on the probe
+  // is a realistic way to lose a run. classifyPreview treats a surviving 429 as
+  // a failure, so this retry is what keeps a transient throttle from failing
+  // the audit job.
+  const slept = [];
+  let probes = 0;
+  const fetchImpl = authedFetch(() => {
+    probes += 1;
+    if (probes === 1) return res({ status: 429 });
+    return res({ status: 200, headers: timing(THEME), cookies: ['preview_theme=999'] });
+  });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    backoff: [1, 2], sleepImpl: async (ms) => { slept.push(ms); },
+  });
+  assert.equal(probes, 2);
+  assert.deepEqual(slept, [1]);
+  assert.equal(out.ok, true, out.reason);
+});
+
+test('a 5xx preview probe is retried, and one that survives still fails closed', async () => {
+  let probes = 0;
+  const fetchImpl = authedFetch(() => { probes += 1; return res({ status: 503 }); });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    backoff: [1, 2], sleepImpl: async () => {},
+  });
+  assert.equal(probes, 3, 'one attempt per backoff entry, then give up');
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /bot management/);
+  assert.equal(out.cookie, '');
+});
+
+test('a connection failure on the probe is NOT retried; it fails closed at once', async () => {
+  let probes = 0;
+  const fetchImpl = authedFetch(() => { probes += 1; throw new Error('ECONNRESET'); });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    backoff: [1, 2], sleepImpl: async () => {},
+  });
+  assert.equal(probes, 1);
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /connection failure/);
+});
+
+test('a 5xx on the password POST reports error, matching smoke.mjs', async () => {
+  // The outcome strings come from smoke.mjs's authenticateStorefront now, so a
+  // transient 5xx reads as 'error' where this file used to say 'throttled'.
+  // Either way it fails: unlike smoke.mjs there is no reduced-coverage
+  // fallback to drop to, since pa11y would just audit the password page.
+  let posts = 0;
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') { posts += 1; return res({ status: 503 }); }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    backoff: [1], sleepImpl: async () => {},
+  });
+  assert.equal(posts, 2, 'retried once before giving up');
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /storefront password error/);
+});

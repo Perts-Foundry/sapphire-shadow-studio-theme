@@ -19,8 +19,13 @@ So every URL is an authenticated remote request, and two gates stand in the way.
 **The storefront password.** curl cannot get through it: Cloudflare bot management blocklists
 curl's TLS fingerprint on this store. Node's `fetch` (undici) does. That is why
 `.github/actions/shopify-theme-push/smoke.mjs` is built on fetch, and why `get-auth-cookie.mjs`
-imports `BROWSER_HEADERS`, `updateJar` and `cookieHeader` from it rather than copying them. The
-exact header set is what was found to work; two copies would drift apart silently.
+imports `BROWSER_HEADERS`, `updateJar`, `cookieHeader` and `authenticateStorefront` from it rather
+than copying them. The exact header set is what was found to work; two copies would drift apart
+silently. `authenticateStorefront` is the password POST and its outcome classification
+(`success` / `rejected` / `throttled` / `error`); on the smoke side `rejected` HARD-FAILs a deploy,
+here every non-success outcome fails, because an unauthenticated run would just audit the password
+page. The preview probe retries a 429 or a transient 5xx on the same backoff, and fails closed on a
+connection failure.
 
 **Theme selection.** A draft theme renders only when the session is pinned to it, via
 `?preview_theme_id=<id>`.

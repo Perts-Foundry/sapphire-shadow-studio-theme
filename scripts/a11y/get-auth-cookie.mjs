@@ -7,8 +7,8 @@
 //      is password-gated until launch. curl cannot get through: Cloudflare bot
 //      management blocklists its TLS fingerprint. Node's fetch (undici) does,
 //      which is why .github/actions/shopify-theme-push/smoke.mjs is built on it
-//      and why the header set and cookie handling are imported from there
-//      rather than reinvented.
+//      and why the header set, the cookie handling and the password flow
+//      itself are imported from there rather than reinvented.
 //
 //   2. Theme selection. A draft theme renders only when the session is pinned
 //      to it. `?preview_theme_id=<id>` sets that pin as a cookie on first
@@ -41,7 +41,7 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import {
-  BROWSER_HEADERS, updateJar, cookieHeader, parseThemeId, hostOf,
+  BROWSER_HEADERS, updateJar, cookieHeader, parseThemeId, hostOf, authenticateStorefront,
 } from '../../.github/actions/shopify-theme-push/smoke.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -125,11 +125,11 @@ export function classifyPreview({ status, themeDesc, expectedThemeId, finalHost,
 }
 
 /**
- * One request, following redirects manually so cookies are captured at every
- * hop and a /password bounce is visible rather than followed away.
+ * One request chain, following redirects manually so cookies are captured at
+ * every hop and a /password bounce is visible rather than followed away.
  * @returns {Promise<{status: number|null, themeDesc: string|null, finalHost: string|null, redirectPath: string|null}>}
  */
-async function probe(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
+async function probeOnce(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
   let current = url;
   let hops = 0;
   let status = null; let themeDesc = null; let finalHost = null; let redirectPath = null;
@@ -172,6 +172,29 @@ async function probe(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
 }
 
 /**
+ * probeOnce plus retry-with-backoff on a throttle (429) or a transient edge
+ * error (5xx), matching smoke.mjs's fetchObservation. The storefront sits
+ * behind Cloudflare bot management, so a rate-limit on the two probes this
+ * script makes is a realistic way to lose an audit run to something it should
+ * have survived. A connection failure is NOT retried: it fails closed, same as
+ * there. A 5xx that outlives the retries still reaches classifyPreview, which
+ * reads it as a challenge.
+ */
+async function probe(url, opts) {
+  const { backoff = [], sleepImpl = sleep } = opts;
+  let attempt = 0;
+  while (true) {
+    const obs = await probeOnce(url, opts);
+    if ((obs.status === 429 || (obs.status !== null && obs.status >= 500)) && attempt < backoff.length) {
+      await sleepImpl(backoff[attempt]);
+      attempt += 1;
+      continue;
+    }
+    return obs;
+  }
+}
+
+/**
  * Full flow: detect mode, authenticate if locked, pin the preview theme, assert.
  * @param {object} opts
  * @returns {Promise<{ok: boolean, cookie: string, mode: string, reason: string, log: string[]}>}
@@ -191,16 +214,19 @@ export async function getAuthCookie({
   const log = [];
   const say = (s) => log.push(s);
   const expectedHost = hostOf(baseUrl);
-  const opts = { jar, fetchImpl, timeoutMs };
+  const opts = { jar, fetchImpl, timeoutMs, backoff, sleepImpl };
 
   // 1. Mode. A 200 on the bare root means the storefront is public.
   const root = await probe(`${baseUrl}/`, opts);
   const mode = root.status === 200 ? 'PUBLIC' : 'LOCKED';
   say(`mode: ${mode} (root -> ${root.status ?? '000'})`);
 
-  // 2. Authenticate when locked. Mirrors smoke.mjs's classification: a 3xx away
-  //    from /password is success, a 200 or a bounce back to /password is a
-  //    refused password, everything else is transient and retried.
+  // 2. Authenticate when locked, through smoke.mjs's own auth flow rather than
+  //    a second copy of it: the header set, the retry rules and the
+  //    success/rejected/throttled/error distinction are all decided there.
+  //    Unlike smoke.mjs, every non-success outcome fails here. There is no
+  //    reduced-coverage fallback to drop to; an unauthenticated pa11y run would
+  //    audit the password page and report green on it.
   if (mode === 'LOCKED') {
     if (!password) {
       return {
@@ -208,39 +234,7 @@ export async function getAuthCookie({
         reason: 'storefront is password-locked but STOREFRONT_PASSWORD is empty',
       };
     }
-    try {
-      updateJar(jar, await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' }));
-    } catch { /* seeding the cookie is best-effort; the POST below still works */ }
-
-    let attempt = 0;
-    let outcome = 'error';
-    while (true) {
-      let status = null; let locPath = null;
-      try {
-        const res = await fetchImpl(`${baseUrl}/password`, {
-          method: 'POST',
-          headers: { ...BROWSER_HEADERS, cookie: cookieHeader(jar), 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ form_type: 'storefront_password', utf8: '✓', password }).toString(),
-          redirect: 'manual',
-        });
-        updateJar(jar, res);
-        status = res.status;
-        const loc = res.headers.get('location');
-        if (loc) { try { locPath = new URL(loc, `${baseUrl}/password`).pathname; } catch { locPath = loc; } }
-      } catch { status = null; }
-
-      if ((status === 429 || (status !== null && status >= 500)) && attempt < backoff.length) {
-        await sleepImpl(backoff[attempt]);
-        attempt += 1;
-        continue;
-      }
-      if (status === null) outcome = 'error';
-      else if (status === 429 || status >= 500) outcome = 'throttled';
-      else if (status >= 300 && status < 400) outcome = (locPath && /^\/password/.test(locPath)) ? 'rejected' : 'success';
-      else if (status === 200) outcome = 'rejected';
-      else outcome = 'error';
-      break;
-    }
+    const outcome = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep: sleepImpl, backoff });
     say(`auth: ${outcome}`);
     if (outcome !== 'success') {
       return { ok: false, cookie: '', mode, log, reason: `storefront password ${outcome}` };

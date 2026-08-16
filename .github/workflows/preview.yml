@@ -263,6 +263,17 @@ jobs:
           fi
 
           URL_COUNT=$(node -e 'const c=require(process.argv[1]);process.stdout.write(String((c.urls||[]).length))' "$CONFIG_PATH")
+          COUNT_RC=$?
+          # Fail closed on a crash here as well as on a zero count. Without the
+          # status capture, an unreadable config would still write exit_code=0
+          # and the job would report a pass on a run that audited nothing.
+          # summarize-pa11y.mjs catches zero URLs later too; this is the earlier
+          # of the two, and the only one that sees a crash.
+          if [ "$COUNT_RC" -ne 0 ] || ! printf '%s' "$URL_COUNT" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::The pa11y config has no URLs to audit (exit ${COUNT_RC}, count '${URL_COUNT}')."
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "Built pa11y config with ${URL_COUNT} URL(s)."
           {
             echo "config_path=$CONFIG_PATH"
@@ -300,20 +311,29 @@ jobs:
 
           SUMMARY=$(node scripts/a11y/summarize-pa11y.mjs "$REPORT_PATH" --exit-code "$PA11Y_RC")
           SUMMARY_RC=$?
-          echo "$SUMMARY" | node -e '
-            let s = "";
-            process.stdin.on("data", (d) => { s += d; }).on("end", () => {
-              try {
-                const o = JSON.parse(s);
-                console.log(`pa11y-ci: ${o.reason} (${o.total} URL(s), ${o.errors} error(s))`);
-              } catch { console.log("pa11y-ci: summary unavailable"); }
-            });'
-
+          # ONE parse, feeding both the log line (stderr) and the comment body
+          # (stdout). Parsing twice let a malformed summary log a verdict while
+          # silently posting an empty body, because the body parse swallowed its
+          # own failure and the step's exit code came from elsewhere entirely.
           BODY=$(echo "$SUMMARY" | node -e '
             let s = "";
             process.stdin.on("data", (d) => { s += d; }).on("end", () => {
-              try { process.stdout.write(JSON.parse(s).body || ""); } catch { process.stdout.write(""); }
+              let o;
+              try { o = JSON.parse(s); } catch {
+                console.error("pa11y-ci: summary unavailable (unparseable)");
+                process.exit(1);
+              }
+              console.error(`pa11y-ci: ${o.reason} (${o.total} URL(s), ${o.errors} error(s))`);
+              process.stdout.write(o.body || "");
             });')
+          BODY_RC=$?
+          if [ "$BODY_RC" -ne 0 ]; then
+            # An unusable summary is a failed audit, not a green one with an
+            # empty comment: report it in both the code and the comment.
+            echo "::error::The a11y summary could not be parsed."
+            SUMMARY_RC=1
+            BODY="The accessibility summary could not be parsed; see the run log."
+          fi
 
           echo "exit_code=$SUMMARY_RC" >> "$GITHUB_OUTPUT"
           # Random delimiter: this body is page-derived text from a

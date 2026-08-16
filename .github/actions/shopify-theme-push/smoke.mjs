@@ -162,7 +162,8 @@ export function summarize(results) {
 
 // --- cookie jar (over fetch's getSetCookie) --------------------------------
 //
-// `updateJar`, `cookieHeader` and `BROWSER_HEADERS` above are exported for
+// `updateJar`, `cookieHeader`, `BROWSER_HEADERS` above and
+// `authenticateStorefront` below are exported for
 // scripts/a11y/get-auth-cookie.mjs, which drives the same storefront password
 // flow to obtain a cookie for pa11y-ci. They are exported rather than copied so
 // the two callers cannot drift: this store is behind Cloudflare bot management,
@@ -178,6 +179,64 @@ export function updateJar(jar, res) {
 export const cookieHeader = (jar) => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
 
 const realSleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/**
+ * Drive the storefront password form and classify the outcome. Exported for
+ * the same reason as the jar helpers above: scripts/a11y/get-auth-cookie.mjs
+ * needs this exact flow, and a hand-rolled second copy would drift from the
+ * one that is known to get through bot management.
+ *
+ * The outcome distinction is load-bearing here: `rejected` HARD-FAILs a deploy,
+ * everything else is transient and falls back. So `rejected` is reserved for a
+ * DEFINITIVE wrong-password signal: Shopify re-renders the form (200) or
+ * redirects BACK to /password. Success is a 3xx AWAY from /password (to the
+ * return URL). A 429 that survives every retry is `throttled`; a network
+ * failure, a 5xx, or any other status is `error`. Neither means the password
+ * was wrong.
+ *
+ * `jar` is mutated with every cookie seen, on failure as well as success.
+ * @param {object} o
+ * @param {string} o.baseUrl
+ * @param {string} o.password
+ * @param {Map<string,string>} o.jar
+ * @param {Function} o.fetchImpl
+ * @param {Function} o.sleep
+ * @param {number[]} o.backoff  per-retry delays; its length caps the retries
+ * @returns {Promise<'success'|'rejected'|'throttled'|'error'>}
+ */
+export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff }) {
+  try { updateJar(jar, await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' })); } catch { /* seed cookie best-effort */ }
+  let attempt = 0;
+  while (true) {
+    let postStatus = null;
+    let postLocPath = null;
+    try {
+      const postRes = await fetchImpl(`${baseUrl}/password`, {
+        method: 'POST',
+        headers: { ...BROWSER_HEADERS, cookie: cookieHeader(jar), 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ form_type: 'storefront_password', utf8: '✓', password }).toString(),
+        redirect: 'manual',
+      });
+      updateJar(jar, postRes);
+      postStatus = postRes.status;
+      const loc = postRes.headers.get('location');
+      if (loc) { try { postLocPath = new URL(loc, `${baseUrl}/password`).pathname; } catch { postLocPath = loc; } }
+    } catch { postStatus = null; }
+    // Retry a throttled (429) or transient server/edge error (5xx) POST: the
+    // storefront password endpoint intermittently 503s under bot-management.
+    if ((postStatus === 429 || (postStatus !== null && postStatus >= 500)) && attempt < backoff.length) {
+      await sleep(backoff[attempt]);
+      attempt += 1;
+      continue;
+    }
+    if (postStatus === null) return 'error';
+    if (postStatus === 429) return 'throttled';
+    if (postStatus >= 500) return 'error';
+    if (postStatus >= 300 && postStatus < 400) return (postLocPath && /^\/password/.test(postLocPath)) ? 'rejected' : 'success';
+    if (postStatus === 200) return 'rejected';
+    return 'error';
+  }
+}
 
 /**
  * Fetch with a per-request timeout, manual-redirect hop-following (stopping at
@@ -322,43 +381,9 @@ export async function runSmoke({
   // while deploys keep merging. Transient failures stay SOFT-WARN + fallback.
   let authed = false;
   if (mode === 'LOCKED' && password) {
-    try { updateJar(jar, await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' })); } catch { /* seed cookie best-effort */ }
-    let postAttempt = 0;
-    let authResult = 'error'; // 'success' | 'rejected' | 'throttled' | 'error'
-    while (true) {
-      let postStatus = null;
-      let postLocPath = null;
-      try {
-        const postRes = await fetchImpl(`${baseUrl}/password`, {
-          method: 'POST',
-          headers: { ...BROWSER_HEADERS, cookie: cookieHeader(jar), 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ form_type: 'storefront_password', utf8: '✓', password }).toString(),
-          redirect: 'manual',
-        });
-        updateJar(jar, postRes);
-        postStatus = postRes.status;
-        const loc = postRes.headers.get('location');
-        if (loc) { try { postLocPath = new URL(loc, `${baseUrl}/password`).pathname; } catch { postLocPath = loc; } }
-      } catch { postStatus = null; }
-      // Retry a throttled (429) or transient server/edge error (5xx) POST: the
-      // storefront password endpoint intermittently 503s under bot-management.
-      if ((postStatus === 429 || (postStatus !== null && postStatus >= 500)) && postAttempt < backoff.length) {
-        await sleep(backoff[postAttempt]);
-        postAttempt += 1;
-        continue;
-      }
-      // 'rejected' is reserved for a DEFINITIVE wrong-password signal: Shopify
-      // re-renders the form (200) or redirects BACK to /password. Success is a
-      // 3xx AWAY from /password (to the return URL). Everything else (429, 5xx,
-      // network failure, unexpected status) is transient/unknown, NOT a
-      // rejection, so it never HARD-FAILs the deploy on a provided password.
-      if (postStatus === null) authResult = 'error';
-      else if (postStatus === 429 || postStatus >= 500) authResult = postStatus === 429 ? 'throttled' : 'error';
-      else if (postStatus >= 300 && postStatus < 400) authResult = (postLocPath && /^\/password/.test(postLocPath)) ? 'rejected' : 'success';
-      else if (postStatus === 200) authResult = 'rejected';
-      else authResult = 'error';
-      break;
-    }
+    // Retry/outcome rules live in authenticateStorefront (shared with the a11y
+    // auth helper); only the deploy-facing consequences are decided here.
+    const authResult = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff });
     maskCookieValues(jar);
     authed = authResult === 'success';
     if (authResult === 'rejected') {

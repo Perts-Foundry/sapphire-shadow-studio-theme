@@ -76,8 +76,43 @@ needs it in the same step.
 **curl cannot do any of this.** Cloudflare bot management blocklists its TLS
 fingerprint on this store. Node's `fetch` (undici) gets through, which is why
 `smoke.mjs` is built on it and why `get-auth-cookie.mjs` IMPORTS `BROWSER_HEADERS`,
-`updateJar` and `cookieHeader` from `smoke.mjs` rather than copying them. The exact
-header set is what was found to work; two copies would drift.
+`updateJar`, `cookieHeader` and `authenticateStorefront` from `smoke.mjs` rather
+than copying them. The exact header set is what was found to work; two copies
+would drift.
+
+That claim was originally only half-true: the header and cookie helpers were
+imported, but the password POST and its outcome classification had been
+hand-rolled a second time in `get-auth-cookie.mjs`, which is exactly the drift
+the exports exist to prevent. The loop now lives in `smoke.mjs` as the exported
+`authenticateStorefront`, and both callers share it. The four outcome strings
+(`success` / `rejected` / `throttled` / `error`) are load-bearing on the smoke
+side, where `rejected` HARD-FAILs a deploy and everything else falls back to
+reduced coverage, so the extraction preserves that classification exactly.
+One visible consequence on the a11y side: a 5xx on the password POST now reports
+`error` where the copy said `throttled`. Both fail there regardless, because an
+unauthenticated pa11y run would audit the password page and green on it.
+
+**`probe()` retries a throttle, for the same reason `smoke.mjs` does.** The store
+sits behind bot management, so a 429 or a transient 5xx on either of the two
+probes is a realistic way to lose an audit run to something it should have
+survived. `probe()` now takes the same `backoff` / `sleepImpl` the password POST
+already had. A connection failure is deliberately NOT retried: it fails closed,
+matching `fetchObservation`. A 5xx that outlives the retries still reaches
+`classifyPreview`, which reads it as a challenge.
+
+**Every `node` call in the audit job has its exit status captured.** The job runs
+`set +e` throughout, so each step decides its own verdict and writes one
+`exit_code`; a status that is never read is a silent pass. Two were not read.
+The URL count was interpolated straight from a command substitution, so a crash
+in that `node -e` produced an empty count and still wrote `exit_code=0`; it now
+fails closed on a non-zero status or a count that is not a positive integer,
+which is also the earlier of the two zero-URL guards (`summarize-pa11y.mjs`
+catches it downstream, but only after pa11y has run). The summary was parsed
+twice, and the body parse fell back to an empty string independently of the exit
+code, so a malformed summary could log a verdict while posting an empty comment
+and still report success. It is parsed once now: the log line goes to stderr and
+the body to stdout from the same parse, and a parse failure sets `exit_code=1`
+and says so in the comment.
 
 **Non-text contrast is checked against the PAGE, not against the control's own
 fill.** The naive reading (border vs its own background) scores a solid black
