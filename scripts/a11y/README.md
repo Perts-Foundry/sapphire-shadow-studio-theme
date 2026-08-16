@@ -4,8 +4,9 @@ pa11y-ci against the PR's deployed preview theme. This is the dynamic half of th
 accessibility check; the static half is `scripts/contrast/`, which lints colour schemes inside the
 required `validate / validate` context.
 
-These scripts are driven by the `a11y-audit` job in `.github/workflows/preview.yml`. They are not
-useful standalone without a deployed preview theme and the storefront password.
+These scripts are driven by the "A11y audit" steps of the `validate` job in
+`.github/workflows/validate.yml`, which `needs: deploy-preview` so the theme it audits is known to
+exist. They are not useful standalone without a deployed preview theme and the storefront password.
 
 ## Why this is harder than the sibling repo
 
@@ -102,15 +103,40 @@ It cannot check handles against the live store (no network in unit tests), so a 
 handle surfaces as a 404 in the audit rather than at test time.
 
 Per-entry `ignore` and `hideElements` pass through to pa11y. Use them for third-party embeds this
-theme does not control, never to silence a real finding in theme markup.
+theme does not control, never to silence a real finding in theme markup. These are the only
+suppressions pa11y itself applies, and they are invisible to the summariser by design: they are
+scoped to one URL, not to the whole audit.
+
+## baseline.json
+
+The audit-wide known-debt list, as axe rule ids. An entry silences that whole rule on every audited
+page, so the gate reports **regressions** rather than the launch state.
+
+`summarize-pa11y.mjs` owns it, **not** `build-pa11yci.mjs`. Handing the list to pa11y as
+`defaults.ignore` dropped matching findings inside the browser, which had two consequences worth
+not repeating: the report could not say what it had hidden (so the comment claimed a clean
+WCAG 2.1 AA pass over rules it never gated), and the per-URL display cap was spent on baselined
+noise, which is how three baselined rules stayed invisible for a whole PR. pa11y now runs
+unbaselined and reports everything; the filter runs in the summariser, which publishes the rule
+list and a per-rule count of what each entry hid on that run. A rule showing **0** hid nothing and
+should be deleted; an entry that outlives its debt hides the next regression behind it.
+
+Consequence to know when reading the logs: pa11y-ci now exits non-zero on any run that has a
+baselined finding, so its exit code is no longer a crash signal. See below.
 
 ## Fail-closed behaviour
 
 pa11y-ci exits 0 when it audited nothing. A config that lost its URLs, or a run that died before
 the first page, looks exactly like "no accessibility errors". `summarize-pa11y.mjs` therefore reads
 the URL count out of the JSON rather than grepping pa11y's prose, and treats zero URLs as a
-failure. It also fails a non-zero pa11y exit that reported no errors, which is what a Chrome crash
-or an unloadable page looks like.
+failure.
+
+A page pa11y could not load at all is the other silent pass. pa11y-ci stores the caught exception
+as that URL's whole result array, and an `Error` serialises to `{}`, so a `type === 'error'` filter
+counted the page as clean. The exit code used to catch it; with the baseline applied in the
+summariser that no longer works, so the summariser detects such an entry structurally and fails the
+run, naming the URL. The exit-code net is kept as a last resort for a run that reported nothing at
+all.
 
 ## Layout
 
@@ -118,6 +144,7 @@ or an unloadable page looks like.
 | --- | --- |
 | `get-auth-cookie.mjs` | Password flow, preview-theme pin, and the theme-id assertion |
 | `build-pa11yci.mjs` | `paths.json` + base URL + theme id + cookie into a pa11y config |
-| `summarize-pa11y.mjs` | Sanitised, length-bounded PR-comment body; fail-closed verdict |
+| `summarize-pa11y.mjs` | Baseline filter + disclosure; sanitised, length-bounded PR-comment body; fail-closed verdict |
 | `paths.json` | The audited path list, one per template |
+| `baseline.json` | Audit-wide known-debt axe rules, read by `summarize-pa11y.mjs` |
 | `test/` | `node --test` suites; fully offline, with an injected fetch |

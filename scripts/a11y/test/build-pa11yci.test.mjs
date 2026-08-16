@@ -78,3 +78,19 @@ test('the committed config is JSON-serialisable and has no undefined leaks', () 
   assert.ok(!json.includes('undefined'));
   assert.deepEqual(JSON.parse(json).urls.length, paths.paths.length);
 });
+
+test('the known-debt baseline never reaches pa11y', () => {
+  // pa11y's `ignore` drops findings inside the browser, so a baselined rule
+  // would be unreportable and the CI comment would claim a pass over rules it
+  // had not gated. The baseline is summarize-pa11y.mjs's job now; a regression
+  // that re-adds it here would silently un-disclose the whole suppression set.
+  const { defaults } = buildConfig(base);
+  assert.ok(!('ignore' in defaults), 'defaults.ignore would re-hide the baseline from the report');
+});
+
+test('per-path ignore is a different thing and still reaches pa11y', () => {
+  // The third-party-embed escape hatch is deliberately invisible to the
+  // summariser; it is scoped to one URL, not to the whole audit.
+  const config = buildConfig({ ...base, paths: { paths: [{ path: '/', ignore: ['frame-title'] }] } });
+  assert.deepEqual(config.urls[0].ignore, ['frame-title']);
+});
