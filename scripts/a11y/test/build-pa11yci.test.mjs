@@ -132,10 +132,14 @@ test('a per-entry hideElements adds to the audit-wide one instead of replacing i
   assert.equal(config.urls[0].hideElements, '#PBarNextFrame, #chat');
 });
 
-test('the committed paths.json hides the platform preview bar on every page', () => {
-  // frame-title / frame-tested were baselined audit-wide for this one iframe;
-  // dropping this selector would resurrect 38 findings the theme cannot fix.
-  assert.equal(buildConfig(base).defaults.hideElements, '#PBarNextFrame');
+test('the committed paths.json hides the DOM this theme cannot reach', () => {
+  // frame-title / frame-tested were baselined audit-wide for the preview-bar
+  // iframe, and two more rules for Judge.me's app blocks; dropping either
+  // selector resurrects findings no change to this repo could fix. Asserted as
+  // substrings so adding a third does not fail the test for the wrong reason.
+  const { hideElements } = buildConfig(base).defaults;
+  assert.match(hideElements, /#PBarNextFrame/);
+  assert.match(hideElements, /jdgm-/);
 });
 
 test('per-path ignore is a different thing and still reaches pa11y', () => {

@@ -26,14 +26,28 @@
   ],
   "defaults": {
     "_comment": [
+      "Markup this theme cannot reach, hidden from the accessibility tree the",
+      "audit walks. Both entries are other people's DOM, which is the ONLY",
+      "thing that belongs here: a finding in a file this repo owns gets fixed,",
+      "never hidden.",
+      "",
       "#PBarNextFrame is Shopify's own preview-bar iframe, injected into every",
       "page of a preview theme by the platform. It is title-less and",
       "cross-origin, which is 2 axe findings (frame-title, frame-tested) per",
-      "page for markup no template in this repo emits and no theme change can",
-      "reach. Hiding the element removes it from the accessibility tree the",
-      "audit walks; it does not run on the live storefront at all."
+      "page for markup no template in this repo emits. It does not run on the",
+      "live storefront at all.",
+      "",
+      "jdgm- is Judge.me, installed as app blocks (see the",
+      "shopify://apps/judge-me-reviews/... types in the product templates). Its",
+      "widgets ship an aria-controls pointing at a tab panel that is not in the",
+      "DOM until the tab is opened, and a review-form error node whose id is",
+      "emitted once per widget on the page. Both are app markup: the theme",
+      "renders a block reference, not the HTML, so there is no version of this",
+      "repo in which they can be fixed. Matched on class AND id because the",
+      "widgets carry the prefix on both and the offending nodes are not all",
+      "inside one container."
     ],
-    "hideElements": "#PBarNextFrame"
+    "hideElements": "#PBarNextFrame, [class*=\"jdgm-\"], [id*=\"jdgm-\"]"
   },
   "paths": [
     {

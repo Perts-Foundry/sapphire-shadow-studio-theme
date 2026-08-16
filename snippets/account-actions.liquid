@@ -1,8 +1,16 @@
+{%- doc -%}
+  @param [heading_id] - {string} id for the panel heading, unique per page.
+    Defaults to `account-drawer-heading`, which is what the account DIALOG names
+    in aria-labelledby; the desktop popover renders the same markup earlier on
+    the page, so it must pass its own or that reference resolves to the wrong
+    heading (the first match wins, and the first match was the popover's).
+{%- enddoc -%}
+
 <div class="account-actions">
   <div class="account-actions__main-menu">
     <header class="account-actions__header">
       <h2
-        id="account-drawer-heading"
+        id="{{ heading_id | default: 'account-drawer-heading' }}"
         class="account-actions__title h5"
       >
         {% if customer and customer.first_name != blank %}

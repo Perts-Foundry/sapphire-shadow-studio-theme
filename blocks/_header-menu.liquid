@@ -81,8 +81,13 @@
 
     {% capture children %}
       {% for link in block_settings.menu.links %}
+        {%- comment -%}
+          No role="presentation" here either, for the same reason as the More
+          item below: these are slotted into overflow-list's shadow <ul>, and a
+          presentational child is not a list item. They are the top-level
+          navigation, so being announced as a list of N items is correct.
+        {%- endcomment -%}
         <li
-          role="presentation"
           class="menu-list__list-item"
           on:focus="/activate"
           on:blur="/deactivate"
@@ -133,9 +138,15 @@
           {%- endif -%}
         </li>
       {% endfor %}
+      {%- comment -%}
+        No role="presentation". This <li> is slotted into overflow-list's shadow
+        <ul>, and a presentational child of a list is not a list item, which is
+        what the `list` rule was reporting on every page the header renders. It
+        is also simply wrong: the More control is a navigation item like its
+        siblings, not decoration.
+      {%- endcomment -%}
       <li
         class="menu-list__list-item"
-        role="presentation"
         slot="more"
         on:focus="/activate"
         on:blur="/deactivate"
