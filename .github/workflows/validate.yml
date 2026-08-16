@@ -960,9 +960,23 @@ jobs:
             // the last hop before page-derived text becomes a comment, and the
             // full body must leave room for the rest of the report under
             // GitHub's 65536-character limit.
-            const a11ySummary = (process.env.A11Y_SUMMARY || '_No report produced._')
-              .replace(/`{4,}/g, '```')
-              .slice(0, 30000);
+            //
+            // The cap must cut at a per-URL block boundary, never mid-block: a
+            // blind slice can drop a closing ``` fence, and the dangling open
+            // fence then swallows every later section of the report into one
+            // code block (observed on the first run of this layout). Fall back
+            // to a blind cut WITH explicit closers only if no boundary exists.
+            let a11ySummary = (process.env.A11Y_SUMMARY || '_No report produced._')
+              .replace(/`{4,}/g, '```');
+            const A11Y_CAP = 30000;
+            if (a11ySummary.length > A11Y_CAP) {
+              const closer = '</details>';
+              const cut = a11ySummary.lastIndexOf(closer, A11Y_CAP);
+              a11ySummary = (cut > 0
+                ? a11ySummary.slice(0, cut + closer.length)
+                : a11ySummary.slice(0, A11Y_CAP) + '\n```\n\n' + closer)
+                + '\n\n_Truncated to fit the comment; see the A11y audit step in the run log for the full report._';
+            }
             const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
