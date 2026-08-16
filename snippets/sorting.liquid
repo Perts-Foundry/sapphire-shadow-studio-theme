@@ -20,6 +20,16 @@
   data-should-use-select-on-mobile="{{ should_use_select_on_mobile }}"
 >
   {% liquid
+    # Up to three of these render to one collection page (desktop panel, mobile
+    # panel, overflow menu), all with the same section id, so section id alone
+    # is not unique enough for an id that anything references: `for`,
+    # aria-controls and aria-labelledby all resolve to the FIRST match, which
+    # was the desktop panel no matter which control the visitor was using.
+    # `suffix` is set on the two form-connected call sites and `sort_position`
+    # on the mobile one, so between them every call site is distinguishable.
+    assign scope_id = suffix | default: sort_position | default: 'default'
+    assign scope_id = section_id | append: '-' | append: scope_id
+
     assign default_sort_by = results.default_sort_by
     for option in results.sort_options
       if option.value == sort_by
@@ -30,14 +40,14 @@
 
   <div class="sorting-filter__container {% if should_use_select_on_mobile %} desktop:hidden {% else %} hidden {% endif %}">
     <label
-      for="sort-select-{{ section_id }}"
+      for="sort-select-{{ scope_id }}"
       class="facets__label"
     >
       {{- 'actions.sort' | t -}}
     </label>
     <div class="sorting-filter__select-wrapper">
       <select
-        id="sort-select-{{ section_id }}"
+        id="sort-select-{{ scope_id }}"
         name="sort_by"
         class="sorting-filter__select"
         {% if should_use_select_on_mobile == false %}
@@ -76,7 +86,7 @@
   >
     <details
       ref="details"
-      id="Sorting-{{ section_id }}"
+      id="Sorting-{{ scope_id }}"
       data-default-sort-by="{{ default_sort_by }}"
       class="facets__panel {% if should_use_select_on_mobile %} mobile:hidden {% endif %}"
       data-auto-close-details="desktop,mobile"
@@ -86,12 +96,12 @@
         class="facets__summary"
         role="button"
         aria-expanded="false"
-        aria-controls="sorting-options-{{ section_id }}"
+        aria-controls="sorting-options-{{ scope_id }}"
         ref="summary"
       >
         <span
           class="facets__label"
-          id="sort-label-{{ section_id }}"
+          id="sort-label-{{ scope_id }}"
         >
           {{- 'actions.sort' | t -}}
         </span>
@@ -105,16 +115,16 @@
         </span>
       </summary>
       <floating-panel-component
-        id="sorting-options-{{ section_id }}"
+        id="sorting-options-{{ scope_id }}"
         class="sorting-filter__options color-{{ settings.popover_color_scheme }}"
         role="listbox"
-        aria-labelledby="sort-label-{{ section_id }}"
+        aria-labelledby="sort-label-{{ scope_id }}"
         ref="listbox"
       >
         <div class="sorting-filter__options-inner">
           {% for option in results.sort_options %}
             <label
-              for="sort-option-{{ option.value }}-{{ section_id }}"
+              for="sort-option-{{ option.value }}-{{ scope_id }}"
             >
               <div
                 class="sorting-filter__option"
@@ -125,7 +135,7 @@
                 <input
                   type="radio"
                   name="sort_by"
-                  id="sort-option-{{ option.value }}-{{ section_id }}"
+                  id="sort-option-{{ option.value }}-{{ scope_id }}"
                   {% if suffix != blank %}
                     form="FacetFiltersForm--{{ section_id }}-{{ suffix }}"
                   {% endif %}
@@ -135,6 +145,17 @@
                   {% if option.value == sort_by %}
                     checked
                   {% endif %}
+                  {%- comment -%}
+                    The role="option" wrapper is the widget as far as assistive
+                    tech is concerned: SortingFilterComponent gives it the
+                    roving tabindex, arrow keys and Enter/Space, and this input
+                    exists only to carry the value into the facets form. Left
+                    focusable it was a focusable control nested inside another
+                    control (nested-interactive), and a focusable node hidden
+                    from the accessibility tree at the same time. Clicking the
+                    label still activates it; tabindex does not affect that.
+                  {%- endcomment -%}
+                  tabindex="-1"
                   aria-hidden="true"
                 >
                 <span class="svg-wrapper icon-checkmark sorting-filter__checkmark">

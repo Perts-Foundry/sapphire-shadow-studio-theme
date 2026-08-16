@@ -48,6 +48,7 @@
     },
     "menu": "Menü",
     "country_region": "Ülke/Bölge",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Slayt {{ index }}/{{ length }}",
     "scroll_to": "{{ title }} bölümüne git",
     "loading_product_recommendations": "Ürün önerileri yükleniyor",

@@ -48,6 +48,7 @@
     "cart_count": "สินค้าทั้งหมดในตะกร้าสินค้า",
     "menu": "เมนู",
     "country_region": "ประเทศ/ภูมิภาค",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "สไลด์ที่ {{ index }} จาก {{ length }}",
     "scroll_to": "เลื่อนไปที่ {{ title }}",
     "loading_product_recommendations": "กำลังโหลดการแนะนำสินค้า",

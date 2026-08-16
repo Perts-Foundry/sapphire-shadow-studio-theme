@@ -50,6 +50,7 @@
     },
     "menu": "Menu",
     "country_region": "Kraj/region",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Slajd {{ index }} z {{ length }}",
     "scroll_to": "Przewiń do {{ title }}",
     "loading_product_recommendations": "Wczytywanie polecanych produktów",

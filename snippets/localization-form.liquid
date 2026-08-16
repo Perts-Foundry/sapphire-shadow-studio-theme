@@ -35,6 +35,14 @@
 
   assign aliases_us = 'us,usa,america,united states of america'
   assign aliases_uk = 'uk,gb,great britain'
+
+  # Every id below is namespaced with this, because the header renders this
+  # snippet twice per page (dropdown and drawer) and the ids are ARIA reference
+  # targets: aria-activedescendant on the search input points at one country
+  # row by id, and a duplicate makes that reference ambiguous. Defaulted rather
+  # than required so a call site that omits it cannot mint ids like
+  # `-CountryLabel`.
+  assign id_prefix = localization_style | default: 'drawer'
 %}
 <localization-form-component
   ref="localizationForm"
@@ -62,14 +70,21 @@
             </div>
             <input
               class="country-filter__input"
-              id="country-filter-input"
+              id="{{ id_prefix }}-country-filter-input"
               type="search"
               name="country_filter"
               value=""
               placeholder="{{ 'placeholders.search' | t }}"
               role="combobox"
-              aria-owns="country-results"
-              aria-controls="country-results"
+              {%- comment -%}
+                Was aria-owns + aria-controls="country-results", an id no element
+                on the page has ever had; the real one is prefixed. aria-owns is
+                dropped rather than repointed: it is the ARIA 1.1 combobox
+                spelling, and re-parenting the whole result list into the input
+                is not what this widget does. aria-controls is the 1.2 one and
+                is what aria-activedescendant is read against.
+              {%- endcomment -%}
+              aria-controls="{{ id_prefix }}-country-results"
               aria-haspopup="listbox"
               aria-autocomplete="list"
               aria-label="{{ 'accessibility.find_country' | t }}"
@@ -82,7 +97,7 @@
             >
             <label
               class="field__label visually-hidden"
-              for="country-filter-input"
+              for="{{ id_prefix }}-country-filter-input"
             >
               {{- 'content.search' | t -}}
             </label>
@@ -104,7 +119,7 @@
       <div class="country-selector-form__wrapper">
         <h2
           class="visually-hidden"
-          id="{{ localization_style }}-CountryLabel"
+          id="{{ id_prefix }}-CountryLabel"
         >
           Country/Region
         </h2>
@@ -118,14 +133,31 @@
         {% endif %}
         <div
           class="localization-form__list country-selector__list{% if show_currencies %} country-selector__list--with-multiple-currencies{% endif %}"
-          id="{{ localization_style }}-country-results"
+          id="{{ id_prefix }}-country-results"
           ref="countryList"
         >
+          {%- comment -%}
+            The rows are role="option" and the search input is a role="combobox"
+            that points aria-activedescendant at one of them, so the element
+            holding them has to be the listbox. It was role="list", which is not
+            a valid parent for an option and made every row an orphan. The
+            no-results message moved out to a sibling of the lists for the same
+            reason: as a bare <span> it was neither a list item nor an option,
+            so it broke whichever role the container carried.
+          {%- endcomment -%}
+          <span
+            class="localization-form__list-item localization-form__list-item-disabled localization-form__no-results"
+            id="{{ id_prefix }}-no-results-message"
+            ref="noResultsMessage"
+            hidden
+          >
+            {{- 'content.no_results_found' | t -}}
+          </span>
           {% if show_popular_countries %}
             <ul
-              role="list"
+              role="listbox"
               class="list-unstyled popular-countries"
-              aria-label="{{ 'accessibility.country_region' | t }}"
+              aria-label="{{ 'accessibility.popular_countries' | t }}"
               ref="popularCountries"
             >
               {%- for country in popular_countries -%}
@@ -147,7 +179,7 @@
                   {% if aliases %}
                     data-aliases="{{ aliases }}"
                   {% endif %}
-                  id="{{ country.name }}"
+                  id="{{ id_prefix }}-popular-country-{{ country.iso_code }}"
                   aria-label="{{ country.name }}"
                   role="option"
                   tabindex="-1"
@@ -172,17 +204,10 @@
             </ul>
           {% endif %}
           <ul
-            role="list"
+            role="listbox"
             class="list-unstyled countries"
+            aria-label="{{ 'accessibility.country_region' | t }}"
           >
-            <span
-              class="localization-form__list-item localization-form__list-item-disabled"
-              id="no-results-message"
-              ref="noResultsMessage"
-              hidden
-            >
-              {{- 'content.no_results_found' | t -}}
-            </span>
             {%- for country in localization.available_countries -%}
               {% liquid
                 assign aliases = ''
@@ -202,7 +227,7 @@
                 {% if aliases %}
                   data-aliases="{{ aliases }}"
                 {% endif %}
-                id="{{ country.name }}"
+                id="{{ id_prefix }}-country-{{ country.iso_code }}"
                 aria-label="{{ country.name }}"
                 role="option"
                 tabindex="-1"
@@ -240,7 +265,7 @@
       <div class="language-selector{% if show_country %} top-shadow{% else %} language-selector--collapse-space{% endif %}{% if show_country == false and localization_style == 'drawer' %} h5{% endif %}">
         <h2
           class="visually-hidden"
-          id="{{ localization_style }}-LanguageLabel"
+          id="{{ id_prefix }}-LanguageLabel"
         >
           {{ 'content.language' | t }}
         </h2>
@@ -248,7 +273,7 @@
           <span class="language-selector__label">{{ 'content.language' | t }}</span>
         {% endif %}
         <select
-          id="{{ localization_style }}Select"
+          id="{{ id_prefix }}-language-select"
           class="localization-form__select"
           name="language_code"
           aria-label="{{ 'content.language' | t }}"
@@ -474,7 +499,7 @@
     }
   }
 
-  .localization-form__list-item#no-results-message {
+  .localization-form__list-item.localization-form__no-results {
     grid-template-columns: 1fr;
     text-align: center;
     color: rgb(var(--color-foreground-rgb) / var(--opacity-subdued-text));

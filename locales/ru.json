@@ -50,6 +50,7 @@
     },
     "menu": "Меню",
     "country_region": "Страна/регион",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Слайд {{ index }} из {{ length }}",
     "scroll_to": "Прокрутить до {{ title }}",
     "loading_product_recommendations": "Загрузка рекомендаций товаров",

@@ -48,6 +48,7 @@
     "cart_count": "Összes termék a kosárban",
     "menu": "Menü",
     "country_region": "Ország/régió",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "{{ index }}./{{ length }} dia",
     "scroll_to": "Görgess ide: {{ title }}",
     "loading_product_recommendations": "Termékajánlások betöltése",

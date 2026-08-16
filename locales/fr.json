@@ -49,6 +49,7 @@
     "cart_count": "Nombre total d’articles dans le panier",
     "menu": "Menu",
     "country_region": "Pays/région",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Diapositive {{ index }} sur {{ length }}",
     "scroll_to": "Faire défiler vers {{ title }}",
     "loading_product_recommendations": "Chargement des recommandations de produits",

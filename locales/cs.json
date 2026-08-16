@@ -50,6 +50,7 @@
     "cart_count": "Celkem položek v košíku",
     "menu": "Nabídka",
     "country_region": "Země/region",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Snímek {{ index }} z {{ length }}",
     "scroll_to": "Přejděte na {{ title }}",
     "loading_product_recommendations": "Načítají se doporučené produkty",

@@ -153,14 +153,21 @@
         </div>
       {% endif %}
     {%- else -%}
+      {%- comment -%}
+        One status message for the whole placeholder grid; see the matching
+        block. aria-label on a role-less div announces nothing.
+      {%- endcomment -%}
       <div
         class="resource-list resource-list--grid"
       >
+        <span
+          role="status"
+          class="visually-hidden"
+        >
+          {{- 'accessibility.loading_product_recommendations' | t -}}
+        </span>
         {% for i in (1..section.settings.columns) %}
-          <div
-            class="product-recommendations__skeleton-item"
-            aria-label="{{ 'accessibility.loading_product_recommendations' | t }}"
-          ></div>
+          <div class="product-recommendations__skeleton-item"></div>
         {% endfor %}
       </div>
     {%- endif -%}

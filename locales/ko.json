@@ -48,6 +48,7 @@
     "cart_count": "카트에 있는 총 품목 수",
     "menu": "메뉴",
     "country_region": "국가/지역",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "{{ index }}/{{ length }}번째 슬라이드",
     "scroll_to": "{{ title }}(으)로 스크롤",
     "loading_product_recommendations": "제품 추천 로드 중",

@@ -48,6 +48,7 @@
     },
     "menu": "菜单",
     "country_region": "国家/地区",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "第 {{ index }} 张幻灯片，共 {{ length }} 张",
     "scroll_to": "滚动到 {{ title }}",
     "loading_product_recommendations": "加载产品推荐",

@@ -142,7 +142,14 @@
         on:pointerenter="/activate"
         on:pointerleave="/deactivate"
       >
-        <button role="menuitem" class="button menu-list__link button-unstyled">
+        {%- comment -%}
+          No role: this is the only role="menuitem" in the theme and there is no
+          menu or menubar anywhere above it, which made it an orphan on every
+          page the header renders. `menuitem` also means an application-style
+          menu, which this is not; it is a nav disclosure, and a plain button is
+          exactly what assistive tech should be told it is.
+        {%- endcomment -%}
+        <button class="button menu-list__link button-unstyled">
           <span class="menu-list__link-title">{{ 'actions.more' | t }}</span>
         </button>
       </li>

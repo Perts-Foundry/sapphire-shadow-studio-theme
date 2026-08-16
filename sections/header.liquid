@@ -242,7 +242,14 @@
         </span>
       </button>
 
+      {%- comment -%}
+        The button's aria-controls has always named this id; nothing carried it,
+        so the reference dangled. The panel is what the button expands and
+        collapses, so it is the right target: the country listbox inside it has
+        its own id and its own controller, the search combobox.
+      {%- endcomment -%}
       <div
+        id="dropdown-localization-results"
         class="localization-wrapper {{ section.settings.localization_position }}-bound color-{{ settings.popover_color_scheme }}"
         hidden
         ref="panel"

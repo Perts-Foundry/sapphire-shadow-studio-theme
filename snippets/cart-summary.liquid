@@ -196,9 +196,19 @@
                     <li
                       class="cart-discount__pill"
                       data-discount-code="{{ discount_code }}"
-                      aria-label="{{ 'accessibility.discount_applied' | t: code: discount_code }}"
                     >
-                      <p class="cart-discount__pill-code">
+                      {%- comment -%}
+                        A list item takes no ARIA label, so this said nothing.
+                        As real text it reads before the code itself, which is
+                        the only way "Applied discount code" reaches anyone.
+                      {%- endcomment -%}
+                      <span class="visually-hidden">
+                        {{- 'accessibility.discount_applied' | t: code: discount_code -}}
+                      </span>
+                      <p
+                        class="cart-discount__pill-code"
+                        aria-hidden="true"
+                      >
                         {{ discount_code }}
                       </p>
                       <button

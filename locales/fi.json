@@ -48,6 +48,7 @@
     "cart_count": "Tuotteita ostoskorissa yhteensä",
     "menu": "Valikko",
     "country_region": "Maa/alue",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Dia {{ index }}/{{ length }}",
     "scroll_to": "Vieritä kohtaan {{ title }}",
     "loading_product_recommendations": "Tuotesuositusten lataaminen",

@@ -48,6 +48,7 @@
     },
     "menu": "選單",
     "country_region": "國家/地區",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "第 {{ index }} 張投影片，共 {{ length }} 張",
     "scroll_to": "捲動至 {{ title }}",
     "loading_product_recommendations": "正在載入商品推薦",

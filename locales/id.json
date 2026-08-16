@@ -48,6 +48,7 @@
     },
     "menu": "Menu",
     "country_region": "Negara/Wilayah",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Slide {{ index }} dari {{ length }}",
     "scroll_to": "Gulir ke {{ title }}",
     "loading_product_recommendations": "Memuat rekomendasi produk",

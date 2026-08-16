@@ -141,9 +141,14 @@
     "
     {{ block.shopify_attributes }}
   >
+    {%- comment -%}
+      role="region" makes the label legal and gives the filter set a landmark a
+      screen-reader user can jump to, which is what the label was reaching for.
+    {%- endcomment -%}
     <div
       class="facets facets--{{ block_settings.filter_style }} spacing-style"
       style="{% render 'spacing-style', settings: block_settings %}{% if block_settings.text_label_case == 'uppercase' %} --facet-label-transform: uppercase;{% endif %}"
+      role="region"
       aria-label="{{ 'accessibility.filters' | t }}"
     >
       <facets-form-component
@@ -290,9 +295,15 @@
           {{ 'actions.show_filters' | t }}
 
           {% if total_active_values > 0 %}
+            {%- comment -%}
+              role="status" rather than a bare aria-label: a plain div takes no
+              label, and this number changes as facets are applied, which is
+              exactly what a status region is for.
+            {%- endcomment -%}
             <div
               id="filter-count-bubble-toggle"
               class="filter-count-bubble"
+              role="status"
               aria-label="{{ 'accessibility.filter_count' | t: count: total_active_values }}"
             >
               <span class="filter-count-bubble__background"></span>

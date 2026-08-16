@@ -67,6 +67,7 @@
     "cart_count": "Total articole în coș",
     "menu": "Meniu",
     "country_region": "Țară/regiune",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Diapozitivul {{ index }} din {{ length }}",
     "scroll_to": "Derulează la {{ title }}",
     "loading_product_recommendations": "Se încarcă recomandările de produse",

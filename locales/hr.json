@@ -49,6 +49,7 @@
     "cart_count": "Ukupan broj stavki u košarici",
     "menu": "Izbornik",
     "country_region": "Država/regija",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Slajd {{ index }} od {{ length }}",
     "scroll_to": "Idi na {{ title }}",
     "loading_product_recommendations": "Učitavanje preporuka proizvoda",

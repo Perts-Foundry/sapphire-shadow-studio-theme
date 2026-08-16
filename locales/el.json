@@ -48,6 +48,7 @@
     },
     "menu": "Μενού",
     "country_region": "Χώρα/Περιοχή",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Διαφάνεια {{ index }} από {{ length }}",
     "scroll_to": "Κύλιση προς το {{ title }}",
     "loading_product_recommendations": "Φόρτωση συστάσεων προϊόντων",

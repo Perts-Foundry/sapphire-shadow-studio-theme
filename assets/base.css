@@ -3410,8 +3410,19 @@ slideshow-slide.product-media-container--tallest {
 /*
  * Be specific about HTML children structure to avoid targeting nested slideshows.
  * Ensure that the content is 'visible' while scrolling instead of 'auto' to avoid issues in Safari.
+ *
+ * The second branch is the product card: snippets/card-gallery.liquid wraps its
+ * slides in a `display: contents` anchor so the link does not also contain the
+ * arrow buttons. That anchor is invisible to layout but NOT to the child
+ * combinator, so without this branch every product card silently lost the
+ * Safari repaint fix above while keeping the structure the comment describes.
  */
-slideshow-component:is([dragging], [transitioning], :hover) > slideshow-container > slideshow-slides > slideshow-slide {
+slideshow-component:is([dragging], [transitioning], :hover) > slideshow-container > slideshow-slides > slideshow-slide,
+slideshow-component:is([dragging], [transitioning], :hover)
+  > slideshow-container
+  > slideshow-slides
+  > a.contents
+  > slideshow-slide {
   content-visibility: visible;
 }
 

@@ -48,6 +48,7 @@
     "cart_count": "Tổng mặt hàng trong giỏ hàng",
     "menu": "Menu",
     "country_region": "Quốc gia/Khu vực",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Trang chiếu {{ index }}/{{ length }}",
     "scroll_to": "Cuộn đến {{ title }}",
     "loading_product_recommendations": "Đang tải đề xuất sản phẩm",

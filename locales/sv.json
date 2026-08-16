@@ -48,6 +48,7 @@
     "cart_count": "Totalt antal artiklar i varukorgen",
     "menu": "Meny",
     "country_region": "Land/region",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Bild {{ index }} av {{ length }}",
     "scroll_to": "Rulla till {{ title }}",
     "loading_product_recommendations": "Läser in produktrekommendationer",
