@@ -14,20 +14,18 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
-- [ ] **Triage the 56 contrast findings the new lint baselined.** `scripts/contrast/` landed as a
+- [ ] **Triage the 44 contrast findings the lint baselined.** `scripts/contrast/` landed as a
   merge gate with every pre-existing failure recorded in `accepted-risks.json` rather than fixed, so
   the gate could be introduced without restyling the live storefront. Each entry is dated, carries a
   note, and is ratcheted (the pair may not get worse), but the debt is real and the file should
-  shrink rather than persist. Three groups, in rough priority order.
+  shrink rather than persist. Two groups, in rough priority order. (A third, the twelve waivers for
+  the two orphaned blue schemes, was resolved 2026-08-16 by deleting the schemes; see
+  `release-notes.md`.)
   1. **`scheme-2` `primary_hover` is `#ffffff` on `#f5f5f5`, 1.09:1.** Links become invisible on
      hover. `scheme-2` is referenced by live templates, so this one actually ships. Fix in
      `config/settings_data.json`, then delete the two baseline entries (`current` and
      `presets.Default`); the lint reports a stale exception once it passes, so it will tell you.
-  2. **`scheme-ec7ae723-...` and `scheme-8089d18b-...` carry the worst text ratios** (black body text
-     on a deep blue, 3.02:1). Both are defined in `settings_data.json` but referenced by no template,
-     section or block as of 2026-08-16, so nothing renders them today. Decide: recolour them, or
-     delete them from the scheme list so the theme editor cannot offer a broken scheme.
-  3. **35 control-border findings are stock Horizon hairlines** below the 3:1 SC 1.4.11 bar
+  2. **35 control-border findings are stock Horizon hairlines** below the 3:1 SC 1.4.11 bar
      (input borders, variant swatch outlines, button hover borders). Genuine debt, pre-existing, and
      the largest visual change to fix. Worth doing as one deliberate pass rather than piecemeal.
   Note the two overlay schemes (`background: rgba(0,0,0,0)`) are NOT in the baseline: static colour
