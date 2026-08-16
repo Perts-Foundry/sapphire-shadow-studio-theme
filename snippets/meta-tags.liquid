@@ -116,6 +116,29 @@
   {%- unless page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless -%}
 </title>
 
+{%- comment -%}
+  An empty blog is a thin-content signal, so a blog listing with no articles is
+  kept out of the index. The guard is the article count, not a hardcoded handle,
+  so this is self-clearing: publish the first article and the tag stops being
+  emitted on its own. Do not replace it with an unconditional noindex on the
+  blog page type; that would survive publishing and silently bury real posts.
+
+  `follow` is deliberate: the page still links into the catalogue, and those
+  links should keep passing through. Article pages are never touched, since an
+  article existing means there is content to index.
+
+  Shopify's generated sitemap still lists the blog, so `scripts/seo-review`
+  reports this as `robots-noindex` (crawl) and `surface-noindex` (anonymous
+  sweep); both carry an accepted-risks entry keyed to `/blogs/news` that goes
+  away with the tag.
+{%- endcomment -%}
+{%- if request.page_type == 'blog' and blog.articles_count == 0 -%}
+  <meta
+    name="robots"
+    content="noindex, follow"
+  >
+{%- endif -%}
+
 <link
   rel="canonical"
   href="{{ canonical_url }}"

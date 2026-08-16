@@ -46,11 +46,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   exists is skipped with no error, so renaming or removing a collection silently degrades the trail
   and nothing in CI catches it. A `custom.breadcrumb_collection` metafield is the fix that needs no
   maintenance. Revisit when the catalogue or collection set grows.
-- [ ] **SEO: `/blogs/news` is empty and indexable. Decision now due.** Accepted deliberately at
-  launch rather than overlooked. It is a thin-content signal on a small indexable surface. The
-  "revisit at launch" trigger has fired, so pick one of three: `noindex` the blog, unpublish it, or
-  start publishing. The third is content work, not a code change, and should not be chosen by
-  default; an empty blog left indexable is the outcome this item exists to prevent.
 - [ ] **SEO: `featured` and `healthcare` list an identical five products.** Both stay indexable by
   decision. Their meta descriptions differ but the grid does not, so canonical selection between them
   is Google's coin flip. Revisit with real Search Console data after launch, not before.
@@ -113,8 +108,8 @@ in a repo PR, which the sync model would clobber.
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
 menus) through the `scripts/blank-inventory/lib/admin.mjs` token client. Nothing was changed. Items
-already tracked above are not repeated here: null variant SKUs, the empty `/blogs/news`, and
-attaching one hero image per colour. What the pass verified as clean is recorded in
+already tracked above are not repeated here: null variant SKUs and attaching one hero image per
+colour. (The empty `/blogs/news` was also on that list; it is resolved, see `release-notes.md`.) What the pass verified as clean is recorded in
 `release-notes.md`, not here, so it does not get re-audited. The 2026-08-14 backlog triage closed out
 several of the pass's other findings.
 

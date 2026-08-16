@@ -56,7 +56,9 @@ Crawl-mode checks and why each exists:
 - `canonical-host`: canonicals must live on the primary domain, never `*.myshopify.com` and never
   a preview host.
 - `robots-noindex`: an indexable page type carrying noindex is an error; `cart`, `search`, `404`,
-  `password`, and `policy` are exempt.
+  `password`, and `policy` are exempt. The empty blog listing is deliberately noindexed and is
+  suppressed through `accepted-risks.json`, not through the exempt list: `blog` stays an indexable
+  page type so the day it has articles and still carries noindex, the check reds.
 - `404-status`: a garbage path must return a real 404 (soft-404s poison crawl budget).
 
 Admin-mode checks read what is **stored**, because the storefront renders fallbacks: a null

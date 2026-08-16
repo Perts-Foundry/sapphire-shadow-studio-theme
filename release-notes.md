@@ -1,5 +1,40 @@
 # Release Notes
 
+## Empty blog listing is noindexed by article count (unreleased)
+
+### What changed
+
+`snippets/meta-tags.liquid` emits `<meta name="robots" content="noindex, follow">`
+on a blog listing whose `articles_count` is zero. `/blogs/news` has no articles, so
+that is the one page affected today. Three `scripts/seo-review/accepted-risks.json`
+rows go with it: `blog-empty` is rewritten from "revisit at launch" to the decision
+that was made, and `robots-noindex` plus `surface-noindex` are accepted on
+`/blogs/news`.
+
+**The guard is the article count, not the blog handle, and that is the whole
+design.** The three options on the table were noindex, unpublish, or start
+publishing. Publishing is content work and was explicitly not to be chosen by
+default; unpublishing 404s the route and costs a nav edit to undo. Noindex was
+picked because it is the only one that is reversible without anybody remembering
+to reverse it: an unconditional noindex on the `blog` page type would survive the
+first real post and quietly bury it, whereas counting articles means the tag
+removes itself the moment there is something worth indexing. Do not "simplify" the
+condition to a page-type check.
+
+**`follow`, not `nofollow`.** The listing still links into the catalogue and those
+links should keep passing through; the thin-content problem is the page being
+indexed, not the page existing.
+
+**Two seo-review checks fire on this by design, and are suppressed rather than
+exempted.** Shopify's generated sitemap lists the blog regardless of the robots
+meta, so the crawl reports `robots-noindex` and the anonymous surface sweep will
+report `surface-noindex` once the password gate is off. Both are accepted-risk
+rows keyed to `/blogs/news`. `blog` was deliberately **not** added to
+`lib/checks.mjs`'s `NOINDEX_OK` set: keeping it an indexable page type means that
+if the blog ever has articles and still carries a noindex, the check reds instead
+of staying silent. The accepted-risk rows are self-clearing in the same way as the
+tag, since the findings disappear with the first published article.
+
 ## Shipping copy: Expedited/Express standardised, announcement bar corrected (unreleased)
 
 ### What changed
