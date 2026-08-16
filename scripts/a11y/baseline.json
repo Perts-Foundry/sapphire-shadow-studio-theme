@@ -1,10 +1,9 @@
 {
   "_comment": [
     "Known accessibility debt, ignored audit-wide so the pa11y gate reports",
-    "REGRESSIONS rather than the launch state. Every code here was present on",
-    "every-page-or-most audit of 2026-08-16 (PR #105's first run) and is",
-    "recorded in TODO.md for triage. Delete a code the moment its findings are",
-    "fixed: an entry that outlives its debt hides the next regression behind it.",
+    "REGRESSIONS rather than the launch state. Delete a code the moment its",
+    "findings are fixed: an entry that outlives its debt hides the next",
+    "regression behind it.",
     "",
     "These are axe RULE ids, so an entry silences that whole rule on every",
     "audited page. That is deliberately coarser than scripts/contrast/",
@@ -21,17 +20,21 @@
     "when a rule is safe to delete: a rule hiding 0 findings is already clear.",
     "",
     "For third-party embeds this theme cannot fix, prefer the per-path `ignore`",
-    "/ `hideElements` escape hatches in paths.json over an entry here."
+    "/ `hideElements` escape hatches in paths.json over an entry here.",
+    "",
+    "STATE. This started at twelve rules hiding 357 findings on PR #105's first",
+    "run. Eleven are gone: two were the platform's own preview-bar iframe and",
+    "are hidden in paths.json instead, one was a silent decorative video and is",
+    "a per-path ignore, and eight were real markup defects, each one thing",
+    "repeated by a snippet the header or the product grid renders many times.",
+    "",
+    "color-contrast is the one that stays, deliberately. What remains behind it",
+    "is scheme-6, the hero overlay: a transparent scheme whose text sits on",
+    "whatever photograph the section is showing, so the ratio is a property of",
+    "the image rather than of any value in settings_data.json (the static lint",
+    "reports those pairs as indeterminate for exactly that reason). Fixing it",
+    "means a design decision about a scrim, not a colour edit, and it is the",
+    "one accessibility item still open in TODO.md."
   ],
-  "ignore": [
-    "aria-prohibited-attr",
-    "aria-required-parent",
-    "aria-valid-attr-value",
-    "color-contrast",
-    "duplicate-id-aria",
-    "list",
-    "nested-interactive",
-    "scrollable-region-focusable",
-    "target-size"
-  ]
+  "ignore": ["color-contrast"]
 }

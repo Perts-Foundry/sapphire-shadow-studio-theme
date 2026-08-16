@@ -1,5 +1,126 @@
 # Release Notes
 
+## Accessibility baseline burn-down (unreleased)
+
+PR #104 shipped the two accessibility gates with their pre-existing failures
+recorded rather than fixed, so the gates could be introduced without restyling a
+live storefront: twelve axe rules silenced audit-wide in
+`scripts/a11y/baseline.json` (hiding 357 findings on PR #105's first full run)
+and 44 measured colour pairs waived in `scripts/contrast/accepted-risks.json`.
+This change takes the pa11y baseline to one rule and the contrast waivers to 32.
+
+### Only one of the twelve rules was a design question
+
+`color-contrast` is the entry that stays, and the reason is worth recording: what
+sits behind it is `scheme-6`, the transparent hero overlay, whose text is
+composited over whatever photograph the section shows. No value in
+`settings_data.json` determines that ratio, which is also why the static lint
+reports those pairs as indeterminate instead of failing them. Fixing it is a
+decision about a scrim, so it stays in `TODO.md` as a design item.
+
+Three of the other eleven were never theme debt. `frame-title` and
+`frame-tested` (38 findings) are Shopify's `#PBarNextFrame` preview-bar iframe,
+injected by the platform into every preview-theme page and absent from the live
+storefront. `video-caption` is the homepage hero montage: autoplay, loop, muted,
+no controls, no speech, nothing to caption. Both are handled where the audit
+config can see them rather than by silencing a rule store-wide, which is the
+point of the mechanisms below.
+
+The remaining eight were each ONE defect, multiplied by a snippet the header or
+the product grid renders many times per page. That is why the counts looked
+large: 47 `duplicate-id-aria` findings were three ids, 19 `aria-required-parent`
+findings were a single `role="menuitem"` (one per page, nineteen pages).
+
+### paths.json grows a top-level `defaults`
+
+`build-pa11yci.mjs` spreads it UNDER the committed pa11y defaults, so a future
+edit there can add an option but cannot downgrade the standard, drop the axe
+runner, or unpin Chrome's sandbox flags. An audit-wide `ignore` is rejected
+outright rather than merged: that is the one option that would re-hide findings
+from the summariser, which is precisely why the baseline was moved out of this
+file in the first place. A per-entry `hideElements` now CONCATENATES with the
+audit-wide one, because pa11y overrides rather than merges and a page-scoped hide
+would otherwise silently un-hide the preview bar on the one page that needed an
+extra selector.
+
+Three escape hatches now exist and they are ordered by blast radius: per-path
+`ignore` (one page, one rule) < top-level `defaults` (every page, no rule
+suppressed) < `baseline.json` (every page, whole rule). Reach left first.
+
+### The localization form was a combobox with no listbox
+
+The country rows are `role="option"` and the search input is a `role="combobox"`
+that points `aria-activedescendant` at one of them by id. The element holding
+those options was `role="list"`, which is not a valid parent for an option, so
+every row was an orphan; the no-results message was a bare `<span>` sitting
+directly inside that list, which is what the `list` rule was reporting. The lists
+are listboxes now and the message is their sibling.
+
+Two things there are easy to reintroduce. `aria-owns`/`aria-controls` named
+`country-results`, an id no element on the page has ever had (the real one is
+prefixed), and the row ids were the country NAME: spaces in an id, and the same
+id in both the popular and the full list, for an attribute whose entire job is to
+name exactly one row. Every id in the snippet is namespaced by
+`localization_style` now, defaulted rather than required, because a call site
+that omitted it was minting ids like `-CountryLabel`.
+
+### role="menuitem" outside a menu
+
+The theme's only `role="menuitem"` had no `menu` or `menubar` anywhere above it.
+`menuitem` also means an application-style menu, which the header nav is not, so
+the role was removed rather than a `menubar` invented to satisfy it. A nav
+disclosure should be announced as the button it is.
+
+### The product card's link wrapped its own arrows
+
+`card-gallery` wrapped the whole slideshow in the product anchor, arrow buttons
+included: a control inside a control. The arrows could not move out instead,
+because `on:click="/previous"` binds to the closest component ancestor and they
+have to stay inside `<slideshow-component>`. The anchor moved in to wrap the
+SLIDES, which is the same clickable area minus the arrows.
+
+The consequence to remember: that anchor is `display: contents`, so it adds no
+box to layout, but it is still a DOM node, and `base.css` had a deliberately
+structural selector (`slideshow-slides > slideshow-slide`) carrying a Safari
+repaint fix. That selector grew a matching branch. A `display: contents` wrapper
+is invisible to layout and to the reader, and fully visible to the child
+combinator.
+
+### Carousels are keyboard-reachable
+
+`slideshow-slides` went from `tabindex="-1"` to `tabindex="0"`, but only when
+there is more than one slide: a one-slide gallery is not scrollable, so a tab
+stop there would do nothing. The browser provides arrow-key scrolling for a
+focused scroll container on its own, so no JS was involved, and the existing
+`focusin` handler already suspends autoplay, so arriving by keyboard does not
+fight the rotation. This is a deliberate keyboard-UX change: one tab stop per
+carousel, approved as the cost of the slides being reachable at all.
+
+### Contrast: what moved and what deliberately did not
+
+One change is visible by design: `scheme-2`'s `primary_hover` was `#ffffff` on a
+`#f5f5f5` page, so links vanished on hover. It follows schemes 1 and 3 to
+`#000000`. Everything else is imperceptible: an input text colour a hair darker,
+the dark scheme's white hairlines from 19-31% alpha to 37%, `scheme-4`'s border
+from 50% to 60%, four hardcoded CSS opacities replaced by the
+`--opacity-subdued-text` token the theme already had.
+
+Each new value clears its threshold with margin rather than landing on it. A
+value that rounds to exactly 3.00 would be a ratchet set at the bar, and the next
+rounding change to the lint would fail it.
+
+The 32 survivors are two deliberate decisions, and their notes now say so instead
+of pointing at a TODO entry:
+
+- The light schemes' hairline borders ARE the light theme's look. Raising them to
+  3:1 would darken a line the storefront uses as a whisper, on every card, input
+  and swatch. The dark scheme and `scheme-4` were raised in the same pass because
+  there the same change cannot be seen.
+- A "border" that holds the same colour as its own fill is a borderless control,
+  not a failing border. What tells it apart from the page is the fill, which is
+  what the lint actually scores (it takes the better of the two edges). Fixing it
+  would mean painting a border the design does not have.
+
 ## Orphaned colour schemes deleted (unreleased)
 
 The three unreferenced colour schemes (`scheme-58084d4c-...` transparent dark-text,

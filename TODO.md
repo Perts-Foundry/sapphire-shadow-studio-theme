@@ -14,38 +14,22 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
-- [ ] **Triage the 44 contrast findings the lint baselined.** `scripts/contrast/` landed as a
-  merge gate with every pre-existing failure recorded in `accepted-risks.json` rather than fixed, so
-  the gate could be introduced without restyling the live storefront. Each entry is dated, carries a
-  note, and is ratcheted (the pair may not get worse), but the debt is real and the file should
-  shrink rather than persist. Two groups, in rough priority order. (A third, the twelve waivers for
-  the two orphaned blue schemes, was resolved 2026-08-16 by deleting the schemes; see
-  `release-notes.md`.)
-  1. **`scheme-2` `primary_hover` is `#ffffff` on `#f5f5f5`, 1.09:1.** Links become invisible on
-     hover. `scheme-2` is referenced by live templates, so this one actually ships. Fix in
-     `config/settings_data.json`, then delete the two baseline entries (`current` and
-     `presets.Default`); the lint reports a stale exception once it passes, so it will tell you.
-  2. **35 control-border findings are stock Horizon hairlines** below the 3:1 SC 1.4.11 bar
-     (input borders, variant swatch outlines, button hover borders). Genuine debt, pre-existing, and
-     the largest visual change to fix. Worth doing as one deliberate pass rather than piecemeal.
-  Note the two overlay schemes (`background: rgba(0,0,0,0)`) are NOT in the baseline: static colour
-  maths cannot reach them, so they are reported as indeterminate and covered by the pa11y layer.
+- [ ] **Decide what the hero overlay's text sits on.** `color-contrast` is the last rule left in
+  `scripts/a11y/baseline.json`, and the only accessibility rule the dynamic audit does not gate.
+  What it hides is `scheme-6`, the transparent overlay scheme: its text is composited over whatever
+  photograph the section is showing, so no value in `config/settings_data.json` determines the ratio
+  and the static contrast lint reports those pairs as indeterminate rather than failing them. The
+  fix is a design decision (a scrim, a gradient, a constrained crop, or a rule about which images
+  may carry copy), not a colour edit, which is why it survived the 2026-08-16 burn-down. Clear the
+  baseline entry once it is made.
 
-- [ ] **Triage the twelve axe rules the pa11y baseline silences audit-wide.** `scripts/a11y/baseline.json`
-  landed on 2026-08-16 so the dynamic audit could gate merges without first restyling the storefront;
-  every rule in it fired on the first full audit (PR #105). Each rule silenced is invisible to the
-  gate until cleared, so the file should shrink to empty. The dominant patterns: `list` violations
-  from `overflow-list` custom elements sitting directly inside `<ul>` (header nav, facet filters);
-  `scrollable-region-focusable` on product-card slideshows without keyboard access;
-  `aria-prohibited-attr` / `aria-required-parent` / `aria-valid-attr-value` ARIA misuse across
-  templates; `color-contrast` (the rendered-page counterpart of the contrast-lint debt above);
-  `frame-title` / `frame-tested` on third-party iframes (`#PBarNextFrame`), which may belong in
-  paths.json's per-path `hideElements` instead of the baseline; and one `duplicate-id-aria`. The
-  second round (the comment caps issues at 10 per URL, so these surfaced only after the first nine
-  were silenced): `nested-interactive`, `video-caption`, and, most awkwardly, `target-size`, the
-  44x44 rule CLAUDE.md makes a project rule and the audit was configured to add; baselining it was a
-  ship-the-gate expedient and it should be the first entry cleared. Fix a rule's findings, delete
-  its entry, and the audit enforces it from then on.
+- [ ] **The light schemes' hairline borders remain below 3:1.** 32 entries in
+  `scripts/contrast/accepted-risks.json`, all ratcheted and all deliberate as of 2026-08-16: the
+  hairline is the light theme's look, and darkening it to the SC 1.4.11 bar would change every card,
+  input and variant swatch on the storefront. The dark scheme and `scheme-4` were raised in the same
+  pass because there the change is imperceptible. Revisit only as part of a deliberate visual pass,
+  not as a lint chore. (The `*_hover_border`-equals-its-own-fill entries are a different thing and
+  need no work: those are borderless controls, told apart from the page by their fill.)
 
 - [ ] **Variant SKUs: review the identifier and its lifecycle before adopting one.** Deferred on
   2026-07-29 rather than dropped. All 343 variants have a null SKU today. Three things to settle
