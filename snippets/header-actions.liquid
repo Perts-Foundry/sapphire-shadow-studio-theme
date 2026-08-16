@@ -171,9 +171,15 @@
                 </button>
               </div>
 
+              {%- comment -%}
+                Same as the empty-cart branch above: inside the cart dialog,
+                which its own heading already labels. <scroll-hint> is a
+                role-less custom element, so ARIA forbids a label on it and
+                nothing announced this one. The audit runs with an empty cart,
+                so only the other branch's copy was ever reported.
+              {%- endcomment -%}
               <scroll-hint
                 class="cart-drawer__content motion-reduce"
-                aria-label="{{ 'accessibility.cart' | t }}"
                 style="--header-height: 60px;"
               >
                 <scroll-hint
