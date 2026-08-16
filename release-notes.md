@@ -1,5 +1,20 @@
 # Release Notes
 
+## Orphaned colour schemes deleted (unreleased)
+
+The three unreferenced colour schemes (`scheme-58084d4c-...` transparent dark-text,
+`scheme-ec7ae723-...` deep blue, `scheme-8089d18b-...` light blue) were removed from
+`config/settings_data.json` (`current`, plus the one preset copy). No template,
+section, block, schema default, or settings key referenced them; they only added
+inline CSS to every page and broken-contrast choices to the editor's scheme
+pickers. The contrast triage decision for the two blue ones (TODO item, resolved
+2026-08-16) was delete-not-recolour: nothing rendered them, so their 12
+`accepted-risks.json` waivers were deleted in the same change (a waiver matching
+no existing scheme hard-fails the contrast gate). The remaining schemes are all
+load-bearing; the storefront is not dark-only (product, collection, cart, and
+search bodies sit on `scheme-1`/`scheme-3`), so no further scheme deletion is
+safe without a repoint-everything pass.
+
 ## Accessibility checks in CI, in two layers (unreleased)
 
 ### What changed
