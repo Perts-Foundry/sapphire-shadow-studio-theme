@@ -109,6 +109,17 @@ export function buildConfig({
       // included because CLAUDE.md makes 44x44 touch targets a project rule,
       // and a footer-link touch-target fix has already shipped once (PR #99).
       rules: ['target-size'],
+      // axe returns two result sets: `violations` (a measured failure) and
+      // `incomplete` (axe could not decide, overwhelmingly color-contrast over
+      // an image, gradient, or overlapping element). pa11y's axe runner
+      // promotes incomplete to ERROR by impact unless capped, which is what
+      // forced color-contrast into baseline.json: the unmeasurable overlay
+      // text drowned out the measurable failures. Capping needs-review at
+      // `warning` keeps every MEASURED violation a gating error while the
+      // can't-measure set flows through as warnings, which includeWarnings
+      // keeps in the JSON so summarize-pa11y.mjs can disclose and track them.
+      includeWarnings: true,
+      levelCapWhenNeedsReview: 'warning',
       timeout,
       headers,
       chromeLaunchConfig: {

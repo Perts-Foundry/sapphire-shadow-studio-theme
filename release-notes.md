@@ -7,16 +7,36 @@ recorded rather than fixed, so the gates could be introduced without restyling a
 live storefront: twelve axe rules silenced audit-wide in
 `scripts/a11y/baseline.json` (hiding 357 findings on PR #105's first full run)
 and 44 measured colour pairs waived in `scripts/contrast/accepted-risks.json`.
-This change takes the pa11y baseline to one rule and the contrast waivers to 32.
+This change takes the pa11y baseline to empty and the contrast waivers to 32.
 
-### Only one of the twelve rules was a design question
+### The last rule out was hiding almost nothing measurable
 
-`color-contrast` is the entry that stays, and the reason is worth recording: what
-sits behind it is `scheme-6`, the transparent hero overlay, whose text is
-composited over whatever photograph the section shows. No value in
-`settings_data.json` determines that ratio, which is also why the static lint
-reports those pairs as indeterminate instead of failing them. Fixing it is a
-decision about a scrim, so it stays in `TODO.md` as a design item.
+`color-contrast` was the entry expected to stay, on the theory that what sat
+behind it was `scheme-6`, the transparent hero overlay, whose text is composited
+over whatever photograph the section shows. Recovering the hidden findings from
+a local run against the preview theme showed the real composition: nearly every
+one was an axe INCOMPLETE result, not a measured failure. axe returns two sets,
+`violations` (a measured ratio below the bar) and `incomplete` (it could not
+resolve the background: an image, a gradient, an overlapping element, Shopify's
+chat widget), and pa11y's axe runner promotes incomplete to a gating error by
+impact unless capped. The unmeasurable set was drowning the gate, and the only
+measured violation on any audited page was inside Judge.me's widget, which
+`paths.json` already hides.
+
+So `build-pa11yci.mjs` now sets `levelCapWhenNeedsReview: 'warning'` (committed
+side, so a `paths.json` edit cannot raise it back) with `includeWarnings: true`,
+and the baseline is empty. Measured colour-contrast violations gate again for
+the first time since the audit landed; the can't-measure set flows through as
+warnings, which the summariser counts per rule and per page in the CI Report
+comment ("Needs review") so the trend is trackable run over run without failing
+anything. A verification run over all 19 paths with this config reported 0
+errors.
+
+What the overlay text sits on is still a design property of the hero imagery:
+no audit setting can measure text composited over a photograph, capped or not.
+The needs-review counts in each run's report are where that surface stays
+visible; if a scrim, gradient, or image-selection rule ever lands, those counts
+are the before/after instrument.
 
 Three of the other eleven were never theme debt. `frame-title` and
 `frame-tested` (38 findings) are Shopify's `#PBarNextFrame` preview-bar iframe,

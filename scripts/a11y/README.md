@@ -124,6 +124,20 @@ should be deleted; an entry that outlives its debt hides the next regression beh
 Consequence to know when reading the logs: pa11y-ci now exits non-zero on any run that has a
 baselined finding, so its exit code is no longer a crash signal. See below.
 
+The list is empty as of the burn-down and should stay that way; the mechanism remains for the next
+genuine known-debt situation.
+
+## Needs review (axe incomplete)
+
+axe returns `violations` (a measured failure) and `incomplete` (it could not resolve the
+background: text over an image, a gradient, an overlapping element). pa11y promotes incomplete to a
+gating error unless capped, which is what once forced `color-contrast` into the baseline: the
+unmeasurable set drowned the measured one. `build-pa11yci.mjs` caps needs-review findings at
+`warning` (`levelCapWhenNeedsReview`, committed side so `paths.json` cannot raise it) and keeps
+them in the JSON (`includeWarnings`). The summariser counts them per page and per rule in a
+non-gating "Needs review" block of the CI Report comment; a jump between runs means new
+unmeasurable text landed and deserves a manual look.
+
 ## Fail-closed behaviour
 
 pa11y-ci exits 0 when it audited nothing. A config that lost its URLs, or a run that died before

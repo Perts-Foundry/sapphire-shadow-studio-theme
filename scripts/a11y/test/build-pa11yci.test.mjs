@@ -44,6 +44,16 @@ test('defaults match the WCAG2AA gate the sibling repo already runs', () => {
   assert.ok(defaults.chromeLaunchConfig.args.includes('--no-sandbox'));
 });
 
+test('needs-review findings are capped at warning and kept in the JSON', () => {
+  // axe `incomplete` (background unmeasurable) is promoted to a gating error
+  // by pa11y unless capped; the cap is what let color-contrast leave
+  // baseline.json while measured violations still gate. includeWarnings keeps
+  // the capped findings in the report so the summariser can disclose them.
+  const { defaults } = buildConfig(base);
+  assert.equal(defaults.levelCapWhenNeedsReview, 'warning');
+  assert.equal(defaults.includeWarnings, true);
+});
+
 test('the run is serial, so a burst does not trip bot management', () => {
   assert.equal(buildConfig(base).concurrency, 1);
 });
@@ -111,6 +121,20 @@ test('file defaults cannot weaken the committed gate', () => {
   assert.deepEqual(config.defaults.runners, ['axe']);
   assert.deepEqual(config.defaults.rules, ['target-size']);
   assert.equal(config.defaults.chromeLaunchConfig.executablePath, CHROME_PATH);
+});
+
+test('file defaults cannot promote needs-review findings past the warning cap', () => {
+  // Raising the cap to error would re-flood the gate with unmeasurable
+  // findings; dropping includeWarnings would hide them from the summariser.
+  const config = buildConfig({
+    ...base,
+    paths: {
+      defaults: { levelCapWhenNeedsReview: 'error', includeWarnings: false },
+      paths: [{ path: '/' }],
+    },
+  });
+  assert.equal(config.defaults.levelCapWhenNeedsReview, 'warning');
+  assert.equal(config.defaults.includeWarnings, true);
 });
 
 test('an audit-wide ignore in paths.json defaults is rejected outright', () => {
