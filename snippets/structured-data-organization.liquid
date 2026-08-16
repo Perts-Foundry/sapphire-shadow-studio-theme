@@ -27,6 +27,39 @@
   Google does require a raster logo of at least 112x112; SVG is not reliably
   consumed, so keep the logo setting on a PNG.
 
+  `hasMerchantReturnPolicy` is hardcoded, and deliberately not a theme setting.
+  The return-policy categories are not one-field swaps:
+  `MerchantReturnFiniteReturnWindow` additionally requires `merchantReturnDays`,
+  and Google wants `returnFees`, `returnMethod`, and `refundType`. A dropdown
+  would let the operator pick a category that renders a structurally invalid
+  node, with nothing in CI to catch it (`shopify theme check` does not parse
+  JSON-LD, and `seo-review:test` is unit tests only). It is also a
+  legal-adjacent claim that has to track `/policies/refund-policy`, and a
+  theme-editor dropdown can drift from that policy silently. Changing it should
+  cost a code edit and a release note. Before changing the category, check
+  Google's required fields for the new one.
+
+  KNOWN AND ACCEPTED: this node asserts a 14-day return window store-wide, and
+  the published policy's exclusion list (custom or personalized designs, final
+  sale, gift cards) covers five of the six products. Google's org-level node is
+  meant for a policy applying to most or all products; here it applies to one.
+  This is a chosen trade, not an oversight: `merchantReturnLink` points at the
+  live policy that enumerates every exclusion. Do not file the contradiction as
+  a bug. The per-product override is closed, not merely unimplemented: Google's
+  override path is a `MerchantReturnPolicy` nested under `Offer`, Shopify's
+  `structured_data` filter owns that node and emits
+  `"@id": "/products/handle?variant=N#offer"`, and shadowing that `@id` to merge
+  a property in would mean reproducing Shopify's exact relative id including the
+  variant parameter, on products with hundreds of variants, relying on
+  undocumented node-merge behaviour. That is the silent-invalidity class the
+  structured-data rules in CLAUDE.md exist to prevent.
+
+  `applicableCountry` is the literal `"US"`. Not from
+  `localization.available_countries`, which is market config that would silently
+  widen a legal claim the day international markets are enabled, and not from
+  `shop.address`, because the postal-detail ban above applies and pulling a
+  country code out of that object invites the next reader to pull the rest.
+
   @example
     {% render 'structured-data-organization' %}
 {% enddoc %}
@@ -48,6 +81,12 @@
 
   assign org_id = shop.url | append: '/#organization'
   assign org_description = shop.description | default: shop.name
+
+  assign return_policy_id = shop.url | append: '/#return-policy'
+  assign return_policy_url = ''
+  if shop.refund_policy.url != blank
+    assign return_policy_url = shop.url | append: shop.refund_policy.url
+  endif
 -%}
 
 <script type="application/ld+json">
@@ -74,5 +113,20 @@
         {%- endfor -%}
       ]
     {%- endif -%}
+    ,
+    "hasMerchantReturnPolicy": {
+      "@type": "MerchantReturnPolicy",
+      "@id": {{ return_policy_id | json }},
+      "applicableCountry": "US",
+      "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+      "merchantReturnDays": 14,
+      "returnMethod": "https://schema.org/ReturnByMail",
+      "returnFees": "https://schema.org/ReturnFeesCustomerResponsibility",
+      "refundType": "https://schema.org/FullRefund"
+      {%- if return_policy_url != blank -%}
+        ,
+        "merchantReturnLink": {{ return_policy_url | json }}
+      {%- endif -%}
+    }
   }
 </script>

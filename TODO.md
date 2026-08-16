@@ -31,24 +31,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   only, nothing about what actually composites on the page), and its one non-obvious part is the
   pairing map, since `primary` is measured against `background` while `primary_button_text` is
   measured against `primary_button_background`, and the two can fail in opposite directions.
-- [ ] **SEO: return-policy structured data.** Deferred, and the reason matters because the obvious
-  one is wrong. It is blocked by Shopify's `structured_data` filter not being extensible, **not** by
-  the return policy varying per product. `MerchantReturnPolicy` does not need to be store-wide, and
-  `MerchantReturnNotPermitted` expresses Shift Fuel's final-sale case precisely. Declaring the policy
-  at the Organization level on the homepage node is a viable partial path if the product-level route
-  stays closed.
-- [ ] **SEO: `ItemList` markup on collection pages.** Not emitted today. Low value while the catalogue
-  is six products; revisit if the collection count grows.
-- [ ] **SEO: deterministic breadcrumb parent collection.** `snippets/breadcrumbs.liquid` has shipped
-  and picks a product's parent from a hardcoded preferred-handle list
-  (`healthcare,the-vitals-collection,featured`) after honouring a collection-scoped URL. Ordering is
-  deterministic, but **the list is hand-maintained and fails quietly**: a handle that no longer
-  exists is skipped with no error, so renaming or removing a collection silently degrades the trail
-  and nothing in CI catches it. A `custom.breadcrumb_collection` metafield is the fix that needs no
-  maintenance. Revisit when the catalogue or collection set grows.
-- [ ] **SEO: `featured` and `healthcare` list an identical five products.** Both stay indexable by
-  decision. Their meta descriptions differ but the grid does not, so canonical selection between them
-  is Google's coin flip. Revisit with real Search Console data after launch, not before.
 - [ ] **Variant SKUs: review the identifier and its lifecycle before adopting one.** Deferred on
   2026-07-29 rather than dropped. All 343 variants have a null SKU today. Three things to settle
   before any backfill. (Re-checked 2026-08-13: the count is now 431 across the six products, and every

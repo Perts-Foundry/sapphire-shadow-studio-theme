@@ -19,7 +19,10 @@
 //   Requires MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
 
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
-import { ERROR, WARN, TITLE_MAX, DESC_MIN, DESC_MAX } from './lib/checks.mjs';
+import {
+  ERROR, WARN, TITLE_MAX, DESC_MIN, DESC_MAX,
+  BREADCRUMB_EXCLUDED_HANDLES, BREADCRUMB_PREFERRED_HANDLES,
+} from './lib/checks.mjs';
 import { finishRun } from './lib/report.mjs';
 
 function arg(flag) { return process.argv.includes(flag); }
@@ -35,6 +38,10 @@ const QUERY = `
     edges { node {
       handle title
       seo { title description }
+      breadcrumbCollection: metafield(namespace: "custom", key: "breadcrumb_collection") {
+        value
+        reference { ... on Collection { handle } }
+      }
       variants(first: 250) {
         pageInfo { hasNextPage }
         edges { node { sku } }
@@ -97,6 +104,40 @@ export function isEffectivelyEmpty(text) {
   return (text || '').replace(/<[^>]*>|&nbsp;/gi, ' ').trim().length === 0;
 }
 
+/**
+ * Findings for the per-product `custom.breadcrumb_collection` metafield that
+ * snippets/breadcrumbs.liquid reads as step 2 of its four-step parent cascade.
+ *
+ * Keyed per product rather than aggregated into one counter, so the baseline
+ * differ names which product regressed instead of moving a number.
+ *
+ * @param {Array<{handle:string, breadcrumbCollection:?{value:?string, reference:?{handle:string}}}>} products
+ * @returns {Array<{check:string, severity:string, url:string, detail:string}>}
+ */
+export function breadcrumbCollectionFindings(products) {
+  const findings = [];
+  for (const p of products) {
+    const url = `admin:product/${p.handle}`;
+    const mf = p.breadcrumbCollection;
+    // A nil reference with a non-nil value means the referenced collection was
+    // deleted. The theme cannot tell that apart from unset (both render blank),
+    // so neither does this check.
+    const handle = mf && mf.reference ? mf.reference.handle : null;
+    if (!handle) {
+      findings.push({
+        check: 'product-breadcrumb-collection-missing', severity: WARN, url,
+        detail: `no custom.breadcrumb_collection reference; the breadcrumb parent falls back to the theme's preferred-handle list (${BREADCRUMB_PREFERRED_HANDLES.join(', ')})`,
+      });
+    } else if (BREADCRUMB_EXCLUDED_HANDLES.has(handle)) {
+      findings.push({
+        check: 'product-breadcrumb-collection-catchall', severity: WARN, url,
+        detail: `custom.breadcrumb_collection points at the catch-all "${handle}", which the theme ignores; the value looks set in Admin but has no effect`,
+      });
+    }
+  }
+  return findings;
+}
+
 async function main() {
   const log = (l) => process.stdout.write(l + '\n');
   for (const v of ['MYSHOPIFY_DOMAIN', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET']) {
@@ -138,6 +179,7 @@ async function main() {
       if (!v.node.sku) skuMissing += 1;
     }
   }
+  findings.push(...breadcrumbCollectionFindings(products));
   if (truncated.length > 0) {
     findings.push({
       check: 'admin-read-truncated', severity: ERROR, url: 'admin:query',

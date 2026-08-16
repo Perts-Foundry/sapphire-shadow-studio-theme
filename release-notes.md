@@ -1,5 +1,242 @@
 # Release Notes
 
+## Collection differentiation is a runbook, not a code change (unreleased)
+
+### What changed
+
+No theme code. `docs/collection-differentiation-runbook.md` is new, and it replaces
+the accepted-risk paragraph further down this file that recorded `featured` and
+`healthcare` holding an identical five products as "reviewed and accepted rather
+than merged; revisit after launch with real Search Console data." That accept is
+superseded, and the `TODO.md` row is deleted.
+
+**The runbook is the tracker, not a backlog row.** No `TODO.md` entry replaces the
+deleted one. The open Admin work is stated in the runbook itself, and
+`scripts/seo-review/admin.mjs` reports it on every run through
+`admin-description-duplicate`, `collection-body-empty`, and
+`collection-seo-title-missing`, which is a better progress signal than a checkbox
+because it clears itself when the work is actually done.
+
+### Design points that are load-bearing
+
+**With six products the two collections cannot be differentiated by adding.** One
+has to shrink, and the symmetric difference has to be non-empty in **both**
+directions. A subset page is still a duplicate candidate against its superset, so
+turning identical grids into nested ones fixes nothing. The proposed split makes
+`healthcare` a real category with an editorial rule (credential-embroidered pieces
+for healthcare workers: the two Lead II crewnecks, the quarter-zip, the women's
+vest, and the Huddle crewneck) and `featured` a hand-picked merchandising shelf of
+three that includes `gift-card`, which will never belong in `healthcare` and so
+guarantees the difference in that direction permanently.
+
+**Copy is half the job and is the most likely way this lands and still fails.**
+`templates/collection.json` renders the H1 from `{{ closest.collection.title }}`
+and the body from `{{ closest.collection.description }}`, so two pages with
+different grids and templated everything-else still cluster. Each collection needs
+distinct body copy and distinct stored SEO fields.
+
+**The structural answer is fewer collections.** `all-products`, `featured`,
+`healthcare`, and `the-vitals-collection` over six products is four names for one
+catalogue. The split is a holding action until the catalogue grows, recorded as
+such so it is not rediscovered as a fresh idea.
+
+**The named fallback is noindexing `featured`**, using the blog-listing noindex in
+`snippets/meta-tags.liquid` as the working precedent. It is recorded here rather
+than as a backlog row, because it is a contingency and not an open action.
+
+**Verification is Search Console after a re-crawl, weeks out.** Canonical
+clustering is a Google-side judgement and everything checkable sooner is a proxy.
+
+## Breadcrumb parent collection is a product metafield (unreleased)
+
+### What changed
+
+`snippets/breadcrumbs.liquid` gains a second step in its parent-collection
+cascade, reading `product.metafields.custom.breadcrumb_collection.value`. The
+snippet's doc header goes from "three steps" to four. `scripts/seo-review/admin.mjs`
+reads the metafield through the Admin API and reports two new checks, backed by an
+exported pure function and unit tests. `docs/breadcrumb-collection-metafield.md`
+is new and `CLAUDE.md` points at it. The Admin work (definition plus values) is
+stated in that doc rather than in `TODO.md`; the two new checks report it on every
+admin-mode run and stop reporting when it is done, so no backlog row is carried.
+
+### Design points that are load-bearing
+
+**The definition, verbatim, because one field of it fails silently.** Owner
+Product, namespace `custom`, key `breadcrumb_collection`, type **Collection
+reference, single**, access **Storefronts: read**. Single and not a list, because a
+trail has exactly one parent and a list reintroduces the "which one" ambiguity the
+metafield exists to remove. Without storefront read access the value returns nil to
+Liquid, indistinguishable from unset, while Admin keeps showing what you set.
+
+**Step 2, not step 1.** A collection-scoped URL still wins outright. The snippet's
+documented reason for that step is that the shopper actually walked through that
+collection and the trail should reflect the path taken. The canonical-contradiction
+argument that would otherwise favour overriding it does not apply here, because the
+last `ListItem` deliberately omits `item`.
+
+**`preferred_handles` stays permanently, demoted to step 3.** Removing it once
+values are set would regress any newly created product to the last-resort "first
+non-catch-all" scan, which is the "Home > All Products > Lead II Crewneck" defect
+recorded further down this file. It is a safety net, not a migration artifact, so
+there is no follow-up row to delete it. Its quiet failure mode (a renamed handle
+skipped without error) is now covered by a check rather than by nothing.
+
+**The catch-all guard applies to a hand-set value too.** Pointing the metafield at
+`all-products` would reintroduce exactly the trail the exclusion list exists to
+prevent, so a misconfigured value falls through to the preferred list rather than
+to the worst available trail.
+
+**One blank check covers four nil causes on purpose:** unset, definition absent,
+definition not storefront-readable, and referenced collection deleted. All four
+should behave identically, so the snippet does not try to tell them apart and
+neither does the check.
+
+**Both checks are WARN and keyed per product** (`admin:product/<handle>`) rather
+than aggregated into a counter, so the baseline differ names which product
+regressed. `product-breadcrumb-collection-catchall` is the higher-value of the two,
+because a set-but-ignored value looks correct in Admin.
+`BREADCRUMB_EXCLUDED_HANDLES` in `lib/checks.mjs` mirrors the snippet's exclusion
+list and carries the same change-them-together comment `BREADCRUMB_PAGE_TYPES`
+already has.
+
+**Shipping the Liquid before the Admin work is safe.** The metafield read returns
+nil until a value exists and the code falls through to the existing fallback, so
+there is no window where the site is worse off.
+
+## ItemList markup on collection pages (unreleased)
+
+### What changed
+
+New `snippets/structured-data-collection-list.liquid`, rendered from
+`sections/main-collection.liquid`. New `jsonld-itemlist-missing` WARN in
+`scripts/seo-review/lib/checks.mjs` with a test. The exception list in
+`snippets/structured-data.liquid`'s doc block gains a third entry.
+
+### Design points that are load-bearing
+
+**A standalone `ItemList`, not a `CollectionPage` with `mainEntity`.** Google does
+not consume `CollectionPage`, and it would want an `isPartOf` back to the `WebSite`
+`@id`, which puts an entity relationship on a non-homepage page: the neighbourhood
+of the `jsonld-entity-leak` rule the rest of this theme's structured data is built
+around.
+
+**`ListItem`s carry a `url` and nothing else.** Full `Product` nodes would duplicate
+the offers and prices Shopify's `structured_data` filter already emits on each
+product page, and would breach the standing rule that Product markup is never
+hand-authored.
+
+**Positions are absolute** (`forloop.index | plus: paginate.current_offset`). Page 2
+restarting at position 1 would assert that a different product is the first item in
+the same list.
+
+**Paginated views are not suppressed; filtered and re-sorted ones are.** Shopify
+canonicalises `?page=N` to itself, so each page is its own indexable URL and a list
+naming that page's slice with absolute positions is accurate. Infinite scroll does
+not change that, because the JSON-LD describes the HTML that was served. A filtered
+collection URL canonicalises back to the base collection, so a list emitted there
+describes one page under a URL pointing at another; a non-default sort changes the
+ordering the positions assert. An empty list is suppressed too, so a suppressed case
+emits no `<script>` tag rather than an empty array. The price-range filter needs its
+own check in the guard, because a price filter with no selected values still reports
+`active_values.size` as 0.
+
+**`itemListOrder` and `numberOfItems` are both deliberately absent.** An earlier
+draft carried `itemListOrder: ItemListOrderAscending`, which asserts an ordering
+semantic without checking the collection's actual sort; for a `manual`,
+`best-selling`, or `created-descending` collection that is simply untrue, and it is
+semantically valid JSON so no validator catches it. `numberOfItems` must equal the
+`itemListElement` count, and the obvious source (`paginate.items`, the collection
+total) does not equal it on any page of a multi-page collection, so emitting it
+would be wrong by construction. Both are optional; omitting beats deriving.
+
+**It lives in `sections/main-collection.liquid`, inside the `{% paginate %}` block.**
+Inside, because it needs `paginate.current_offset`. Not in the shared
+`snippets/product-grid.liquid`, which `sections/search-results.liquid` also renders,
+where an `ItemList` would assert a stable list for a query-dependent result set. Not
+in `templates/collection.json`, which Shopify generates and the theme editor can
+overwrite.
+
+**The loop over `collection.products` is a deliberate second pass**, not folded into
+the existing `{% capture children %}` card loop. Building JSON inside that loop is
+where trailing-comma bugs live, and at 24 items the second pass is free.
+
+**The check is WARN, not ERROR.** `exitCodeFor` blocks only on fresh errors, and an
+empty collection legitimately emits nothing.
+
+## Return policy on the Organization node (unreleased)
+
+### What changed
+
+`snippets/structured-data-organization.liquid` gains a `hasMerchantReturnPolicy`
+property declaring a 14-day return window. Edited in place rather than split into a
+new snippet: `hasMerchantReturnPolicy` is a property *of* Organization, and every
+`structured-data-*.liquid` in this theme emits a complete `<script>` node, so a
+snippet emitting a bare JSON fragment would make the router's dispatch model a lie.
+`CLAUDE.md` gains a matching rule.
+
+### The premise this was filed under was wrong, in both directions
+
+The `TODO.md` row said the item was blocked by Shopify's `structured_data` filter
+not being extensible, "**not** by the return policy varying per product," and that
+`MerchantReturnNotPermitted` expressed "Shift Fuel's final-sale case precisely." The
+"Out of scope" paragraph further down this file recorded the same reasoning. Both
+are wrong. The published refund policy is a **14-day return window** with a
+non-returnable list covering custom or personalized designs, items marked final
+sale, and gift cards. `shift-fuel-crewneck` is the one product that is **not** final
+sale, which is exactly why it is the only one of six product templates carrying no
+`return-policy-acknowledgment` block; the final-sale case belongs to the
+custom-embroidered Lead II and Huddle products. So the store has a real return
+policy, and policy non-uniformity is precisely the difficulty rather than a
+non-issue.
+
+### Design points that are load-bearing
+
+**The over-statement is a chosen trade, recorded so it is not filed as a bug.** The
+node asserts a 14-day window store-wide, and the policy's exclusion list covers five
+of the six products. Google's org-level node is meant for a policy applying to most
+or all products; here it applies to one. The mitigation is that `merchantReturnLink`
+points at the live policy that enumerates every exclusion, and that this paragraph
+exists.
+
+**The product-level override is closed, not merely unimplemented.** Google's
+override path is a `MerchantReturnPolicy` nested under **`Offer`**, not `Product`.
+Shopify's filter owns that node and emits
+`"@id": "/products/handle?variant=N#offer"`. Shadowing that `@id` to merge in a
+property would mean reproducing Shopify's exact relative id including the variant
+parameter, on products with hundreds of variants, relying on undocumented node-merge
+behaviour. That is the silent-invalidity class the structured-data rules exist to
+prevent. Do not re-propose it.
+
+**Not a theme setting.** The categories are not one-field swaps:
+`MerchantReturnFiniteReturnWindow` additionally requires `merchantReturnDays`, and
+Google wants `returnFees`, `returnMethod`, and `refundType`. A dropdown would let
+the operator pick a category that renders a structurally invalid node, with nothing
+in CI to catch it, since `shopify theme check` does not parse JSON-LD and
+`seo-review:test` is unit tests only. It is also a legal-adjacent claim that has to
+track `/policies/refund-policy`, and a theme-editor dropdown can drift from that
+silently. Changing it should cost a code edit and a release note.
+
+**`applicableCountry` is the literal `"US"`.** Not from
+`localization.available_countries`, which is market config that would silently widen
+a legal claim the day international markets are enabled. Not from `shop.address`,
+because the snippet's doc block bans postal detail and pulling a country code out of
+that object invites the next reader to pull the rest. If the active delivery profile
+ever ships outside the US, this becomes an array listing every country served.
+
+**Every field traces to the published policy, not to a plausible default.**
+`returnFees` is `ReturnFeesCustomerResponsibility` because the policy says the
+customer arranges and pays for return shipping and no prepaid labels are provided;
+`refundType` is `FullRefund` to the original payment method; `returnMethod` is
+`ReturnByMail`.
+
+**`merchantReturnLink` comes from `shop.refund_policy.url`**, prepended with
+`shop.url`, so the policy text has a single source of truth and none of it is
+duplicated into the theme. It is guarded, because `shop.refund_policy` is nil when
+the policy is unpublished, and it follows the established leading-comma-inside-its-
+own-`if` idiom. The outer comma is unconditional because the property itself always
+emits.
+
 ## Empty blog listing is noindexed by article count (unreleased)
 
 ### What changed
@@ -1165,12 +1402,19 @@ Also out of scope and tracked in `TODO.md`: return-policy structured data (block
 by Shopify's `structured_data` filter not being extensible, not by policy
 non-uniformity), `ItemList` markup on collections, and blog content.
 
+> **Superseded.** The return-policy parenthetical above is wrong on the point it
+> makes: the policy does vary per product, and that variation is the difficulty
+> rather than a non-issue. See "Return policy on the Organization node" at the top
+> of this file. `ItemList` shipped; see "ItemList markup on collection pages".
+
 ### Accepted risks, recorded so they are not rediscovered as bugs
 
 - **`featured` and `healthcare` hold an identical set of five products** and both
   stay indexable. Their meta descriptions differ, but the product grid does not,
   so canonical selection between them is Google's coin flip. Reviewed and
   accepted rather than merged; revisit after launch with real Search Console data.
+  > **Superseded.** This accept no longer stands. See "Collection differentiation
+  > is a runbook, not a code change" at the top of this file.
 - **The empty `/blogs/news` stays indexable.** A thin-content signal at launch on
   a small indexable surface, accepted deliberately.
 

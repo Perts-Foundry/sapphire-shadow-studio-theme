@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isEffectivelyEmpty } from '../admin.mjs';
+import { isEffectivelyEmpty, breadcrumbCollectionFindings } from '../admin.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
   assert.equal(isEffectivelyEmpty(''), true);
@@ -14,4 +14,38 @@ test('isEffectivelyEmpty treats editor artifacts as empty', () => {
 test('isEffectivelyEmpty keeps real copy', () => {
   assert.equal(isEffectivelyEmpty('<p>Real body copy.</p>'), false);
   assert.equal(isEffectivelyEmpty('plain text'), false);
+});
+
+const mf = (handle) => ({ value: `gid://shopify/Collection/${handle}`, reference: { handle } });
+
+test('a resolved, non-catch-all breadcrumb metafield produces no finding', () => {
+  assert.deepEqual(
+    breadcrumbCollectionFindings([{ handle: 'lead-ii-crewneck', breadcrumbCollection: mf('healthcare') }]),
+    [],
+  );
+});
+
+test('every nil cause of an unset breadcrumb metafield reads the same', () => {
+  // Unset, definition absent or not storefront-readable, and a deleted
+  // reference all reach the theme as blank, so they reach this check as one
+  // finding rather than three.
+  const products = [
+    { handle: 'a', breadcrumbCollection: null },
+    { handle: 'b', breadcrumbCollection: { value: null, reference: null } },
+    { handle: 'c', breadcrumbCollection: { value: 'gid://shopify/Collection/999', reference: null } },
+  ];
+  const f = breadcrumbCollectionFindings(products);
+  assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-missing'));
+  assert.deepEqual(f.map((x) => x.url), ['admin:product/a', 'admin:product/b', 'admin:product/c']);
+  assert.ok(f.every((x) => x.severity === 'WARN'));
+});
+
+test('a catch-all breadcrumb metafield is flagged separately, keyed per product', () => {
+  const f = breadcrumbCollectionFindings([
+    { handle: 'x', breadcrumbCollection: mf('all-products') },
+    { handle: 'y', breadcrumbCollection: mf('frontpage') },
+    { handle: 'z', breadcrumbCollection: mf('all') },
+  ]);
+  assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-catchall'));
+  assert.deepEqual(f.map((x) => x.url), ['admin:product/x', 'admin:product/y', 'admin:product/z']);
 });

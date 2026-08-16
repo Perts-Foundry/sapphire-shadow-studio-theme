@@ -48,6 +48,11 @@ Crawl-mode checks and why each exists:
   `BreadcrumbList` follow the allow-list in `snippets/breadcrumbs.liquid` (`product`, `collection`,
   `page`, `article`, `blog`, `list-collections`; `policy` deliberately absent). The constant in
   `lib/checks.mjs` mirrors that snippet's case list; change them together.
+- `jsonld-itemlist-missing` (WARN): a collection page should carry the `ItemList` emitted by
+  `snippets/structured-data-collection-list.liquid`. WARN rather than ERROR because an empty
+  collection legitimately emits nothing. The snippet also suppresses the node on filtered and
+  re-sorted views; the crawl walks sitemap URLs, which are neither, so the suppression never trips
+  this check.
 - `h1-count`: exactly one `<h1>` per page. Nothing in CI checks heading structure; the homepage
   once had two (header + hero) and the FAQ page once had zero.
 - `description-duplicate` (ERROR): the exact defect class of the original audit's worst content
@@ -70,6 +75,16 @@ Two guard behaviours worth knowing: any GraphQL connection reporting another pag
 query caps raises an `admin-read-truncated` ERROR rather than silently auditing a subset, and
 collection body copy is judged after stripping editor artifacts (`<p></p>`, `&nbsp;`), so a
 visually blank body cannot pass as content.
+
+Admin mode also reads the `custom.breadcrumb_collection` product metafield that
+`snippets/breadcrumbs.liquid` uses to pick a breadcrumb parent, and reports
+`product-breadcrumb-collection-missing` and `product-breadcrumb-collection-catchall`. Both are WARN
+and both are keyed per product (`admin:product/<handle>`) rather than aggregated, so the baseline
+differ names which product regressed instead of moving a counter. The catch-all variant is the more
+valuable of the two: a value pointing at `all`, `frontpage`, or `all-products` is ignored by the
+theme while still looking correct in Admin. `BREADCRUMB_EXCLUDED_HANDLES` in `lib/checks.mjs`
+mirrors the snippet's exclusion list; change them together. Full context, including the definition
+and the per-product values: `docs/breadcrumb-collection-metafield.md`.
 
 Surface mode is the generalized launch-day checklist (B7): it runs anonymously on purpose.
 Pre-launch, the password gate is reported as status and the page sweep is skipped with a reason.

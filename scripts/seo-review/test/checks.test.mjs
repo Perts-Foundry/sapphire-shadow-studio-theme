@@ -114,6 +114,21 @@ test('breadcrumb allow-list is enforced in both directions', () => {
   assert.ok(unexpected.some((f) => f.check === 'breadcrumb-unexpected'));
 });
 
+test('collection page without an ItemList warns, and other page types do not', () => {
+  const bc = { raw: '', parsed: {}, types: ['BreadcrumbList'], error: null };
+  const missing = evaluatePage(page('collection', goodExtract({ jsonLd: [bc] })), HOST);
+  assert.deepEqual(checksOf(missing), ['jsonld-itemlist-missing']);
+  assert.equal(missing[0].severity, WARN);
+
+  const present = evaluatePage(page('collection', goodExtract({
+    jsonLd: [bc, { raw: '', parsed: {}, types: ['ItemList'], error: null }],
+  })), HOST);
+  assert.deepEqual(present, []);
+
+  // A page with no ItemList and no reason to have one stays clean.
+  assert.deepEqual(evaluatePage(page('page', goodExtract()), HOST), []);
+});
+
 test('product without Product/ProductGroup markup warns', () => {
   const f = evaluatePage(page('product', goodExtract({ jsonLd: [{ raw: '', parsed: {}, types: ['BreadcrumbList'], error: null }] })), HOST);
   assert.ok(f.some((x) => x.check === 'jsonld-product-missing' && x.severity === WARN));

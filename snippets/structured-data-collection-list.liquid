@@ -1,0 +1,104 @@
+{% doc %}
+  Emits the `ItemList` JSON-LD describing the products on the current page of a
+  collection grid.
+
+  Rendered from `sections/main-collection.liquid`, inside its `{% paginate %}`
+  block because it needs `paginate.current_offset`. Deliberately NOT rendered
+  from `snippets/product-grid.liquid`: that snippet is shared with
+  `sections/search-results.liquid`, and an `ItemList` on `/search` would assert
+  a stable list for a query-dependent result set. Also not added to
+  `templates/collection.json`, which Shopify generates and the theme editor can
+  overwrite.
+
+  A standalone `ItemList`, not a `CollectionPage` with `mainEntity`. Google does
+  not consume `CollectionPage`, and it would want an `isPartOf` back to the
+  `WebSite` `@id`, which puts an entity relationship on a non-homepage page.
+  That is the neighbourhood of the homepage-only rule the rest of the
+  structured data in this theme is built around.
+
+  `ListItem`s carry a `url` and nothing else, which is Google's summary-page
+  pattern. Full `Product` nodes here would duplicate the offers and prices
+  Shopify's `structured_data` filter already emits on each product page, and
+  would breach the standing rule that Product markup is never hand-authored.
+
+  Three properties are deliberately absent:
+
+  - `itemListOrder`. Asserting an order without checking the collection's actual
+    sort is simply untrue for a `manual`, `best-selling`, or `created-descending`
+    collection, and it is semantically valid JSON so no validator catches it.
+  - `numberOfItems`. It must equal the `itemListElement` count, and the obvious
+    source (`paginate.items`, the collection total) does not equal it on any page
+    of a multi-page collection.
+  - `item`. See the `url`-only note above.
+
+  `position` is absolute (`forloop.index | plus: paginate.current_offset`), not
+  page-relative. Page 2 restarting at position 1 would assert that a different
+  product is the first item in the same list.
+
+  Paginated views are NOT suppressed: Shopify canonicalises `?page=N` to itself,
+  so each page is its own indexable URL and a list naming that page's slice with
+  absolute positions is accurate. Infinite scroll does not change that; the
+  JSON-LD describes the HTML that was served.
+
+  Filtered and re-sorted views ARE suppressed. A filtered collection URL
+  canonicalises back to the base collection, so a list emitted there describes
+  one page under a URL pointing at another. A non-default sort changes the
+  ordering the positions assert. An empty list is suppressed too, so a
+  suppressed case emits no `<script>` tag at all rather than an empty array.
+
+  `product.url` is used rather than a hand-built `/products/` path because it
+  carries the locale and market path prefix. Inside a plain
+  `{% for product in collection.products %}` loop it returns `/products/handle`,
+  not the collection-scoped form, because scoping requires an explicit
+  `| within:`.
+
+  @param {object} collection - The collection being rendered.
+  @param {object} paginate - The `paginate` object wrapping the grid. Supplies
+    `current_offset` so positions stay absolute across pages.
+
+  @example
+    {% render 'structured-data-collection-list', collection: collection, paginate: paginate %}
+{% enddoc %}
+
+{%- liquid
+  assign list_is_scoped = false
+
+  # A price filter with no selected values still reports `active_values.size`
+  # as 0, so it needs its own check rather than riding on the loop above it.
+  for filter in collection.filters
+    if filter.active_values.size > 0
+      assign list_is_scoped = true
+      break
+    endif
+    if filter.type == 'price_range'
+      if filter.min_value.value != blank or filter.max_value.value != blank
+        assign list_is_scoped = true
+        break
+      endif
+    endif
+  endfor
+
+  if collection.sort_by != blank and collection.sort_by != collection.default_sort_by
+    assign list_is_scoped = true
+  endif
+-%}
+
+{%- if list_is_scoped == false and collection.products.size > 0 -%}
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      "name": {{ collection.title | json }},
+      "itemListElement": [
+        {%- for product in collection.products -%}
+          {%- unless forloop.first -%},{%- endunless -%}
+          {
+            "@type": "ListItem",
+            "position": {{ forloop.index | plus: paginate.current_offset }},
+            "url": {{ shop.url | append: product.url | json }}
+          }
+        {%- endfor -%}
+      ]
+    }
+  </script>
+{%- endif -%}
