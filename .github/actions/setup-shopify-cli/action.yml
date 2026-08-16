@@ -22,14 +22,27 @@ runs:
       shell: bash
       # `--ignore-scripts` blocks lifecycle scripts (preinstall/install/postinstall)
       # from every package in the tree, so a compromised dependency cannot
-      # execute code in a job that holds the Shopify token. Nothing here needs
-      # those scripts: `esbuild` is the only package in the lockfile with
-      # `hasInstallScript` (a transitive dep of `@shopify/cli`), and both it and
-      # `@ast-grep/napi` get their platform binaries from `optionalDependencies`
-      # (per-platform packages npm resolves at install time), not from a
-      # postinstall download. `sharp`, the one direct devDependency with native
-      # code, likewise ships no install script at the pinned version. Re-check
-      # with `node -e` over `package-lock.json` for `hasInstallScript` after a
-      # dependency bump; if something genuinely needs a lifecycle script, install
-      # it in a job with no secrets rather than dropping this flag.
+      # execute code in a job that holds the Shopify token. Two packages in the
+      # lockfile carry `hasInstallScript`, and neither needs it here:
+      #
+      #   esbuild    transitive dep of `@shopify/cli`. It and `@ast-grep/napi`
+      #              get their platform binaries from `optionalDependencies`
+      #              (per-platform packages npm resolves at install time), not
+      #              from a postinstall download.
+      #   puppeteer  transitive dep of `pa11y-ci` (the accessibility audit in
+      #              preview.yml). Its install script downloads a Chromium
+      #              build. Blocking it is DELIBERATE and load-bearing: the
+      #              a11y job points pa11y at the runner's preinstalled
+      #              `/usr/bin/google-chrome` instead, and also sets
+      #              `PUPPETEER_SKIP_DOWNLOAD=1`. Every open `npm audit` high on
+      #              this tree (extract-zip symlink traversal, reachable only
+      #              through `@puppeteer/browsers`) lives in that download path,
+      #              so it is never executed. The audit's suggested "fix" is a
+      #              downgrade to pa11y-ci 3.x, which is strictly worse.
+      #
+      # `sharp`, the one direct devDependency with native code, ships no install
+      # script at the pinned version. Re-check with `node -e` over
+      # `package-lock.json` for `hasInstallScript` after a dependency bump; if
+      # something genuinely needs a lifecycle script, install it in a job with no
+      # secrets rather than dropping this flag.
       run: npm ci --ignore-scripts

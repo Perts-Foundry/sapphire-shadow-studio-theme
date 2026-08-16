@@ -1,8 +1,15 @@
 name: preview
 
+# PR-close cleanup only. The preview-theme push and the dynamic a11y audit
+# both live in validate.yml now (jobs `deploy-preview` and `validate`), so
+# validate can hard-depend on the preview theme existing before it audits it
+# and every result lands in the single CI Report comment. This file keeps the
+# `closed` event, which validate.yml deliberately does not listen to: deleting
+# the pr-N-preview theme when the PR closes.
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
 
 permissions: {}
 
@@ -10,151 +17,12 @@ permissions: {}
 # `bash -e {0}`; the delta here is `-u` (unset variable is an error) and
 # `-o pipefail` (a pipeline fails if any stage does), so a future step cannot
 # read an unset secret as an empty string or pass a broken pipeline off as
-# success. Steps that must survive a non-zero command still clear `-e` with
-# their own `set +e`; that does NOT clear `-u` or `-o pipefail`, which is the
-# point. Composite actions declare their own shell and are unaffected.
+# success. Composite actions declare their own shell and are unaffected.
 defaults:
   run:
     shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
-  deploy-preview:
-    # Skip Dependabot PRs: Dependabot-triggered workflows run with a separate
-    # secrets/variables scope (`Settings -> Secrets and variables ->
-    # Dependabot`) that does NOT inherit the regular Actions secrets, so
-    # `SHOPIFY_CLI_THEME_TOKEN` is empty here and `npx shopify theme list`
-    # fails authentication. Preview themes are for human visual review of
-    # code changes; dependency bumps (action SHAs, npm tooling) do not change
-    # the rendered storefront, so a preview adds no signal. The auto-deploy
-    # chain still works because `deploy.yml`'s `workflow_run` arm uses the
-    # default-branch secrets scope (not Dependabot's).
-    if: |
-      github.event.action != 'closed'
-      && github.event.pull_request.draft == false
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login != 'dependabot[bot]'
-    name: deploy-preview
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write
-    concurrency:
-      group: preview-deploy-pr-${{ github.event.pull_request.number }}
-      # Deliberately `true`, decided rather than defaulted. Cancelling mid-push
-      # can leave the preview theme partially uploaded, but that state is
-      # self-healing: the next run pushes the whole tree, and the run that
-      # cancelled this one is by definition already queued. The preview theme
-      # is an unpublished draft with no customer exposure, so a partial state
-      # between two pushes costs nothing, while queueing every run of a
-      # push-storm burns CI minutes for no safety gain. The cleanup job below
-      # is `false` for the opposite reason: a cancelled delete leaks a theme
-      # that nothing sweeps up.
-      cancel-in-progress: true
-    outputs:
-      theme_id: ${{ steps.push.outputs.theme-id }}
-      editor_url: ${{ steps.push.outputs.editor-url }}
-      preview_url: ${{ steps.push.outputs.preview-url }}
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-
-      - name: Push or update preview theme
-        id: push
-        uses: ./.github/actions/shopify-theme-push
-        with:
-          mode: preview
-          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
-          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
-          pr-number: ${{ github.event.pull_request.number }}
-
-      - name: Upsert preview comment
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          THEME_ID: ${{ steps.push.outputs.theme-id }}
-          THEME_NAME: ${{ steps.push.outputs.theme-name }}
-          EDITOR_URL: ${{ steps.push.outputs.editor-url }}
-          PREVIEW_URL: ${{ steps.push.outputs.preview-url }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-        with:
-          script: |
-            const marker = '<!-- preview -->';
-            const themeId = process.env.THEME_ID;
-            const themeName = process.env.THEME_NAME;
-            const editorUrl = process.env.EDITOR_URL;
-            const previewUrl = process.env.PREVIEW_URL;
-            const prNumber = parseInt(process.env.PR_NUMBER, 10);
-            const sha = (process.env.SHA || '').slice(0, 7);
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-
-            const body = [
-              marker,
-              '# Preview Deployment',
-              '',
-              '✅ **Preview theme deployed.** Open the URL below to inspect.',
-              '',
-              `**Commit:** \`${sha}\` | **Run:** [#${context.runNumber}](${runUrl})`,
-              '',
-              '---',
-              '',
-              '| | |',
-              '|:--|:--|',
-              `| **Theme** | \`${themeName}\` (id \`${themeId}\`) |`,
-              `| **Preview URL** | [${previewUrl}](${previewUrl}) |`,
-              `| **Edit in admin** | [Open editor](${editorUrl}) |`,
-              '',
-              '---',
-              '',
-              'Updated on every push to the PR; deleted when the PR closes.',
-            ].join('\n');
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-            });
-            const existing = comments
-              .filter(c => c.body && c.body.includes(marker))
-              .sort((a, b) => a.id - b.id);
-            const [keep, ...dupes] = existing;
-            if (keep) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: keep.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body,
-              });
-            }
-            for (const dup of dupes) {
-              await github.rest.issues.deleteComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: dup.id,
-              });
-            }
-            // Sweep the legacy marker from pre-restyle runs.
-            const legacy = comments.filter(c => c.body && c.body.includes('<!-- sapphire-preview-bot -->'));
-            for (const c of legacy) {
-              try {
-                await github.rest.issues.deleteComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: c.id,
-                });
-              } catch (_) { /* swallowed */ }
-            }
-
   cleanup:
     # Match deploy-preview's fork-PR and Dependabot exclusions. PRs that
     # never had a pr-N-preview theme created (deploy-preview rejected them
@@ -163,8 +31,7 @@ jobs:
     # `pull_request: closed` event from a merged Dependabot PR may run in
     # Dependabot's secrets scope with an empty token).
     if: |
-      github.event.action == 'closed'
-      && github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.login != 'dependabot[bot]'
     name: cleanup
     runs-on: ubuntu-24.04
@@ -174,6 +41,8 @@ jobs:
       pull-requests: write
     concurrency:
       group: preview-cleanup-pr-${{ github.event.pull_request.number }}
+      # A cancelled delete leaks a theme that nothing sweeps up, so queue
+      # rather than cancel.
       cancel-in-progress: false
     steps:
       - name: Checkout main for composite actions

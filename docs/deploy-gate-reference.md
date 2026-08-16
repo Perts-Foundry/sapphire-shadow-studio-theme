@@ -27,9 +27,40 @@ and is read by `smoke.mjs` from env, never argv.
    `validate.yml`, `head_sha`, **and** `event: 'pull_request'` (the event filter blocks a
    future `push` / `workflow_dispatch` trigger on validate.yml from masquerading as proof).
    Workflow_run paths: re-fetch the triggering Validate run via `getWorkflowRun`, assert
-   `conclusion: success`, thread the returned `head_sha` as `trustedSha` through every
-   downstream API call. HEAD-drift is first asserted via `pr.head.sha === trustedSha`;
-   `compareCommits.status === 'identical'` is **defence in depth** on top of that.
+   `status: completed`, then assert the **`validate` JOB** is `completed/success` via
+   `listJobsForWorkflowRun` (`filter: 'latest'`), and thread the run's `head_sha` as
+   `trustedSha` through every downstream API call. HEAD-drift is first asserted via
+   `pr.head.sha === trustedSha`; `compareCommits.status === 'identical'` is **defence in
+   depth** on top of that.
+   - **Gate on the JOB, not the run.** `validate.yml` is two jobs: `deploy-preview` (pushes
+     the `pr-N-preview` theme; holds the Shopify CLI token; runs for shopify-sync reconcile
+     PRs too) and `validate` (every PR-time check). Only the second is a verdict on the code,
+     and `validate / validate` is exactly the context branch protection requires on `main`, so
+     the job is what the rest of the system already trusts. The workflow-level `if:`
+     accordingly admits `workflow_run.conclusion` of `success` **or** `failure`; `cancelled`
+     stays excluded because validate.yml's `cancel-in-progress` group cancels the whole run on
+     every push and those carry no verdict. A green job under a red run proceeds with a
+     `core.warning` naming `deploy-preview`; a red job under a *green* run is impossible and
+     `setFailed`s; a missing job `setFailed`s only under a green run, since a red run can
+     legitimately have no jobs (validate.yml failed to parse).
+   - **Do not over-credit this.** On its own it does **not** yet unblock a preview-push flake.
+     `validate.yml` independently turns a non-success `deploy-preview` into a11y
+     `exit_code=1`, which reds the `validate` job too, so "red run, green `validate` job"
+     is currently unreachable with two jobs. This is hardening that makes the gate robust to
+     that coupling changing and to a third job being added. The validate-side decoupling that
+     would actually unblock a preview flake is deferred, not done: key the audit off
+     `deploy-preview.outputs.theme_id` (written only after a successful push, so a non-empty
+     value means the theme is fully uploaded) rather than off `deploy-preview.result` (which
+     also goes non-success when the *comment* step fails after the push landed).
+   - **The comment path deliberately still requires the whole RUN green** (`listWorkflowRuns`
+     → `latest.conclusion === 'success'`). Gate 2 therefore has two implementations that can
+     disagree once the coupling above is relaxed. The asymmetry is intentional and in the safe
+     direction: the comment path is the stricter of the two, and it is the one a human reaches
+     for when auto-deploy has already refused.
+   - The job name `'validate'` is hardcoded in `deploy.yml`'s `resolve` step, the same way the
+     workflow name `"validate"` is hardcoded in `on.workflow_run.workflows`. Renaming either
+     breaks both auto-deploy paths; `resolve` fails loudly (listing the job names it did see)
+     rather than silently passing.
    - **Do not "simplify" the `compareCommits` check away** as redundant with the SHA
      equality. The comparison is commit-object equality, **not** tree equality; same-tree
      amends, cherry-picks, and different-tree force-pushes all return `diverged`, not

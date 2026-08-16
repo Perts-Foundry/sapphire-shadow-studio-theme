@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
-  summarize, runSmoke, PASS, SOFT_WARN, HARD_FAIL,
+  summarize, runSmoke, authenticateStorefront, PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
 const THEME = '181702754604';
@@ -576,4 +576,62 @@ test('runSmoke: exhausted time budget -> SOFT-WARN remainder, does not hard-fail
   assert.ok(r.lines.some(l => /products SOFT-WARN: time budget/.test(l)));
   // structural still passed -> exit 0
   assert.equal(r.exitCode, 0);
+});
+
+// --- authenticateStorefront (shared with scripts/a11y/get-auth-cookie.mjs) ---
+//
+// runSmoke's own auth tests above cover the deploy-facing consequences. These
+// pin the exported contract directly, because the a11y auth helper now depends
+// on these four outcome strings and on the retry rule behind them.
+const auth = (fetchImpl, { sleep = recordingSleep(), backoff = [8000, 20000] } = {}) =>
+  authenticateStorefront({ baseUrl: BASE, password: 'p', jar: new Map(), fetchImpl, sleep, backoff });
+
+test('authenticateStorefront: 3xx away from /password -> success', async () => {
+  const fetchImpl = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 302, location: '/' }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(fetchImpl), 'success');
+});
+
+test('authenticateStorefront: 200 re-render and 3xx back to /password -> rejected', async () => {
+  const reRender = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 200 }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(reRender), 'rejected');
+  const bounce = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 302, location: '/password' }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(bounce), 'rejected');
+});
+
+test('authenticateStorefront: a persistent 429 is throttled, a 5xx is error, never rejected', async () => {
+  const throttled = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 429 }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(throttled), 'throttled');
+  const broken = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 503 }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(broken), 'error');
+});
+
+test('authenticateStorefront: a network failure is error, and the retries are bounded by backoff', async () => {
+  const dead = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', 'THROW'],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(dead), 'error');
+
+  const sleep = recordingSleep();
+  const throttled = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 429 }],
+    [() => true, { status: 200 }],
+  ]);
+  await auth(throttled, { sleep, backoff: [1, 2] });
+  assert.deepEqual(sleep.delays, [1, 2], 'exactly one POST per backoff entry, then give up');
 });

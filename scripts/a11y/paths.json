@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Storefront paths pa11y-ci audits against the PR's preview theme.",
+    "",
+    "The list is committed rather than crawled so a PR that breaks a page cannot",
+    "shrink the audit's own coverage. Selection rule: one path per distinct",
+    "TEMPLATE, because a template is the unit a theme change actually alters.",
+    "Every product template has exactly one live product, so the handles below are",
+    "the whole product surface, not a sample.",
+    "",
+    "When a product handle changes or a template is added, this file must change",
+    "with it. scripts/a11y/test/paths.test.mjs asserts every templates/product*.json",
+    "has an entry here, so a new product template fails the build rather than",
+    "silently going unaudited. It cannot check handles against the live store (no",
+    "network in CI unit tests); a renamed handle surfaces as a 404 in the audit.",
+    "",
+    "Per-entry `ignore` and `hideElements` are pa11y options, passed through by",
+    "build-pa11yci.mjs. Use them for third-party embeds this theme does not",
+    "control, never to silence a real finding in theme markup."
+  ],
+  "paths": [
+    { "path": "/", "label": "index (homepage)", "template": "templates/index.json" },
+    { "path": "/collections", "label": "list-collections", "template": "templates/list-collections.json" },
+    { "path": "/collections/all-products", "label": "collection", "template": "templates/collection.json" },
+    { "path": "/products/huddle-crewneck", "label": "product (huddle crewneck)", "template": "templates/product.huddle-crewneck.json" },
+    { "path": "/products/lead-ii-crewneck", "label": "product (lead ii crewneck)", "template": "templates/product.lead-ii-crewneck.json" },
+    { "path": "/products/lead-ii-quarter-zip", "label": "product (lead ii quarter zip)", "template": "templates/product.lead-ii-quarter-zip.json" },
+    { "path": "/products/lead-ii-vest-womens", "label": "product (lead ii vest womens)", "template": "templates/product.lead-ii-vest-womens.json" },
+    { "path": "/products/shift-fuel-crewneck", "label": "product (shift fuel crewneck)", "template": "templates/product.shift-fuel-crewneck.json" },
+    { "path": "/products/sapphire-shadow-studio-gift-card", "label": "product (gift card)", "template": "templates/product.gift-card.json" },
+    { "path": "/cart", "label": "cart", "template": "templates/cart.json" },
+    { "path": "/search?q=crewneck", "label": "search results", "template": "templates/search.json" },
+    { "path": "/pages/about", "label": "page (about)", "template": "templates/page.about.json" },
+    { "path": "/pages/faq", "label": "page (faq)", "template": "templates/page.faq.json" },
+    { "path": "/pages/contact", "label": "page (contact)", "template": "templates/page.contact.json" },
+    { "path": "/pages/custom-orders", "label": "page (custom orders)", "template": "templates/page.custom-orders.json" },
+    { "path": "/pages/data-sharing-opt-out", "label": "page (generic template)", "template": "templates/page.json" },
+    { "path": "/blogs/news", "label": "blog listing", "template": "templates/blog.json" },
+    { "path": "/policies/refund-policy", "label": "shop policy (Shopify-rendered)", "template": null },
+    { "path": "/404-intentionally-missing", "label": "404", "template": "templates/404.json" }
+  ]
+}

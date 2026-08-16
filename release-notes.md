@@ -1,5 +1,322 @@
 # Release Notes
 
+## Accessibility checks in CI, in two layers (unreleased)
+
+### What changed
+
+`validate.yml` gains a `Contrast + a11y tests` step plus a dynamic pa11y-ci audit
+of the PR's preview theme. To make the audit possible inside the required check,
+the preview-theme push moved from `preview.yml` into `validate.yml` as a
+`deploy-preview` job that the `validate` job `needs`, so the theme the audit
+reads is known to exist and to match the head SHA; `preview.yml` retains only the
+PR-close cleanup. Everything reports into the one sticky CI Report comment.
+Before this, the twelve validate steps contained no
+accessibility check of any kind, so a failing colour scheme shipped silently: the
+`sss-dark-scheme` accent sat at 3.86:1 until a hand-run Lighthouse audit caught it
+on 2026-08-15. A hand-run audit is not a gate.
+
+New: `scripts/contrast/` (static colour-scheme lint, plus `accepted-risks.json`),
+`scripts/a11y/` (preview-theme auth, pa11y config builder, result summariser), and
+a `pa11y-ci` devDependency. `TODO.md`'s "Add an accessibility check to CI" row is
+replaced by a triage row for the debt the lint surfaced.
+
+### Why two layers rather than one
+
+They fail in different directions and neither subsumes the other.
+
+**The static lint** reads `config/settings_data.json` directly. No network, no
+browser, no storefront password, so it can sit inside the required
+`validate / validate` context and block a merge. What it cannot see is a rendered
+page: font sizes, focus order, what actually composites over a hero image.
+
+**pa11y-ci** sees exactly that, but only against a deployed `pr-N-preview` theme,
+which means an authenticated remote request and a secret. It started life as an
+advisory job in `preview.yml`; the operator then chose to make it gate merges,
+accepting the trade that every validate run now waits on a preview deploy and
+depends on a live storefront round trip. Draft and Dependabot PRs get no preview
+by design, so for them the audit records a benign skip rather than a failure,
+while a FAILED preview deploy is a red check: "could not audit" must never read
+as "no accessibility errors".
+
+Like the contrast lint, the pa11y gate landed with its pre-existing debt
+baselined rather than fixed: `scripts/a11y/baseline.json` silences the nine axe
+rules the first full audit surfaced, audit-wide, so the gate catches regressions
+from day one (TODO.md holds the triage row). Rule-level rather than per-finding
+is deliberate: pa11y findings key on generated selectors that churn with section
+ids, so a per-finding baseline would go stale on every editor edit. The trade,
+recorded in the file's header, is that a new instance of a baselined rule stays
+invisible until that rule is cleared.
+
+The `perts-foundry-website` precedent supplied the pa11y defaults (`WCAG2AA`, axe
+runner, `target-size`) and the reporting shape. Its plumbing did NOT port: that
+repo Hugo-builds to `public/` and serves it on localhost, needing no secret and no
+network. Liquid renders server-side, so this repo has no local build target.
+
+### Design points that are load-bearing
+
+**`STOREFRONT_PASSWORD` is scoped to one STEP, not to the `validate` job.** The
+pa11y step launches `--no-sandbox` Chrome that executes third-party page
+JavaScript (consent banner, chat widget, Shopify's own scripts). The storefront
+password must not be in that process's environment. No Shopify token appears
+anywhere in the `validate` job (the CLI theme token lives only in
+`deploy-preview`), so the per-job secret isolation described in CLAUDE.md's
+deploy-gate section survives. The password is the one secret the validate job now
+holds at all, and it is read access to a password-gated storefront, not a write
+capability.
+
+**The preview-theme assertion is the point of `get-auth-cookie.mjs`.** Passing the
+storefront password proves only that the storefront opened. It does not prove the
+session is pinned to the PR's DRAFT theme. If `?preview_theme_id=` silently failed,
+pa11y would audit the LIVE theme and report green on a PR that broke the page. So
+the script fetches the preview URL and reads the theme id back out of the
+`server-timing` header, asserting it matches the expected id specifically. The
+same assertion catches a Cloudflare interstitial, which returns a page that is not
+a rendered storefront at all.
+
+**The preview-activation mechanism was verified against the live store before this
+shipped (2026-08-16), read-only, using the existing unpublished sync theme.** A bare
+`?preview_theme_id=` does activate an unpublished theme for an authenticated
+session, so the share/`key=` URL fallback the plan held in reserve is not needed.
+All 19 paths in `paths.json` returned their expected status and reported the
+preview theme id rather than the live one.
+
+**That verification caught a bug that would have failed the first CI run.** The
+`*.myshopify.com` host 302s to the primary custom domain, and the original
+off-host assertion rejected it, even though auth and theme activation had both
+succeeded. `vars.SHOPIFY_FLAG_STORE` is the myshopify host, so the check failed
+against the exact BASE_URL the workflow passes. The fix is not to loosen the
+assertion but to move it: the THEME ID is the identity proof, and it is strictly
+stronger than a host comparison, because `server-timing: theme;desc=<id>` naming
+this store's specific unpublished theme is something only this store emits. The
+resolved origin is now returned so pa11y requests the canonical host directly
+instead of eating a redirect on all 19 URLs. It travels via a file rather than
+`$GITHUB_OUTPUT`, because a step cannot read back its own outputs and the caller
+needs it in the same step.
+
+**curl cannot do any of this.** Cloudflare bot management blocklists its TLS
+fingerprint on this store. Node's `fetch` (undici) gets through, which is why
+`smoke.mjs` is built on it and why `get-auth-cookie.mjs` IMPORTS `BROWSER_HEADERS`,
+`updateJar`, `cookieHeader` and `authenticateStorefront` from `smoke.mjs` rather
+than copying them. The exact header set is what was found to work; two copies
+would drift.
+
+That claim was originally only half-true: the header and cookie helpers were
+imported, but the password POST and its outcome classification had been
+hand-rolled a second time in `get-auth-cookie.mjs`, which is exactly the drift
+the exports exist to prevent. The loop now lives in `smoke.mjs` as the exported
+`authenticateStorefront`, and both callers share it. The four outcome strings
+(`success` / `rejected` / `throttled` / `error`) are load-bearing on the smoke
+side, where `rejected` HARD-FAILs a deploy and everything else falls back to
+reduced coverage, so the extraction preserves that classification exactly.
+One visible consequence on the a11y side: a 5xx on the password POST now reports
+`error` where the copy said `throttled`. Both fail there regardless, because an
+unauthenticated pa11y run would audit the password page and green on it.
+
+**`probe()` retries a throttle, for the same reason `smoke.mjs` does.** The store
+sits behind bot management, so a 429 or a transient 5xx on either of the two
+probes is a realistic way to lose an audit run to something it should have
+survived. `probe()` now takes the same `backoff` / `sleepImpl` the password POST
+already had. A connection failure is deliberately NOT retried: it fails closed,
+matching `fetchObservation`. A 5xx that outlives the retries still reaches
+`classifyPreview`, which reads it as a challenge.
+
+**Every `node` call in the audit job has its exit status captured.** The job runs
+`set +e` throughout, so each step decides its own verdict and writes one
+`exit_code`; a status that is never read is a silent pass. Two were not read.
+The URL count was interpolated straight from a command substitution, so a crash
+in that `node -e` produced an empty count and still wrote `exit_code=0`; it now
+fails closed on a non-zero status or a count that is not a positive integer,
+which is also the earlier of the two zero-URL guards (`summarize-pa11y.mjs`
+catches it downstream, but only after pa11y has run). The summary was parsed
+twice, and the body parse fell back to an empty string independently of the exit
+code, so a malformed summary could log a verdict while posting an empty comment
+and still report success. It is parsed once now: the log line goes to stderr and
+the body to stdout from the same parse, and a parse failure sets `exit_code=1`
+and says so in the comment.
+
+**Non-text contrast is checked against the PAGE, not against the control's own
+fill.** The naive reading (border vs its own background) scores a solid black
+button on white at 1:1 and fails it, which is nonsense, and would have demanded a
+baseline entry for nearly every scheme. What SC 1.4.11 actually requires is that
+the control be tellable apart from the page, so the check passes when EITHER the
+border OR the component's fill reaches 3:1 against the scheme background. For the
+page-level `border` role the component background IS the scheme background, so it
+reduces to the plain border-vs-page check.
+
+**`foreground_heading` is checked at 3:1, not 4.5:1, and this is a judgment call.**
+The role is one colour shared by all six heading levels. h1-h3 are 32px and up,
+clearing the large-text bar comfortably; h5 and h6 are 14px and 12px and do not, so
+a strict reading would demand 4.5:1. It was left at 3:1 so the gate could land
+without an immediate baseline. Tightening it is one line in `lib/pairs.mjs`.
+Revisit if a small heading ever becomes the sole carrier of information.
+
+**Overlay schemes are reported INDETERMINATE, not passed and not failed.** Two
+schemes have `background: rgba(0,0,0,0)`: they paint nothing and composite over
+whatever section media sits beneath. What a static reader would have to assume
+about the surface underneath is invention, and reporting `#f2f2f2` text as "1:1
+against white" would be a fabricated number that 44 fabricated baseline entries
+then silenced. They are excluded from the tally, reported by name, and left to the
+pa11y layer, which renders the real image behind the real text. This is the
+clearest case for why one layer was not enough.
+
+**The baseline ratchets and self-clears.** `accepted-risks.json` records the ratio
+measured when each exception was accepted. Score below it later and the lint fails:
+accepting "this border is at 2.1:1" must not also accept a later 1.2:1. Reach the
+threshold and the entry is reported STALE so it gets deleted, because a file that
+only grows eventually hides a regression behind an entry nobody remembers. A
+malformed entry is a hard error, never a silent no-op, since a typo'd scheme name
+would otherwise look like a granted exception while suppressing nothing.
+
+**It landed with 56 recorded exceptions and zero colour changes.** That was a
+deliberate instruction, not an oversight: the operator chose to ship the gate first
+and triage the debt separately (`TODO.md`). The consequence worth knowing is that
+the gate catches REGRESSIONS from day one but asserts nothing about the current
+palette's absolute quality.
+
+**The unblock path for a false positive is a baseline entry, never a threshold
+change.** The lint sits inside the required check, so a false positive blocks every
+merge. Widening a threshold in `lib/pairs.mjs` removes the check for every scheme
+forever; an `accepted-risks.json` row is scoped, dated, noted and reversible.
+
+**Every open `npm audit` high in the new dependency tree is unreachable.** All six
+trace to `extract-zip` via `@puppeteer/browsers`, which lives in puppeteer's
+browser-DOWNLOAD path. `npm ci --ignore-scripts` (setup-shopify-cli) blocks that
+script, `PUPPETEER_SKIP_DOWNLOAD=1` reinforces it, and pa11y is pointed at the
+runner's `/usr/bin/google-chrome`. The audit's suggested fix is a downgrade to
+pa11y-ci 3.x, which is strictly worse. The `setup-shopify-cli` comment enumerating
+`hasInstallScript` packages was updated, since puppeteer is now the second one.
+
+**The audit and the preview push share one cancellation scope.** A new push must
+cancel a running audit BEFORE redeploying the theme that audit is reading; letting
+them race produces findings for a tree that no longer exists. With both inside
+`validate.yml`, the workflow-level `validate-<pr>` concurrency group
+(`cancel-in-progress: true`) provides this for free: a new push cancels the whole
+prior run, preview push and audit alike, so the moved `deploy-preview` job carries
+no job-level concurrency group of its own. The residual race (a redeploy landing
+inside the cancellation window) is accepted and commented: the cost is a stale
+report on a PR that is about to get a fresh run.
+
+**Both new capture steps use a random `$GITHUB_OUTPUT` heredoc delimiter**, not the
+fixed `GHEOF` the older steps use. Their captured text is PR-controlled (scheme
+names, baseline notes, page-derived pa11y findings), so a fixed delimiter would let
+a PR close the heredoc early and inject arbitrary step outputs.
+
+### Follow-ups from the infra review of the two-job layout
+
+**Auto-deploy gates on the `validate` JOB, not on the validate RUN.** Folding the
+preview push into `validate.yml` gave the run two jobs with very different
+meanings, and `deploy.yml`'s `workflow_run` arm was still reading
+`workflow_run.conclusion`. Only `validate` is a verdict on the code;
+`deploy-preview` talks to Shopify over the network and runs for shopify-sync
+reconcile PRs as well. The gate now resolves the `validate` job via
+`listJobsForWorkflowRun` (`filter: 'latest'`, so a superseded re-run attempt
+cannot supply the verdict) and requires `completed/success` on it; the
+workflow-level `if:` was widened to admit a `failure` run conclusion so the job
+check can be reached at all.
+
+**What this does not do, stated plainly.** It was filed as the fix for "a Shopify
+hiccup in `deploy-preview` fails the run with every validation green and blocks
+auto-deploy", and that premise is wrong on this branch: `validate.yml` turns any
+non-success `deploy-preview` into a11y `exit_code=1`, which reds the `validate`
+job as well. With two jobs in the run, "red run, green `validate` job" is
+therefore unreachable, the `core.warning` branch is currently dead code, and a
+preview flake still blocks auto-deploy. What landed is hardening: the gate now
+trusts the same artifact branch protection trusts, and it stays correct if a third
+job is added to `validate.yml` or the audit's coupling to `deploy-preview.result`
+is relaxed. The actual flake fix is keying the audit off
+`deploy-preview.outputs.theme_id` (written only after a successful push, so a
+non-empty value means the theme is fully uploaded, while `result != 'success'` can
+also mean the *comment* step failed afterwards). That is deliberately not shipped
+here, because it changes what the required check asserts.
+
+The rejected alternative was `continue-on-error: true` on `deploy-preview`. It is
+a smaller diff, but it renders the job GREEN in the Actions tab when the theme
+push actually failed, which is the same class of dishonest-green problem as the
+three items below. A red job with a gate that knows which job matters is the
+honest shape.
+
+Properties kept deliberately: `cancelled` is still excluded at the workflow level,
+because `validate.yml`'s `cancel-in-progress` group cancels the whole run on every
+new push and those runs carry no verdict; a red `validate` job under a GREEN run
+still `setFailed`s, because that combination should be impossible and must not
+read as an ordinary red validate; and a MISSING `validate` job `setFailed`s only
+under a green run, since a red run can legitimately have no jobs at all
+(validate.yml failed to parse), and reddening `deploy` for that would put a red
+run on a PR that was never a deploy candidate. None of the four documented deploy
+gates were touched.
+
+The comment path still requires the whole run green. That asymmetry is deliberate
+and in the safe direction (stricter), and is now recorded in
+`docs/deploy-gate-reference.md` rather than left to be rediscovered.
+
+**The baseline moved out of pa11y and into the summariser, so the report can
+disclose it.** `baseline.json` silences twelve axe rules audit-wide, but it was
+handed to pa11y as `defaults.ignore`, which drops matching findings inside the
+browser. The report therefore could not say what it had hidden, and the comment
+claimed "N URL(s) audited against WCAG 2.1 AA (axe runner, plus `target-size`)"
+while `target-size` itself was one of the twelve. pa11y now runs unbaselined;
+`summarize-pa11y.mjs` applies the filter and publishes the rule list, a per-rule
+count of what each entry hid on that run, and a per-URL suppressed column. A rule
+at 0 is flagged as clearable, which is the signal for deleting it. The audited-
+standard sentence is qualified for as long as `target-size` sits in the baseline.
+
+A second benefit that was itself a prior bug: the per-URL display cap is no longer
+spent on baselined noise, which is what hid three baselined rules for a whole PR
+(commit `d060587`).
+
+The cost, and it is real: pa11y-ci now exits non-zero on any run with a baselined
+finding, so its exit code is no longer a usable crash signal. That signal is
+replaced by a stronger, per-URL one. pa11y-ci stores a caught exception as that
+URL's entire result array and an `Error` serialises to `{}`, so a page that never
+loaded had no `type: 'error'` entry and was already being counted as a clean pass;
+only the exit code had been catching it. The summariser now detects such an entry
+structurally, names the URL, and fails the run. A result that is not an array at
+all (or is absent) is treated the same way, rather than falling back to "no
+issues" as it used to. The exit-code check is kept as a last resort for a run that
+reported nothing at all; it cannot be unconditional, because a non-zero exit is now
+the normal case whenever anything baselined fired.
+
+Still missing, and deliberately deferred: nothing asserts the report covered every
+URL the config declared. The floor is one URL, not all of them, so a run whose
+browser pool died after three pages would report "3 URL(s) audited" and pass.
+`validate.yml` already computes and validates that count as
+`steps.a11y-config.outputs.url_count`; threading it into the summariser as an
+expected-URL assertion is the remaining piece.
+
+**A skipped-by-design audit no longer renders as "All checks passed".** Draft and
+Dependabot PRs get no preview theme, so the a11y step writes `exit_code=0` on
+purpose: the required context must not go red or skip, or those PRs are blocked
+forever. But the aggregator counted that 0 as a pass, so the banner asserted a full
+green over an audit that never ran. `Collect results` now classifies it as a skip
+and separately records that the skip was EXPECTED, and the banner has a dedicated
+clause saying the dynamic audit did not run and only the static contrast lint
+covered accessibility. `Check for failures` is untouched, so mergeability for
+drafts and Dependabot is unchanged.
+
+**The CI Report comment is bounded as a whole, not just section by section.** Only
+the a11y section had a cap (30k). GitHub rejects a body over 65536 characters with
+a 422, and the upsert is `continue-on-error`, so an oversized report would have
+silently posted nothing at all: the worst possible failure mode for the thing
+reporting the failures. The detail blocks are now data rather than string literals,
+and if the assembled body exceeds 60000 characters they are replaced one at a time
+with a "see the run log" placeholder, PASSING sections first and largest first, so
+a failing check's output survives longest. The banner and the four result tables
+are never dropped. Every degraded form still emits a matched `<details>` pair and a
+matched fence pair.
+
+Fixed in passing, found by an offline harness over the assembler: the a11y cap's
+blind-cut fallback appended a fixed ` ``` ` + `</details>` pair, which assumed the
+cut had landed inside both. When it had not, the spurious `</details>` closed the
+WRAPPER around the a11y section and spilled every later section out of it. The
+closers are now computed from what the retained text actually leaves open, after
+dropping the partial final line.
+
+**zizmor gets a token.** Without one it silently drops its online audits
+(`impostor-commit`, `ref-confusion`, `known-vulnerable-actions`) and still reports
+a clean run, so a green "Security audit" row was asserting more than the tool had
+checked. `GH_TOKEN: ${{ github.token }}` is enough: those audits only read public
+action repositories.
+
 ## Collection differentiation is a runbook, not a code change (unreleased)
 
 ### What changed
