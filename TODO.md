@@ -122,7 +122,7 @@ several of the pass's other findings.
   at `/collections`, which renders all four as cards. Only The Vitals Collection has an image; the
   other three fall back to a product photo or a placeholder. That page also shows Featured and All
   Products alongside the two real collections, which is the collection-list equivalent of the
-  duplicate-grid problem already tracked above. Admin (collection images, or point Catalog at
+  duplicate-grid problem tracked in `docs/collection-differentiation-runbook.md`. Admin (collection images, or point Catalog at
   `/collections/all`).
 - [ ] **The `all-products` smart collection's rules are junk that happens to work.** They are
   `VARIANT_PRICE > -1` OR `VARIANT_INVENTORY < 0`, matching on any condition: the first rule catches

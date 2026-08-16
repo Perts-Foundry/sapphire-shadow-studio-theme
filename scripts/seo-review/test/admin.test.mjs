@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isEffectivelyEmpty, breadcrumbCollectionFindings } from '../admin.mjs';
+import { WARN } from '../lib/checks.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
   assert.equal(isEffectivelyEmpty(''), true);
@@ -37,7 +38,20 @@ test('every nil cause of an unset breadcrumb metafield reads the same', () => {
   const f = breadcrumbCollectionFindings(products);
   assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-missing'));
   assert.deepEqual(f.map((x) => x.url), ['admin:product/a', 'admin:product/b', 'admin:product/c']);
-  assert.ok(f.every((x) => x.severity === 'WARN'));
+  assert.ok(f.every((x) => x.severity === WARN));
+});
+
+test('a documented intentionally-blank product produces no missing finding', () => {
+  // docs/breadcrumb-collection-metafield.md says gift-card stays blank, so the
+  // missing WARN must not fire for it; a catch-all value on it still would.
+  assert.deepEqual(
+    breadcrumbCollectionFindings([{ handle: 'gift-card', breadcrumbCollection: null }]),
+    [],
+  );
+  assert.equal(
+    breadcrumbCollectionFindings([{ handle: 'gift-card', breadcrumbCollection: mf('all') }])[0].check,
+    'product-breadcrumb-collection-catchall',
+  );
 });
 
 test('a catch-all breadcrumb metafield is flagged separately, keyed per product', () => {
@@ -48,4 +62,5 @@ test('a catch-all breadcrumb metafield is flagged separately, keyed per product'
   ]);
   assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-catchall'));
   assert.deepEqual(f.map((x) => x.url), ['admin:product/x', 'admin:product/y', 'admin:product/z']);
+  assert.ok(f.every((x) => x.severity === WARN));
 });

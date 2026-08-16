@@ -105,6 +105,15 @@ export function isEffectivelyEmpty(text) {
 }
 
 /**
+ * Products where a blank `custom.breadcrumb_collection` is the correct
+ * configuration (docs/breadcrumb-collection-metafield.md: the gift card's
+ * two-item "Home > Gift Card" trail needs no parent). The missing-value WARN
+ * skips these so the check can reach zero findings once every other product
+ * is set.
+ */
+export const BREADCRUMB_BLANK_OK_HANDLES = new Set(['gift-card']);
+
+/**
  * Findings for the per-product `custom.breadcrumb_collection` metafield that
  * snippets/breadcrumbs.liquid reads as step 2 of its four-step parent cascade.
  *
@@ -124,6 +133,7 @@ export function breadcrumbCollectionFindings(products) {
     // so neither does this check.
     const handle = mf && mf.reference ? mf.reference.handle : null;
     if (!handle) {
+      if (BREADCRUMB_BLANK_OK_HANDLES.has(p.handle)) continue;
       findings.push({
         check: 'product-breadcrumb-collection-missing', severity: WARN, url,
         detail: `no custom.breadcrumb_collection reference; the breadcrumb parent falls back to the theme's preferred-handle list (${BREADCRUMB_PREFERRED_HANDLES.join(', ')})`,
