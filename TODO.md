@@ -118,8 +118,9 @@ attaching one hero image per colour. What the pass verified as clean is recorded
 `release-notes.md`, not here, so it does not get re-audited. The 2026-08-14 backlog triage closed out
 several of the pass's other findings.
 
-- [ ] **[LAUNCH BLOCKER] All 431 variants weigh 0 lb while Express is weight-tiered.** The live rate table on the
-  General profile prices Express at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9), and $80 (9+).
+- [ ] **[LAUNCH BLOCKER] All 431 variants weigh 0 lb while Expedited is weight-tiered.** The live rate
+  table on the General profile prices Expedited at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9),
+  and $80 (9+).
   Every variant on all six products reports `0 POUNDS`, so every order of any size buys the $20 tier
   and the tiering above it is unreachable. Economy is priced on cart total, not weight, so it is
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
@@ -136,15 +137,6 @@ several of the pass's other findings.
   the page. Its only media is the 500x500 `SSS-Square-White-BG-svg.svg` logo. It is the one product
   page with neither body copy nor a photograph; the accordion carries the whole page. Admin (product
   description plus a gift-card image).
-- [ ] **The announcement bar contradicts the real shipping rates.** Slide 2 reads "$8.00 Flat Rate
-  Shipping **for All Items**"; $8 is the under-$75 rate only, and slide 3 immediately says free over
-  $75. "for All Items" is the wrong half of the sentence to emphasise. `sections/header-group.json`,
-  admin-synced.
-- [ ] **Copy says "Expedited shipping", checkout says "Express".** All five apparel templates'
-  Shipping and Turnaround accordion and three FAQ answers use "Expedited"; the live rate is named
-  "Express". Rename one side. Cheapest fix is the Admin rate name, since the word appears in eight
-  template locations (five product templates plus three occurrences in `templates/page.faq.json`;
-  re-counted 2026-08-15). Repo plus Admin.
 - [ ] **Stored SEO titles are null on all four collections and all five pages.** Descriptions are set
   everywhere; only the titles are empty, so they render as the resource title with no keyword control.
   Products all have both. This is the `collection-seo-title-missing` / page-equivalent WARN the

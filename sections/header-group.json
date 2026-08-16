@@ -32,7 +32,7 @@
           "type": "_announcement",
           "name": "t:names.announcement",
           "settings": {
-            "text": "<strong>$8.00 Flat Rate Shipping</strong> for All Items",
+            "text": "<strong>$8.00 Flat Rate Shipping</strong> on Orders under $75.00",
             "link": "shopify://policies/shipping-policy",
             "font": "var(--font-subheading--family)",
             "font_size": "0.75rem",
@@ -46,7 +46,7 @@
           "type": "_announcement",
           "name": "t:names.announcement",
           "settings": {
-            "text": "<strong>Free Shipping</strong> on Orders over $75.00",
+            "text": "<strong>Free Shipping</strong> on Orders $75.00 and up",
             "link": "shopify://policies/shipping-policy",
             "font": "var(--font-subheading--family)",
             "font_size": "0.75rem",
