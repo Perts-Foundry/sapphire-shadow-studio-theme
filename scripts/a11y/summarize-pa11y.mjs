@@ -291,11 +291,13 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
 
   // A non-zero pa11y-ci exit with nothing parsed out means it failed for some
   // other reason (a page that would not load, a Chrome crash). Do not green it.
-  // This net only fires when the report is otherwise empty: with the baseline
-  // applied HERE rather than in the runner, pa11y-ci legitimately exits
-  // non-zero on every run that has any baselined finding, so the per-URL
-  // `malformed` check above is the primary crash detector now.
-  if (errors === 0 && suppressed === 0 && exitCode !== null && exitCode !== 0) {
+  // This net only fires when the report is otherwise empty: pa11y-ci counts
+  // EVERY issue it reports toward a URL's pass/fail, so with the baseline
+  // applied HERE rather than in the runner it legitimately exits non-zero on
+  // any baselined finding, and with includeWarnings it does the same on any
+  // needs-review warning. The per-URL `malformed` check above is the primary
+  // crash detector now.
+  if (errors === 0 && suppressed === 0 && warnings === 0 && exitCode !== null && exitCode !== 0) {
     return {
       ok: false, total, passes, errors, suppressed, warnings, malformed, body,
       reason: `pa11y-ci exited ${exitCode} but reported no accessibility findings at all; the run itself failed`,

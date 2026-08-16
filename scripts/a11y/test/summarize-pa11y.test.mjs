@@ -110,6 +110,18 @@ test('a run with only baselined findings is clean despite pa11y exiting non-zero
   assert.equal(out.suppressed, 2);
 });
 
+test('a run with only needs-review warnings is clean despite pa11y exiting non-zero', () => {
+  // includeWarnings puts warnings in the issue list pa11y-ci counts toward a
+  // URL's pass/fail, so a warnings-only run exits 2. Not a crash either.
+  const out = summarize(
+    report({ 'https://s.example/a': [issue({ type: 'warning' })] }),
+    { exitCode: 2 }
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.errors, 0);
+  assert.equal(out.warnings, 1);
+});
+
 // ── Baseline disclosure ────────────────────────────────────────────
 
 test('baselined rules are suppressed from the gate but disclosed in the body', () => {
