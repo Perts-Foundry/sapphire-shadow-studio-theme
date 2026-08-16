@@ -25,6 +25,9 @@
     "frame-tested",
     "frame-title",
     "list",
-    "scrollable-region-focusable"
+    "nested-interactive",
+    "scrollable-region-focusable",
+    "target-size",
+    "video-caption"
   ]
 }
