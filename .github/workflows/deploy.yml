@@ -3,10 +3,12 @@
 #   1. issue_comment  - Dev PRs. A write+ collaborator comments `deploy`;
 #                       the gate job runs the collaborator-permission check
 #                       and the validate-on-HEAD-SHA re-verification.
-#   2. workflow_run   - Auto-deploy for shopify-sync admin commits. Validate
-#       (shopify-sync)  succeeds on the auto-reconcile PR; this workflow
-#                       fires; the gate runs the shopify-sync gates (signed-
-#                       commit, label, diff-sanity, base-staleness).
+#   2. workflow_run   - Auto-deploy for shopify-sync admin commits. Validate's
+#       (shopify-sync)  `validate` JOB succeeds on the auto-reconcile PR (the
+#                       run may still be red if its `deploy-preview` job broke);
+#                       this workflow fires; the gate runs the shopify-sync
+#                       gates (signed-commit, label, diff-sanity,
+#                       base-staleness).
 #   3. workflow_run   - Auto-deploy for Dependabot PRs. Same shape as (2),
 #       (dependabot/**) with dependabot-specific gates (no CI-file changes,
 #                       major-version label requirement, manual-review
@@ -33,8 +35,10 @@
 #            bash cannot leak the Shopify token because the Shopify token
 #            structurally does not exist in this job's scope.
 #
-# WARNING: workflow_run.workflows hardcodes the literal name "validate";
-# renaming validate.yml silently breaks the auto-deploy paths. The
+# WARNING: workflow_run.workflows hardcodes the literal name "validate", and
+# the gate job hardcodes the literal JOB name "validate" inside it (validate.yml
+# is two jobs; only that one is a verdict on the code). Renaming either silently
+# breaks the auto-deploy paths. The
 # workflow_run.branches filter (shopify-sync, dependabot/**) also depends on
 # Dependabot's branch-naming convention. The sync job's phantom-orphan SSH
 # push additionally depends on (a) the ruleset name "shopify-sync-protection",
@@ -95,6 +99,25 @@ jobs:
     #       (push: main or push: shopify-sync) rather than a PR. validate.yml
     #       fires on both pull_request and push; only the pull_request flavor
     #       corresponds to an auto-deploy candidate.
+    #
+    # `failure` is accepted alongside `success` here ON PURPOSE, and the real
+    # gate moved into `resolve` below. validate.yml is two jobs: `deploy-preview`
+    # (pushes the pr-N-preview theme, holds the Shopify CLI token) and
+    # `validate` (every PR-time check). `resolve` gates on the `validate` JOB's
+    # conclusion, which is exactly what branch protection trusts
+    # (`validate / validate`) and does not conflate a Shopify-side preview
+    # failure with a verdict on the code.
+    #
+    # Scope note, so this is not over-credited: on its own it does NOT yet
+    # unblock a preview flake, because validate.yml still turns a failed
+    # `deploy-preview` into a red `validate` job as well (a11y `exit_code=1`).
+    # This is correctness hardening that makes the gate robust to that coupling
+    # changing, and to a third job ever being added. The validate-side
+    # decoupling is deferred; see docs/deploy-gate-reference.md.
+    #
+    # `cancelled` stays excluded: validate.yml's cancel-in-progress concurrency
+    # group cancels the whole run on every new push, and those carry no verdict
+    # at all.
     if: |
       (github.event_name == 'issue_comment'
         && github.event.issue.pull_request
@@ -102,7 +125,7 @@ jobs:
         && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association))
       || (github.event_name == 'workflow_run'
         && github.event.workflow_run.event == 'pull_request'
-        && github.event.workflow_run.conclusion == 'success')
+        && contains(fromJSON('["success", "failure"]'), github.event.workflow_run.conclusion))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -327,16 +350,81 @@ jobs:
             }
             // Re-fetch the triggering run by id. This is the TRUSTED source
             // for head_sha (the event payload can be replayed; getWorkflowRun
-            // returns the live record). Re-assert conclusion=success in case
-            // the run was retried or its status mutated between dispatch and
-            // execution.
+            // returns the live record). Re-assert completion in case the run
+            // was retried or its status mutated between dispatch and execution.
             const { data: run } = await github.rest.actions.getWorkflowRun({
               owner, repo, run_id: context.payload.workflow_run.id,
             });
-            if (run.status !== 'completed' || run.conclusion !== 'success') {
-              core.setFailed(`Triggering validate run not green (${run.status}/${run.conclusion}).`);
+            if (run.status !== 'completed') {
+              core.setFailed(`Triggering validate run is not complete (${run.status}).`);
               return;
             }
+
+            // THE VALIDATE GATE, on the JOB rather than the run. validate.yml
+            // has two jobs and only one of them is a verdict on the code:
+            // `deploy-preview` pushes the pr-N-preview theme (Shopify CLI
+            // token, network to Shopify), `validate` runs every PR-time check.
+            // Reading `run.conclusion` conflated the two: a preview-push flake
+            // reds the RUN without being a verdict on the code. The job name
+            // below is the same context branch protection requires on main
+            // (`validate / validate`), so this trusts what the rest of the
+            // system already trusts. See the workflow-level `if:` above for why
+            // this is hardening rather than a flake fix on its own.
+            //
+            // WARNING: this string is the job's `name:` in validate.yml.
+            // Renaming that job breaks both auto-deploy paths, exactly like
+            // renaming the workflow breaks `on.workflow_run.workflows`.
+            const VALIDATE_JOB = 'validate';
+            // `filter: latest` so a re-run's superseded attempt cannot supply
+            // the verdict.
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: run.id, filter: 'latest', per_page: 100,
+            });
+            const validateJob = jobs.find((j) => j.name === VALIDATE_JOB);
+            if (!validateJob) {
+              // Split the same way the conclusion check below does. A GREEN run
+              // with no `validate` job means the job was renamed and both
+              // auto-deploy paths are silently broken: be loud. A RED run can
+              // legitimately have no jobs at all (validate.yml failed to parse,
+              // a startup failure), and failing this workflow for that would
+              // put a red `deploy` run on a PR that was never a deploy
+              // candidate, which teaches the operator to ignore red deploys.
+              const detail = `saw: ${jobs.map((j) => j.name).join(', ') || 'none'}`;
+              if (run.conclusion === 'success') {
+                core.setFailed(`Triggering run is \`success\` but has no \`${VALIDATE_JOB}\` job (${detail}). Was validate.yml's job renamed?`);
+              } else {
+                core.info(`Triggering run is \`${run.conclusion}\` with no \`${VALIDATE_JOB}\` job (${detail}); nothing to deploy.`);
+              }
+              return;
+            }
+            const jobGreen = validateJob.status === 'completed' && validateJob.conclusion === 'success';
+            if (!jobGreen) {
+              if (run.conclusion === 'success') {
+                // The run says green but the job the gate actually trusts does
+                // not. That should be impossible; make it loud rather than
+                // letting it read as an ordinary red validate.
+                core.setFailed(`Validate run is \`success\` but the \`${VALIDATE_JOB}\` job is \`${validateJob.status}/${validateJob.conclusion}\`.`);
+              } else {
+                // An ordinary red validate. Nothing to deploy; this is not an
+                // error, and it is what the old workflow-level conclusion
+                // filter used to swallow before any runner started.
+                core.info(`\`${VALIDATE_JOB}\` job is ${validateJob.status}/${validateJob.conclusion}; nothing to deploy.`);
+              }
+              return;
+            }
+            if (run.conclusion !== 'success') {
+              // UNREACHABLE TODAY, deliberately kept. validate.yml turns any
+              // non-success `deploy-preview` into a11y `exit_code=1`, which
+              // reds the `validate` job too, so "red run, green validate job"
+              // cannot currently occur with only two jobs in the run. It
+              // becomes reachable the moment validate.yml stops coupling the
+              // audit to `deploy-preview.result`, and it would occur
+              // immediately if a third job were added to validate.yml.
+              // Gating on the job is the correct thing to trust either way;
+              // this branch is what keeps that honest when it starts to matter.
+              core.warning(`Validate run concluded \`${run.conclusion}\` while the \`${VALIDATE_JOB}\` job is green; proceeding. Check the \`deploy-preview\` job: the preview theme for this PR is probably stale or missing.`);
+            }
+
             if (!run.head_sha) {
               core.setFailed('workflow_run has no head_sha; cannot pin trusted SHA.');
               return;

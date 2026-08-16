@@ -19,7 +19,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PATHS_FILE = join(HERE, 'paths.json');
-export const BASELINE_FILE = join(HERE, 'baseline.json');
 
 // Chrome comes from the RUNNER, not from puppeteer. `npm ci --ignore-scripts`
 // (setup-shopify-cli) blocks puppeteer's install script, so the bundled
@@ -36,7 +35,6 @@ export const CHROME_PATH = '/usr/bin/google-chrome';
  * @param {string} o.themeId
  * @param {string} [o.cookie]   Cookie header; empty in PUBLIC mode
  * @param {object} [o.paths]    parsed paths.json; defaults to the committed file
- * @param {object} [o.baseline] parsed baseline.json; defaults to the committed file
  * @param {number} [o.timeout]
  * @param {number} [o.concurrency]
  * @returns {object} a pa11y-ci config object
@@ -48,7 +46,6 @@ export function buildConfig({
   themeId,
   cookie = '',
   paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8')),
-  baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8')),
   // Generous per-URL timeout: these are authenticated remote requests to a
   // storefront behind bot management, not localhost.
   timeout = 60000,
@@ -70,15 +67,19 @@ export function buildConfig({
   const headers = {};
   if (cookie) headers.Cookie = cookie;
 
-  // Audit-wide known-debt baseline (axe rule ids); see baseline.json's header
-  // comment for the semantics and the deliberate coarseness trade. A malformed
-  // file is a hard error, never a silent no-op: a typo'd baseline that ignored
-  // nothing would fail every run, but one that silently ignored EVERYTHING
-  // would be worse, so the shape is validated rather than defaulted.
-  const ignore = baseline?.ignore;
-  if (!Array.isArray(ignore) || !ignore.every((c) => typeof c === 'string' && c.length > 0)) {
-    throw new Error('baseline.json must have an `ignore` array of non-empty strings');
-  }
+  // NOTE: the audit-wide known-debt baseline (scripts/a11y/baseline.json) is
+  // deliberately NOT applied here. pa11y's `ignore` drops matching findings
+  // inside the browser, so the report could never say what it had hidden and
+  // the PR comment claimed a WCAG 2.1 AA pass over rules it had not gated. The
+  // filter now lives in scripts/a11y/summarize-pa11y.mjs, which sees every
+  // finding and can disclose the suppressed-rule list with a per-rule count.
+  // A second consequence, relied on there: pa11y-ci now exits non-zero on any
+  // run with baselined findings, so its exit code is no longer a crash signal
+  // and the summariser detects an untestable URL structurally instead.
+  //
+  // Per-PATH `ignore` (paths.json) is a different thing and does still reach
+  // pa11y: it is the escape hatch for third-party embeds this theme cannot
+  // fix, and those findings are invisible to the summariser by design.
 
   return {
     defaults: {
@@ -88,7 +89,6 @@ export function buildConfig({
       // included because CLAUDE.md makes 44x44 touch targets a project rule,
       // and a footer-link touch-target fix has already shipped once (PR #99).
       rules: ['target-size'],
-      ignore,
       timeout,
       headers,
       chromeLaunchConfig: {

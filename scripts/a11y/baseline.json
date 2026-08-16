@@ -13,6 +13,13 @@
     "baseline would go stale on every editor edit. The trade is that a NEW",
     "instance of a baselined rule is invisible until the rule is cleared.",
     "",
+    "This file is read by scripts/a11y/summarize-pa11y.mjs, NOT by",
+    "build-pa11yci.mjs. pa11y runs unbaselined and reports everything; the",
+    "summariser applies the list and publishes both the rule names and a",
+    "per-rule count of what each one hid, so the CI Report cannot claim a clean",
+    "WCAG 2.1 AA pass over rules it never gated. That count is the signal for",
+    "when a rule is safe to delete: a rule hiding 0 findings is already clear.",
+    "",
     "For third-party embeds this theme cannot fix, prefer the per-path `ignore`",
     "/ `hideElements` escape hatches in paths.json over an entry here."
   ],

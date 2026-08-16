@@ -619,6 +619,15 @@ jobs:
       # ── zizmor (security audit of workflows + composite actions) ─
       - name: zizmor
         id: zizmor
+        env:
+          # Without a token zizmor silently drops its online audits
+          # (impostor-commit, ref-confusion, known-vulnerable-actions) and
+          # still reports a clean run, so a green "Security audit" row was
+          # asserting more than the tool had checked. The default GITHUB_TOKEN
+          # is enough: those audits only read public action repositories, and
+          # this job holds `contents: read` with no write scope beyond
+          # pull-requests (used by the comment step).
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           python3 -m pip install --user --quiet "zizmor==1.5.2"
@@ -845,26 +854,52 @@ jobs:
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
+          A11Y_STATE: ${{ steps.a11y-config.outputs.preview_state }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
-          PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$A11Y_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
-            if [ -z "$code" ]; then
+          PASS=0; FAIL=0; SKIP=0; SKIP_BY_DESIGN=0
+          classify() {
+            if [ -z "$1" ]; then
               SKIP=$((SKIP + 1))
-            elif [ "$code" = "0" ]; then
+            elif [ "$1" = "0" ]; then
               PASS=$((PASS + 1))
             else
               FAIL=$((FAIL + 1))
             fi
+          }
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+            classify "$code"
           done
+          # The a11y audit is the one check that can be absent BY DESIGN: draft
+          # and Dependabot PRs get no preview theme, so there is nothing to
+          # audit. It writes exit_code=0 in that state on purpose, because a
+          # required context that goes red (or skips) would block those PRs
+          # forever. Counting that 0 as a PASS is what made a skipped-by-design
+          # audit render as "All checks passed". Count it as a skip instead,
+          # and record that the skip was EXPECTED so the banner reports it
+          # without telling the operator to go investigate.
+          #
+          # The exit code is required as well as the state. `Check for failures`
+          # fails closed on an empty A11Y_EXIT, so keying the reassuring banner
+          # on the state alone would let the comment say "all runnable checks
+          # passed" on a job that then went red because the audit step never
+          # recorded a result. An empty code falls through to `classify` and
+          # surfaces as an unexplained skip, which is what it is.
+          if [ "${A11Y_STATE:-}" = "skipped" ] && [ "${A11Y_EXIT:-}" = "0" ]; then
+            SKIP=$((SKIP + 1))
+            SKIP_BY_DESIGN=$((SKIP_BY_DESIGN + 1))
+          else
+            classify "$A11Y_EXIT"
+          fi
           TOTAL=$((PASS + FAIL + SKIP))
           {
             echo "pass=$PASS"
             echo "fail=$FAIL"
             echo "skip=$SKIP"
+            echo "skip_by_design=$SKIP_BY_DESIGN"
             echo "total=$TOTAL"
           } >> "$GITHUB_OUTPUT"
 
@@ -876,6 +911,7 @@ jobs:
           PASS_COUNT: ${{ steps.results.outputs.pass }}
           FAIL_COUNT: ${{ steps.results.outputs.fail }}
           SKIP_COUNT: ${{ steps.results.outputs.skip }}
+          SKIP_BY_DESIGN_COUNT: ${{ steps.results.outputs.skip_by_design }}
           TOTAL_COUNT: ${{ steps.results.outputs.total }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
           THEME_CHECK_EXIT: ${{ steps.theme-check.outputs.exit_code }}
@@ -915,11 +951,21 @@ jobs:
             const pass = process.env.PASS_COUNT;
             const fail = process.env.FAIL_COUNT;
             const skip = process.env.SKIP_COUNT;
-            const banner = (fail === '0' && skip === '0')
-              ? '✅ **All checks passed.** Comment `deploy` to deploy and merge.'
-              : (fail === '0')
-                ? `⚠️ **${skip} skipped.** Every check should run; investigate why.`
-                : `❌ **${fail} Failure(s).** Please review the details below.`;
+            // Skips split two ways. A by-design skip (the dynamic a11y audit
+            // on a draft or Dependabot PR, where no preview theme exists) is
+            // expected and must still be VISIBLE: it used to be counted as a
+            // pass, so the banner read "All checks passed" over an audit that
+            // never ran. An unexplained skip still means a step stopped
+            // recording a result, which is the case worth investigating.
+            const byDesign = Number(process.env.SKIP_BY_DESIGN_COUNT || 0);
+            const unexplained = Number(skip || 0) - byDesign;
+            const banner = fail !== '0'
+              ? `❌ **${fail} Failure(s).** Please review the details below.`
+              : unexplained > 0
+                ? `⚠️ **${unexplained} skipped.** Every check should run; investigate why.`
+                : byDesign > 0
+                  ? '✅ **All runnable checks passed, but the dynamic a11y audit did not run.** Draft and Dependabot PRs get no preview theme, so there was nothing to audit; only the static contrast lint covered accessibility here. Comment `deploy` to deploy and merge.'
+                  : '✅ **All checks passed.** Comment `deploy` to deploy and merge.';
 
             const status = (code) => {
               if (!code || code === '') return '⏭️';
@@ -966,6 +1012,25 @@ jobs:
             // fence then swallows every later section of the report into one
             // code block (observed on the first run of this layout). Fall back
             // to a blind cut WITH explicit closers only if no boundary exists.
+            //
+            // Those closers are computed, not fixed. A fixed '```' + '</details>'
+            // pair assumed the cut landed inside both; when it did not, the
+            // spurious </details> closed the WRAPPER around this whole section
+            // and spilled every later section out of it, which is the same
+            // class of bug the boundary cut exists to prevent.
+            const closeDangling = (text) => {
+              // Drop the partial final line first: a cut mid-tag ('<detai') or
+              // mid-fence is not something the counters below can reason about.
+              const nl = text.lastIndexOf('\n');
+              const kept = nl > 0 ? text.slice(0, nl) : text.replace(/<[^>]*$/, '');
+              const lines = kept.split('\n');
+              const closers = [];
+              if (lines.filter((l) => l.trim() === '```').length % 2 === 1) closers.push('```');
+              const opens = (kept.match(/<details/g) || []).length;
+              const closed = (kept.match(/<\/details>/g) || []).length;
+              for (let i = 0; i < opens - closed; i += 1) closers.push('</details>');
+              return [kept, ...closers].join('\n');
+            };
             let a11ySummary = (process.env.A11Y_SUMMARY || '_No report produced._')
               .replace(/`{4,}/g, '```');
             const A11Y_CAP = 30000;
@@ -974,7 +1039,7 @@ jobs:
               const cut = a11ySummary.lastIndexOf(closer, A11Y_CAP);
               a11ySummary = (cut > 0
                 ? a11ySummary.slice(0, cut + closer.length)
-                : a11ySummary.slice(0, A11Y_CAP) + '\n```\n\n' + closer)
+                : closeDangling(a11ySummary.slice(0, A11Y_CAP)))
                 + '\n\n_Truncated to fit the comment; see the A11y audit step in the run log for the full report._';
             }
             const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
@@ -982,7 +1047,7 @@ jobs:
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
             const gitleaksOut = sanitize(process.env.GITLEAKS_OUTPUT) || 'No issues found';
 
-            const body = [
+            const head = [
               marker,
               `# CI Report`,
               '',
@@ -1028,119 +1093,78 @@ jobs:
               '',
               '---',
               '',
-              '<details><summary><strong>Theme Check</strong> (<code>shopify theme check</code>)</summary>',
-              '',
-              '```',
-              themeCheckOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Reconcile</strong> (<code>git cherry</code>)</summary>',
-              '',
-              '```',
-              reconcileOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              // Raw markdown, not a fenced block: the summary carries its own
-              // per-URL <details> and fences, pre-sanitised by
-              // scripts/a11y/summarize-pa11y.mjs.
-              '<details><summary><strong>A11y audit</strong> (<code>pa11y-ci</code> against the preview theme)</summary>',
-              '',
-              a11ySummary,
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Size chart</strong> (<code>npm run size-chart:test</code>)</summary>',
-              '',
-              '```',
-              sizeChartOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Product images</strong> (<code>npm run lib:test</code> + <code>npm run images:test</code>)</summary>',
-              '',
-              '```',
-              productImagesOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Blank inventory</strong> (<code>npm run blank-inventory:test</code>)</summary>',
-              '',
-              '```',
-              blankInventoryOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>SEO review</strong> (<code>npm run seo-review:test</code>)</summary>',
-              '',
-              '```',
-              seoReviewOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Applique grid</strong> (<code>npm run applique-grid:test</code>)</summary>',
-              '',
-              '```',
-              appliqueGridOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Blank id guard</strong> (<code>npm run blank-inventory:guard</code>)</summary>',
-              '',
-              '```',
-              blankIdGuardOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Contrast + a11y</strong> (<code>npm run contrast:lint</code> + tests)</summary>',
-              '',
-              '```',
-              contrastOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Deploy smoke</strong> (<code>npm run smoke:test</code>)</summary>',
-              '',
-              '```',
-              smokeTestOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Workflow Lint</strong> (<code>actionlint</code>)</summary>',
-              '',
-              '```',
-              actionlintOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Workflow Security Audit</strong> (<code>zizmor --pedantic</code>)</summary>',
-              '',
-              '```',
-              zizmorOut,
-              '```',
-              '',
-              '</details>',
-              '',
-              '<details><summary><strong>Secret Scan</strong> (<code>gitleaks</code>)</summary>',
-              '',
-              '```',
-              gitleaksOut,
-              '```',
-              '',
-              '</details>',
-            ].join('\n');
+            ];
+
+            // Detail blocks are data, not literals, so the assembler below can
+            // degrade them individually when the whole body would exceed
+            // GitHub's comment limit. `raw: true` means the content is already
+            // markdown carrying its own fences and <details> (only the a11y
+            // summary, pre-sanitised by scripts/a11y/summarize-pa11y.mjs);
+            // everything else is command output and goes inside a fence.
+            const details = [
+              { title: 'Theme Check', tool: 'shopify theme check', out: themeCheckOut, exit: themeCheck },
+              { title: 'Reconcile', tool: 'git cherry', out: reconcileOut, exit: reconcile },
+              { title: 'A11y audit', tool: 'pa11y-ci against the preview theme', out: a11ySummary, exit: a11y, raw: true },
+              { title: 'Size chart', tool: 'npm run size-chart:test', out: sizeChartOut, exit: sizeChart },
+              { title: 'Product images', tool: 'npm run lib:test + npm run images:test', out: productImagesOut, exit: productImages },
+              { title: 'Blank inventory', tool: 'npm run blank-inventory:test', out: blankInventoryOut, exit: blankInventory },
+              { title: 'SEO review', tool: 'npm run seo-review:test', out: seoReviewOut, exit: seoReview },
+              { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
+              { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
+              { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
+              { title: 'Deploy smoke', tool: 'npm run smoke:test', out: smokeTestOut, exit: smokeTest },
+              { title: 'Workflow Lint', tool: 'actionlint', out: actionlintOut, exit: actionlint },
+              { title: 'Workflow Security Audit', tool: 'zizmor --pedantic', out: zizmorOut, exit: zizmor },
+              { title: 'Secret Scan', tool: 'gitleaks', out: gitleaksOut, exit: gitleaks },
+            ];
+
+            const summaryLine = (d) =>
+              `<details><summary><strong>${d.title}</strong> (<code>${d.tool}</code>)</summary>`;
+            // Every branch emits a matched <details> ... </details> and, when
+            // fenced, a matched pair of ``` lines. Nothing here ever slices
+            // mid-block, which is the failure that let one dangling fence
+            // swallow the rest of the report.
+            const render = (d) => d.dropped
+              ? [summaryLine(d), '', '_Detail omitted to keep this comment under GitHub\'s 65536-character limit; see the run log._', '', '</details>', '']
+              : d.raw
+                ? [summaryLine(d), '', d.out, '', '</details>', '']
+                : [summaryLine(d), '', '```', d.out, '```', '', '</details>', ''];
+
+            const assemble = () => head.concat(details.flatMap(render)).join('\n');
+
+            // GitHub hard-rejects a body over 65536 characters with a 422, and
+            // a failed upsert masks the very result it was reporting. The a11y
+            // section has its own 30k cap above, but that is one section: a run
+            // where several checks fail loudly can blow the total on its own.
+            const MAX_COMMENT = 60000;
+            let body = assemble();
+            if (body.length > MAX_COMMENT) {
+              // Drop PASSING sections first, largest first, so the detail a
+              // reader actually needs (a failing check's output) survives
+              // longest. Banner and tables are in `head` and are never dropped.
+              // A passing a11y section is usually the largest block in the
+              // report, so plain largest-first would bin the only accessibility
+              // evidence in the comment before anything else; it sorts last
+              // among passing blocks instead.
+              const order = details
+                .map((d) => ({
+                  d,
+                  len: render(d).join('\n').length,
+                  failed: d.exit && d.exit !== '0' ? 1 : 0,
+                  lastResort: d.title === 'A11y audit' ? 1 : 0,
+                }))
+                .sort((a, b) => (a.failed - b.failed) || (a.lastResort - b.lastResort) || (b.len - a.len));
+              for (const { d } of order) {
+                if (body.length <= MAX_COMMENT) break;
+                d.dropped = true;
+                body = assemble();
+              }
+              // Unreachable in practice (head plus 14 placeholders is a few
+              // kB), but never post something the API will reject.
+              if (body.length > MAX_COMMENT) {
+                body = `${head.join('\n')}\n\n_All detail blocks omitted; this report exceeded GitHub's comment size limit. See the run log._`;
+              }
+            }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildConfig, CHROME_PATH, PATHS_FILE, BASELINE_FILE } from '../build-pa11yci.mjs';
+import { buildConfig, CHROME_PATH, PATHS_FILE } from '../build-pa11yci.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8'));
@@ -79,18 +79,18 @@ test('the committed config is JSON-serialisable and has no undefined leaks', () 
   assert.deepEqual(JSON.parse(json).urls.length, paths.paths.length);
 });
 
-test('the committed baseline lands in defaults.ignore, and a malformed one is a hard error', () => {
-  // The baseline silences whole axe rules audit-wide, so its wiring must be
-  // observable (a baseline that silently failed to load would re-fail every
-  // run) and its shape must be validated (one that silently ignored the wrong
-  // thing would hide regressions).
-  const committed = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
-  assert.deepEqual(buildConfig(base).defaults.ignore, committed.ignore);
+test('the known-debt baseline never reaches pa11y', () => {
+  // pa11y's `ignore` drops findings inside the browser, so a baselined rule
+  // would be unreportable and the CI comment would claim a pass over rules it
+  // had not gated. The baseline is summarize-pa11y.mjs's job now; a regression
+  // that re-adds it here would silently un-disclose the whole suppression set.
+  const { defaults } = buildConfig(base);
+  assert.ok(!('ignore' in defaults), 'defaults.ignore would re-hide the baseline from the report');
+});
 
-  const custom = buildConfig({ ...base, baseline: { ignore: ['color-contrast'] } });
-  assert.deepEqual(custom.defaults.ignore, ['color-contrast']);
-
-  assert.throws(() => buildConfig({ ...base, baseline: {} }), /baseline/);
-  assert.throws(() => buildConfig({ ...base, baseline: { ignore: 'color-contrast' } }), /baseline/);
-  assert.throws(() => buildConfig({ ...base, baseline: { ignore: ['ok', ''] } }), /baseline/);
+test('per-path ignore is a different thing and still reaches pa11y', () => {
+  // The third-party-embed escape hatch is deliberately invisible to the
+  // summariser; it is scoped to one URL, not to the whole audit.
+  const config = buildConfig({ ...base, paths: { paths: [{ path: '/', ignore: ['frame-title'] }] } });
+  assert.deepEqual(config.urls[0].ignore, ['frame-title']);
 });

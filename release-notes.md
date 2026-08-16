@@ -201,6 +201,122 @@ fixed `GHEOF` the older steps use. Their captured text is PR-controlled (scheme
 names, baseline notes, page-derived pa11y findings), so a fixed delimiter would let
 a PR close the heredoc early and inject arbitrary step outputs.
 
+### Follow-ups from the infra review of the two-job layout
+
+**Auto-deploy gates on the `validate` JOB, not on the validate RUN.** Folding the
+preview push into `validate.yml` gave the run two jobs with very different
+meanings, and `deploy.yml`'s `workflow_run` arm was still reading
+`workflow_run.conclusion`. Only `validate` is a verdict on the code;
+`deploy-preview` talks to Shopify over the network and runs for shopify-sync
+reconcile PRs as well. The gate now resolves the `validate` job via
+`listJobsForWorkflowRun` (`filter: 'latest'`, so a superseded re-run attempt
+cannot supply the verdict) and requires `completed/success` on it; the
+workflow-level `if:` was widened to admit a `failure` run conclusion so the job
+check can be reached at all.
+
+**What this does not do, stated plainly.** It was filed as the fix for "a Shopify
+hiccup in `deploy-preview` fails the run with every validation green and blocks
+auto-deploy", and that premise is wrong on this branch: `validate.yml` turns any
+non-success `deploy-preview` into a11y `exit_code=1`, which reds the `validate`
+job as well. With two jobs in the run, "red run, green `validate` job" is
+therefore unreachable, the `core.warning` branch is currently dead code, and a
+preview flake still blocks auto-deploy. What landed is hardening: the gate now
+trusts the same artifact branch protection trusts, and it stays correct if a third
+job is added to `validate.yml` or the audit's coupling to `deploy-preview.result`
+is relaxed. The actual flake fix is keying the audit off
+`deploy-preview.outputs.theme_id` (written only after a successful push, so a
+non-empty value means the theme is fully uploaded, while `result != 'success'` can
+also mean the *comment* step failed afterwards). That is deliberately not shipped
+here, because it changes what the required check asserts.
+
+The rejected alternative was `continue-on-error: true` on `deploy-preview`. It is
+a smaller diff, but it renders the job GREEN in the Actions tab when the theme
+push actually failed, which is the same class of dishonest-green problem as the
+three items below. A red job with a gate that knows which job matters is the
+honest shape.
+
+Properties kept deliberately: `cancelled` is still excluded at the workflow level,
+because `validate.yml`'s `cancel-in-progress` group cancels the whole run on every
+new push and those runs carry no verdict; a red `validate` job under a GREEN run
+still `setFailed`s, because that combination should be impossible and must not
+read as an ordinary red validate; and a MISSING `validate` job `setFailed`s only
+under a green run, since a red run can legitimately have no jobs at all
+(validate.yml failed to parse), and reddening `deploy` for that would put a red
+run on a PR that was never a deploy candidate. None of the four documented deploy
+gates were touched.
+
+The comment path still requires the whole run green. That asymmetry is deliberate
+and in the safe direction (stricter), and is now recorded in
+`docs/deploy-gate-reference.md` rather than left to be rediscovered.
+
+**The baseline moved out of pa11y and into the summariser, so the report can
+disclose it.** `baseline.json` silences twelve axe rules audit-wide, but it was
+handed to pa11y as `defaults.ignore`, which drops matching findings inside the
+browser. The report therefore could not say what it had hidden, and the comment
+claimed "N URL(s) audited against WCAG 2.1 AA (axe runner, plus `target-size`)"
+while `target-size` itself was one of the twelve. pa11y now runs unbaselined;
+`summarize-pa11y.mjs` applies the filter and publishes the rule list, a per-rule
+count of what each entry hid on that run, and a per-URL suppressed column. A rule
+at 0 is flagged as clearable, which is the signal for deleting it. The audited-
+standard sentence is qualified for as long as `target-size` sits in the baseline.
+
+A second benefit that was itself a prior bug: the per-URL display cap is no longer
+spent on baselined noise, which is what hid three baselined rules for a whole PR
+(commit `d060587`).
+
+The cost, and it is real: pa11y-ci now exits non-zero on any run with a baselined
+finding, so its exit code is no longer a usable crash signal. That signal is
+replaced by a stronger, per-URL one. pa11y-ci stores a caught exception as that
+URL's entire result array and an `Error` serialises to `{}`, so a page that never
+loaded had no `type: 'error'` entry and was already being counted as a clean pass;
+only the exit code had been catching it. The summariser now detects such an entry
+structurally, names the URL, and fails the run. A result that is not an array at
+all (or is absent) is treated the same way, rather than falling back to "no
+issues" as it used to. The exit-code check is kept as a last resort for a run that
+reported nothing at all; it cannot be unconditional, because a non-zero exit is now
+the normal case whenever anything baselined fired.
+
+Still missing, and deliberately deferred: nothing asserts the report covered every
+URL the config declared. The floor is one URL, not all of them, so a run whose
+browser pool died after three pages would report "3 URL(s) audited" and pass.
+`validate.yml` already computes and validates that count as
+`steps.a11y-config.outputs.url_count`; threading it into the summariser as an
+expected-URL assertion is the remaining piece.
+
+**A skipped-by-design audit no longer renders as "All checks passed".** Draft and
+Dependabot PRs get no preview theme, so the a11y step writes `exit_code=0` on
+purpose: the required context must not go red or skip, or those PRs are blocked
+forever. But the aggregator counted that 0 as a pass, so the banner asserted a full
+green over an audit that never ran. `Collect results` now classifies it as a skip
+and separately records that the skip was EXPECTED, and the banner has a dedicated
+clause saying the dynamic audit did not run and only the static contrast lint
+covered accessibility. `Check for failures` is untouched, so mergeability for
+drafts and Dependabot is unchanged.
+
+**The CI Report comment is bounded as a whole, not just section by section.** Only
+the a11y section had a cap (30k). GitHub rejects a body over 65536 characters with
+a 422, and the upsert is `continue-on-error`, so an oversized report would have
+silently posted nothing at all: the worst possible failure mode for the thing
+reporting the failures. The detail blocks are now data rather than string literals,
+and if the assembled body exceeds 60000 characters they are replaced one at a time
+with a "see the run log" placeholder, PASSING sections first and largest first, so
+a failing check's output survives longest. The banner and the four result tables
+are never dropped. Every degraded form still emits a matched `<details>` pair and a
+matched fence pair.
+
+Fixed in passing, found by an offline harness over the assembler: the a11y cap's
+blind-cut fallback appended a fixed ` ``` ` + `</details>` pair, which assumed the
+cut had landed inside both. When it had not, the spurious `</details>` closed the
+WRAPPER around the a11y section and spilled every later section out of it. The
+closers are now computed from what the retained text actually leaves open, after
+dropping the partial final line.
+
+**zizmor gets a token.** Without one it silently drops its online audits
+(`impostor-commit`, `ref-confusion`, `known-vulnerable-actions`) and still reports
+a clean run, so a green "Security audit" row was asserting more than the tool had
+checked. `GH_TOKEN: ${{ github.token }}` is enough: those audits only read public
+action repositories.
+
 ## Collection differentiation is a runbook, not a code change (unreleased)
 
 ### What changed
