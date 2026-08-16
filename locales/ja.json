@@ -48,6 +48,7 @@
     "cart_count": "カート内の合計アイテム数",
     "menu": "メニュー",
     "country_region": "国 / 地域",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "スライド {{ index }}/{{ length }}",
     "scroll_to": "{{ title }}までスクロール",
     "loading_product_recommendations": "商品のおすすめを読み込んでいます",

@@ -54,8 +54,14 @@
         </symbol>
       </defs>
     </svg>
+    {%- comment -%}
+      role="img": the stars are a picture of the score, and the label is its
+      alt text. Without a role, aria-label on a plain div is prohibited and
+      the score is announced as nothing at all.
+    {%- endcomment -%}
     <div
       class="rating"
+      role="img"
       style="--star-size: calc(var(--font-{{ block_settings.type_preset }}--size) * 1.1);"
       aria-label="{{ 'accessibility.rating' | t: rating: rating }}"
     >

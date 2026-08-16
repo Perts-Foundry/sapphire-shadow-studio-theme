@@ -81,8 +81,13 @@
 
     {% capture children %}
       {% for link in block_settings.menu.links %}
+        {%- comment -%}
+          No role="presentation" here either, for the same reason as the More
+          item below: these are slotted into overflow-list's shadow <ul>, and a
+          presentational child is not a list item. They are the top-level
+          navigation, so being announced as a list of N items is correct.
+        {%- endcomment -%}
         <li
-          role="presentation"
           class="menu-list__list-item"
           on:focus="/activate"
           on:blur="/deactivate"
@@ -133,16 +138,29 @@
           {%- endif -%}
         </li>
       {% endfor %}
+      {%- comment -%}
+        No role="presentation". This <li> is slotted into overflow-list's shadow
+        <ul>, and a presentational child of a list is not a list item, which is
+        what the `list` rule was reporting on every page the header renders. It
+        is also simply wrong: the More control is a navigation item like its
+        siblings, not decoration.
+      {%- endcomment -%}
       <li
         class="menu-list__list-item"
-        role="presentation"
         slot="more"
         on:focus="/activate"
         on:blur="/deactivate"
         on:pointerenter="/activate"
         on:pointerleave="/deactivate"
       >
-        <button role="menuitem" class="button menu-list__link button-unstyled">
+        {%- comment -%}
+          No role: this is the only role="menuitem" in the theme and there is no
+          menu or menubar anywhere above it, which made it an orphan on every
+          page the header renders. `menuitem` also means an application-style
+          menu, which this is not; it is a nav disclosure, and a plain button is
+          exactly what assistive tech should be told it is.
+        {%- endcomment -%}
+        <button class="button menu-list__link button-unstyled">
           <span class="menu-list__link-title">{{ 'actions.more' | t }}</span>
         </button>
       </li>

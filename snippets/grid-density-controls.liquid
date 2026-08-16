@@ -162,7 +162,8 @@
   }
 
   .column-picker {
-    color: rgb(var(--color-foreground-rgb) / var(--opacity-50));
+    /* Half the foreground is well under the 3:1 an icon control needs. */
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-subdued-text));
     padding: var(--padding-2xs);
     border-radius: var(--style-border-radius-xs);
     transition: background-color var(--animation-speed) ease, color var(--animation-speed) ease;

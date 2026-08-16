@@ -43,7 +43,7 @@
         popover="auto"
         ref="popover"
       >
-        {% render 'account-actions' %}
+        {% render 'account-actions', heading_id: 'account-popover-heading' %}
       </div>
     </anchored-popover-component>
 
@@ -128,10 +128,13 @@
                 </button>
               </div>
 
-              <div
-                class="cart-drawer__content motion-reduce"
-                aria-label="{{ 'accessibility.cart' | t }}"
-              >
+              {%- comment -%}
+                Inside the cart dialog, which is already labelled by its
+                heading. A second label on a role-less div is prohibited and
+                announced nothing, so it goes rather than gaining a role that
+                would nest a redundant landmark inside the dialog.
+              {%- endcomment -%}
+              <div class="cart-drawer__content motion-reduce">
                 <h2
                   class="cart-drawer__heading h4 cart-drawer__heading--empty"
                   id="cart-drawer-heading-empty"
@@ -153,7 +156,7 @@
                   id="cart-drawer-heading"
                 >
                   {{ 'content.cart_title' | t }}
-                  {% render 'cart-bubble' %}
+                  {% render 'cart-bubble', bubble_id: 'cart-drawer-bubble-text' %}
                 </h2>
 
                 <button
@@ -168,9 +171,15 @@
                 </button>
               </div>
 
+              {%- comment -%}
+                Same as the empty-cart branch above: inside the cart dialog,
+                which its own heading already labels. <scroll-hint> is a
+                role-less custom element, so ARIA forbids a label on it and
+                nothing announced this one. The audit runs with an empty cart,
+                so only the other branch's copy was ever reported.
+              {%- endcomment -%}
               <scroll-hint
                 class="cart-drawer__content motion-reduce"
-                aria-label="{{ 'accessibility.cart' | t }}"
                 style="--header-height: 60px;"
               >
                 <scroll-hint

@@ -44,6 +44,16 @@ test('defaults match the WCAG2AA gate the sibling repo already runs', () => {
   assert.ok(defaults.chromeLaunchConfig.args.includes('--no-sandbox'));
 });
 
+test('needs-review findings are capped at warning and kept in the JSON', () => {
+  // axe `incomplete` (background unmeasurable) is promoted to a gating error
+  // by pa11y unless capped; the cap is what let color-contrast leave
+  // baseline.json while measured violations still gate. includeWarnings keeps
+  // the capped findings in the report so the summariser can disclose them.
+  const { defaults } = buildConfig(base);
+  assert.equal(defaults.levelCapWhenNeedsReview, 'warning');
+  assert.equal(defaults.includeWarnings, true);
+});
+
 test('the run is serial, so a burst does not trip bot management', () => {
   assert.equal(buildConfig(base).concurrency, 1);
 });
@@ -86,6 +96,74 @@ test('the known-debt baseline never reaches pa11y', () => {
   // that re-adds it here would silently un-disclose the whole suppression set.
   const { defaults } = buildConfig(base);
   assert.ok(!('ignore' in defaults), 'defaults.ignore would re-hide the baseline from the report');
+});
+
+test('top-level defaults from paths.json reach pa11y, minus the note keys', () => {
+  const config = buildConfig({
+    ...base,
+    paths: { defaults: { hideElements: '#PBarNextFrame', _comment: ['why'] }, paths: [{ path: '/' }] },
+  });
+  assert.equal(config.defaults.hideElements, '#PBarNextFrame');
+  assert.ok(!('_comment' in config.defaults), 'rationale notes are not pa11y options');
+});
+
+test('file defaults cannot weaken the committed gate', () => {
+  // Spread order is the whole protection here: a paths.json edit may ADD an
+  // option, never downgrade the standard, drop the runner, or unpin Chrome.
+  const config = buildConfig({
+    ...base,
+    paths: {
+      defaults: { standard: 'WCAG2A', runners: ['htmlcs'], rules: [], chromeLaunchConfig: { args: [] } },
+      paths: [{ path: '/' }],
+    },
+  });
+  assert.equal(config.defaults.standard, 'WCAG2AA');
+  assert.deepEqual(config.defaults.runners, ['axe']);
+  assert.deepEqual(config.defaults.rules, ['target-size']);
+  assert.equal(config.defaults.chromeLaunchConfig.executablePath, CHROME_PATH);
+});
+
+test('file defaults cannot promote needs-review findings past the warning cap', () => {
+  // Raising the cap to error would re-flood the gate with unmeasurable
+  // findings; dropping includeWarnings would hide them from the summariser.
+  const config = buildConfig({
+    ...base,
+    paths: {
+      defaults: { levelCapWhenNeedsReview: 'error', includeWarnings: false },
+      paths: [{ path: '/' }],
+    },
+  });
+  assert.equal(config.defaults.levelCapWhenNeedsReview, 'warning');
+  assert.equal(config.defaults.includeWarnings, true);
+});
+
+test('an audit-wide ignore in paths.json defaults is rejected outright', () => {
+  // Not merely ignored: it is the one option that would re-hide findings from
+  // the summariser, which is what baseline.json exists to keep visible.
+  assert.throws(
+    () => buildConfig({ ...base, paths: { defaults: { ignore: ['color-contrast'] }, paths: [{ path: '/' }] } }),
+    /ignore/
+  );
+});
+
+test('a per-entry hideElements adds to the audit-wide one instead of replacing it', () => {
+  // pa11y overrides rather than merges, so a page-scoped hide would otherwise
+  // un-hide the preview bar on exactly the page that needed an extra selector.
+  const config = buildConfig({
+    ...base,
+    paths: { defaults: { hideElements: '#PBarNextFrame' }, paths: [{ path: '/', hideElements: '#chat' }] },
+  });
+  assert.equal(config.urls[0].hideElements, '#PBarNextFrame, #chat');
+});
+
+test('the committed paths.json hides the DOM this theme cannot reach', () => {
+  // frame-title / frame-tested were baselined audit-wide for the preview-bar
+  // iframe, and two more rules for Judge.me's app blocks; dropping either
+  // selector resurrects findings no change to this repo could fix. Asserted as
+  // substrings so adding a third does not fail the test for the wrong reason.
+  const { hideElements } = buildConfig(base).defaults;
+  assert.match(hideElements, /#PBarNextFrame/);
+  assert.match(hideElements, /jdgm-/);
 });
 
 test('per-path ignore is a different thing and still reaches pa11y', () => {

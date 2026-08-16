@@ -113,8 +113,27 @@
     {% if slideshow_arrows %}
       {{ slideshow_arrows }}
     {% endif %}
+    {%- comment -%}
+      A scroll container has to be reachable by keyboard, or the only way to
+      read a slide past the first is a pointer. tabindex="0" is all the browser
+      needs: it provides arrow-key scrolling for a focused scroll container on
+      its own, so no JS is involved. role="group" + a label is what stops that
+      stop being announced as an anonymous piece of the page, and focusin
+      already suspends autoplay, so arriving here does not fight the rotation.
+
+      Only when there is something to scroll: a one-slide gallery is not
+      scrollable, so a tab stop there would be a stop that does nothing.
+      slide_count is blank for callers that do not pass it, and blank > 1 is
+      false in Liquid, hence the explicit compare against 1.
+    {%- endcomment -%}
     <slideshow-slides
-      tabindex="-1"
+      {% if slide_count > 1 %}
+        tabindex="0"
+        role="group"
+        aria-label="{{ 'accessibility.slideshow' | t }}"
+      {% else %}
+        tabindex="-1"
+      {% endif %}
       ref="scroller"
       {% if slideshow_gutters %}
         gutters="{{ slideshow_gutters }}"

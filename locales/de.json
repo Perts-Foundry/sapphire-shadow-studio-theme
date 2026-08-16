@@ -48,6 +48,7 @@
     },
     "menu": "Menü",
     "country_region": "Land/Region",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Folie {{ index }} von {{ length }}",
     "scroll_to": "Zu {{ title }} scrollen",
     "discount": "Rabattcode anwenden",

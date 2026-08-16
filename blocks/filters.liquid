@@ -141,9 +141,14 @@
     "
     {{ block.shopify_attributes }}
   >
+    {%- comment -%}
+      role="region" makes the label legal and gives the filter set a landmark a
+      screen-reader user can jump to, which is what the label was reaching for.
+    {%- endcomment -%}
     <div
       class="facets facets--{{ block_settings.filter_style }} spacing-style"
       style="{% render 'spacing-style', settings: block_settings %}{% if block_settings.text_label_case == 'uppercase' %} --facet-label-transform: uppercase;{% endif %}"
+      role="region"
       aria-label="{{ 'accessibility.filters' | t }}"
     >
       <facets-form-component
@@ -168,8 +173,25 @@
             {% if block_settings.enable_filtering %}
               {% assign total_active_values = 0 %}
 
+              {%- liquid
+                # The horizontal style hands these filters to overflow-list, whose
+                # shadow root puts them inside a <ul>, and a <ul> may only contain
+                # <li>. Each filter renders as an <accordion-custom>, so without a
+                # wrapper every filter was an invalid child of that list. The
+                # vertical style renders the same capture straight into a <div>,
+                # where an <li> would be the opposite error (a list item with no
+                # list), so the wrapper is per-style rather than unconditional.
+                assign filter_item_open = ''
+                assign filter_item_close = ''
+                if block_settings.filter_style == 'horizontal'
+                  assign filter_item_open = '<li class="facets__filter-item">'
+                  assign filter_item_close = '</li>'
+                endif
+              -%}
+
               {% capture rendered_filters %}
                 {%- for filter in filters -%}
+                  {{ filter_item_open }}
                   {% case filter.type %}
                     {% when 'price_range' %}
                       {%- liquid
@@ -184,7 +206,7 @@
                           assign should_render_clear = false
                         endif
 
-                        render 'price-filter', filter: filter, filter_style: block_settings.filter_style, should_render_clear: should_render_clear
+                        render 'price-filter', filter: filter, filter_style: block_settings.filter_style, should_render_clear: should_render_clear, scope: 'panel'
                       -%}
                     {% else %}
                       {% liquid
@@ -202,6 +224,7 @@
                         render 'list-filter', filter: filter, filter_style: block_settings.filter_style, active_value_count: active_value_count, should_render_clear: should_render_clear, show_swatch_label: block_settings.show_swatch_label, sectionId: section.id
                       %}
                   {% endcase %}
+                  {{ filter_item_close }}
                 {%- endfor -%}
               {% endcapture %}
 
@@ -290,9 +313,15 @@
           {{ 'actions.show_filters' | t }}
 
           {% if total_active_values > 0 %}
+            {%- comment -%}
+              role="status" rather than a bare aria-label: a plain div takes no
+              label, and this number changes as facets are applied, which is
+              exactly what a status region is for.
+            {%- endcomment -%}
             <div
               id="filter-count-bubble-toggle"
               class="filter-count-bubble"
+              role="status"
               aria-label="{{ 'accessibility.filter_count' | t: count: total_active_values }}"
             >
               <span class="filter-count-bubble__background"></span>
@@ -435,7 +464,7 @@
                           assign is_active = true
                         endif
 
-                        render 'price-filter', filter: filter, filter_style: 'vertical', should_render_clear: false
+                        render 'price-filter', filter: filter, filter_style: 'vertical', should_render_clear: false, scope: 'drawer'
                       -%}
                     {% else %}
                       {% liquid

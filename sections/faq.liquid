@@ -64,7 +64,12 @@
     scroll-margin-top: 150px;
   }
 
-  .faq-section-{{ section_id }} .faq-item:first-child {
+  /*
+   * Scoped through .faq-row, not .faq-item:first-child. Each <details> is now
+   * the first child of its own wrapper, so the old selector matched EVERY row
+   * and would have drawn a top border on all of them.
+   */
+  .faq-section-{{ section_id }} .faq-row:first-child .faq-item {
     border-block-start: 1px solid var(--color-border);
   }
 
@@ -120,17 +125,66 @@
     margin-block-end: 0;
   }
 
+  /*
+   * Geometry of the header row, named so the permalink can be positioned back
+   * onto it from outside <details>. The link used to be a flex item of the
+   * summary; it is now absolutely positioned, and these are the numbers that
+   * held it where it was.
+   */
+  .faq-section-{{ section_id }} .faq-row {
+    --faq-toggle-size: 24px;
+    --faq-header-gap: 16px;
+    --faq-link-icon-size: 14px;
+    /* The 24px WCAG 2.5.8 target the 14px icon never had. */
+    --faq-link-target: 24px;
+    --faq-header-padding-block: 20px;
+
+    position: relative;
+  }
+
+  /*
+   * Reserves exactly what the link occupied as a flex item (its 16px inline
+   * padding plus the icon), so removing it from the flow does not let a long
+   * question run under the icon.
+   */
+  .faq-section-{{ section_id }} .faq-link-spacer {
+    inline-size: calc(var(--faq-header-gap) + var(--faq-link-icon-size));
+    margin-inline-start: auto;
+    flex-shrink: 0;
+  }
+
   .faq-section-{{ section_id }} .faq-link {
+    position: absolute;
+    /*
+     * Spans ONE line of the header row (line box + both paddings) and centres
+     * the icon in it. `1lh` is the question's own line box, so this tracks the
+     * merchant's font-size setting without hardcoding a height.
+     *
+     * Measured against the previous markup: identical to the pixel on a
+     * single-line question. On a question that WRAPS, the icon now sits on the
+     * first line where before it centred on the whole two-line row. That is the
+     * one deliberate difference, and it is the price of the link living outside
+     * <details>, whose height nothing outside it can read.
+     */
+    inset-block-start: 0;
+    block-size: calc(max(1lh, var(--faq-toggle-size)) + var(--faq-header-padding-block) * 2);
+    /*
+     * Right edge of the toggle icon, plus the gap, then back out by half the
+     * difference between the target box and the icon: the icon lands exactly
+     * where it did, while the clickable box around it is 24px.
+     */
+    inset-inline-end: calc(
+      var(--faq-toggle-size) + var(--faq-header-gap) +
+        (var(--faq-link-icon-size) - var(--faq-link-target)) / 2
+    );
+    inline-size: var(--faq-link-target);
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    justify-content: center;
+    font-size: {{ section.settings.question_size }}px;
     color: var(--color-foreground);
     opacity: 0.6;
     text-decoration: none;
-    margin-inline-start: auto;
-    padding-inline-start: 16px;
-    flex-shrink: 0;
     transition: opacity 0.2s ease;
   }
 
@@ -172,6 +226,15 @@
       padding: 16px 0;
     }
 
+    /* Track the smaller header padding and question size above. */
+    .faq-section-{{ section_id }} .faq-row {
+      --faq-header-padding-block: 16px;
+    }
+
+    .faq-section-{{ section_id }} .faq-link {
+      font-size: calc({{ section.settings.question_size }}px * 0.9);
+    }
+
     .faq-section-{{ section_id }} .faq-answer {
       padding: 0 0 16px;
     }
@@ -205,29 +268,46 @@
           assign anchor_id = block.settings.question | handleize | truncate: 50, ''
         endif
       %}
-      <details class="faq-item" id="{{ anchor_id }}" {{ block.shopify_attributes }}>
-        <summary class="faq-question">
-          <span>{{ block.settings.question }}</span>
-          <a
-            href="#{{ anchor_id }}"
-            class="faq-link"
-            title="Copy link"
-            onclick="event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + window.location.pathname + '#{{ anchor_id }}').then(() => { this.setAttribute('title', 'Link copied!'); setTimeout(() => this.setAttribute('title', 'Copy link'), 2000); });"
-          >
-            <svg class="faq-link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      {%- comment -%}
+        The permalink is a SIBLING of <details>, not a child of <summary>.
+        <summary> is a button, so a link inside it was one control nested in
+        another (nested-interactive) on every question of every FAQ page. It
+        cannot move into <details> either: a non-summary child of a collapsed
+        <details> is not rendered, so the icon would vanish until the question
+        was opened.
+
+        It is positioned back over the header row so nothing moves visually,
+        and .faq-link-spacer holds its old place in the summary's flex line so
+        long question text still wraps where it always did rather than running
+        underneath the icon.
+      {%- endcomment -%}
+      <div class="faq-row" {{ block.shopify_attributes }}>
+        <details class="faq-item" id="{{ anchor_id }}">
+          <summary class="faq-question">
+            <span>{{ block.settings.question }}</span>
+            <span class="faq-link-spacer" aria-hidden="true"></span>
+            <svg class="faq-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-          </a>
-          <svg class="faq-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
+          </summary>
+          <div class="faq-answer">
+            {{ block.settings.answer }}
+          </div>
+        </details>
+        <a
+          href="#{{ anchor_id }}"
+          class="faq-link"
+          aria-label="Copy link to this question"
+          title="Copy link"
+          onclick="event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + window.location.pathname + '#{{ anchor_id }}').then(() => { this.setAttribute('title', 'Link copied!'); setTimeout(() => this.setAttribute('title', 'Copy link'), 2000); });"
+        >
+          <svg class="faq-link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
           </svg>
-        </summary>
-        <div class="faq-answer">
-          {{ block.settings.answer }}
-        </div>
-      </details>
+        </a>
+      </div>
     {% endfor %}
   </div>
 </div>

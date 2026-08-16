@@ -50,6 +50,41 @@ test('warnings and notices are not counted as errors', () => {
   assert.equal(out.errors, 0);
 });
 
+test('needs-review warnings are counted, disclosed per rule, and do not gate', () => {
+  // build-pa11yci.mjs caps axe `incomplete` at warning; the summary tracks the
+  // count over time without failing the run.
+  const out = summarize(report({
+    'https://s.example/a': [issue({ type: 'warning' }), issue({ type: 'warning', code: 'target-size' })],
+    'https://s.example/b': [issue({ type: 'warning' })],
+  }));
+  assert.equal(out.ok, true);
+  assert.equal(out.warnings, 3);
+  assert.match(out.body, /Needs review<\/strong> \(3 finding\(s\)/);
+  assert.match(out.body, /\| `color-contrast` \| 2 \|/);
+  assert.match(out.body, /\| `target-size` \| 1 \|/);
+});
+
+test('the per-URL table carries a needs-review column', () => {
+  const out = summarize(report({ 'https://s.example/a': [issue({ type: 'warning' })] }));
+  assert.match(out.body, /\| Page \| Errors \| Suppressed \| Needs review \|/);
+  assert.match(out.body, /\| `\/a` \| 0 ✅ \| 0 \| 1 \|/);
+});
+
+test('a clean run with no warnings has no needs-review block', () => {
+  const out = summarize(report({ 'https://s.example/a': [] }));
+  assert.equal(out.warnings, 0);
+  // The table column is always present; the disclosure block only appears when
+  // there is something to disclose.
+  assert.ok(!out.body.includes('<strong>Needs review</strong>'));
+});
+
+test('a page-derived rule id cannot forge markup in the needs-review table', () => {
+  const out = summarize(report({
+    'https://s.example/a': [issue({ type: 'warning', code: '</details>```x' })],
+  }));
+  assert.ok(!out.body.includes('</details>```'));
+});
+
 test('a non-zero pa11y exit with nothing parsed out still fails', () => {
   // Chrome crashed, or a page would not load: the run failed even though no
   // accessibility issue was recorded.
@@ -73,6 +108,18 @@ test('a run with only baselined findings is clean despite pa11y exiting non-zero
   assert.equal(out.ok, true);
   assert.equal(out.errors, 0);
   assert.equal(out.suppressed, 2);
+});
+
+test('a run with only needs-review warnings is clean despite pa11y exiting non-zero', () => {
+  // includeWarnings puts warnings in the issue list pa11y-ci counts toward a
+  // URL's pass/fail, so a warnings-only run exits 2. Not a crash either.
+  const out = summarize(
+    report({ 'https://s.example/a': [issue({ type: 'warning' })] }),
+    { exitCode: 2 }
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.errors, 0);
+  assert.equal(out.warnings, 1);
 });
 
 // ── Baseline disclosure ────────────────────────────────────────────
@@ -130,10 +177,11 @@ test('the per-URL table carries a suppressed column', () => {
   assert.match(out.body, /\| `\/a` \| 1 ❌ \| 1 \|/);
 });
 
-test('the committed baseline parses and normalises', () => {
+test('the committed baseline parses, and is empty', () => {
+  // The burn-down's end state: nothing suppressed. A rule reappearing here is
+  // a deliberate decision, not a default, so this test makes it a visible one.
   const committed = loadBaseline();
-  assert.ok(Array.isArray(committed) && committed.length > 0);
-  assert.ok(committed.every((c) => typeof c === 'string' && c === c.toLowerCase()));
+  assert.deepEqual(committed, []);
 });
 
 test('a malformed baseline is a hard error, never a silent no-op', () => {

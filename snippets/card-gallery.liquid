@@ -182,21 +182,38 @@
         assign slideshow_attributes = slideshow_attributes | append: ' disabled="true"'
       endif
     %}
-    <a
-      class="contents"
-      ref="cardGalleryLink"
-      href="{{ product.selected_or_first_available_variant.url }}"
-      aria-label="{{- product.title -}}"
-    >
-      {% render 'slideshow',
-        ref: 'slideshow',
-        initial_slide: 0,
-        slides: slides,
-        slide_count: media_list_to_show.size,
-        show_arrows: show_arrows,
-        attributes: slideshow_attributes
-      %}
-    </a>
+    {%- comment -%}
+      The product link wraps the SLIDES, not the whole slideshow. It used to sit
+      outside `{% render 'slideshow' %}`, which put the previous/next arrow
+      buttons inside an anchor: a control nested in another control, which is
+      undefined behaviour for assistive tech and, for a keyboard user, an arrow
+      whose activation could be read as following the link.
+
+      The arrows cannot move instead: `on:click="/previous"` binds to the
+      closest component ancestor, so they have to stay inside
+      <slideshow-component>. Wrapping the slides is the same clickable area
+      minus the arrows. `display: contents` means the anchor adds no box, so the
+      slides remain layout children of the scroller, and `ref="slides[]"` is
+      collected from anywhere in the subtree, so the component still finds them.
+    {%- endcomment -%}
+    {%- capture linked_slides -%}
+      <a
+        class="contents"
+        ref="cardGalleryLink"
+        href="{{ product.selected_or_first_available_variant.url }}"
+        aria-label="{{- product.title -}}"
+      >
+        {{- slides -}}
+      </a>
+    {%- endcapture -%}
+    {% render 'slideshow',
+      ref: 'slideshow',
+      initial_slide: 0,
+      slides: linked_slides,
+      slide_count: media_list_to_show.size,
+      show_arrows: show_arrows,
+      attributes: slideshow_attributes
+    %}
   {% elsif product != blank and product.media.size == 0 %}
     <product-title class="product-card-gallery__title-placeholder">
       <a

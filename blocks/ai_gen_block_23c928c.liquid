@@ -205,7 +205,15 @@
   .ai-about-team-dots-{{ ai_gen_id }} {
     display: flex;
     justify-content: center;
-    gap: 10px;
+    /*
+     * 12px, not 10px, and the two pixels are load-bearing. WCAG 2.5.8 passes a
+     * target under 24px when no neighbouring target's 24px circle overlaps its
+     * own, which for a 12px dot means centres at least 24px apart: 12 + 12.
+     * At 10px the centres were 22px apart and every dot failed target-size.
+     * Widening the gap keeps the dots themselves 12px, where enlarging the
+     * buttons to 24px would have spread the row visibly.
+     */
+    gap: 12px;
     margin-top: 20px;
   }
 

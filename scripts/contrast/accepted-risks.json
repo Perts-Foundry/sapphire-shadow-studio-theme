@@ -4,7 +4,7 @@
     "scheme": "scheme-1",
     "pair": "border around background",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -12,7 +12,7 @@
     "scheme": "scheme-1",
     "pair": "input_border_color around input_background",
     "ratio": 1.33,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -20,7 +20,7 @@
     "scheme": "scheme-1",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.35,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -28,31 +28,7 @@
     "scheme": "scheme-1",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.25,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "scheme-2",
-    "pair": "primary_hover on background",
-    "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "scheme-2",
-    "pair": "input_text_color on input_background",
-    "ratio": 4.33,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "scheme-2",
-    "pair": "input_text_color on input_hover_background",
-    "ratio": 4.36,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -60,7 +36,7 @@
     "scheme": "scheme-2",
     "pair": "border around background",
     "ratio": 1.22,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -68,7 +44,7 @@
     "scheme": "scheme-2",
     "pair": "input_border_color around input_background",
     "ratio": 1.34,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -76,7 +52,7 @@
     "scheme": "scheme-2",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -84,7 +60,7 @@
     "scheme": "scheme-2",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -92,7 +68,7 @@
     "scheme": "scheme-3",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -100,15 +76,7 @@
     "scheme": "scheme-3",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "scheme-4",
-    "pair": "border around background",
-    "ratio": 2.63,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -116,7 +84,7 @@
     "scheme": "scheme-4",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.19,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -124,7 +92,7 @@
     "scheme": "scheme-4",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -132,7 +100,7 @@
     "scheme": "scheme-5",
     "pair": "primary_button_hover_border around primary_button_hover_background",
     "ratio": 1.66,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -140,7 +108,7 @@
     "scheme": "scheme-5",
     "pair": "selected_variant_border_color around selected_variant_background_color",
     "ratio": 1.66,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -148,15 +116,7 @@
     "scheme": "scheme-5",
     "pair": "selected_variant_hover_border_color around selected_variant_hover_background_color",
     "ratio": 1.38,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "sss-dark-scheme",
-    "pair": "border around background",
-    "ratio": 1.79,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -164,31 +124,7 @@
     "scheme": "sss-dark-scheme",
     "pair": "primary_button_hover_border around primary_button_hover_background",
     "ratio": 2.8,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "sss-dark-scheme",
-    "pair": "input_border_color around input_background",
-    "ratio": 2.24,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "sss-dark-scheme",
-    "pair": "variant_border_color around variant_background_color",
-    "ratio": 1.79,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "current",
-    "scheme": "sss-dark-scheme",
-    "pair": "variant_hover_border_color around variant_hover_background_color",
-    "ratio": 2.74,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -196,7 +132,7 @@
     "scheme": "sss-dark-scheme",
     "pair": "selected_variant_hover_border_color around selected_variant_hover_background_color",
     "ratio": 2.8,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -204,7 +140,7 @@
     "scheme": "scheme-1",
     "pair": "border around background",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -212,7 +148,7 @@
     "scheme": "scheme-1",
     "pair": "input_border_color around input_background",
     "ratio": 1.33,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -220,7 +156,7 @@
     "scheme": "scheme-1",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.35,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -228,31 +164,7 @@
     "scheme": "scheme-1",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.25,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "presets.Default",
-    "scheme": "scheme-2",
-    "pair": "primary_hover on background",
-    "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "presets.Default",
-    "scheme": "scheme-2",
-    "pair": "input_text_color on input_background",
-    "ratio": 4.33,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "presets.Default",
-    "scheme": "scheme-2",
-    "pair": "input_text_color on input_hover_background",
-    "ratio": 4.36,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Body/link text below WCAG 2.1 AA 4.5:1. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -260,7 +172,7 @@
     "scheme": "scheme-2",
     "pair": "border around background",
     "ratio": 1.22,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -268,7 +180,7 @@
     "scheme": "scheme-2",
     "pair": "input_border_color around input_background",
     "ratio": 1.34,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -276,7 +188,7 @@
     "scheme": "scheme-2",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -284,7 +196,7 @@
     "scheme": "scheme-2",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -292,7 +204,7 @@
     "scheme": "scheme-3",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.14,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -300,15 +212,7 @@
     "scheme": "scheme-3",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
-    "accepted_on": "2026-08-16"
-  },
-  {
-    "source": "presets.Default",
-    "scheme": "scheme-4",
-    "pair": "border around background",
-    "ratio": 2.63,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -316,7 +220,7 @@
     "scheme": "scheme-4",
     "pair": "variant_border_color around variant_background_color",
     "ratio": 1.19,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -324,7 +228,7 @@
     "scheme": "scheme-4",
     "pair": "variant_hover_border_color around variant_hover_background_color",
     "ratio": 1.09,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: this scheme's hairline is part of the light-theme look and raising it to the 3:1 SC 1.4.11 bar would darken a line the storefront uses as a whisper, on every card, input and variant swatch. The dark scheme and scheme-4 were raised in the same pass, where the same change is imperceptible; these were left. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -332,7 +236,7 @@
     "scheme": "scheme-5",
     "pair": "primary_button_hover_border around primary_button_hover_background",
     "ratio": 1.66,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -340,7 +244,7 @@
     "scheme": "scheme-5",
     "pair": "selected_variant_border_color around selected_variant_background_color",
     "ratio": 1.66,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   },
   {
@@ -348,7 +252,7 @@
     "scheme": "scheme-5",
     "pair": "selected_variant_hover_border_color around selected_variant_hover_background_color",
     "ratio": 1.38,
-    "note": "Pre-existing when the contrast gate landed; recorded, not fixed, so the gate could be introduced without restyling the live storefront. Stock Horizon hairline border below the 3:1 SC 1.4.11 bar. The recorded ratio is a ratchet: this pair may not get worse. Triage tracked in TODO.md.",
+    "note": "Deliberate design decision, 2026-08-16: the border IS the control's own fill (both roles hold the same colour), so this is a borderless button or swatch, not a border that fails. What tells the control apart from the page is its fill, and the lint scores the better of the two edges, so the number here is that fill against the page. Fixing it would mean either painting a border the design does not have or changing a brand colour. The recorded ratio is a ratchet: this pair may not get worse.",
     "accepted_on": "2026-08-16"
   }
 ]

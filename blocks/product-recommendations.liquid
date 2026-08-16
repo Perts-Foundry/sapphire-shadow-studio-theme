@@ -156,12 +156,21 @@
         </div>
       {% endif %}
     {%- else -%}
+      {%- comment -%}
+        One status message for the whole placeholder grid. Each tile used to
+        carry its own aria-label, which ARIA does not allow on a role-less div
+        (nothing announces it) and which would have repeated the same sentence
+        once per tile if it did.
+      {%- endcomment -%}
       <div class="resource-list resource-list--grid">
+        <span
+          role="status"
+          class="visually-hidden"
+        >
+          {{- 'accessibility.loading_product_recommendations' | t -}}
+        </span>
         {% for i in (1..block_settings.max_products) %}
-          <div
-            class="resource-list__item product-recommendations__skeleton-item"
-            aria-label="{{ 'accessibility.loading_product_recommendations' | t }}"
-          ></div>
+          <div class="resource-list__item product-recommendations__skeleton-item"></div>
         {% endfor %}
       </div>
     {%- endif -%}

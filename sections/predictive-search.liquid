@@ -45,7 +45,12 @@
             <ul
               class="predictive-search-results__list predictive-search-results__wrapper predictive-search-results__wrapper-queries list-unstyled"
               role="listbox"
-              aria-labelledby="predictive-search-queries"
+              {%- comment -%}
+                aria-labelledby named an id that has never existed on this page,
+                which leaves the listbox unnamed. `search_results_resource_queries`
+                is the same string the products list uses as its visible heading.
+              {%- endcomment -%}
+              aria-label="{{ 'content.search_results_resource_queries' | t }}"
             >
               {%- for resource in predictive_search.resources.queries -%}
                 <li
@@ -54,13 +59,17 @@
                   data-search-result-index="search-results-{{ shared_results_index | plus: forloop.index }}"
                   on:keydown="/onSearchKeyDown"
                 >
+                  {%- comment -%}
+                    The label belongs on the link, not on the span inside it: a
+                    span has no role, so ARIA forbids labelling it and the
+                    <mark>-marked styled text was the only thing announced.
+                  {%- endcomment -%}
                   <a
                     class="pills__pill predictive-search-results__pill"
                     href="{{ resource.url }}"
+                    aria-label="{{ resource.text }}"
                   >
-                    <span
-                      aria-label="{{ resource.text }}"
-                    >
+                    <span>
                       {{ resource.styled_text }}
                     </span>
                   </a>

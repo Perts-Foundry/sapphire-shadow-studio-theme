@@ -16,10 +16,54 @@
     "",
     "Per-entry `ignore` and `hideElements` are pa11y options, passed through by",
     "build-pa11yci.mjs. Use them for third-party embeds this theme does not",
-    "control, never to silence a real finding in theme markup."
+    "control, never to silence a real finding in theme markup.",
+    "",
+    "Top-level `defaults` is the same escape hatch applied to EVERY audited URL.",
+    "build-pa11yci.mjs spreads it under the committed pa11y defaults, so it can",
+    "add an option but never weaken the standard, the runners, or the Chrome",
+    "flags. Reach for a per-entry option first; use this only when the offending",
+    "DOM is injected on every page."
   ],
+  "defaults": {
+    "_comment": [
+      "Markup this theme cannot reach, hidden from the accessibility tree the",
+      "audit walks. Both entries are other people's DOM, which is the ONLY",
+      "thing that belongs here: a finding in a file this repo owns gets fixed,",
+      "never hidden.",
+      "",
+      "#PBarNextFrame is Shopify's own preview-bar iframe, injected into every",
+      "page of a preview theme by the platform. It is title-less and",
+      "cross-origin, which is 2 axe findings (frame-title, frame-tested) per",
+      "page for markup no template in this repo emits. It does not run on the",
+      "live storefront at all.",
+      "",
+      "jdgm- is Judge.me, installed as app blocks (see the",
+      "shopify://apps/judge-me-reviews/... types in the product templates). Its",
+      "widgets ship an aria-controls pointing at a tab panel that is not in the",
+      "DOM until the tab is opened, and a review-form error node whose id is",
+      "emitted once per widget on the page. Both are app markup: the theme",
+      "renders a block reference, not the HTML, so there is no version of this",
+      "repo in which they can be fixed. Matched on class AND id because the",
+      "widgets carry the prefix on both and the offending nodes are not all",
+      "inside one container."
+    ],
+    "hideElements": "#PBarNextFrame, [class*=\"jdgm-\"], [id*=\"jdgm-\"]"
+  },
   "paths": [
-    { "path": "/", "label": "index (homepage)", "template": "templates/index.json" },
+    {
+      "path": "/",
+      "label": "index (homepage)",
+      "template": "templates/index.json",
+      "_ignore_comment": [
+        "The homepage hero montage (snippets/hero-video.liquid) is a muted,",
+        "silent, decorative loop with no speech and no audio track. WCAG 1.2.2",
+        "captions carry no information for it, so axe's video-caption finding",
+        "has no fix that is not a hollow empty track. The <video> is",
+        "aria-hidden, so this is scoped to the one page that has it rather than",
+        "silenced audit-wide."
+      ],
+      "ignore": ["video-caption"]
+    },
     { "path": "/collections", "label": "list-collections", "template": "templates/list-collections.json" },
     { "path": "/collections/all-products", "label": "collection", "template": "templates/collection.json" },
     { "path": "/products/huddle-crewneck", "label": "product (huddle crewneck)", "template": "templates/product.huddle-crewneck.json" },

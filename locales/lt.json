@@ -50,6 +50,7 @@
     },
     "menu": "Meniu",
     "country_region": "Šalis / regionas",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "{{ index }} skaidrė iš {{ length }}",
     "scroll_to": "Slinkti į „{{ title }}“",
     "loading_product_recommendations": "Įkeliamos gaminių rekomendacijos",

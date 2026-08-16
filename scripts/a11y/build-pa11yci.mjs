@@ -81,14 +81,45 @@ export function buildConfig({
   // pa11y: it is the escape hatch for third-party embeds this theme cannot
   // fix, and those findings are invisible to the summariser by design.
 
+  // Audit-wide pa11y defaults from paths.json. Today this carries only
+  // `hideElements`, for app-injected DOM the theme has no template control over
+  // (Shopify's own preview bar). Anything here applies to EVERY audited URL, so
+  // it is the widest of the three escape hatches: prefer a per-entry `ignore` /
+  // `hideElements` when the problem is one page's embed.
+  // `_`-prefixed keys are the file's own rationale notes, not pa11y options.
+  const fileDefaults = Object.fromEntries(
+    Object.entries(paths?.defaults ?? {}).filter(([key]) => !key.startsWith('_'))
+  );
+  if ('ignore' in fileDefaults) {
+    // An audit-wide `ignore` is exactly the thing the baseline was moved out of
+    // this file to prevent: pa11y drops those findings inside the browser, so
+    // the summariser could not disclose what had been hidden. Per-PATH `ignore`
+    // is fine and stays supported; this one is not.
+    throw new Error('paths.json defaults must not set `ignore` (see baseline.json)');
+  }
+
   return {
     defaults: {
+      // Spread FIRST so the committed keys below win: paths.json can add an
+      // option, never weaken the standard, the runner set, or the sandbox flags.
+      ...fileDefaults,
       standard: 'WCAG2AA',
       runners: ['axe'],
       // `target-size` is an axe rule outside the default WCAG2AA set. It is
       // included because CLAUDE.md makes 44x44 touch targets a project rule,
       // and a footer-link touch-target fix has already shipped once (PR #99).
       rules: ['target-size'],
+      // axe returns two result sets: `violations` (a measured failure) and
+      // `incomplete` (axe could not decide, overwhelmingly color-contrast over
+      // an image, gradient, or overlapping element). pa11y's axe runner
+      // promotes incomplete to ERROR by impact unless capped, which is what
+      // forced color-contrast into baseline.json: the unmeasurable overlay
+      // text drowned out the measurable failures. Capping needs-review at
+      // `warning` keeps every MEASURED violation a gating error while the
+      // can't-measure set flows through as warnings, which includeWarnings
+      // keeps in the JSON so summarize-pa11y.mjs can disclose and track them.
+      includeWarnings: true,
+      levelCapWhenNeedsReview: 'warning',
       timeout,
       headers,
       chromeLaunchConfig: {
@@ -106,7 +137,14 @@ export function buildConfig({
       const built = { url: url.href };
       // Pass-through escape hatches for third-party embeds; see paths.json.
       if (entry.ignore) built.ignore = entry.ignore;
-      if (entry.hideElements) built.hideElements = entry.hideElements;
+      // pa11y REPLACES a default with the per-URL value rather than merging, so
+      // a per-entry hideElements would silently un-hide the audit-wide ones.
+      // Both are selector lists, so concatenate instead.
+      if (entry.hideElements) {
+        built.hideElements = [fileDefaults.hideElements, entry.hideElements]
+          .filter(Boolean)
+          .join(', ');
+      }
       if (entry.actions) built.actions = entry.actions;
       return built;
     }),

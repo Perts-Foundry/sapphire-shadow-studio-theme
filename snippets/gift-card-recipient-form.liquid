@@ -35,7 +35,7 @@
         on:change="/toggleRecipientForm/self"
         value="self"
         checked
-        aria-controls="recipient-fields"
+        aria-controls="Recipient-fields-{{ block.id }}"
       >
       <span>{{- 'content.recipient_form_email_label_my_email' | t -}}</span>
     </label>
@@ -47,12 +47,18 @@
         ref="recipientEmailButton"
         on:change="/toggleRecipientForm/recipient_form"
         value="recipient_form"
-        aria-controls="recipient-fields"
+        aria-controls="Recipient-fields-{{ block.id }}"
       >
       <span>{{ 'content.recipient_form_email_label' | t }}</span>
     </label>
   </fieldset>
+  {%- comment -%}
+    `recipient-fields` was a class, not an id, so both radios' aria-controls
+    pointed at nothing. Block-suffixed like every other id in this form,
+    because a gift-card block can be placed more than once.
+  {%- endcomment -%}
   <div
+    id="Recipient-fields-{{ block.id }}"
     ref="recipientFields"
     class="recipient-fields"
     hidden

@@ -109,6 +109,9 @@ export function sanitize(text, max = 300) {
  * @property {number} passes
  * @property {number} errors      gating errors, baselined rules excluded
  * @property {number} suppressed  findings hidden by the baseline on this run
+ * @property {number} warnings    non-gating needs-review findings (axe could
+ *                                not measure, e.g. text over an image); counted
+ *                                and disclosed so they can be tracked over time
  * @property {number} malformed   result entries pa11y-ci recorded for a URL it
  *                                could not test at all (a load failure or a
  *                                Chrome crash serialises as a bare `{}`)
@@ -161,16 +164,23 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
     // hard failure: a page that never loaded is not a page that passed.
     const malformed = entries.filter((e) => !e || typeof e !== 'object' || typeof e.type !== 'string');
     const errorsAll = entries.filter((e) => e && typeof e === 'object' && e.type === 'error');
+    // Needs-review findings: axe's `incomplete` results, capped to warning by
+    // build-pa11yci.mjs (levelCapWhenNeedsReview) and kept in the JSON by
+    // includeWarnings. Not gated, but counted and disclosed per rule so the
+    // trend is visible run over run.
+    const warningsAll = entries.filter((e) => e && typeof e === 'object' && e.type === 'warning');
     const isBaselined = (e) => baselined.has(String(e.code ?? '').toLowerCase());
     return {
       url,
       issues: errorsAll.filter((e) => !isBaselined(e)),
       suppressed: errorsAll.filter(isBaselined),
+      warnings: warningsAll,
       malformed,
     };
   });
   const errors = perUrl.reduce((n, u) => n + u.issues.length, 0);
   const suppressed = perUrl.reduce((n, u) => n + u.suppressed.length, 0);
+  const warnings = perUrl.reduce((n, u) => n + u.warnings.length, 0);
   const malformed = perUrl.reduce((n, u) => n + u.malformed.length, 0);
   const passes = perUrl.filter((u) => u.issues.length === 0 && u.malformed.length === 0).length;
 
@@ -216,15 +226,39 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
     lines.push('');
   }
 
-  lines.push('| Page | Errors | Suppressed |');
-  lines.push('|:--|--:|--:|');
+  lines.push('| Page | Errors | Suppressed | Needs review |');
+  lines.push('|:--|--:|--:|--:|');
   for (const u of perUrl) {
     const cell = u.malformed.length > 0
       ? '⚠️ untested'
       : (u.issues.length === 0 ? '0 ✅' : `${u.issues.length} ❌`);
-    lines.push(`| \`${sanitize(pathOf(u.url), 120)}\` | ${cell} | ${u.suppressed.length} |`);
+    lines.push(`| \`${sanitize(pathOf(u.url), 120)}\` | ${cell} | ${u.suppressed.length} | ${u.warnings.length} |`);
   }
   lines.push('');
+
+  if (warnings > 0) {
+    // Needs-review disclosure. These do not gate: axe could not measure them
+    // (text over an image, a gradient, an overlapping element), so a red check
+    // would be noise. The per-rule tally is the tracking signal; a jump between
+    // runs means new unmeasurable text landed and deserves a manual look.
+    const byRule = new Map();
+    for (const u of perUrl) {
+      for (const w of u.warnings) {
+        const code = String(w.code ?? 'unknown').toLowerCase();
+        byRule.set(code, (byRule.get(code) ?? 0) + 1);
+      }
+    }
+    lines.push(`<details><summary><strong>Needs review</strong> (${warnings} finding(s) axe could not measure; not gated)</summary>`);
+    lines.push('');
+    lines.push('| Rule | Findings |');
+    lines.push('|:--|--:|');
+    for (const [code, count] of [...byRule.entries()].sort((a, b) => b[1] - a[1])) {
+      lines.push(`| \`${sanitize(code, 80)}\` | ${count} |`);
+    }
+    lines.push('');
+    lines.push('</details>');
+    lines.push('');
+  }
 
   for (const u of perUrl.filter((x) => x.issues.length)) {
     lines.push(`<details><summary><strong>${sanitize(pathOf(u.url), 120)}</strong> (${u.issues.length})</summary>`);
@@ -250,20 +284,22 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
 
   if (malformed > 0) {
     return {
-      ok: false, total, passes, errors, suppressed, malformed, body,
+      ok: false, total, passes, errors, suppressed, warnings, malformed, body,
       reason: `${malformed} URL(s) could not be tested (load failure or crash)`,
     };
   }
 
   // A non-zero pa11y-ci exit with nothing parsed out means it failed for some
   // other reason (a page that would not load, a Chrome crash). Do not green it.
-  // This net only fires when the report is otherwise empty: with the baseline
-  // applied HERE rather than in the runner, pa11y-ci legitimately exits
-  // non-zero on every run that has any baselined finding, so the per-URL
-  // `malformed` check above is the primary crash detector now.
-  if (errors === 0 && suppressed === 0 && exitCode !== null && exitCode !== 0) {
+  // This net only fires when the report is otherwise empty: pa11y-ci counts
+  // EVERY issue it reports toward a URL's pass/fail, so with the baseline
+  // applied HERE rather than in the runner it legitimately exits non-zero on
+  // any baselined finding, and with includeWarnings it does the same on any
+  // needs-review warning. The per-URL `malformed` check above is the primary
+  // crash detector now.
+  if (errors === 0 && suppressed === 0 && warnings === 0 && exitCode !== null && exitCode !== 0) {
     return {
-      ok: false, total, passes, errors, suppressed, malformed, body,
+      ok: false, total, passes, errors, suppressed, warnings, malformed, body,
       reason: `pa11y-ci exited ${exitCode} but reported no accessibility findings at all; the run itself failed`,
     };
   }
@@ -275,6 +311,7 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
     passes,
     errors,
     suppressed,
+    warnings,
     malformed,
     body,
     reason: errors === 0
@@ -285,7 +322,7 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
 
 function fail(reason) {
   return {
-    ok: false, total: 0, passes: 0, errors: 0, suppressed: 0, malformed: 0,
+    ok: false, total: 0, passes: 0, errors: 0, suppressed: 0, warnings: 0, malformed: 0,
     reason, body: `❌ ${sanitize(reason, 500)}`,
   };
 }

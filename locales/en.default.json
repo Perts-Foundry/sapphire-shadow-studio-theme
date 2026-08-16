@@ -18,6 +18,7 @@
     "cart_count": "Total items in cart",
     "close_dialog": "Close dialog",
     "country_region": "Country/Region",
+    "popular_countries": "Popular countries",
     "country_results_count": "{{ count }} results",
     "decrease_quantity": "Decrease quantity",
     "discount": "Apply a discount code",

@@ -44,10 +44,15 @@
           </a>
         {%- else -%}
           <span
-            aria-label="{{ 'content.pagination.previous' | t }}"
             class="pagination__link pagination__link--arrow pagination__link--disabled"
             aria-disabled="true"
           >
+            {%- comment -%}
+              Real text rather than aria-label: this span has no role, and ARIA
+              forbids a label on an element that has none, so the arrow was
+              announcing as an unlabelled graphic at the end of the list.
+            {%- endcomment -%}
+            <span class="visually-hidden">{{- 'content.pagination.previous' | t -}}</span>
             {{ 'icon-chevron-left.svg' | inline_asset_content }}
           </span>
         {%- endif -%}
@@ -149,10 +154,15 @@
           </a>
         {%- else -%}
           <span
-            aria-label="{{ 'content.pagination.next' | t }}"
             class="pagination__link pagination__link--arrow pagination__link--disabled"
             aria-disabled="true"
           >
+            {%- comment -%}
+              Real text rather than aria-label: this span has no role, and ARIA
+              forbids a label on an element that has none, so the arrow was
+              announcing as an unlabelled graphic at the end of the list.
+            {%- endcomment -%}
+            <span class="visually-hidden">{{- 'content.pagination.next' | t -}}</span>
             {{ 'icon-chevron-right.svg' | inline_asset_content }}
           </span>
         {%- endif -%}

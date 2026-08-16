@@ -48,6 +48,7 @@
     "cart_count": "Общо артикули в количката",
     "menu": "Меню",
     "country_region": "Държава/регион",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Слайд {{ index }} от {{ length }}",
     "scroll_to": "Превъртете до {{ title }}",
     "loading_product_recommendations": "Зареждане на препоръчани продукти.",

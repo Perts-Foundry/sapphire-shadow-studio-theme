@@ -48,6 +48,7 @@
     "cart_count": "Totaal aantal artikelen in winkelwagen",
     "menu": "Menu",
     "country_region": "Land/regio",
+    "popular_countries": "TODO: Popular countries",
     "slide_status": "Dia {{ index }} van {{ length }}",
     "scroll_to": "Scrol naar {{ title }}",
     "loading_product_recommendations": "Productaanbevelingen laden",
