@@ -29,6 +29,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PRODUCTS, productForHandle, recognizedColorValues, altColorProblem } from './lib/photo-naming.mjs';
+import { paginate } from './blank-inventory/lib/catalogue.mjs';
 
 const API_VERSION = '2026-07';
 const REQUIRED_SCOPES = ['write_products', 'write_files'];
@@ -176,13 +177,42 @@ const Q_PRODUCT = `query ProductByIdentifier($identifier: ProductIdentifierInput
   productByIdentifier(identifier: $identifier) {
     id title
     options { name optionValues { name } }
-    media(first: 250) { nodes { id alt mediaContentType ... on MediaImage { status image { url } } } }
-    variants(first: 100) { nodes { id title selectedOptions { name value } } }
+    media(first: 250) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id alt mediaContentType ... on MediaImage { status image { url } } }
+    }
+    variants(first: 250) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id title selectedOptions { name value } }
+    }
+  }
+}`;
+
+const Q_PRODUCT_VARIANTS_PAGE = `query ProductVariantsPage($id: ID!, $after: String) {
+  product(id: $id) {
+    variants(first: 250, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id title selectedOptions { name value } }
+    }
+  }
+}`;
+
+const Q_PRODUCT_MEDIA_PAGE = `query ProductMediaPage($id: ID!, $after: String) {
+  product(id: $id) {
+    media(first: 250, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id alt mediaContentType ... on MediaImage { status image { url } } }
+    }
   }
 }`;
 
 const Q_MEDIA = `query MediaByProduct($id: ID!) {
-  product(id: $id) { media(first: 250) { nodes { id alt mediaContentType ... on MediaImage { status image { url } } } } }
+  product(id: $id) {
+    media(first: 250) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id alt mediaContentType ... on MediaImage { status image { url } } }
+    }
+  }
 }`;
 
 const M_STAGED = `mutation StagedUploadsCreate($input: [StagedUploadInput!]!) {
@@ -233,8 +263,15 @@ async function pollMediaReady(domain, token, productId, mediaId, redact) {
   let wait = 1000;
   while (Date.now() < deadline) {
     await sleep(wait);
+    // Walk every media page: a lookup by id against a truncated page would leave `node` undefined,
+    // and this loop would then run to its deadline and report a processing timeout for media that
+    // was actually fine.
     const data = await gql(domain, token, Q_MEDIA, { id: productId }, redact);
-    const node = data.product.media.nodes.find((n) => n.id === mediaId);
+    const nodes = await fetchAllConnection(
+      (query, variables) => gql(domain, token, query, variables, redact),
+      productId, 'media', data.product.media,
+    );
+    const node = nodes.find((n) => n.id === mediaId);
     const status = node && node.status;
     if (status === 'READY') return 'READY';
     if (status === 'FAILED') throw new Error(`media ${mediaId} processing FAILED`);
@@ -267,6 +304,54 @@ export function colorDriftProblem(liveValues, key) {
   return null;
 }
 
+/**
+ * Read EVERY node of a product's connection, following its pages.
+ *
+ * WHY THIS EXISTS: the variants query was `variants(first: 100)` with no `hasNextPage` check. The
+ * two 8-design products carry 144 variants each (8 designs x 3 colours x 6 sizes), so the read
+ * stopped at 100 and the 44 beyond the cap were dropped. Those variants then fell through
+ * `if (!hero.mediaId || !variantIds.length) continue;` with no error, so 88 variants across two
+ * products silently kept the product-level featured image (a Black garment for every colour) while
+ * the run still printed success. A truncated read that reports success is the fail-open shape
+ * scripts/seo-review/admin.mjs refuses by design; this follows the pages instead of guessing.
+ *
+ * The same shape applied to `media`, where the consequence is worse than a miscount:
+ * `pollMediaReady` looks the new media up by id in the returned page, so a truncated read would
+ * leave it undefined and the poll would run to its deadline and report a PROCESSING TIMEOUT for
+ * media that was actually fine. Both connections go through here.
+ *
+ * Pagination itself is delegated to `paginate()` from blank-inventory's catalogue lib rather than
+ * reimplemented: it already carries the malformed-page guard and the runaway-page backstop. The
+ * first page is supplied by the caller (Q_PRODUCT already fetched it), so the common single-page
+ * case still costs zero extra round trips.
+ *
+ * @param {(query: string, variables?: object) => Promise<any>} gqlFn
+ * @param {string} productId
+ * @param {'variants'|'media'} field - which connection to walk
+ * @param {{pageInfo?: {hasNextPage?: boolean, endCursor?: string|null}, nodes?: Array}} firstPage
+ *   the connection already returned by Q_PRODUCT
+ * @returns {Promise<Array<object>>} every node across every page
+ */
+export async function fetchAllConnection(gqlFn, productId, field, firstPage) {
+  const QUERY = field === 'media' ? Q_PRODUCT_MEDIA_PAGE : Q_PRODUCT_VARIANTS_PAGE;
+  const { nodes } = await paginate(async (cursor) => {
+    // paginate() opens with cursor === null, which is the page the caller already has.
+    if (cursor === null) {
+      return {
+        nodes: firstPage?.nodes ?? [],
+        pageInfo: firstPage?.pageInfo ?? { hasNextPage: false, endCursor: null },
+      };
+    }
+    const data = await gqlFn(QUERY, { id: productId, after: cursor });
+    const conn = data?.product?.[field];
+    if (!conn) {
+      throw new Error(`a ${field} page for ${productId} returned no ${field} connection`);
+    }
+    return conn;
+  }, { maxPages: 20 });
+  return nodes;
+}
+
 // Resolve and validate a product; returns { product, colorValues, key, variantsByColor }.
 async function resolveProduct(domain, token, handle, redact) {
   const data = await gql(domain, token, Q_PRODUCT, { identifier: { handle } }, redact);
@@ -289,8 +374,18 @@ async function resolveProduct(domain, token, handle, redact) {
     if (colorProblem) throw new Error(colorProblem);
   }
 
+  const pageGql = (query, variables) => gql(domain, token, query, variables, redact);
+  const variantNodes = await fetchAllConnection(pageGql, product.id, 'variants', product.variants);
+  const mediaNodes = await fetchAllConnection(pageGql, product.id, 'media', product.media);
+
+  // Overwrite the first-page connections with the complete node sets. Callers read
+  // `product.media.nodes` directly, and leaving a partial first page reachable on the returned
+  // object is a trap: it would read as the whole set and silently is not.
+  product.variants = { nodes: variantNodes };
+  product.media = { nodes: mediaNodes };
+
   const variantsByColor = new Map();
-  for (const v of product.variants.nodes) {
+  for (const v of variantNodes) {
     const opt = v.selectedOptions.find((o) => o.name.toLowerCase() === COLOR_OPTION_NAME.toLowerCase());
     if (!opt) continue;
     if (!variantsByColor.has(opt.value)) variantsByColor.set(opt.value, []);

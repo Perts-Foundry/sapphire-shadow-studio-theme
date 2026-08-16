@@ -46,35 +46,26 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   `custom.inventory_blank_sku`, which identifies the shared blank garment rather than the finished
   piece, so the two do not collide.
 
-- [ ] **Attach one hero image per colour in Admin.** Separate from the shipped alt-text gallery
-  filter, which never touches it: `variant.image` drives cart line-item thumbnails and collection
-  cards, and Shopify caps a variant at one attached media, so attachment expresses exactly one hero
-  per colour. Per-colour photography plus alt text is the input. See `docs/product-media-alt-text.md`
-  for the per-product value table and the traps. Admin.
-
-- [ ] **Market Shift Fuel's Grey Heather as a stealth colourway.** White thread on light heather is
-  a deliberate tonal design, not a printing miss: at full-garment scale it reads as a plain
-  sweatshirt and only the close-up (`crew-caffeine-trauma-gray-3.jpg`) reveals it. Do not "fix" the
-  contrast; sell the subtlety. Two parts. (1) Merchandising: name the intent in copy so a shopper
-  understands the low contrast is the point, wording to be drafted. (2) Media order: the colour
-  filter now shows Grey Heather only its own three photos, two of which read as blank, so reorder
-  that colour's media in Admin to lead with the close-up. Confirm on the storefront first. Admin
-  (media order) plus copy.
-
-**Homepage review (2026-07-20).** What is left of a live desktop (1440px) and mobile (390px) review
-of the storefront homepage. It lives in admin-owned config, so it is recorded here rather than edited
-in a repo PR, which the sync model would clobber.
-
-- [ ] **Optional: set the hero video's alt text in admin.** Won't clear the Lighthouse `image-alt`
-  finding (the `video_tag` poster `<img>` is Shopify-internal; see `THEME_CHECK_NON_ACTIONABLE.md`),
-  but it does give the `<video>` element a proper `aria-label` for screen readers. Admin (video media alt).
+- [ ] **Reshoot Shift Fuel's Grey Heather full-garment photos.** The stealth-colourway copy shipped,
+  but the merchandising half did not, and a media reorder cannot deliver it. White thread on light
+  heather survives neither downscaling nor a full-garment framing: at the 96px a cart line-item
+  thumbnail renders, `shift-fuel_crew-sweater_grey-heather_flat-1.jpg` shows no design at all, and
+  the angled shot is no better. The other three Grey Heather products are fine (Huddle's `VETTECH`
+  applique is legible at 96px, and both Lead II lines show a visible mark), so this is one blank
+  garment on one product, not a colourway-wide problem.
+  A media reorder is not the fix and would be a no-op: `snippets/product-media-gallery-content.liquid`
+  pins the selected variant's attached media to gallery position 1, so the attached hero outranks
+  Admin media order. Changing which photo leads means changing the hero, and Shopify caps a variant
+  at one attached media, so that means detaching first. The durable fix is a full-garment Grey
+  Heather shot that survives downscaling (raking light, or a tighter three-quarter crop that keeps
+  the lettering large), after which the hero can be re-pointed. Photography plus Admin.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
 menus) through the `scripts/blank-inventory/lib/admin.mjs` token client. Nothing was changed. Items
-already tracked above are not repeated here: null variant SKUs and attaching one hero image per
-colour. (The empty `/blogs/news` was also on that list; it is resolved, see `release-notes.md`.) What the pass verified as clean is recorded in
+already tracked above are not repeated here: null variant SKUs. (The empty `/blogs/news` and the
+per-colour hero attach were also on that list; both are resolved, see `release-notes.md`.) What the pass verified as clean is recorded in
 `release-notes.md`, not here, so it does not get re-audited. The 2026-08-14 backlog triage closed out
 several of the pass's other findings.
 
@@ -92,15 +83,9 @@ several of the pass's other findings.
   no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
   under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
   plus possibly the template.
-- [ ] **The gift card product has no description and one piece of media.** `descriptionHtml` is empty,
-  and `product.gift-card.json` renders `{{ closest.product.description }}`, so that block is blank on
-  the page. Its only media is the 500x500 `SSS-Square-White-BG-svg.svg` logo. It is the one product
-  page with neither body copy nor a photograph; the accordion carries the whole page. Admin (product
-  description plus a gift-card image).
-- [ ] **Stored SEO titles are null on all four collections and all five pages.** Descriptions are set
-  everywhere; only the titles are empty, so they render as the resource title with no keyword control.
-  Products all have both. This is the `collection-seo-title-missing` / page-equivalent WARN the
-  `seo-review` skill reports, recorded here so it is not rediscovered each run. Admin.
+- [ ] **The gift card product has no photograph.** The description shipped, so the page is no longer
+  blank, but its only media is still the 500x500 `SSS-Square-White-BG-svg.svg` logo. It is the one
+  product page with no photograph. Admin (product media).
 - [ ] **Three of the four collections have no collection image**, and the "Catalog" menu entry points
   at `/collections`, which renders all four as cards. Only The Vitals Collection has an image; the
   other three fall back to a product photo or a placeholder. That page also shows Featured and All

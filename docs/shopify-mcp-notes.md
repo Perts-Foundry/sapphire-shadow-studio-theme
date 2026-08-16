@@ -23,6 +23,18 @@ Admin data through the MCP, so it isn't misrouted.
   of these via the exchanged token (bullet above), not the MCP. Also note the render-time
   fallbacks: a null stored SEO title renders as the resource title on the storefront, so a
   crawl cannot tell you what is actually stored.
+- **`SEOInput` replaces the whole `seo` object; it does not patch it.** A `productUpdate` or
+  `collectionUpdate` carrying `seo: { title }` alone sets the description to null, and the
+  mutation reports success. This wiped six product SEO descriptions on 2026-07-29. Any mutation
+  that carries a `seo` key must read the current `seo { title description }` first and echo back
+  every field it is not deliberately changing. Read it *immediately* before the write, not at the
+  start of a long session: echoing a stale capture reverts any Admin edit made in between, which
+  is the same data loss reached by staleness instead of omission. Omitting the `seo` key entirely
+  is safe and is the right move when only `descriptionHtml` is changing, because then the stored
+  SEO fields are untouched by construction rather than by careful echoing.
+  Pages are the exception: they have no `seo` field, so their title is written with
+  `metafieldsSet` on `global.title_tag`, and the sibling `description_tag` is a separate record
+  that a `title_tag` write cannot disturb.
 - **Media / image upload is not an MCP tool.** The MCP exposes no media or file upload tool,
   so theme imagery ships through the `assets/` directory. Product / media imagery goes
   through the Admin UI or the Admin GraphQL API (staged upload, then `fileCreate` / product

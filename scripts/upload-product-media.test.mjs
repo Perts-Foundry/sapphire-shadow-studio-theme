@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseArgs, gidDriftProblem, colorDriftProblem, checkProducts, classifyResolveError,
+  fetchAllConnection,
 } from './upload-product-media.mjs';
 import { PRODUCTS, recognizedColorValues } from './lib/photo-naming.mjs';
 
@@ -105,4 +106,87 @@ test('parseArgs still refuses an unscoped run without --check-products', () => {
   assert.throws(() => parseArgs(['--dry-run']), /Refusing an unscoped run/);
   assert.equal(parseArgs(['--product', 'x']).product, 'x');
   assert.equal(parseArgs(['--all']).all, true);
+});
+
+
+// --- fetchAllConnection --------------------------------------------------------------------
+// Regression cover for the silent truncation: `variants(first: 100)` with no hasNextPage check
+// yielded 100 of a 144-variant product's variants and dropped the other 44 without an error, so 88
+// variants across two products would have kept a Black hero for every colour while the run still
+// reported success. `media` had the identical shape, where a truncated read makes pollMediaReady
+// report a processing timeout for media that was actually fine.
+
+const page = (ids, hasNextPage, endCursor = null) => ({
+  pageInfo: { hasNextPage, endCursor },
+  nodes: ids.map((i) => ({
+    id: `gid://shopify/ProductVariant/${i}`,
+    title: `v${i}`,
+    selectedOptions: [{ name: 'Color', value: 'Black' }],
+  })),
+});
+const ids = (nodes) => nodes.map((n) => Number(n.id.split('/').pop()));
+
+test('fetchAllConnection returns the first page without querying when there is no next page', async () => {
+  let calls = 0;
+  const nodes = await fetchAllConnection(
+    () => { calls++; throw new Error('should not paginate'); },
+    'gid://shopify/Product/1', 'variants', page([1, 2, 3], false),
+  );
+  assert.deepEqual(ids(nodes), [1, 2, 3]);
+  assert.equal(calls, 0, 'the single-page case must cost zero extra round trips');
+});
+
+test('fetchAllConnection follows every page, in order, threading the cursor', async () => {
+  const rest = [
+    { product: { variants: page([101, 102], true, 'c2') } },
+    { product: { variants: page([103], false) } },
+  ];
+  const cursors = [];
+  const nodes = await fetchAllConnection(
+    async (_q, vars) => { cursors.push(vars.after); return rest.shift(); },
+    'gid://shopify/Product/1', 'variants', page([1, 2, 100], true, 'c1'),
+  );
+  assert.deepEqual(ids(nodes), [1, 2, 100, 101, 102, 103]);
+  assert.deepEqual(cursors, ['c1', 'c2'], 'each page must be requested with the prior endCursor');
+});
+
+test('fetchAllConnection recovers all 144 variants of an 8-design product', async () => {
+  // The exact shape that regressed: a 100-wide first page, 44 beyond it.
+  const first = page(Array.from({ length: 100 }, (_, i) => i + 1), true, 'cur');
+  const rest = { product: { variants: page(Array.from({ length: 44 }, (_, i) => i + 101), false) } };
+  const nodes = await fetchAllConnection(async () => rest, 'gid://shopify/Product/1', 'variants', first);
+  assert.equal(nodes.length, 144, 'every variant must be read, not just the first page');
+});
+
+test('fetchAllConnection reads the media connection off the media field', async () => {
+  const rest = { product: { media: page([2], false) } };
+  const seen = [];
+  const nodes = await fetchAllConnection(
+    async (q) => { seen.push(q); return rest; },
+    'gid://shopify/Product/1', 'media', page([1], true, 'c1'),
+  );
+  assert.deepEqual(ids(nodes), [1, 2]);
+  assert.match(seen[0], /ProductMediaPage/, 'the media field must use the media page query');
+});
+
+test('fetchAllConnection throws rather than returning a partial read', async () => {
+  await assert.rejects(
+    () => fetchAllConnection(async () => ({ product: null }), 'gid://shopify/Product/1', 'variants',
+      page([1], true, 'c1')),
+    /no variants connection/,
+  );
+  await assert.rejects(
+    () => fetchAllConnection(async () => ({ product: { media: null } }), 'gid://shopify/Product/1',
+      'media', page([1], true, 'c1')),
+    /no media connection/,
+  );
+});
+
+test('fetchAllConnection stops a runaway connection instead of spinning', async () => {
+  await assert.rejects(
+    () => fetchAllConnection(
+      async () => ({ product: { variants: page([2], true, 'c') } }),
+      'gid://shopify/Product/1', 'variants', page([1], true, 'c')),
+    /Pagination exceeded 20 pages/,
+  );
 });

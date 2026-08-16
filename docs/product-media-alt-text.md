@@ -214,6 +214,29 @@ Nothing warns you. The gallery just renders differently.
 | A value added to the option later | That word becomes reserved retroactively, across alt text written before it existed |
 | Alt names a colour inside another word ("Blackout backdrop") | Nothing. Whole-word matching handles it |
 
+**A processed batch's manifest can drift from the live Admin option value, and the hero attach then
+skips that colour silently.** The manifest is gitignored, so this note is the only durable record of
+it. The 2026-07-18 batch was written when the option values were `Navy` and `Gray`; both were later
+renamed in Admin to `Classic Navy` and `Grey Heather`, and `scripts/lib/photo-naming.mjs` was updated
+to match, but the already-processed manifest was not. Two independent failures follow, and fixing
+only the first leaves the second armed:
+
+- `scripts/upload-product-media.mjs` keys `heroPlan` by the manifest's `admin_color` string and looks
+  it up in `variantsByColor`, which is keyed by the live Admin value. A miss falls through
+  `if (!hero.mediaId || !variantIds.length) continue;` with no error, so that colour simply gets no
+  hero while the run still reports success.
+- The `alt` column drifts with it. A stale alt that says `Navy crewneck` names no recognized value at
+  all (`Navy` is half of `Classic Navy`, the third row of the table above), so `altColorProblem`
+  rejects the row and the hero is skipped for that reason instead. Worse, if the row did pass, the
+  uploader fires `fileUpdate` on any dupe whose alt differs from the manifest's, which would
+  overwrite the *correct* live alt with the stale one and unbind those photos from their colour.
+
+Before running `--attach-heroes` against an older batch, correct `admin_color` **and** `alt` together,
+then verify every corrected alt is byte-identical to the live alt. Byte-identity is the property that
+matters: it is what guarantees the run fires zero `fileUpdate` calls. A dry run showing
+`created=0 updated=0` is the confirmation, and any `updated` count above zero on a batch whose photos
+are already live means alt text is about to be rewritten.
+
 **Do not put a colour value in a product title.** Shopify falls back to the resource title when an
 image has no alt text of its own: `image_tag` documents the alt attribute as "the media alt text,
 or the resource title" for product images. No current product title contains a value, so this is
