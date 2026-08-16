@@ -9,12 +9,15 @@
   store has exactly one of each rather than one per page.
 
   Not everything routes through here. `sections/faq.liquid` emits its own
-  `FAQPage` node, and `snippets/breadcrumbs.liquid` emits its own `BreadcrumbList`
-  node, because in both cases the markup is derived from the same data as the
-  visible markup beside it and has no meaning away from it. Keeping the
+  `FAQPage` node, `snippets/breadcrumbs.liquid` emits its own `BreadcrumbList`
+  node, and `snippets/structured-data-collection-list.liquid` emits its own
+  `ItemList` node from inside the collection grid's `{% paginate %}` block,
+  because in each case the markup is derived from the same data as the visible
+  markup beside it and has no meaning away from it. Keeping the
   `BreadcrumbList` in the breadcrumb snippet is what guarantees the trail and the
-  structured data cannot disagree. Page-scoped markup belongs with the thing it
-  describes; this router is for site-wide entity nodes.
+  structured data cannot disagree; the `ItemList` needs `paginate.current_offset`,
+  which exists only where the grid is rendered. Page-scoped markup belongs with
+  the thing it describes; this router is for site-wide entity nodes.
 
   Product and ProductGroup markup is not routed here. It comes from Shopify's
   `{{ product | structured_data }}` filter in `sections/product-information.liquid`

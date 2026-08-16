@@ -70,6 +70,12 @@
         paginate: paginate,
         enable_infinite_scroll: section.settings.enable_infinite_scroll
       %}
+
+      {% comment %}
+        Inside the paginate block because the snippet needs `paginate.current_offset`
+        to keep ListItem positions absolute across pages.
+      {% endcomment %}
+      {% render 'structured-data-collection-list', collection: collection, paginate: paginate %}
     {% endpaginate %}
   </div>
 </results-list>

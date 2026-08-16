@@ -17,6 +17,17 @@ export const BREADCRUMB_PAGE_TYPES = new Set([
   'product', 'collection', 'page', 'article', 'blog', 'list-collections',
 ]);
 
+// Collection handles that are never a useful breadcrumb parent. `all` and
+// `frontpage` are Shopify's virtual catch-alls; `all-products` is a real
+// collection in this store that serves the same purpose. Mirrors
+// `excluded_handles` in snippets/breadcrumbs.liquid; change them together.
+export const BREADCRUMB_EXCLUDED_HANDLES = new Set(['all', 'frontpage', 'all-products']);
+
+// The order that snippet scans when no metafield value applies, quoted in the
+// admin-mode finding detail so the reader knows what a product falls back to.
+// Mirrors `preferred_handles` in the same snippet; change them together.
+export const BREADCRUMB_PREFERRED_HANDLES = ['healthcare', 'the-vitals-collection', 'featured'];
+
 // Page types where a missing meta description is acceptable (never indexed
 // or deliberately utilitarian). Everything else should have one.
 const DESCRIPTION_EXEMPT = new Set(['cart', 'search', '404', 'password']);
@@ -127,6 +138,13 @@ export function evaluatePage(page, expectedHost) {
   }
   if (BREADCRUMB_PAGE_TYPES.has(pageType) && !types.includes('BreadcrumbList')) {
     add('jsonld-breadcrumb-missing', ERROR, `no BreadcrumbList on page type ${pageType}`);
+  }
+  // WARN, not ERROR: an empty collection legitimately emits no ItemList, and
+  // exitCodeFor blocks only on fresh errors. The crawl walks sitemap URLs,
+  // which are unfiltered and unsorted, so the snippet's suppression logic for
+  // filtered and re-sorted views never trips this.
+  if (pageType === 'collection' && !types.includes('ItemList')) {
+    add('jsonld-itemlist-missing', WARN, 'no ItemList on a collection page');
   }
 
   // Visible breadcrumb presence must match the allow-list

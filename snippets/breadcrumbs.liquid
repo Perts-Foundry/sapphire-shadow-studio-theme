@@ -15,11 +15,14 @@
   "Home > Refund policy" is not worth the markup. `/collections` is a real page,
   which is why `list-collections` stays.
 
-  A product's parent crumb is chosen in three steps: the collection the shopper
-  actually browsed through when the URL is collection-scoped, else the first hit
-  in an explicit preferred-handle list, else any collection that is not a
-  catch-all. The preferred list is hand-maintained and must be updated when
-  collections change; see the comment on it below.
+  A product's parent crumb is chosen in four steps: the collection the shopper
+  actually browsed through when the URL is collection-scoped, else the product's
+  `custom.breadcrumb_collection` metafield, else the first hit in an explicit
+  preferred-handle list, else any collection that is not a catch-all. The
+  metafield is the maintenance-free answer and the preferred list is the
+  permanent safety net behind it, not a migration artifact; see
+  `docs/breadcrumb-collection-metafield.md` for the Admin definition, the
+  per-product values, and the seo-review checks that back them.
 
   The last entry is a link carrying `aria-current="page"`, per the breadcrumb
   contract in `docs/accessibility-patterns.md`, but its JSON-LD `ListItem`
@@ -69,11 +72,35 @@
           endunless
         endif
 
-        # Otherwise pick by explicit preference rather than by whatever
-        # `product.collections` happens to sort first, which changes silently
-        # when collections are reordered in Admin. KEEP THIS LIST IN SYNC when
+        # Per-product override, set in Admin as `custom.breadcrumb_collection`
+        # (owner Product, type collection_reference). One blank check covers
+        # every failure mode: `.value` is nil when the metafield is unset, when
+        # the definition does not exist, when the definition is not readable by
+        # the storefront, and when the referenced collection has been deleted.
+        # The catch-all guard is not redundant. Pointing this at `all-products`
+        # would reintroduce the exact "Home > All Products > ..." trail the
+        # exclusion list exists to prevent, so a misconfigured value falls
+        # through to the preferred list rather than to the worst trail.
+        if parent_collection == blank
+          assign breadcrumb_collection = product.metafields.custom.breadcrumb_collection.value
+          if breadcrumb_collection != blank
+            unless excluded_handles contains breadcrumb_collection.handle
+              assign parent_collection = breadcrumb_collection
+            endunless
+          endif
+        endif
+
+        # Fallback when no metafield value applies: pick by explicit preference
+        # rather than by whatever `product.collections` happens to sort first,
+        # which changes silently when collections are reordered in Admin. This
+        # list stays permanently. Removing it would regress every product to the
+        # last resort below until each one has a metafield value, which is the
+        # "Home > All Products > ..." defect again, and it gives newly created
+        # products a sane parent before anyone opens Admin. Keep it in sync when
         # collections are added, removed, or renamed: a handle that no longer
-        # exists is skipped without error, which fails quietly.
+        # exists is still skipped without error, but that quiet failure is now
+        # covered by the `product-breadcrumb-collection-missing` check in
+        # scripts/seo-review/admin.mjs rather than by nothing.
         if parent_collection == blank
           assign preferred_handles = 'healthcare,the-vitals-collection,featured' | split: ','
 
