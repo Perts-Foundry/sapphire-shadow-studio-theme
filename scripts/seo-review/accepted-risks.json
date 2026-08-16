@@ -2,8 +2,20 @@
   {
     "check": "blog-empty",
     "path": null,
-    "note": "Deliberate: /blogs/news stays indexable while empty. Revisit a few weeks after launch (TODO.md row); if still empty, decide between noindex and unpublishing.",
-    "accepted_on": "2026-07-28"
+    "note": "Deliberate: /blogs/news has no articles and is kept out of the index by the article-count guard in snippets/meta-tags.liquid. The blog stays published so it is ready when posts start; this row goes away with the first article.",
+    "accepted_on": "2026-08-15"
+  },
+  {
+    "check": "robots-noindex",
+    "path": "/blogs/news",
+    "note": "Intended: the empty blog listing is noindexed on purpose (snippets/meta-tags.liquid). Self-clearing, since the guard is the article count, so publishing the first article resolves the finding and this row with it.",
+    "accepted_on": "2026-08-15"
+  },
+  {
+    "check": "surface-noindex",
+    "path": "/blogs/news",
+    "note": "Same noindex, seen by the anonymous sweep. Shopify's generated sitemap lists the blog regardless of the robots meta, so a sitemap-listed noindex URL is expected here rather than a defect.",
+    "accepted_on": "2026-08-15"
   },
   {
     "check": "variant-sku-missing",
