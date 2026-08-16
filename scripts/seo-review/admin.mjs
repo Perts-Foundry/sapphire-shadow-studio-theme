@@ -190,7 +190,7 @@ async function main() {
     if (count === 0) {
       findings.push({
         check: 'blog-empty', severity: WARN, url: `admin:blog/${b.handle}`,
-        detail: 'blog has zero articles but its listing page is indexable',
+        detail: 'blog has zero articles (its listing is noindexed while empty, per snippets/meta-tags.liquid)',
       });
     }
   }
