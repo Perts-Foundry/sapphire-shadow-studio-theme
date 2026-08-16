@@ -1,5 +1,128 @@
 # Release Notes
 
+## Accessibility checks in CI, in two layers (unreleased)
+
+### What changed
+
+`validate.yml` gains a `Contrast + a11y tests` step, and `preview.yml` gains an
+`a11y-audit` job. Before this, the twelve validate steps contained no
+accessibility check of any kind, so a failing colour scheme shipped silently: the
+`sss-dark-scheme` accent sat at 3.86:1 until a hand-run Lighthouse audit caught it
+on 2026-08-15. A hand-run audit is not a gate.
+
+New: `scripts/contrast/` (static colour-scheme lint, plus `accepted-risks.json`),
+`scripts/a11y/` (preview-theme auth, pa11y config builder, result summariser), and
+a `pa11y-ci` devDependency. `TODO.md`'s "Add an accessibility check to CI" row is
+replaced by a triage row for the debt the lint surfaced.
+
+### Why two layers rather than one
+
+They fail in different directions and neither subsumes the other.
+
+**The static lint** reads `config/settings_data.json` directly. No network, no
+browser, no storefront password, so it can sit inside the required
+`validate / validate` context and block a merge. What it cannot see is a rendered
+page: font sizes, focus order, what actually composites over a hero image.
+
+**pa11y-ci** sees exactly that, but only against a deployed `pr-N-preview` theme,
+which means an authenticated remote request and a secret. It cannot be a required
+check without making every merge depend on a live storefront round trip, so it is
+advisory for now.
+
+The `perts-foundry-website` precedent supplied the pa11y defaults (`WCAG2AA`, axe
+runner, `target-size`) and the reporting shape. Its plumbing did NOT port: that
+repo Hugo-builds to `public/` and serves it on localhost, needing no secret and no
+network. Liquid renders server-side, so this repo has no local build target.
+
+### Design points that are load-bearing
+
+**`STOREFRONT_PASSWORD` is scoped to one STEP, not to the `a11y-audit` job.** The
+pa11y step launches `--no-sandbox` Chrome that executes third-party page
+JavaScript (consent banner, chat widget, Shopify's own scripts). The storefront
+password must not be in that process's environment. No Shopify token appears
+anywhere in the job, so the per-job secret isolation described in CLAUDE.md's
+deploy-gate section survives: this adds a secret to `preview.yml`, in a job that
+holds nothing else.
+
+**The preview-theme assertion is the point of `get-auth-cookie.mjs`.** Passing the
+storefront password proves only that the storefront opened. It does not prove the
+session is pinned to the PR's DRAFT theme. If `?preview_theme_id=` silently failed,
+pa11y would audit the LIVE theme and report green on a PR that broke the page. So
+the script fetches the preview URL and reads the theme id back out of the
+`server-timing` header, asserting it matches the expected id specifically. The
+same assertion catches a Cloudflare interstitial, which returns a page that is not
+a rendered storefront at all.
+
+**curl cannot do any of this.** Cloudflare bot management blocklists its TLS
+fingerprint on this store. Node's `fetch` (undici) gets through, which is why
+`smoke.mjs` is built on it and why `get-auth-cookie.mjs` IMPORTS `BROWSER_HEADERS`,
+`updateJar` and `cookieHeader` from `smoke.mjs` rather than copying them. The exact
+header set is what was found to work; two copies would drift.
+
+**Non-text contrast is checked against the PAGE, not against the control's own
+fill.** The naive reading (border vs its own background) scores a solid black
+button on white at 1:1 and fails it, which is nonsense, and would have demanded a
+baseline entry for nearly every scheme. What SC 1.4.11 actually requires is that
+the control be tellable apart from the page, so the check passes when EITHER the
+border OR the component's fill reaches 3:1 against the scheme background. For the
+page-level `border` role the component background IS the scheme background, so it
+reduces to the plain border-vs-page check.
+
+**`foreground_heading` is checked at 3:1, not 4.5:1, and this is a judgment call.**
+The role is one colour shared by all six heading levels. h1-h3 are 32px and up,
+clearing the large-text bar comfortably; h5 and h6 are 14px and 12px and do not, so
+a strict reading would demand 4.5:1. It was left at 3:1 so the gate could land
+without an immediate baseline. Tightening it is one line in `lib/pairs.mjs`.
+Revisit if a small heading ever becomes the sole carrier of information.
+
+**Overlay schemes are reported INDETERMINATE, not passed and not failed.** Two
+schemes have `background: rgba(0,0,0,0)`: they paint nothing and composite over
+whatever section media sits beneath. What a static reader would have to assume
+about the surface underneath is invention, and reporting `#f2f2f2` text as "1:1
+against white" would be a fabricated number that 44 fabricated baseline entries
+then silenced. They are excluded from the tally, reported by name, and left to the
+pa11y layer, which renders the real image behind the real text. This is the
+clearest case for why one layer was not enough.
+
+**The baseline ratchets and self-clears.** `accepted-risks.json` records the ratio
+measured when each exception was accepted. Score below it later and the lint fails:
+accepting "this border is at 2.1:1" must not also accept a later 1.2:1. Reach the
+threshold and the entry is reported STALE so it gets deleted, because a file that
+only grows eventually hides a regression behind an entry nobody remembers. A
+malformed entry is a hard error, never a silent no-op, since a typo'd scheme name
+would otherwise look like a granted exception while suppressing nothing.
+
+**It landed with 56 recorded exceptions and zero colour changes.** That was a
+deliberate instruction, not an oversight: the operator chose to ship the gate first
+and triage the debt separately (`TODO.md`). The consequence worth knowing is that
+the gate catches REGRESSIONS from day one but asserts nothing about the current
+palette's absolute quality.
+
+**The unblock path for a false positive is a baseline entry, never a threshold
+change.** The lint sits inside the required check, so a false positive blocks every
+merge. Widening a threshold in `lib/pairs.mjs` removes the check for every scheme
+forever; an `accepted-risks.json` row is scoped, dated, noted and reversible.
+
+**Every open `npm audit` high in the new dependency tree is unreachable.** All six
+trace to `extract-zip` via `@puppeteer/browsers`, which lives in puppeteer's
+browser-DOWNLOAD path. `npm ci --ignore-scripts` (setup-shopify-cli) blocks that
+script, `PUPPETEER_SKIP_DOWNLOAD=1` reinforces it, and pa11y is pointed at the
+runner's `/usr/bin/google-chrome`. The audit's suggested fix is a downgrade to
+pa11y-ci 3.x, which is strictly worse. The `setup-shopify-cli` comment enumerating
+`hasInstallScript` packages was updated, since puppeteer is now the second one.
+
+**`a11y-audit` shares `deploy-preview`'s concurrency group deliberately.** A new
+push must cancel a running audit BEFORE redeploying the theme that audit is
+reading. A sibling group would let the two race and produce findings for a tree
+that no longer exists. The residual race (a redeploy landing inside the
+cancellation window) is accepted and commented: the cost is a stale report on a PR
+that is about to get a fresh run, never a wrong merge decision.
+
+**Both new capture steps use a random `$GITHUB_OUTPUT` heredoc delimiter**, not the
+fixed `GHEOF` the older steps use. Their captured text is PR-controlled (scheme
+names, baseline notes, page-derived pa11y findings), so a fixed delimiter would let
+a PR close the heredoc early and inject arbitrary step outputs.
+
 ## Collection differentiation is a runbook, not a code change (unreleased)
 
 ### What changed

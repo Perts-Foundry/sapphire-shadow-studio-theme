@@ -33,7 +33,7 @@ export const SOFT_WARN = 'SOFT-WARN';
 export const HARD_FAIL = 'HARD-FAIL';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-const BROWSER_HEADERS = {
+export const BROWSER_HEADERS = {
   'user-agent': UA,
   'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'accept-language': 'en-US,en;q=0.9',
@@ -161,14 +161,21 @@ export function summarize(results) {
 }
 
 // --- cookie jar (over fetch's getSetCookie) --------------------------------
-function updateJar(jar, res) {
+//
+// `updateJar`, `cookieHeader` and `BROWSER_HEADERS` above are exported for
+// scripts/a11y/get-auth-cookie.mjs, which drives the same storefront password
+// flow to obtain a cookie for pa11y-ci. They are exported rather than copied so
+// the two callers cannot drift: this store is behind Cloudflare bot management,
+// and the exact header set and manual-redirect cookie handling here are what
+// was found to get through it. Nothing else about smoke.mjs is shared.
+export function updateJar(jar, res) {
   for (const c of res.headers.getSetCookie?.() ?? []) {
     const pair = c.split(';')[0];
     const i = pair.indexOf('=');
     if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1));
   }
 }
-const cookieHeader = (jar) => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+export const cookieHeader = (jar) => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
 
 const realSleep = (ms) => new Promise(r => setTimeout(r, ms));
 

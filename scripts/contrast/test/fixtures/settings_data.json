@@ -1,0 +1,137 @@
+/*
+ * ------------------------------------------------------------
+ * Fixture standing in for config/settings_data.json.
+ *
+ * Deliberately synthetic, and deliberately carrying the banner comment: the
+ * banner is the reason lib/settings.mjs exists, so a fixture without it would
+ * not exercise the code path that reads the real file.
+ *
+ * fixture-pass    every pair clears its threshold (black on white).
+ * fixture-fail    one text pair and one border pair fail, nothing else.
+ * fixture-overlay fully transparent background: indeterminate, not failed.
+ * ------------------------------------------------------------
+ */
+{
+  "current": {
+    "color_schemes": {
+      "fixture-pass": {
+        "settings": {
+          "background": "#ffffff",
+          "foreground_heading": "#000000",
+          "foreground": "#000000",
+          "primary": "#000000",
+          "primary_hover": "#000000",
+          "border": "#595959",
+          "shadow": "#000000",
+          "primary_button_background": "#000000",
+          "primary_button_text": "#ffffff",
+          "primary_button_border": "#000000",
+          "primary_button_hover_background": "#000000",
+          "primary_button_hover_text": "#ffffff",
+          "primary_button_hover_border": "#000000",
+          "secondary_button_background": "#000000",
+          "secondary_button_text": "#ffffff",
+          "secondary_button_border": "#000000",
+          "secondary_button_hover_background": "#000000",
+          "secondary_button_hover_text": "#ffffff",
+          "secondary_button_hover_border": "#000000",
+          "input_background": "#000000",
+          "input_text_color": "#ffffff",
+          "input_border_color": "#000000",
+          "input_hover_background": "#000000",
+          "variant_background_color": "#000000",
+          "variant_text_color": "#ffffff",
+          "variant_border_color": "#000000",
+          "variant_hover_background_color": "#000000",
+          "variant_hover_text_color": "#ffffff",
+          "variant_hover_border_color": "#000000",
+          "selected_variant_background_color": "#000000",
+          "selected_variant_text_color": "#ffffff",
+          "selected_variant_border_color": "#000000",
+          "selected_variant_hover_background_color": "#000000",
+          "selected_variant_hover_text_color": "#ffffff",
+          "selected_variant_hover_border_color": "#000000"
+        }
+      },
+      "fixture-fail": {
+        "settings": {
+          "background": "#ffffff",
+          "foreground_heading": "#000000",
+          "foreground": "#cccccc",
+          "primary": "#000000",
+          "primary_hover": "#000000",
+          "border": "#fdfdfd",
+          "shadow": "#000000",
+          "primary_button_background": "#000000",
+          "primary_button_text": "#ffffff",
+          "primary_button_border": "#000000",
+          "primary_button_hover_background": "#000000",
+          "primary_button_hover_text": "#ffffff",
+          "primary_button_hover_border": "#000000",
+          "secondary_button_background": "#000000",
+          "secondary_button_text": "#ffffff",
+          "secondary_button_border": "#000000",
+          "secondary_button_hover_background": "#000000",
+          "secondary_button_hover_text": "#ffffff",
+          "secondary_button_hover_border": "#000000",
+          "input_background": "#000000",
+          "input_text_color": "#ffffff",
+          "input_border_color": "#000000",
+          "input_hover_background": "#000000",
+          "variant_background_color": "#000000",
+          "variant_text_color": "#ffffff",
+          "variant_border_color": "#000000",
+          "variant_hover_background_color": "#000000",
+          "variant_hover_text_color": "#ffffff",
+          "variant_hover_border_color": "#000000",
+          "selected_variant_background_color": "#000000",
+          "selected_variant_text_color": "#ffffff",
+          "selected_variant_border_color": "#000000",
+          "selected_variant_hover_background_color": "#000000",
+          "selected_variant_hover_text_color": "#ffffff",
+          "selected_variant_hover_border_color": "#000000"
+        }
+      },
+      "fixture-overlay": {
+        "settings": {
+          "background": "rgba(0,0,0,0)",
+          "foreground_heading": "#ffffff",
+          "foreground": "#ffffff",
+          "primary": "#ffffff",
+          "primary_hover": "#ffffff",
+          "border": "#ffffff",
+          "shadow": "#000000",
+          "primary_button_background": "#ffffff",
+          "primary_button_text": "#ffffff",
+          "primary_button_border": "#ffffff",
+          "primary_button_hover_background": "#ffffff",
+          "primary_button_hover_text": "#ffffff",
+          "primary_button_hover_border": "#ffffff",
+          "secondary_button_background": "#ffffff",
+          "secondary_button_text": "#ffffff",
+          "secondary_button_border": "#ffffff",
+          "secondary_button_hover_background": "#ffffff",
+          "secondary_button_hover_text": "#ffffff",
+          "secondary_button_hover_border": "#ffffff",
+          "input_background": "#ffffff",
+          "input_text_color": "#ffffff",
+          "input_border_color": "#ffffff",
+          "input_hover_background": "#ffffff",
+          "variant_background_color": "#ffffff",
+          "variant_text_color": "#ffffff",
+          "variant_border_color": "#ffffff",
+          "variant_hover_background_color": "#ffffff",
+          "variant_hover_text_color": "#ffffff",
+          "variant_hover_border_color": "#ffffff",
+          "selected_variant_background_color": "#ffffff",
+          "selected_variant_text_color": "#ffffff",
+          "selected_variant_border_color": "#ffffff",
+          "selected_variant_hover_background_color": "#ffffff",
+          "selected_variant_hover_text_color": "#ffffff",
+          "selected_variant_hover_border_color": "#ffffff"
+        }
+      }
+    }
+  },
+  "presets": {}
+}

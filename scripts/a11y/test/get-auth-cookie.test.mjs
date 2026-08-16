@@ -1,0 +1,170 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { previewUrl, classifyPreview, getAuthCookie } from '../get-auth-cookie.mjs';
+
+const BASE = 'https://shop.example';
+const THEME = '999';
+
+/** Minimal Response stand-in with the bits the script reads. */
+function res({ status = 200, headers = {}, cookies = [], url = `${BASE}/` } = {}) {
+  const h = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+  return {
+    status,
+    url,
+    headers: {
+      get: (k) => h.get(k.toLowerCase()) ?? null,
+      getSetCookie: () => cookies,
+    },
+  };
+}
+
+const timing = (id) => ({ 'server-timing': `db;dur=1, theme;desc="${id}"` });
+
+test('previewUrl pins the theme and preserves the path', () => {
+  assert.equal(previewUrl(BASE, '1'), 'https://shop.example/?preview_theme_id=1');
+  assert.equal(previewUrl(BASE, '1', '/cart'), 'https://shop.example/cart?preview_theme_id=1');
+});
+
+test('classifyPreview accepts only the expected theme on a 200 same-host', () => {
+  const ok = classifyPreview({ status: 200, themeDesc: '999', expectedThemeId: '999', finalHost: 'shop.example', expectedHost: 'shop.example' });
+  assert.equal(ok.ok, true);
+});
+
+test('classifyPreview REJECTS the live theme being served instead', () => {
+  // The single most important case: without it a preview that never activated
+  // would audit production and green the PR.
+  const v = classifyPreview({ status: 200, themeDesc: '111', expectedThemeId: '999', finalHost: 'h', expectedHost: 'h' });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /served theme 111, expected preview theme 999/);
+});
+
+test('classifyPreview rejects the non-200, off-host and challenge cases', () => {
+  assert.equal(classifyPreview({ status: null, expectedThemeId: '9' }).ok, false);
+  assert.match(classifyPreview({ status: 403, expectedThemeId: '9' }).reason, /bot management/);
+  assert.match(classifyPreview({ status: 503, expectedThemeId: '9' }).reason, /bot management/);
+  assert.match(classifyPreview({ status: 404, expectedThemeId: '9' }).reason, /expected 200/);
+  assert.match(
+    classifyPreview({ status: 200, themeDesc: '9', expectedThemeId: '9', finalHost: 'elsewhere', expectedHost: 'shop.example' }).reason,
+    /redirected off-host/
+  );
+  // No server-timing at all means it is not a rendered storefront page.
+  assert.match(
+    classifyPreview({ status: 200, themeDesc: null, expectedThemeId: '9', finalHost: 'h', expectedHost: 'h' }).reason,
+    /not a rendered storefront page/
+  );
+});
+
+test('LOCKED: full password flow yields a cookie pinned to the preview theme', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push(`${opts.method || 'GET'} ${url}`);
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      return res({ status: 302, headers: { location: '/' }, cookies: ['storefront_digest=abc; Path=/'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200, cookies: ['_secure_session_id=s1; Path=/'] });
+    if (url.includes('preview_theme_id')) {
+      return res({ status: 200, headers: timing(THEME), cookies: ['preview_theme=999; Path=/'] });
+    }
+    // Bare root while locked: bounced to the password wall.
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'hunter2', fetchImpl });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.mode, 'LOCKED');
+  assert.match(out.cookie, /storefront_digest=abc/);
+  assert.match(out.cookie, /preview_theme=999/);
+  assert.ok(calls.some((c) => c.startsWith('POST')), 'the password must actually be posted');
+});
+
+test('PUBLIC: no password needed, still pins and asserts the preview theme', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('preview_theme_id')) {
+      return res({ status: 200, headers: timing(THEME), cookies: ['preview_theme=999; Path=/'] });
+    }
+    return res({ status: 200, headers: timing('111') }); // public root, live theme
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: '', fetchImpl });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.mode, 'PUBLIC');
+  assert.match(out.cookie, /preview_theme=999/);
+});
+
+test('LOCKED with no password is a hard failure, not a quiet public fallback', async () => {
+  const fetchImpl = async () => res({ status: 302, headers: { location: '/password' } });
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: '', fetchImpl });
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /password-locked but STOREFRONT_PASSWORD is empty/);
+});
+
+test('a refused password fails rather than auditing the password page', async () => {
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') return res({ status: 200 });
+    if (url.endsWith('/password')) return res({ status: 200 });
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'wrong', fetchImpl });
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /rejected/);
+  assert.equal(out.cookie, '');
+});
+
+test('a bounce back to /password after POST is also a rejection', async () => {
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      return res({ status: 302, headers: { location: '/password' } });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'wrong', fetchImpl });
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /rejected/);
+});
+
+test('a throttled POST is retried before being given up on', async () => {
+  let posts = 0;
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      posts += 1;
+      if (posts === 1) return res({ status: 429 });
+      return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) return res({ status: 200, headers: timing(THEME) });
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl, sleepImpl: async () => {},
+  });
+  assert.equal(posts, 2);
+  assert.equal(out.ok, true, out.reason);
+});
+
+test('authenticating but landing on the LIVE theme is a failure', async () => {
+  // Auth succeeded, the pin did not take. This is the exact silent-fallback
+  // scenario the whole script exists to detect.
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) return res({ status: 200, headers: timing('111') });
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl });
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /served theme 111/);
+  assert.equal(out.cookie, '', 'no cookie may be emitted on a failed assertion');
+});
+
+test('a network failure on the preview probe fails closed', async () => {
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') return res({ status: 302, headers: { location: '/' } });
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) throw new Error('ECONNRESET');
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl });
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /connection failure/);
+});
