@@ -31,11 +31,13 @@
 //   STOREFRONT_PASSWORD  optional; absent/empty means PUBLIC mode
 //   BASE_URL             e.g. https://sapphire-shadow-studio.myshopify.com
 //   THEME_ID             the preview theme's numeric id
+//   CANONICAL_BASE_URL_FILE  optional; path to write the resolved origin to
 //
 // stdout: the Cookie header value (possibly empty). Diagnostics go to stderr so
 // stdout can be captured directly.
 // Exit 0 on success, 1 on any failure to reach the preview theme.
 
+import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -43,6 +45,11 @@ import {
 } from '../../.github/actions/shopify-theme-push/smoke.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Origin of a URL string, or null if unparseable. Companion to smoke.mjs's hostOf. */
+export function originOf(url) {
+  try { return new URL(url).origin; } catch { return null; }
+}
 
 /**
  * Build the URL that pins a session to a specific theme.
@@ -62,36 +69,59 @@ export function previewUrl(baseUrl, themeId, path = '/') {
 /**
  * Decide what a post-auth preview probe proves. Pure, so the decision table is
  * unit-tested without touching the network.
+ *
+ * ON HOSTS. A store's `*.myshopify.com` host 302s to its primary custom domain,
+ * so the probe legitimately finishes on a different host than it started on.
+ * That is canonicalisation, not a hijack, and rejecting it made this script
+ * fail against the very BASE_URL the workflow passes (`vars.SHOPIFY_FLAG_STORE`
+ * is the myshopify host). Verified against the live store on 2026-08-16: both
+ * hosts authenticate and both activate the preview theme; only the host
+ * assertion differed.
+ *
+ * So the THEME ID, not the host, is the identity proof, and it is the stronger
+ * of the two: `server-timing: theme;desc=<id>` carrying this store's specific
+ * unpublished theme id is something only this store emits. A host that is not
+ * the store cannot produce it. The resolved host is reported back rather than
+ * judged, so the caller can point pa11y straight at the canonical origin
+ * instead of eating a redirect on every URL.
+ *
  * @param {object} o
  * @param {number|null} o.status
  * @param {string|null} o.themeDesc    theme id from `server-timing`
  * @param {string} o.expectedThemeId
  * @param {string|null} o.finalHost
  * @param {string} o.expectedHost
- * @returns {{ok: boolean, reason: string}}
+ * @returns {{ok: boolean, reason: string, redirected: boolean}}
  * @example
  *   classifyPreview({status: 200, themeDesc: '9', expectedThemeId: '9', finalHost: 'a', expectedHost: 'a'})
  */
 export function classifyPreview({ status, themeDesc, expectedThemeId, finalHost, expectedHost }) {
-  if (status === null) return { ok: false, reason: 'connection failure' };
+  const redirected = Boolean(finalHost && expectedHost && finalHost !== expectedHost);
+  const no = (reason) => ({ ok: false, reason, redirected });
+
+  if (status === null) return no('connection failure');
   if (status === 403 || status === 503) {
     // The signature of a Cloudflare challenge: reachable host, refused content.
-    return { ok: false, reason: `blocked by bot management (${status}); headless Chrome will see the same` };
+    return no(`blocked by bot management (${status}); headless Chrome will see the same`);
   }
-  if (status !== 200) return { ok: false, reason: `expected 200, got ${status}` };
-  if (finalHost && expectedHost && finalHost !== expectedHost) {
-    return { ok: false, reason: `redirected off-host to ${finalHost}` };
-  }
+  if (status !== 200) return no(`expected 200, got ${status}`);
   if (!themeDesc) {
     // No server-timing means the response is not a rendered Shopify theme page.
-    return { ok: false, reason: 'no theme id in server-timing (not a rendered storefront page)' };
+    // This is also what an interstitial or a genuinely foreign host returns.
+    return no('no theme id in server-timing (not a rendered storefront page)');
   }
   if (String(themeDesc) !== String(expectedThemeId)) {
     // THE assertion this script exists for. Auditing the live theme instead of
     // the PR's preview would green every PR regardless of what it changed.
-    return { ok: false, reason: `served theme ${themeDesc}, expected preview theme ${expectedThemeId}` };
+    return no(`served theme ${themeDesc}, expected preview theme ${expectedThemeId}`);
   }
-  return { ok: true, reason: `preview theme ${expectedThemeId} served` };
+  return {
+    ok: true,
+    redirected,
+    reason: redirected
+      ? `preview theme ${expectedThemeId} served, canonical host ${finalHost}`
+      : `preview theme ${expectedThemeId} served`,
+  };
 }
 
 /**
@@ -103,6 +133,7 @@ async function probe(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
   let current = url;
   let hops = 0;
   let status = null; let themeDesc = null; let finalHost = null; let redirectPath = null;
+  let finalOrigin = null;
 
   while (true) {
     const headers = { ...BROWSER_HEADERS };
@@ -113,20 +144,21 @@ async function probe(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
     try {
       res = await fetchImpl(current, { headers, redirect: 'manual', signal: ctl.signal });
     } catch {
-      return { status: null, themeDesc: null, finalHost, redirectPath };
+      return { status: null, themeDesc: null, finalHost, finalOrigin, redirectPath };
     } finally {
       clearTimeout(timer);
     }
     updateJar(jar, res);
     status = res.status;
     finalHost = hostOf(res.url) || finalHost;
+    finalOrigin = originOf(res.url) || finalOrigin;
     const loc = res.headers.get('location');
     if (status >= 300 && status < 400 && loc && hops < maxHops) {
       let next = null;
       try { next = new URL(loc, current); } catch { next = null; }
       redirectPath = next ? next.pathname : loc;
       if (!next || /^\/password/.test(redirectPath)) {
-        if (next) finalHost = next.host;
+        if (next) { finalHost = next.host; finalOrigin = next.origin; }
         break;
       }
       current = next.href;
@@ -136,7 +168,7 @@ async function probe(url, { jar, fetchImpl, timeoutMs, maxHops = 5 }) {
     themeDesc = parseThemeId(res.headers.get('server-timing'));
     break;
   }
-  return { status, themeDesc, finalHost, redirectPath };
+  return { status, themeDesc, finalHost, finalOrigin, redirectPath };
 }
 
 /**
@@ -226,9 +258,18 @@ export async function getAuthCookie({
     finalHost: pinned.finalHost,
     expectedHost,
   });
-  if (!verdict.ok) return { ok: false, cookie: '', mode, log, reason: verdict.reason };
+  if (!verdict.ok) {
+    return { ok: false, cookie: '', canonicalBaseUrl: baseUrl, mode, log, reason: verdict.reason };
+  }
 
-  return { ok: true, cookie: cookieHeader(jar), mode, log, reason: verdict.reason };
+  // Hand back the origin the store actually canonicalised to, so pa11y can
+  // request it directly. Pointing pa11y at the pre-redirect host would work
+  // (Chrome follows the 302) but would cost an extra hop on all 19 URLs and
+  // make every audited URL differ from the one reported.
+  const canonicalBaseUrl = pinned.finalOrigin || baseUrl;
+  if (verdict.redirected) say(`canonical origin: ${canonicalBaseUrl}`);
+
+  return { ok: true, cookie: cookieHeader(jar), canonicalBaseUrl, mode, log, reason: verdict.reason };
 }
 
 function envConfig() {
@@ -250,7 +291,7 @@ async function main() {
     return;
   }
 
-  const { ok, cookie, mode, reason, log } = await getAuthCookie({ baseUrl, themeId, password });
+  const { ok, cookie, canonicalBaseUrl, mode, reason, log } = await getAuthCookie({ baseUrl, themeId, password });
   for (const line of log) process.stderr.write(`get-auth-cookie: ${line}\n`);
   if (!ok) {
     process.stderr.write(`get-auth-cookie: FAILED (${reason})\n`);
@@ -258,6 +299,16 @@ async function main() {
     return;
   }
   process.stderr.write(`get-auth-cookie: ok, mode=${mode}, ${reason}\n`);
+
+  // The canonical origin goes to a file, not to stdout (which carries the
+  // cookie and nothing else) and not to $GITHUB_OUTPUT (which the writing step
+  // cannot read back; step outputs are only visible to LATER steps, and the
+  // caller needs this value in the same step to build the pa11y config). It is
+  // a public storefront URL, not a secret, so it needs no masking.
+  if (process.env.CANONICAL_BASE_URL_FILE) {
+    writeFileSync(process.env.CANONICAL_BASE_URL_FILE, canonicalBaseUrl);
+  }
+
   // stdout carries the cookie and nothing else. The caller masks it before it
   // can reach a log; see the a11y-audit job in preview.yml.
   process.stdout.write(cookie);

@@ -53,6 +53,26 @@ the script fetches the preview URL and reads the theme id back out of the
 same assertion catches a Cloudflare interstitial, which returns a page that is not
 a rendered storefront at all.
 
+**The preview-activation mechanism was verified against the live store before this
+shipped (2026-08-16), read-only, using the existing unpublished sync theme.** A bare
+`?preview_theme_id=` does activate an unpublished theme for an authenticated
+session, so the share/`key=` URL fallback the plan held in reserve is not needed.
+All 19 paths in `paths.json` returned their expected status and reported the
+preview theme id rather than the live one.
+
+**That verification caught a bug that would have failed the first CI run.** The
+`*.myshopify.com` host 302s to the primary custom domain, and the original
+off-host assertion rejected it, even though auth and theme activation had both
+succeeded. `vars.SHOPIFY_FLAG_STORE` is the myshopify host, so the check failed
+against the exact BASE_URL the workflow passes. The fix is not to loosen the
+assertion but to move it: the THEME ID is the identity proof, and it is strictly
+stronger than a host comparison, because `server-timing: theme;desc=<id>` naming
+this store's specific unpublished theme is something only this store emits. The
+resolved origin is now returned so pa11y requests the canonical host directly
+instead of eating a redirect on all 19 URLs. It travels via a file rather than
+`$GITHUB_OUTPUT`, because a step cannot read back its own outputs and the caller
+needs it in the same step.
+
 **curl cannot do any of this.** Cloudflare bot management blocklists its TLS
 fingerprint on this store. Node's `fetch` (undici) gets through, which is why
 `smoke.mjs` is built on it and why `get-auth-cookie.mjs` IMPORTS `BROWSER_HEADERS`,

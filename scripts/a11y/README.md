@@ -36,6 +36,29 @@ So `get-auth-cookie.mjs` fetches the preview URL and reads the theme id back out
 catches a Cloudflare interstitial, which returns something that is not a rendered storefront at all.
 Nothing is printed unless that assertion passes.
 
+## Verified against the live store, 2026-08-16
+
+The activation mechanism was the plan's flagged load-bearing assumption, so it was checked
+read-only against the real store using the existing unpublished `EDIT HERE - shopify-sync` theme
+(the same class of theme as a `pr-N-preview` theme).
+
+- A bare `?preview_theme_id=<id>` **does** activate an unpublished theme for an authenticated
+  session. No share/`key=` URL fallback is needed.
+- All 19 paths in `paths.json` returned their expected status (200, and 404 for the deliberate
+  missing page) **and** reported the preview theme id, not the live one.
+- The `*.myshopify.com` host 302s to the primary custom domain. This is why `classifyPreview` does
+  not reject a host change: `vars.SHOPIFY_FLAG_STORE` is the myshopify host, so a strict host
+  assertion failed against the exact BASE_URL the workflow passes. The theme id is the identity
+  proof instead, and it is the stronger one. The resolved origin is handed back so pa11y requests
+  the canonical host directly rather than eating a redirect on all 19 URLs.
+
+## Host handling
+
+`getAuthCookie` returns `canonicalBaseUrl`, written to the file named by `CANONICAL_BASE_URL_FILE`.
+It goes to a file rather than `$GITHUB_OUTPUT` because a step cannot read back its own outputs, and
+the workflow needs the value in the same step to build the config. It is a public storefront URL,
+not a secret.
+
 ## PUBLIC mode
 
 `STOREFRONT_PASSWORD` disappears when the storefront opens at launch. That is not an error: the

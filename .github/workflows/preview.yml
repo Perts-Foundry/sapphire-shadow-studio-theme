@@ -225,6 +225,7 @@ jobs:
           BASE_URL: https://${{ vars.SHOPIFY_FLAG_STORE }}
           THEME_ID: ${{ needs.deploy-preview.outputs.theme_id }}
           CONFIG_PATH: ${{ runner.temp }}/pa11yci.json
+          CANONICAL_BASE_URL_FILE: ${{ runner.temp }}/canonical-base-url
         run: |
           set +e
           COOKIE=$(node scripts/a11y/get-auth-cookie.mjs)
@@ -240,9 +241,20 @@ jobs:
             echo "::add-mask::$COOKIE"
           fi
 
+          # Build against the origin the store CANONICALISED to, not the one we
+          # started from. `vars.SHOPIFY_FLAG_STORE` is the *.myshopify.com host,
+          # and the store 302s that to its primary custom domain, so building
+          # against BASE_URL would put a redirect hop on all 19 URLs and make
+          # every audited URL differ from the one reported. get-auth-cookie.mjs
+          # writes the resolved origin to $GITHUB_OUTPUT; fall back to BASE_URL
+          # if it somehow did not.
+          CANONICAL=$(cat "$CANONICAL_BASE_URL_FILE" 2>/dev/null)
+          CANONICAL="${CANONICAL:-$BASE_URL}"
+          echo "Auditing origin: $CANONICAL"
+
           # The config file embeds the cookie. It goes to RUNNER_TEMP and is
           # never uploaded as an artifact or printed.
-          COOKIE="$COOKIE" node scripts/a11y/build-pa11yci.mjs > "$CONFIG_PATH"
+          COOKIE="$COOKIE" BASE_URL="$CANONICAL" node scripts/a11y/build-pa11yci.mjs > "$CONFIG_PATH"
           BUILD_RC=$?
           if [ "$BUILD_RC" -ne 0 ]; then
             echo "::error::Failed to build the pa11y-ci config."

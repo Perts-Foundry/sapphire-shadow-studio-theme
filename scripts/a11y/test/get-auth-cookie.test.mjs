@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { previewUrl, classifyPreview, getAuthCookie } from '../get-auth-cookie.mjs';
+import { previewUrl, classifyPreview, getAuthCookie, originOf } from '../get-auth-cookie.mjs';
 
 const BASE = 'https://shop.example';
 const THEME = '999';
@@ -44,10 +44,6 @@ test('classifyPreview rejects the non-200, off-host and challenge cases', () => 
   assert.match(classifyPreview({ status: 403, expectedThemeId: '9' }).reason, /bot management/);
   assert.match(classifyPreview({ status: 503, expectedThemeId: '9' }).reason, /bot management/);
   assert.match(classifyPreview({ status: 404, expectedThemeId: '9' }).reason, /expected 200/);
-  assert.match(
-    classifyPreview({ status: 200, themeDesc: '9', expectedThemeId: '9', finalHost: 'elsewhere', expectedHost: 'shop.example' }).reason,
-    /redirected off-host/
-  );
   // No server-timing at all means it is not a rendered storefront page.
   assert.match(
     classifyPreview({ status: 200, themeDesc: null, expectedThemeId: '9', finalHost: 'h', expectedHost: 'h' }).reason,
@@ -167,4 +163,75 @@ test('a network failure on the preview probe fails closed', async () => {
   const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl });
   assert.equal(out.ok, false);
   assert.match(out.reason, /connection failure/);
+});
+
+test('a canonical-host redirect is ACCEPTED when the theme id still matches', () => {
+  // Verified against the live store on 2026-08-16: *.myshopify.com 302s to the
+  // primary custom domain, and the preview theme is served correctly on the far
+  // side. Rejecting that made the script fail against the very BASE_URL the
+  // workflow passes. The theme id is the identity proof, not the host.
+  const v = classifyPreview({
+    status: 200, themeDesc: '9', expectedThemeId: '9',
+    finalHost: 'shop.custom.example', expectedHost: 'shop.myshopify.example',
+  });
+  assert.equal(v.ok, true);
+  assert.equal(v.redirected, true);
+  assert.match(v.reason, /canonical host shop\.custom\.example/);
+});
+
+test('a redirect to a host serving the WRONG theme is still rejected', () => {
+  const v = classifyPreview({
+    status: 200, themeDesc: '111', expectedThemeId: '9',
+    finalHost: 'elsewhere.example', expectedHost: 'shop.example',
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /served theme 111/);
+});
+
+test('a redirect to a host that is not a storefront at all is rejected', () => {
+  // No server-timing theme id: an interstitial, or a genuinely foreign host.
+  const v = classifyPreview({
+    status: 200, themeDesc: null, expectedThemeId: '9',
+    finalHost: 'attacker.example', expectedHost: 'shop.example',
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /not a rendered storefront page/);
+});
+
+test('getAuthCookie reports the canonical origin it resolved to', async () => {
+  const canonical = 'https://custom.example';
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) {
+      return res({ status: 200, headers: timing(THEME), url: `${canonical}/?preview_theme_id=${THEME}` });
+    }
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.canonicalBaseUrl, canonical);
+});
+
+test('canonicalBaseUrl falls back to the input when no redirect happened', async () => {
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) {
+      return res({ status: 200, headers: timing(THEME), url: `${BASE}/?preview_theme_id=${THEME}` });
+    }
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({ baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.canonicalBaseUrl, BASE);
+});
+
+test('originOf extracts an origin and tolerates junk', () => {
+  assert.equal(originOf('https://a.example/x?y=1'), 'https://a.example');
+  assert.equal(originOf('not a url'), null);
 });
