@@ -4,8 +4,9 @@ pa11y-ci against the PR's deployed preview theme. This is the dynamic half of th
 accessibility check; the static half is `scripts/contrast/`, which lints colour schemes inside the
 required `validate / validate` context.
 
-These scripts are driven by the `a11y-audit` job in `.github/workflows/preview.yml`. They are not
-useful standalone without a deployed preview theme and the storefront password.
+These scripts are driven by the "A11y audit" steps of the `validate` job in
+`.github/workflows/validate.yml`, which `needs: deploy-preview` so the theme it audits is known to
+exist. They are not useful standalone without a deployed preview theme and the storefront password.
 
 ## Why this is harder than the sibling repo
 

@@ -2,19 +2,26 @@
 # (`workflow_run.workflows: ["validate"]`). Renaming will silently break both
 # auto-deploy paths (shopify-sync and dependabot/**).
 #
-# Single `validate` job that runs every PR-time check sequentially, captures
-# stdout + exit code per step, and posts a single sticky CI Report comment
-# (marker `<!-- ci-results -->`). Mirrors the shape of the CI report in the
-# resume-curator repo.
+# Two jobs. `deploy-preview` pushes the pr-N-preview theme (moved here from
+# preview.yml so validate can hard-depend on it); `validate` runs every
+# PR-time check sequentially, including the dynamic a11y audit against that
+# preview theme, captures stdout + exit code per step, and posts a single
+# sticky CI Report comment (marker `<!-- ci-results -->`). Mirrors the shape
+# of the CI report in the resume-curator repo. preview.yml retains only the
+# PR-close cleanup (theme delete), which is a different event.
 #
 # Required-check name on `main`: `validate / validate` (one context, set in
-# infrastructure repo via `ci_check_contexts = ["validate"]`).
+# infrastructure repo via `ci_check_contexts = ["validate"]`). The
+# `deploy-preview` job is deliberately NOT required: it is skipped for draft
+# and Dependabot PRs, and a skipped required context blocks merge forever.
 #
-# Token-bearing workflows (deploy.yml, preview.yml, both auto-deploys) live in
-# separate files; this workflow holds no Shopify token.
+# Secret isolation is per JOB, matching deploy.yml's pattern: `deploy-preview`
+# holds the Shopify CLI theme token; `validate` holds only STOREFRONT_PASSWORD
+# (read access to a password-gated storefront, no write capability), scoped to
+# the single auth step, never to the Chrome-running audit step.
 #
-# Fork PRs are excluded; preview.yml does the same. Excluding here also
-# prevents fork history from polluting `gitleaks --log-opts="--all"`.
+# Fork PRs are excluded from every job. Excluding here also prevents fork
+# history from polluting `gitleaks --log-opts="--all"`.
 name: validate
 
 on:
@@ -39,11 +46,158 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: validate
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  deploy-preview:
+    # Moved from preview.yml so `validate` can hard-depend on the preview theme
+    # existing before its dynamic a11y audit runs. This workflow never receives
+    # `closed` events, so the old `action != 'closed'` clause is gone; the
+    # PR-close cleanup stays in preview.yml.
+    #
+    # Skip Dependabot PRs: Dependabot-triggered workflows run with a separate
+    # secrets/variables scope (`Settings -> Secrets and variables ->
+    # Dependabot`) that does NOT inherit the regular Actions secrets, so
+    # `SHOPIFY_CLI_THEME_TOKEN` is empty here and `npx shopify theme list`
+    # fails authentication. Preview themes are for human visual review of
+    # code changes; dependency bumps (action SHAs, npm tooling) do not change
+    # the rendered storefront, so a preview adds no signal. The auto-deploy
+    # chain still works because `deploy.yml`'s `workflow_run` arm uses the
+    # default-branch secrets scope (not Dependabot's).
+    #
+    # No job-level concurrency group: the workflow-level `validate-<pr>` group
+    # (cancel-in-progress: true) already guarantees a new push cancels the
+    # whole prior run, preview push and audit alike, so an audit can never be
+    # reading a theme a newer run is redeploying. Cancelling mid-push can
+    # leave the preview theme partially uploaded, but that state is
+    # self-healing: the next run pushes the whole tree, and the run that
+    # cancelled this one is by definition already queued.
+    if: |
+      github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+    name: deploy-preview
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      theme_id: ${{ steps.push.outputs.theme-id }}
+      editor_url: ${{ steps.push.outputs.editor-url }}
+      preview_url: ${{ steps.push.outputs.preview-url }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Push or update preview theme
+        id: push
+        uses: ./.github/actions/shopify-theme-push
+        with:
+          mode: preview
+          shopify-cli-theme-token: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+          shopify-flag-store: ${{ vars.SHOPIFY_FLAG_STORE }}
+          pr-number: ${{ github.event.pull_request.number }}
+
+      - name: Upsert preview comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          THEME_ID: ${{ steps.push.outputs.theme-id }}
+          THEME_NAME: ${{ steps.push.outputs.theme-name }}
+          EDITOR_URL: ${{ steps.push.outputs.editor-url }}
+          PREVIEW_URL: ${{ steps.push.outputs.preview-url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- preview -->';
+            const themeId = process.env.THEME_ID;
+            const themeName = process.env.THEME_NAME;
+            const editorUrl = process.env.EDITOR_URL;
+            const previewUrl = process.env.PREVIEW_URL;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const sha = (process.env.SHA || '').slice(0, 7);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const body = [
+              marker,
+              '# Preview Deployment',
+              '',
+              '✅ **Preview theme deployed.** Open the URL below to inspect.',
+              '',
+              `**Commit:** \`${sha}\` | **Run:** [#${context.runNumber}](${runUrl})`,
+              '',
+              '---',
+              '',
+              '| | |',
+              '|:--|:--|',
+              `| **Theme** | \`${themeName}\` (id \`${themeId}\`) |`,
+              `| **Preview URL** | [${previewUrl}](${previewUrl}) |`,
+              `| **Edit in admin** | [Open editor](${editorUrl}) |`,
+              '',
+              '---',
+              '',
+              'Updated on every push to the PR; deleted when the PR closes.',
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const existing = comments
+              .filter(c => c.body && c.body.includes(marker))
+              .sort((a, b) => a.id - b.id);
+            const [keep, ...dupes] = existing;
+            if (keep) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: keep.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+            for (const dup of dupes) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: dup.id,
+              });
+            }
+            // Sweep the legacy marker from pre-restyle runs.
+            const legacy = comments.filter(c => c.body && c.body.includes('<!-- sapphire-preview-bot -->'));
+            for (const c of legacy) {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              } catch (_) { /* swallowed */ }
+            }
+
+  validate:
+    name: validate
+    # `always()` is load-bearing: deploy-preview is SKIPPED for draft and
+    # Dependabot PRs and can FAIL on a Shopify hiccup, and this job is the
+    # required check, so it must run in every one of those states. The a11y
+    # audit step below reads `needs.deploy-preview.result` and turns
+    # "preview failed" into a red check and "preview skipped" into a benign
+    # skip; a plain `needs` would instead skip the required context and block
+    # the PR forever.
+    needs: deploy-preview
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    # 15 was the pre-a11y budget; the dynamic audit adds an authenticated
+    # pa11y-ci pass over every storefront path in scripts/a11y/paths.json.
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: write
@@ -52,6 +206,11 @@ jobs:
       # and skip ANSI escape sequences entirely. Any tool that ignores it
       # is still defended by the per-step `sed -E ...` strip in capture.
       NO_COLOR: "1"
+      # puppeteer (a pa11y-ci dependency) would otherwise try to download its
+      # own Chromium. `npm ci --ignore-scripts` already blocks that; this makes
+      # the intent explicit and covers any non-lifecycle download path. pa11y
+      # is pointed at the runner's preinstalled Chrome instead.
+      PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
       - name: Checkout PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -333,12 +492,11 @@ jobs:
       # scheme with failing contrast shipped silently (the sss-dark-scheme
       # accent sat at 3.86:1 until a hand-run Lighthouse audit caught it).
       #
-      # `contrast:lint` is the STATIC layer and it is the one that gates merges:
-      # it reads config/settings_data.json directly, needs no network and no
-      # storefront password, and so belongs in the required `validate / validate`
-      # context. The DYNAMIC layer (pa11y-ci against the deployed preview theme)
-      # cannot live here, because there is no rendered page at validate time; it
-      # runs in preview.yml's `a11y-audit` job.
+      # `contrast:lint` is the STATIC layer: it reads config/settings_data.json
+      # directly and needs no network, no storefront password, and no preview
+      # theme. The DYNAMIC layer (pa11y-ci against the deployed preview theme)
+      # is the "A11y audit" steps further down, which depend on the
+      # deploy-preview job having pushed a rendered theme first.
       #
       # `a11y:test` is folded into this step deliberately. It is the unit suite
       # for scripts/a11y/ (the pa11y config builder, the preview-auth flow, the
@@ -491,6 +649,187 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── Dynamic a11y audit (pa11y-ci against the preview theme) ─
+      # The dynamic half of the two-layer accessibility check; the static half
+      # is the contrast lint above. This covers what colour maths cannot: real
+      # DOM, real font sizes, real focus order, real overlay schemes composited
+      # over real hero images. It exists in THIS job (rather than preview.yml,
+      # where it started life) so its result lands in the same CI Report
+      # comment and the same required `validate / validate` context as every
+      # other check; `needs: deploy-preview` is what guarantees the theme it
+      # audits exists and matches this head SHA.
+      #
+      # Three preview states, decided here and threaded through the report:
+      #   success -> authenticate, build the config, audit.
+      #   skipped -> draft or Dependabot PR; no preview exists BY DESIGN, so
+      #              record a benign skip (exit 0), never a failure.
+      #   failed/cancelled -> the preview deploy broke, so the audit cannot
+      #              run; that is a red check, not a silent skip.
+      - name: A11y audit config
+        id: a11y-config
+        env:
+          # STOREFRONT_PASSWORD is scoped to THIS STEP, never to the job. The
+          # pa11y step below launches `--no-sandbox` Chrome that executes
+          # third-party page JavaScript (consent banner, chat widget, Shopify's
+          # own scripts); the storefront password must not be present in that
+          # process's environment. No Shopify token appears anywhere in this job.
+          STOREFRONT_PASSWORD: ${{ secrets.STOREFRONT_PASSWORD }}
+          # Step-env indirection, never inlined into `run:`. These are job
+          # outputs, and interpolating them into a shell body would make them a
+          # script-injection vector.
+          PREVIEW_RESULT: ${{ needs.deploy-preview.result }}
+          BASE_URL: https://${{ vars.SHOPIFY_FLAG_STORE }}
+          THEME_ID: ${{ needs.deploy-preview.outputs.theme_id }}
+          CONFIG_PATH: ${{ runner.temp }}/pa11yci.json
+          CANONICAL_BASE_URL_FILE: ${{ runner.temp }}/canonical-base-url
+        run: |
+          set +e
+          if [ "$PREVIEW_RESULT" = "skipped" ]; then
+            echo "No preview theme for this PR (draft or Dependabot); the dynamic audit is skipped by design."
+            {
+              echo "preview_state=skipped"
+              echo "exit_code=0"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$PREVIEW_RESULT" != "success" ]; then
+            echo "::error::The preview deploy did not succeed (${PREVIEW_RESULT}), so the a11y audit cannot run."
+            {
+              echo "preview_state=failed"
+              echo "exit_code=1"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "preview_state=success" >> "$GITHUB_OUTPUT"
+
+          COOKIE=$(node scripts/a11y/get-auth-cookie.mjs)
+          AUTH_RC=$?
+          if [ "$AUTH_RC" -ne 0 ]; then
+            echo "::error::Could not reach the preview theme; see the diagnostics above."
+            echo "exit_code=$AUTH_RC" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Mask BEFORE anything else can emit it. The cookie is a live
+          # authenticated session for the storefront.
+          if [ -n "$COOKIE" ]; then
+            echo "::add-mask::$COOKIE"
+          fi
+
+          # Build against the origin the store CANONICALISED to, not the one we
+          # started from. `vars.SHOPIFY_FLAG_STORE` is the *.myshopify.com host,
+          # and the store 302s that to its primary custom domain, so building
+          # against BASE_URL would put a redirect hop on all audited URLs and
+          # make every audited URL differ from the one reported.
+          # get-auth-cookie.mjs writes the resolved origin to a temp file; fall
+          # back to BASE_URL if it somehow did not.
+          CANONICAL=$(cat "$CANONICAL_BASE_URL_FILE" 2>/dev/null)
+          CANONICAL="${CANONICAL:-$BASE_URL}"
+          echo "Auditing origin: $CANONICAL"
+
+          # The config file embeds the cookie. It goes to RUNNER_TEMP and is
+          # never uploaded as an artifact or printed.
+          COOKIE="$COOKIE" BASE_URL="$CANONICAL" node scripts/a11y/build-pa11yci.mjs > "$CONFIG_PATH"
+          BUILD_RC=$?
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "::error::Failed to build the pa11y-ci config."
+            echo "exit_code=$BUILD_RC" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          URL_COUNT=$(node -e 'const c=require(process.argv[1]);process.stdout.write(String((c.urls||[]).length))' "$CONFIG_PATH")
+          COUNT_RC=$?
+          # Fail closed on a crash here as well as on a zero count. Without the
+          # status capture, an unreadable config would still write exit_code=0
+          # and the step would report a pass on a run that audited nothing.
+          # summarize-pa11y.mjs catches zero URLs later too; this is the earlier
+          # of the two, and the only one that sees a crash.
+          if [ "$COUNT_RC" -ne 0 ] || ! printf '%s' "$URL_COUNT" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::The pa11y config has no URLs to audit (exit ${COUNT_RC}, count '${URL_COUNT}')."
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Built pa11y config with ${URL_COUNT} URL(s)."
+          {
+            echo "config_path=$CONFIG_PATH"
+            echo "url_count=$URL_COUNT"
+            echo "exit_code=0"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: A11y audit
+        id: a11y
+        # No secret env here by design; the config file carries the cookie.
+        env:
+          CONFIG_PATH: ${{ steps.a11y-config.outputs.config_path }}
+          REPORT_PATH: ${{ runner.temp }}/pa11y-report.json
+          CONFIG_RC: ${{ steps.a11y-config.outputs.exit_code }}
+          PREVIEW_STATE: ${{ steps.a11y-config.outputs.preview_state }}
+        run: |
+          set +e
+          # Every early path writes summary via a random heredoc delimiter:
+          # even the fixed strings share a step with page-derived text below,
+          # and a fixed delimiter would be forgeable from a PR-controlled page.
+          write_summary() {
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+            {
+              echo "summary<<${DELIM}"
+              printf '%s\n' "$1"
+              echo "${DELIM}"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [ "${PREVIEW_STATE:-}" = "skipped" ]; then
+            echo "exit_code=0" >> "$GITHUB_OUTPUT"
+            write_summary "_Skipped: no preview theme is deployed for this PR (draft or Dependabot), so the dynamic audit did not run. The static contrast lint above still gates the merge._"
+            exit 0
+          fi
+          if [ "${PREVIEW_STATE:-}" = "failed" ]; then
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+            write_summary "❌ The preview deploy did not succeed, so the audit could not run."
+            exit 0
+          fi
+          if [ "${CONFIG_RC:-1}" != "0" ]; then
+            echo "Skipped: the config step failed."
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+            write_summary "Could not authenticate against the preview theme; pa11y-ci did not run."
+            exit 0
+          fi
+
+          npx pa11y-ci --config "$CONFIG_PATH" --json > "$REPORT_PATH" 2>/tmp/pa11y.err
+          PA11Y_RC=$?
+          # stderr only. stdout is the JSON report, and pa11y can echo the
+          # config (which holds the session cookie) into stderr on a config
+          # error, so this is capped rather than dumped.
+          head -c 2000 /tmp/pa11y.err || true
+
+          SUMMARY=$(node scripts/a11y/summarize-pa11y.mjs "$REPORT_PATH" --exit-code "$PA11Y_RC")
+          SUMMARY_RC=$?
+          # ONE parse, feeding both the log line (stderr) and the comment body
+          # (stdout). Parsing twice let a malformed summary log a verdict while
+          # silently posting an empty body, because the body parse swallowed its
+          # own failure and the step's exit code came from elsewhere entirely.
+          BODY=$(echo "$SUMMARY" | node -e '
+            let s = "";
+            process.stdin.on("data", (d) => { s += d; }).on("end", () => {
+              let o;
+              try { o = JSON.parse(s); } catch {
+                console.error("pa11y-ci: summary unavailable (unparseable)");
+                process.exit(1);
+              }
+              console.error(`pa11y-ci: ${o.reason} (${o.total} URL(s), ${o.errors} error(s))`);
+              process.stdout.write(o.body || "");
+            });')
+          BODY_RC=$?
+          if [ "$BODY_RC" -ne 0 ]; then
+            # An unusable summary is a failed audit, not a green one with an
+            # empty comment: report it in both the code and the comment.
+            echo "::error::The a11y summary could not be parsed."
+            SUMMARY_RC=1
+            BODY="The accessibility summary could not be parsed; see the run log."
+          fi
+
+          echo "exit_code=$SUMMARY_RC" >> "$GITHUB_OUTPUT"
+          write_summary "$BODY"
+
       # ── Aggregate & comment ────────────────────────────────────
       - name: Collect results
         id: results
@@ -505,13 +844,14 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
+          A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
           GITLEAKS_EXIT: ${{ steps.gitleaks.outputs.exit_code }}
         run: |
           PASS=0; FAIL=0; SKIP=0
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$A11Y_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             if [ -z "$code" ]; then
               SKIP=$((SKIP + 1))
             elif [ "$code" = "0" ]; then
@@ -547,6 +887,9 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
+          A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
+          A11Y_STATE: ${{ steps.a11y-config.outputs.preview_state }}
+          A11Y_SUMMARY: ${{ steps.a11y.outputs.summary }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
@@ -594,6 +937,8 @@ jobs:
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const contrast = process.env.CONTRAST_EXIT;
+            const a11y = process.env.A11Y_EXIT;
+            const a11yState = process.env.A11Y_STATE;
             const smokeTest = process.env.SMOKE_TEST_EXIT;
             const actionlint = process.env.ACTIONLINT_EXIT;
             const zizmor = process.env.ZIZMOR_EXIT;
@@ -608,6 +953,16 @@ jobs:
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const contrastOut = sanitize(process.env.CONTRAST_OUTPUT) || 'No output';
+            // NOT run through sanitize(): the a11y summary is markdown built
+            // and sanitised by scripts/a11y/summarize-pa11y.mjs (its per-URL
+            // <details> blocks are intentional and sanitize() would strip
+            // them). Re-apply the fence guard and a length cap anyway; this is
+            // the last hop before page-derived text becomes a comment, and the
+            // full body must leave room for the rest of the report under
+            // GitHub's 65536-character limit.
+            const a11ySummary = (process.env.A11Y_SUMMARY || '_No report produced._')
+              .replace(/`{4,}/g, '```')
+              .slice(0, 30000);
             const smokeTestOut = sanitize(process.env.SMOKE_TEST_OUTPUT) || 'No output';
             const actionlintOut = sanitize(process.env.ACTIONLINT_OUTPUT) || 'No issues found';
             const zizmorOut = sanitize(process.env.ZIZMOR_OUTPUT) || 'No issues found';
@@ -629,6 +984,7 @@ jobs:
               `|:------|:-----|:------:|`,
               `| **Theme Check** | \`shopify theme check --fail-level error\` | ${status(themeCheck)} |`,
               `| **Reconcile** | \`git cherry HEAD origin/shopify-sync\` | ${status(reconcile)} |`,
+              `| **A11y audit** | \`pa11y-ci\` (axe, WCAG 2.1 AA) vs preview theme | ${a11yState === 'skipped' ? '⏭️ (no preview)' : status(a11y)} |`,
               '',
               '### Tooling',
               '',
@@ -671,6 +1027,15 @@ jobs:
               '```',
               reconcileOut,
               '```',
+              '',
+              '</details>',
+              '',
+              // Raw markdown, not a fenced block: the summary carries its own
+              // per-URL <details> and fences, pre-sanitised by
+              // scripts/a11y/summarize-pa11y.mjs.
+              '<details><summary><strong>A11y audit</strong> (<code>pa11y-ci</code> against the preview theme)</summary>',
+              '',
+              a11ySummary,
               '',
               '</details>',
               '',
@@ -791,7 +1156,8 @@ jobs:
             const stale = comments.filter(c =>
               c.body && (
                 c.body.includes('<!-- validation-results -->') ||
-                c.body.includes('<!-- sapphire-reconcile-bot -->')
+                c.body.includes('<!-- sapphire-reconcile-bot -->') ||
+                c.body.includes('<!-- a11y -->')
               )
             );
             for (const c of stale) {
@@ -817,6 +1183,7 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
+          A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
           ACTIONLINT_EXIT: ${{ steps.actionlint.outputs.exit_code }}
           ZIZMOR_EXIT: ${{ steps.zizmor.outputs.exit_code }}
@@ -848,6 +1215,10 @@ jobs:
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "contrast" "$CONTRAST_EXIT"
+          # 0 when the audit passed OR when deploy-preview was skipped by
+          # design (draft / Dependabot); 1 when the audit found errors or the
+          # preview deploy failed. Empty fails closed like every other check.
+          check_exit "a11y" "$A11Y_EXIT"
           check_exit "smoke-test" "$SMOKE_TEST_EXIT"
           check_exit "actionlint" "$ACTIONLINT_EXIT"
           check_exit "zizmor" "$ZIZMOR_EXIT"

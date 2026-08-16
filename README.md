@@ -62,10 +62,9 @@ Theme conventions (component framework, BEM/CSS rules, block development, access
 The normal path for a code change:
 
 1. Branch from `main` and open a pull request. (Direct push to `main` is not part of the workflow; `main` is protected.)
-2. **Validate** runs theme-check and the security/lint suite, and posts a sticky CI report.
-3. **Preview** spins up a per-PR unpublished theme `pr-<n>-preview` and comments the link.
-4. When Validate is green, comment `deploy` on the PR (you must be a write+ collaborator).
-5. The deploy workflow pushes to the live theme, smoke-tests it, squash-merges the PR, and deletes the preview theme. If anything fails, the PR stays open and a sticky failure comment is posted.
+2. **Validate** first spins up a per-PR unpublished theme `pr-<n>-preview` and comments the link, then runs theme-check, the security/lint suite, and an accessibility audit of that preview theme, and posts a sticky CI report covering everything.
+3. When Validate is green, comment `deploy` on the PR (you must be a write+ collaborator).
+4. The deploy workflow pushes to the live theme, smoke-tests it, squash-merges the PR, and deletes the preview theme. If anything fails, the PR stays open and a sticky failure comment is posted.
 
 Two paths **auto-deploy** after Validate passes, with no comment needed: the single `shopify-sync` reconcile PR (capturing admin edits) and Dependabot PRs (minor/patch bumps). Major-version bumps and any change touching `.github/{workflows,actions,scripts}/` are held for a manual `deploy` comment after review.
 
@@ -79,8 +78,8 @@ Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate` | PR opened / synchronize / reopened (same-repo heads) | One sequential job (`validate`) running `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `seo-review`, `applique-grid`, `product-images`, `smoke` deploy smoke-test units, and the blank-id guard), `actionlint`, `zizmor`, and `gitleaks`, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
-| `preview` | PR opened / synchronize / closed | Creates a per-PR unpublished theme `pr-<n>-preview`, comments the link, deletes it on close. |
+| `validate` | PR opened / synchronize / reopened (same-repo heads) | Two jobs. `deploy-preview` (skipped for drafts and Dependabot) creates a per-PR unpublished theme `pr-<n>-preview` and comments the link. `validate` (needs `deploy-preview`, runs even when it is skipped or fails) sequentially runs `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `seo-review`, `applique-grid`, `product-images`, `smoke` deploy smoke-test units, the blank-id guard, and the contrast lint), `actionlint`, `zizmor`, `gitleaks`, and a pa11y-ci accessibility audit of the preview theme, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
+| `preview` | PR closed | Deletes the PR's `pr-<n>-preview` theme and marks the preview comment deleted. |
 | `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
 | `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**` | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
 

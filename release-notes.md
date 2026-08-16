@@ -4,8 +4,13 @@
 
 ### What changed
 
-`validate.yml` gains a `Contrast + a11y tests` step, and `preview.yml` gains an
-`a11y-audit` job. Before this, the twelve validate steps contained no
+`validate.yml` gains a `Contrast + a11y tests` step plus a dynamic pa11y-ci audit
+of the PR's preview theme. To make the audit possible inside the required check,
+the preview-theme push moved from `preview.yml` into `validate.yml` as a
+`deploy-preview` job that the `validate` job `needs`, so the theme the audit
+reads is known to exist and to match the head SHA; `preview.yml` retains only the
+PR-close cleanup. Everything reports into the one sticky CI Report comment.
+Before this, the twelve validate steps contained no
 accessibility check of any kind, so a failing colour scheme shipped silently: the
 `sss-dark-scheme` accent sat at 3.86:1 until a hand-run Lighthouse audit caught it
 on 2026-08-15. A hand-run audit is not a gate.
@@ -25,9 +30,13 @@ browser, no storefront password, so it can sit inside the required
 page: font sizes, focus order, what actually composites over a hero image.
 
 **pa11y-ci** sees exactly that, but only against a deployed `pr-N-preview` theme,
-which means an authenticated remote request and a secret. It cannot be a required
-check without making every merge depend on a live storefront round trip, so it is
-advisory for now.
+which means an authenticated remote request and a secret. It started life as an
+advisory job in `preview.yml`; the operator then chose to make it gate merges,
+accepting the trade that every validate run now waits on a preview deploy and
+depends on a live storefront round trip. Draft and Dependabot PRs get no preview
+by design, so for them the audit records a benign skip rather than a failure,
+while a FAILED preview deploy is a red check: "could not audit" must never read
+as "no accessibility errors".
 
 The `perts-foundry-website` precedent supplied the pa11y defaults (`WCAG2AA`, axe
 runner, `target-size`) and the reporting shape. Its plumbing did NOT port: that
@@ -36,13 +45,15 @@ network. Liquid renders server-side, so this repo has no local build target.
 
 ### Design points that are load-bearing
 
-**`STOREFRONT_PASSWORD` is scoped to one STEP, not to the `a11y-audit` job.** The
+**`STOREFRONT_PASSWORD` is scoped to one STEP, not to the `validate` job.** The
 pa11y step launches `--no-sandbox` Chrome that executes third-party page
 JavaScript (consent banner, chat widget, Shopify's own scripts). The storefront
 password must not be in that process's environment. No Shopify token appears
-anywhere in the job, so the per-job secret isolation described in CLAUDE.md's
-deploy-gate section survives: this adds a secret to `preview.yml`, in a job that
-holds nothing else.
+anywhere in the `validate` job (the CLI theme token lives only in
+`deploy-preview`), so the per-job secret isolation described in CLAUDE.md's
+deploy-gate section survives. The password is the one secret the validate job now
+holds at all, and it is read access to a password-gated storefront, not a write
+capability.
 
 **The preview-theme assertion is the point of `get-auth-cookie.mjs`.** Passing the
 storefront password proves only that the storefront opened. It does not prove the
@@ -166,12 +177,15 @@ runner's `/usr/bin/google-chrome`. The audit's suggested fix is a downgrade to
 pa11y-ci 3.x, which is strictly worse. The `setup-shopify-cli` comment enumerating
 `hasInstallScript` packages was updated, since puppeteer is now the second one.
 
-**`a11y-audit` shares `deploy-preview`'s concurrency group deliberately.** A new
-push must cancel a running audit BEFORE redeploying the theme that audit is
-reading. A sibling group would let the two race and produce findings for a tree
-that no longer exists. The residual race (a redeploy landing inside the
-cancellation window) is accepted and commented: the cost is a stale report on a PR
-that is about to get a fresh run, never a wrong merge decision.
+**The audit and the preview push share one cancellation scope.** A new push must
+cancel a running audit BEFORE redeploying the theme that audit is reading; letting
+them race produces findings for a tree that no longer exists. With both inside
+`validate.yml`, the workflow-level `validate-<pr>` concurrency group
+(`cancel-in-progress: true`) provides this for free: a new push cancels the whole
+prior run, preview push and audit alike, so the moved `deploy-preview` job carries
+no job-level concurrency group of its own. The residual race (a redeploy landing
+inside the cancellation window) is accepted and commented: the cost is a stale
+report on a PR that is about to get a fresh run.
 
 **Both new capture steps use a random `$GITHUB_OUTPUT` heredoc delimiter**, not the
 fixed `GHEOF` the older steps use. Their captured text is PR-controlled (scheme
