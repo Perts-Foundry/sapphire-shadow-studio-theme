@@ -1,5 +1,47 @@
 # Release Notes
 
+## Shipping copy: Expedited/Express standardised, announcement bar corrected (unreleased)
+
+### What changed
+
+`sections/header-group.json` rewords two announcement slides: slide 2 from "$8.00
+Flat Rate Shipping **for All Items**" to "on Orders under $75.00", and slide 3
+from "Free Shipping on Orders over $75.00" to "on Orders $75.00 and up". The
+theme's "Expedited" wording is unchanged everywhere it appears; the other half of
+the mismatch is a manual Admin rate rename that stays open in `TODO.md` because
+`write_shipping` is not granted to the custom app.
+
+**The direction of the Expedited/Express fix was decided by counting surfaces and
+by the zero-orders window, not by which side looked cheaper to edit.** `TODO.md`
+had recorded the Admin rate name as the cheap side to change, on a count of eight
+template locations. That count was short. "Expedited" appears in 13+
+customer-facing places once the live Shopify shop policy is included: five
+product-template accordions, three FAQ answers, and roughly six mentions in the
+Shipping Policy, which is not a repo file at all. Against that, "Express" is four
+Admin rate rows. The policy is also the half that would degrade most under a
+rename, because it deliberately contrasts "Expedited Shipping" with "Rush
+Production" as a teaching point. The second, time-boxed reason: `orders(query:
+"status:any")` returns zero, so no historical `shippingLine.title` carries the old
+name. Order history freezes that string, so the rename is free now and is not free
+after the first order. If this is read after launch, the calculus has changed.
+
+**The boundary wording on slide 3 is a correctness fix, not a copy edit.** The
+live rate is free at order total **>= $75.00**, so "over $75.00" mispriced exactly
+$75. "$75.00 and up" matches both the rate condition and the FAQ, which already
+said "Orders $75 and up ship free".
+
+**The rename interacts with the 0-lb weight blocker, and does not fix it.** The
+Shipping Policy says Expedited pricing "varies based on order weight". That is
+true of the rate configuration (four weight tiers at $20/$40/$60/$80) and false in
+practice while every variant weighs 0 lb, because every order of any size buys the
+$20 tier. The rename makes the *name* honest; the *pricing* claim stays wrong
+until per-variant weights are set. The policy wording was deliberately not
+softened to match the bug, and the blocker stays open in `TODO.md`.
+
+Rate descriptions at checkout are a separate matter, noted and declined here: all
+six live rate rows have an empty description, so checkout shows a bare name and
+price.
+
 ## Footer touch targets, dark-scheme contrast, and three stale findings retired (unreleased)
 
 ### What changed
