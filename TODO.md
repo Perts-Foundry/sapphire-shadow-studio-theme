@@ -33,6 +33,18 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   Note the two overlay schemes (`background: rgba(0,0,0,0)`) are NOT in the baseline: static colour
   maths cannot reach them, so they are reported as indeterminate and covered by the pa11y layer.
 
+- [ ] **Triage the nine axe rules the pa11y baseline silences audit-wide.** `scripts/a11y/baseline.json`
+  landed on 2026-08-16 so the dynamic audit could gate merges without first restyling the storefront;
+  every rule in it fired on the first full audit (PR #105). Each rule silenced is invisible to the
+  gate until cleared, so the file should shrink to empty. The dominant patterns: `list` violations
+  from `overflow-list` custom elements sitting directly inside `<ul>` (header nav, facet filters);
+  `scrollable-region-focusable` on product-card slideshows without keyboard access;
+  `aria-prohibited-attr` / `aria-required-parent` / `aria-valid-attr-value` ARIA misuse across
+  templates; `color-contrast` (the rendered-page counterpart of the contrast-lint debt above);
+  `frame-title` / `frame-tested` on third-party iframes (`#PBarNextFrame`), which may belong in
+  paths.json's per-path `hideElements` instead of the baseline; and one `duplicate-id-aria`. Fix a
+  rule's findings, delete its entry, and the audit enforces it from then on.
+
 - [ ] **Variant SKUs: review the identifier and its lifecycle before adopting one.** Deferred on
   2026-07-29 rather than dropped. All 343 variants have a null SKU today. Three things to settle
   before any backfill. (Re-checked 2026-08-13: the count is now 431 across the six products, and every

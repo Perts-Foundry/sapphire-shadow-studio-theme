@@ -38,6 +38,15 @@ by design, so for them the audit records a benign skip rather than a failure,
 while a FAILED preview deploy is a red check: "could not audit" must never read
 as "no accessibility errors".
 
+Like the contrast lint, the pa11y gate landed with its pre-existing debt
+baselined rather than fixed: `scripts/a11y/baseline.json` silences the nine axe
+rules the first full audit surfaced, audit-wide, so the gate catches regressions
+from day one (TODO.md holds the triage row). Rule-level rather than per-finding
+is deliberate: pa11y findings key on generated selectors that churn with section
+ids, so a per-finding baseline would go stale on every editor edit. The trade,
+recorded in the file's header, is that a new instance of a baselined rule stays
+invisible until that rule is cleared.
+
 The `perts-foundry-website` precedent supplied the pa11y defaults (`WCAG2AA`, axe
 runner, `target-size`) and the reporting shape. Its plumbing did NOT port: that
 repo Hugo-builds to `public/` and serves it on localhost, needing no secret and no

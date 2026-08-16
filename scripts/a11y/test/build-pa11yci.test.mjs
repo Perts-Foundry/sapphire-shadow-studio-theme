@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildConfig, CHROME_PATH, PATHS_FILE } from '../build-pa11yci.mjs';
+import { buildConfig, CHROME_PATH, PATHS_FILE, BASELINE_FILE } from '../build-pa11yci.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8'));
@@ -77,4 +77,20 @@ test('the committed config is JSON-serialisable and has no undefined leaks', () 
   const json = JSON.stringify(buildConfig({ ...base, cookie: 'x=y' }));
   assert.ok(!json.includes('undefined'));
   assert.deepEqual(JSON.parse(json).urls.length, paths.paths.length);
+});
+
+test('the committed baseline lands in defaults.ignore, and a malformed one is a hard error', () => {
+  // The baseline silences whole axe rules audit-wide, so its wiring must be
+  // observable (a baseline that silently failed to load would re-fail every
+  // run) and its shape must be validated (one that silently ignored the wrong
+  // thing would hide regressions).
+  const committed = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
+  assert.deepEqual(buildConfig(base).defaults.ignore, committed.ignore);
+
+  const custom = buildConfig({ ...base, baseline: { ignore: ['color-contrast'] } });
+  assert.deepEqual(custom.defaults.ignore, ['color-contrast']);
+
+  assert.throws(() => buildConfig({ ...base, baseline: {} }), /baseline/);
+  assert.throws(() => buildConfig({ ...base, baseline: { ignore: 'color-contrast' } }), /baseline/);
+  assert.throws(() => buildConfig({ ...base, baseline: { ignore: ['ok', ''] } }), /baseline/);
 });

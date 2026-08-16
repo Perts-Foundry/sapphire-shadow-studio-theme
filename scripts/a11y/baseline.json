@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Known accessibility debt, ignored audit-wide so the pa11y gate reports",
+    "REGRESSIONS rather than the launch state. Every code here was present on",
+    "every-page-or-most audit of 2026-08-16 (PR #105's first run) and is",
+    "recorded in TODO.md for triage. Delete a code the moment its findings are",
+    "fixed: an entry that outlives its debt hides the next regression behind it.",
+    "",
+    "These are axe RULE ids, so an entry silences that whole rule on every",
+    "audited page. That is deliberately coarser than scripts/contrast/",
+    "accepted-risks.json (which pins per-scheme measured ratios): pa11y findings",
+    "key on generated selectors that churn with section ids, so a per-finding",
+    "baseline would go stale on every editor edit. The trade is that a NEW",
+    "instance of a baselined rule is invisible until the rule is cleared.",
+    "",
+    "For third-party embeds this theme cannot fix, prefer the per-path `ignore`",
+    "/ `hideElements` escape hatches in paths.json over an entry here."
+  ],
+  "ignore": [
+    "aria-prohibited-attr",
+    "aria-required-parent",
+    "aria-valid-attr-value",
+    "color-contrast",
+    "duplicate-id-aria",
+    "frame-tested",
+    "frame-title",
+    "list",
+    "scrollable-region-focusable"
+  ]
+}
