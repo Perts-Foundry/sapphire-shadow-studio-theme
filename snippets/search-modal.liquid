@@ -401,7 +401,10 @@
     top: auto;
     width: var(--icon-size-lg);
     height: var(--icon-size-lg);
-    color: rgb(var(--color-foreground-rgb) / var(--opacity-60));
+    /* 60% of the foreground lands under the 3:1 non-text bar on this scheme's
+       background; --opacity-subdued-text (70%) is the token the rest of the
+       theme already uses for a de-emphasised mark. */
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-subdued-text));
 
     @media screen and (min-width: 750px) {
       left: var(--margin-md);

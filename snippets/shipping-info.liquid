@@ -99,7 +99,9 @@
     flex-shrink: 0;
     width: 1rem;
     height: 1rem;
-    color: rgb(var(--color-foreground-rgb) / 0.5);
+    /* Half the foreground is well under the 3:1 an icon needs; the token is
+       what every other subdued mark in the theme uses. */
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-subdued-text));
     transition: color 0.2s ease;
   }
 

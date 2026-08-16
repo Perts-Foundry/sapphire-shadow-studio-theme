@@ -233,8 +233,10 @@
 
   product-custom-property-component .__character-count {
     font-style: italic;
+    /* The theme's own error colour rather than a one-off #d32f2f, which was the
+       only red in the repo and sat right on the 4.5:1 line. */
     /* stylelint-disable-next-line declaration-no-important */
-    color: #d32f2f !important;
+    color: var(--color-error) !important;
   }
 
   /* We should consolidate input styles that share the same behavior */
