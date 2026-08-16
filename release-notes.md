@@ -8,8 +8,11 @@
 Flat Rate Shipping **for All Items**" to "on Orders under $75.00", and slide 3
 from "Free Shipping on Orders over $75.00" to "on Orders $75.00 and up". The
 theme's "Expedited" wording is unchanged everywhere it appears; the other half of
-the mismatch is a manual Admin rate rename that stays open in `TODO.md` because
-`write_shipping` is not granted to the custom app.
+the mismatch was closed by hand in Admin, where the four `Express` rate rows were
+renamed to `Expedited`. That step could not be scripted because `write_shipping`
+is not granted to the custom app. Verified read-only afterwards: four `Expedited`
+rows at $20/$40/$60/$80 on the same weight tiers, both `Economy` rows and the
+North America zone untouched, zero rows named `Express`.
 
 **The direction of the Expedited/Express fix was decided by counting surfaces and
 by the zero-orders window, not by which side looked cheaper to edit.** `TODO.md`

@@ -118,16 +118,9 @@ attaching one hero image per colour. What the pass verified as clean is recorded
 `release-notes.md`, not here, so it does not get re-audited. The 2026-08-14 backlog triage closed out
 several of the pass's other findings.
 
-- [ ] **Rename the four `Express` shipping rates to `Expedited` in Admin.** The theme, the FAQ, and
-  the Shipping Policy all say "Expedited"; the live rate rows say "Express", so checkout offers a name
-  no other surface uses. `write_shipping` is not granted to the custom app, so this cannot be
-  scripted: **Settings > Shipping and delivery > General profile > North America**, rename each of the
-  four `Express` rows. Leave prices, weight conditions, the two `Economy` rows, and the zone
-  untouched. Do it before the first order lands; the rename is free only while zero orders exist,
-  because `shippingLine.title` is frozen into order history. Admin (shipping rates).
 - [ ] **[LAUNCH BLOCKER] All 431 variants weigh 0 lb while Expedited is weight-tiered.** The live rate
-  table on the General profile prices Expedited (still named `Express` in Admin until the rename item
-  above lands) at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9), and $80 (9+).
+  table on the General profile prices Expedited at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9),
+  and $80 (9+).
   Every variant on all six products reports `0 POUNDS`, so every order of any size buys the $20 tier
   and the tiering above it is unreachable. Economy is priced on cart total, not weight, so it is
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
