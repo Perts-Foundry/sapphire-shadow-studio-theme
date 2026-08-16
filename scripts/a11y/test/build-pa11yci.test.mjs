@@ -88,6 +88,56 @@ test('the known-debt baseline never reaches pa11y', () => {
   assert.ok(!('ignore' in defaults), 'defaults.ignore would re-hide the baseline from the report');
 });
 
+test('top-level defaults from paths.json reach pa11y, minus the note keys', () => {
+  const config = buildConfig({
+    ...base,
+    paths: { defaults: { hideElements: '#PBarNextFrame', _comment: ['why'] }, paths: [{ path: '/' }] },
+  });
+  assert.equal(config.defaults.hideElements, '#PBarNextFrame');
+  assert.ok(!('_comment' in config.defaults), 'rationale notes are not pa11y options');
+});
+
+test('file defaults cannot weaken the committed gate', () => {
+  // Spread order is the whole protection here: a paths.json edit may ADD an
+  // option, never downgrade the standard, drop the runner, or unpin Chrome.
+  const config = buildConfig({
+    ...base,
+    paths: {
+      defaults: { standard: 'WCAG2A', runners: ['htmlcs'], rules: [], chromeLaunchConfig: { args: [] } },
+      paths: [{ path: '/' }],
+    },
+  });
+  assert.equal(config.defaults.standard, 'WCAG2AA');
+  assert.deepEqual(config.defaults.runners, ['axe']);
+  assert.deepEqual(config.defaults.rules, ['target-size']);
+  assert.equal(config.defaults.chromeLaunchConfig.executablePath, CHROME_PATH);
+});
+
+test('an audit-wide ignore in paths.json defaults is rejected outright', () => {
+  // Not merely ignored: it is the one option that would re-hide findings from
+  // the summariser, which is what baseline.json exists to keep visible.
+  assert.throws(
+    () => buildConfig({ ...base, paths: { defaults: { ignore: ['color-contrast'] }, paths: [{ path: '/' }] } }),
+    /ignore/
+  );
+});
+
+test('a per-entry hideElements adds to the audit-wide one instead of replacing it', () => {
+  // pa11y overrides rather than merges, so a page-scoped hide would otherwise
+  // un-hide the preview bar on exactly the page that needed an extra selector.
+  const config = buildConfig({
+    ...base,
+    paths: { defaults: { hideElements: '#PBarNextFrame' }, paths: [{ path: '/', hideElements: '#chat' }] },
+  });
+  assert.equal(config.urls[0].hideElements, '#PBarNextFrame, #chat');
+});
+
+test('the committed paths.json hides the platform preview bar on every page', () => {
+  // frame-title / frame-tested were baselined audit-wide for this one iframe;
+  // dropping this selector would resurrect 38 findings the theme cannot fix.
+  assert.equal(buildConfig(base).defaults.hideElements, '#PBarNextFrame');
+});
+
 test('per-path ignore is a different thing and still reaches pa11y', () => {
   // The third-party-embed escape hatch is deliberately invisible to the
   // summariser; it is scoped to one URL, not to the whole audit.

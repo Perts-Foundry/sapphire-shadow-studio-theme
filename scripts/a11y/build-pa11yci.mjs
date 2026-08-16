@@ -81,8 +81,28 @@ export function buildConfig({
   // pa11y: it is the escape hatch for third-party embeds this theme cannot
   // fix, and those findings are invisible to the summariser by design.
 
+  // Audit-wide pa11y defaults from paths.json. Today this carries only
+  // `hideElements`, for app-injected DOM the theme has no template control over
+  // (Shopify's own preview bar). Anything here applies to EVERY audited URL, so
+  // it is the widest of the three escape hatches: prefer a per-entry `ignore` /
+  // `hideElements` when the problem is one page's embed.
+  // `_`-prefixed keys are the file's own rationale notes, not pa11y options.
+  const fileDefaults = Object.fromEntries(
+    Object.entries(paths?.defaults ?? {}).filter(([key]) => !key.startsWith('_'))
+  );
+  if ('ignore' in fileDefaults) {
+    // An audit-wide `ignore` is exactly the thing the baseline was moved out of
+    // this file to prevent: pa11y drops those findings inside the browser, so
+    // the summariser could not disclose what had been hidden. Per-PATH `ignore`
+    // is fine and stays supported; this one is not.
+    throw new Error('paths.json defaults must not set `ignore` (see baseline.json)');
+  }
+
   return {
     defaults: {
+      // Spread FIRST so the committed keys below win: paths.json can add an
+      // option, never weaken the standard, the runner set, or the sandbox flags.
+      ...fileDefaults,
       standard: 'WCAG2AA',
       runners: ['axe'],
       // `target-size` is an axe rule outside the default WCAG2AA set. It is
@@ -106,7 +126,14 @@ export function buildConfig({
       const built = { url: url.href };
       // Pass-through escape hatches for third-party embeds; see paths.json.
       if (entry.ignore) built.ignore = entry.ignore;
-      if (entry.hideElements) built.hideElements = entry.hideElements;
+      // pa11y REPLACES a default with the per-URL value rather than merging, so
+      // a per-entry hideElements would silently un-hide the audit-wide ones.
+      // Both are selector lists, so concatenate instead.
+      if (entry.hideElements) {
+        built.hideElements = [fileDefaults.hideElements, entry.hideElements]
+          .filter(Boolean)
+          .join(', ');
+      }
       if (entry.actions) built.actions = entry.actions;
       return built;
     }),

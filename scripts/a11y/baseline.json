@@ -29,12 +29,9 @@
     "aria-valid-attr-value",
     "color-contrast",
     "duplicate-id-aria",
-    "frame-tested",
-    "frame-title",
     "list",
     "nested-interactive",
     "scrollable-region-focusable",
-    "target-size",
-    "video-caption"
+    "target-size"
   ]
 }
