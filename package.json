@@ -27,7 +27,7 @@
     "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs"
   },
   "devDependencies": {
-    "@shopify/cli": "4.6.0",
+    "@shopify/cli": "4.6.1",
     "heic-decode": "2.1.0",
     "pa11y-ci": "4.1.1",
     "sharp": "0.35.3"
