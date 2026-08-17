@@ -1,5 +1,86 @@
 # Release Notes
 
+## Admin backlog batch, and a silent truncation in the media uploader (unreleased)
+
+Five Admin-side backlog items were cleared against the live store: the gift card's empty
+`descriptionHtml`, null SEO titles on all four collections and all five pages, per-colour hero
+attachment across all 426 colour-bearing variants, the Shift Fuel Grey Heather stealth-colourway
+copy, and the hero video's alt text. The repo side of that is `TODO.md` plus two doc notes. Two
+findings from the pass are worth more than the items themselves.
+
+### `variants(first: 100)` was silently dropping 88 variants
+
+`scripts/upload-product-media.mjs` read a product's variants with a hardcoded `first: 100` and no
+`pageInfo { hasNextPage }` check. The two 8-design products carry 144 variants each (8 designs x 3
+colours x 6 sizes), so `variantsByColor` was built from the first 100 and the remaining 44 on each
+were dropped. Those variants then fell through `if (!hero.mediaId || !variantIds.length) continue;`
+with no error and no warning, and the run printed success.
+
+Had it run unfixed, 88 variants across two products would have kept showing the product-level
+featured image, which is a **Black** garment on every one of these products, so a customer buying
+Grey Heather or Classic Navy would have seen a black sweatshirt in their cart, and nothing in the
+output would have said so. A truncated read that reports success is the fail-open shape
+`scripts/seo-review/admin.mjs` refuses by design with its `admin-read-truncated` ERROR; this script
+had simply never been given the same treatment.
+
+The fix is `fetchAllConnection`, which follows the connection's pages and throws rather than
+returning a partial read. It delegates the walk to `paginate()` from
+`scripts/blank-inventory/lib/catalogue.mjs` rather than reimplementing it: that helper already
+carries the malformed-page guard and the runaway-page backstop, and reusing it means one tested
+pagination path instead of two. The first page comes from the caller, since `Q_PRODUCT` has already
+fetched it, so the single-page case still costs zero extra round trips. It takes an injected `gqlFn`
+so the pagination is unit-testable without a network, and `scripts/upload-product-media.test.mjs`
+covers the exact regressing shape: a 144-variant product with a 100-wide first page.
+
+`media` had the identical unguarded read at two call sites and now goes through the same helper. Its
+consequence was worse than a miscount: `pollMediaReady` looks the newly-created media up by id in
+the returned page, so a truncated read would leave that lookup undefined, and the poll would run to
+its two-minute deadline and report a **processing timeout for media that had uploaded fine**. That
+one is not reachable at the current catalogue size (the largest product carries 15 media against a
+250 cap), but it is the same fail-open shape, and leaving it while fixing its twin would have made
+this note untrue of the file it describes.
+
+`resolveProduct` now also overwrites both first-page connections on the object it returns with the
+complete node sets. Callers read `product.media.nodes` directly, and a partial first page left
+reachable there reads as the whole set and silently is not.
+
+What caught it is worth recording, because the obvious check would not have. The hero *lines* in the
+dry-run output were all 13 present and correct; only reconciling their variant counts against a
+live-derived colour matrix exposed the gap, and 36 + 30 + 34 = 100 is the signature. A verification
+that counts one attachment per colour, or that compares only the variants which did get attached,
+passes cleanly while 88 variants sit unattached. Derive the expected matrix from a live read, and
+compare totals, not just presence.
+
+### The variant hero outranks Admin media order
+
+`snippets/product-media-gallery-content.liquid` pins the selected variant's attached media to gallery
+position 1. So the hero is not only the cart line-item thumbnail and collection card: it also decides
+which photo the product page opens on for that colour, and **no Admin media reorder can override it**.
+
+This retires a standing assumption that a colour's gallery lead is fixed by reordering media in
+Admin. It is not, once a hero is attached. Combined with Shopify's one-media-per-variant cap, that
+means changing which photo leads a colour requires detaching the hero first, not reordering anything.
+A planned one-off reorder script for Shift Fuel's Grey Heather was dropped on this basis: it would
+have been a live write with no visible effect.
+
+### Two halves deliberately did not land, and are not in `TODO.md`
+
+The backlog is kept to open actions, and the operator's call on this pass was to close both parent
+items out rather than carry a remainder. Recorded here instead so the decisions are not lost:
+
+**Shift Fuel's Grey Heather is still a blank-looking garment**, and a media reorder will not fix it.
+White thread on light heather shows no design at the 96px a cart thumbnail renders, on the flat and
+angled shots alike; only the close-up reveals it. The hero decision was flat-everywhere with no
+per-product exception, so that colour's cart thumbnail and gallery lead are both the blank flat.
+Anyone revisiting this should reach for the camera, not the media order: the position-1 pin above
+means the hero has to be detached and re-pointed, and the durable fix is a full-garment shot that
+survives downscaling (raking light, or a tighter crop that keeps the lettering large). The other
+three Grey Heather products are unaffected, so this is one photograph on one product.
+
+**The gift card still has no photograph.** The description shipped and the page is no longer blank,
+but its only media remains the 500x500 logo SVG, making it the one product page with no photograph.
+The photograph was out of scope for this pass by design; the description was the whole of it.
+
 ## Accessibility baseline burn-down (unreleased)
 
 PR #104 shipped the two accessibility gates with their pre-existing failures
