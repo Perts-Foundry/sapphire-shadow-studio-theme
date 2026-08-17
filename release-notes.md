@@ -1,5 +1,44 @@
 # Release Notes
 
+## Dynamic collections dropdown on the main menu (unreleased)
+
+The Shop link's dropdown is not authored in Admin. **A top-level menu link that has no children of
+its own, points at the catalog or the collection list (`catalog_link` / `collections_link`, which is
+what "All products" and "All collections" become in the menu editor), and sits on a store with at
+least one published collection gets a submenu built from Liquid's global `collections` drop.** Add a
+collection in Admin and it appears in the nav on the next page render; no menu edit, no repo script,
+no sync run. This is the whole reason the feature exists: a static Shopify menu cannot track the
+catalog, and the alternative was a scheduled job reconciling menu items against collections.
+
+**The trigger is the thing to know before editing the menu.** It is implicit, so a future editor
+adding a second "All products" link somewhere in the main menu will silently get a second dynamic
+dropdown, and giving the Shop link a single hand-authored child in Admin silently turns the dynamic
+list off (an authored submenu always wins). Neither is checked anywhere: nothing in CI parses the
+menu, and the menu lives outside the repo entirely. The `collections.size > 0` half of the trigger
+is not defensive noise; without it a store with no published collections renders a link that
+advertises a dropdown (`aria-haspopup`, `aria-expanded`) over an empty panel.
+
+**Three surfaces, one convention.** `blocks/_header-menu.liquid` computes the trigger and passes
+`dynamic_collections` into `snippets/mega-menu-list.liquid` (desktop, including the "More" overflow
+popover, which reuses the same markup); `snippets/header-drawer.liquid` recomputes it for the mobile
+drawer. The drawer's accordion and flat branches both handle it, because `drawer_accordion` is
+currently `false` and the flat branch is the live path; implementing only the accordion branch, as
+originally planned, would have shipped nothing on mobile. The drawer's 3-level branch deliberately
+does not support it: the menu is two levels, and the feature would disappear if a third level were
+ever added there.
+
+**The dynamic list is always plain text, even when the block's media type is `collection_images`.**
+That mode reads images off static child links, and a dynamic parent has none, so both files downgrade
+to text for this branch. The featured-content column is unaffected: it keys off the parent link's own
+type, and a catalog parent still resolves `collections.all`, which is why the desktop dropdown keeps
+its product cards alongside the generated list.
+
+**The list is capped at 50, which is Liquid's own per-loop ceiling, not a design choice.** The cap is
+written out explicitly (`limit: 50`, and the desktop column math takes `collections.size | at_most:
+50`) so the column count cannot describe more items than the loop emits. At three collections none of
+this is visible; at 51 the nav would silently stop listing everything, which is the point at which a
+generated dropdown stops being the right shape for the menu.
+
 ## Fits Chest column on the women's microfleece vest size chart (unreleased)
 
 The vest was the one blank whose chart offered no way in for a shopper without a reference garment:

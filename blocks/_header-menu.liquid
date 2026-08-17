@@ -82,6 +82,24 @@
     {% capture children %}
       {% for link in block_settings.menu.links %}
         {%- comment -%}
+          Dynamic collections submenu convention: a top-level menu link that
+          points at the catalog or the collection list, has no children of its
+          own in the Admin menu, and sits on a store with at least one published
+          collection gets a submenu built from the global `collections` drop, so
+          the dropdown tracks the catalog without anyone editing the menu. A
+          link that already has children keeps its authored submenu, and a store
+          with no published collections falls back to a plain link. Documented in
+          release-notes.md as well, since an Admin editor will not read this.
+        {%- endcomment -%}
+        {% liquid
+          assign is_dynamic = false
+          if link.links == blank and collections.size > 0
+            if link.type == 'catalog_link' or link.type == 'collections_link'
+              assign is_dynamic = true
+            endif
+          endif
+        %}
+        {%- comment -%}
           No role="presentation" here either, for the same reason as the More
           item below: these are slotted into overflow-list's shadow <ul>, and a
           presentational child is not a list item. They are the top-level
@@ -98,7 +116,7 @@
             href="{{ link.url }}"
             data-skip-node-update="true"
             class="menu-list__link{% if link.active %} menu-list__link--active{% endif %}"
-            {%- if link.links != blank -%}
+            {%- if link.links != blank or is_dynamic -%}
               aria-controls="submenu-{{ forloop.index }}"
               aria-haspopup="true"
               aria-expanded="false"
@@ -107,7 +125,7 @@
           >
             <span class="menu-list__link-title">{{- link.title -}}</span>
           </a>
-          {%- if link.links != blank -%}
+          {%- if link.links != blank or is_dynamic -%}
             <div class="menu-list__submenu{{ color_scheme_classes }}" ref="submenu[]">
               <div
                 id="submenu-{{ forloop.index }}"
@@ -129,7 +147,8 @@
                       grid_columns_count_collection_images: 8,
                       menu_content_type: menu_content_type,
                       content_aspect_ratio: ratio,
-                      image_border_radius: image_border_radius
+                      image_border_radius: image_border_radius,
+                      dynamic_collections: is_dynamic
                     %}
                   </div>
                 </div>

@@ -103,11 +103,31 @@
             {% assign animation_index = 0 %}
             {%- for link in linklist.links -%}
               {% assign animation_index = animation_index | plus: 1 %}
+              {%- comment -%}
+                Dynamic collections submenu: a childless catalog or
+                collection-list link gets a submenu built from the global
+                `collections` drop, matching the desktop menu in
+                `blocks/_header-menu.liquid`. The 3-level branch below
+                deliberately does not support this; the menu is 2 levels, and
+                the feature would disappear if a third level were ever added.
+              {%- endcomment -%}
+              {% liquid
+                assign is_dynamic = false
+                if link.links == blank and collections.size > 0
+                  if link.type == 'catalog_link' or link.type == 'collections_link'
+                    assign is_dynamic = true
+                  endif
+                endif
+                assign has_children = false
+                if link.links != blank or is_dynamic
+                  assign has_children = true
+                endif
+              %}
               <li
                 style="--menu-drawer-animation-index: {{ animation_index }};"
                 class="{%- if block_settings.drawer_accordion -%}menu-drawer__list-item--deep{%- else -%}menu-drawer__list-item--flat{%- endif -%}{% if block_settings.drawer_dividers %} menu-drawer__list-item--divider{% endif %}"
               >
-                {% if block_settings.drawer_accordion and link.links != blank %}
+                {% if block_settings.drawer_accordion and has_children %}
                   {%- comment -%}
                     Accordion for links with children, in menus with fewer than 3 levels of links
                   {%- endcomment -%}
@@ -132,8 +152,10 @@
                         </span>
                       </summary>
                       {% liquid
+                        # A dynamic parent has no static collection children to
+                        # pull images from, so its list is always plain text.
                         assign render_link_image = false
-                        if block_settings.menu_style == 'collection_images'
+                        if block_settings.menu_style == 'collection_images' and is_dynamic == false
                           assign catalog_links = link.links | where: 'type', 'catalog_link'
                           assign collection_list_links = link.links | where: 'type', 'collections_link'
                           assign collection_links = link.links | where: 'type', 'collection_link'
@@ -147,34 +169,58 @@
                         role="list"
                         tabindex="-1"
                       >
-                        {%- for childlink in link.links -%}
-                          <li
-                            class="menu-drawer__list-item"
-                            style="--menu-drawer-animation-index: {{ forloop.index }};"
-                          >
-                            <a
-                              id="HeaderDrawer-{{ link.handle }}-{{ childlink.handle }}"
-                              href="{{ childlink.url }}"
-                              class="menu-drawer__menu-item menu-drawer__menu-item--child focus-inset{% if childlink.current %} menu-drawer__menu-item--active{% endif %}"
-                              {% if childlink.current %}
-                                aria-current="page"
-                              {% endif %}
+                        {%- if is_dynamic -%}
+                          {%- for collection in collections limit: 50 -%}
+                            <li
+                              class="menu-drawer__list-item"
+                              style="--menu-drawer-animation-index: {{ forloop.index }};"
                             >
-                              {% if render_link_image %}
-                                {% render 'link-featured-image',
-                                  link: childlink,
-                                  class: 'menu-drawer__link-image',
-                                  sizes: 'auto, 400px'
-                                %}
-                              {% endif %}
-                              <span class="menu-drawer__menu-item-text wrap-text">{{ childlink.title | escape }}</span>
-                            </a>
-                          </li>
-                        {%- endfor -%}
+                              <a
+                                id="HeaderDrawer-{{ link.handle }}-{{ collection.handle }}"
+                                href="{{ collection.url }}"
+                                class="menu-drawer__menu-item menu-drawer__menu-item--child focus-inset{% if collection.url == request.path %} menu-drawer__menu-item--active{% endif %}"
+                                {% if collection.url == request.path %}
+                                  aria-current="page"
+                                {% endif %}
+                              >
+                                <span class="menu-drawer__menu-item-text wrap-text">
+                                  {{- collection.title | escape -}}
+                                </span>
+                              </a>
+                            </li>
+                          {%- endfor -%}
+                        {%- else -%}
+                          {%- for childlink in link.links -%}
+                            <li
+                              class="menu-drawer__list-item"
+                              style="--menu-drawer-animation-index: {{ forloop.index }};"
+                            >
+                              <a
+                                id="HeaderDrawer-{{ link.handle }}-{{ childlink.handle }}"
+                                href="{{ childlink.url }}"
+                                class="menu-drawer__menu-item menu-drawer__menu-item--child focus-inset{% if childlink.current %} menu-drawer__menu-item--active{% endif %}"
+                                {% if childlink.current %}
+                                  aria-current="page"
+                                {% endif %}
+                              >
+                                {% if render_link_image %}
+                                  {% render 'link-featured-image',
+                                    link: childlink,
+                                    class: 'menu-drawer__link-image',
+                                    sizes: 'auto, 400px'
+                                  %}
+                                {% endif %}
+                                <span class="menu-drawer__menu-item-text wrap-text">
+                                  {{- childlink.title | escape -}}
+                                </span>
+                              </a>
+                            </li>
+                          {%- endfor -%}
+                        {%- endif -%}
                       </ul>
                     </details>
                   </accordion-custom>
-                {% elsif block_settings.drawer_accordion == false and link.links != blank %}
+                {% elsif block_settings.drawer_accordion == false and has_children %}
                   {%- comment -%}
                     Flat menus for links with children, in menus with fewer than 3 levels of links
                   {%- endcomment -%}
@@ -189,8 +235,10 @@
                     <span class="menu-drawer__menu-item-text wrap-text">{{ link.title | escape }}</span>
                   </a>
                   {% liquid
+                    # A dynamic parent has no static collection children to pull
+                    # images from, so its list is always plain text.
                     assign render_link_image = false
-                    if block_settings.menu_style == 'collection_images'
+                    if block_settings.menu_style == 'collection_images' and is_dynamic == false
                       assign catalog_links = link.links | where: 'type', 'catalog_link'
                       assign collection_list_links = link.links | where: 'type', 'collections_link'
                       assign collection_links = link.links | where: 'type', 'collection_link'
@@ -204,26 +252,49 @@
                     role="list"
                     tabindex="-1"
                   >
-                    {%- for childlink in link.links -%}
-                      <li
-                        class="menu-drawer__list-item"
-                        style="--menu-drawer-animation-index: {{ animation_index }};"
-                      >
-                        <a
-                          href="{{ childlink.url }}"
-                          class="menu-drawer__menu-item menu-drawer__menu-item--child menu-drawer__animated-element focus-inset{% if childlink.current %} menu-drawer__menu-item--active{% endif %}"
+                    {%- if is_dynamic -%}
+                      {%- for collection in collections limit: 50 -%}
+                        <li
+                          class="menu-drawer__list-item"
+                          style="--menu-drawer-animation-index: {{ animation_index }};"
                         >
-                          {% if render_link_image %}
-                            {% render 'link-featured-image',
-                              link: childlink,
-                              class: 'menu-drawer__link-image',
-                              sizes: 'auto, 400px'
-                            %}
-                          {% endif %}
-                          <span class="menu-drawer__menu-item-text wrap-text">{{ childlink.title | escape }}</span>
-                        </a>
-                      </li>
-                    {%- endfor -%}
+                          <a
+                            href="{{ collection.url }}"
+                            class="menu-drawer__menu-item menu-drawer__menu-item--child menu-drawer__animated-element focus-inset{% if collection.url == request.path %} menu-drawer__menu-item--active{% endif %}"
+                            {% if collection.url == request.path %}
+                              aria-current="page"
+                            {% endif %}
+                          >
+                            <span class="menu-drawer__menu-item-text wrap-text">
+                              {{- collection.title | escape -}}
+                            </span>
+                          </a>
+                        </li>
+                      {%- endfor -%}
+                    {%- else -%}
+                      {%- for childlink in link.links -%}
+                        <li
+                          class="menu-drawer__list-item"
+                          style="--menu-drawer-animation-index: {{ animation_index }};"
+                        >
+                          <a
+                            href="{{ childlink.url }}"
+                            class="menu-drawer__menu-item menu-drawer__menu-item--child menu-drawer__animated-element focus-inset{% if childlink.current %} menu-drawer__menu-item--active{% endif %}"
+                          >
+                            {% if render_link_image %}
+                              {% render 'link-featured-image',
+                                link: childlink,
+                                class: 'menu-drawer__link-image',
+                                sizes: 'auto, 400px'
+                              %}
+                            {% endif %}
+                            <span class="menu-drawer__menu-item-text wrap-text">
+                              {{- childlink.title | escape -}}
+                            </span>
+                          </a>
+                        </li>
+                      {%- endfor -%}
+                    {%- endif -%}
                   </ul>
                 {% else %}
                   {%- comment -%}
