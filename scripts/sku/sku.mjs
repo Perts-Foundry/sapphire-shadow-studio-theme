@@ -39,6 +39,7 @@ import {
   ROW_SKIPPED,
 } from './lib/artifact.mjs';
 import { applyArtifact } from './lib/apply.mjs';
+import { transcriptPath, withTranscript } from './lib/transcript.mjs';
 import { setSkus } from './lib/mutations.mjs';
 import { resolveWorkDir } from './lib/workdir.mjs';
 
@@ -251,53 +252,59 @@ async function cmdApply(opts) {
   const fetchers = liveFetchers(client);
 
   const receipt = createReceipt(artifact);
-  heading(dryRun ? `DRY RUN: plan ${artifact.planId}` : `APPLYING plan ${artifact.planId}`);
-  console.log(`  rows ....... ${artifact.rows.length}`);
-  console.log(`  source ..... ${file}`);
-  if (!dryRun) console.log(`  receipt .... ${receiptFile}`);
+  // Everything from here on is gated output; tee it so the full verbatim record survives whatever
+  // the invoking shell does to stdout (a pipe, a truncating harness). See lib/transcript.mjs.
+  const transcriptFile = transcriptPath(WORK_DIR, artifact.planId, dryRun);
+  await withTranscript(transcriptFile, async () => {
+    heading(dryRun ? `DRY RUN: plan ${artifact.planId}` : `APPLYING plan ${artifact.planId}`);
+    console.log(`  rows ....... ${artifact.rows.length}`);
+    console.log(`  source ..... ${file}`);
+    if (!dryRun) console.log(`  receipt .... ${receiptFile}`);
+    console.log(`  transcript . ${transcriptFile}`);
 
-  await applyArtifact(
-    {
-      artifact,
-      receipt,
-      readSkus: (productId) => readProductSkus(fetchers.fetchProductVariantsPage(productId)),
-      write: (productId, rows) => setSkus(client, productId, rows),
-    },
-    {
-      dryRun,
-      persist: dryRun ? async () => {} : (r) => writeJsonAtomic(receiptFile, r),
-      onProgress: (e) => {
-        if (e.type === 'product') console.log(`  ${e.productId}: ${e.writable}/${e.planned} row(s) still at their baseline`);
-        else console.error(`  ${e.type} on ${e.productId}: ${e.message}`);
+    await applyArtifact(
+      {
+        artifact,
+        receipt,
+        readSkus: (productId) => readProductSkus(fetchers.fetchProductVariantsPage(productId)),
+        write: (productId, rows) => setSkus(client, productId, rows),
       },
-    }
-  );
-
-  const tally = receiptTally(receipt);
-  heading(dryRun ? 'Dry run summary' : 'Apply summary');
-  console.log(`  applied .... ${tally[ROW_APPLIED]}`);
-  console.log(`  skipped .... ${tally[ROW_SKIPPED]}`);
-  console.log(`  failed ..... ${tally[ROW_FAILED]}`);
-  for (const r of receipt.rows.filter((r) => r.status === ROW_FAILED || (r.status === ROW_SKIPPED && !dryRun))) {
-    console.log(`  [${r.status}] ${r.variantId} ${r.productHandle}: ${r.detail}`);
-  }
-
-  if (dryRun) {
-    console.log(`\nNothing was written. Re-run without --dry-run to apply, after a separate approval.\n`);
-    return;
-  }
-  console.log(`\nReceipt: ${receiptFile}`);
-  console.log(`Each row records its prior SKU. There is no revert command by design: recovery is`);
-  console.log(`applying those baselines back through the same gates. See docs/sku-scheme.md.`);
-  if (tally[ROW_FAILED]) {
-    console.error(
-      `\n${tally[ROW_FAILED]} row(s) FAILED. Do not re-run this artifact; it is spent. If a whole ` +
-        `product was refused by the API, that is the case docs/sku-scheme.md covers with ` +
-        `"skuWritable": false. Otherwise start again at audit.\n`
+      {
+        dryRun,
+        persist: dryRun ? async () => {} : (r) => writeJsonAtomic(receiptFile, r),
+        onProgress: (e) => {
+          if (e.type === 'product') console.log(`  ${e.productId}: ${e.writable}/${e.planned} row(s) still at their baseline`);
+          else console.error(`  ${e.type} on ${e.productId}: ${e.message}`);
+        },
+      }
     );
-    process.exitCode = 1;
-  }
-  console.log('\nNext: sku verify\n');
+
+    const tally = receiptTally(receipt);
+    heading(dryRun ? 'Dry run summary' : 'Apply summary');
+    console.log(`  applied .... ${tally[ROW_APPLIED]}`);
+    console.log(`  skipped .... ${tally[ROW_SKIPPED]}`);
+    console.log(`  failed ..... ${tally[ROW_FAILED]}`);
+    for (const r of receipt.rows.filter((r) => r.status === ROW_FAILED || (r.status === ROW_SKIPPED && !dryRun))) {
+      console.log(`  [${r.status}] ${r.variantId} ${r.productHandle}: ${r.detail}`);
+    }
+
+    if (dryRun) {
+      console.log(`\nNothing was written. Re-run without --dry-run to apply, after a separate approval.\n`);
+      return;
+    }
+    console.log(`\nReceipt: ${receiptFile}`);
+    console.log(`Each row records its prior SKU. There is no revert command by design: recovery is`);
+    console.log(`applying those baselines back through the same gates. See docs/sku-scheme.md.`);
+    if (tally[ROW_FAILED]) {
+      console.error(
+        `\n${tally[ROW_FAILED]} row(s) FAILED. Do not re-run this artifact; it is spent. If a whole ` +
+          `product was refused by the API, that is the case docs/sku-scheme.md covers with ` +
+          `"skuWritable": false. Otherwise start again at audit.\n`
+      );
+      process.exitCode = 1;
+    }
+    console.log('\nNext: sku verify\n');
+  });
 }
 
 const pad = (s, n) => String(s ?? '').padEnd(n);
