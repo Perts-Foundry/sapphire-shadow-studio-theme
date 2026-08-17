@@ -1,5 +1,28 @@
 # Release Notes
 
+## Collection-list cleanup: all-products deleted, bare collections imaged (2026-08-16, Admin-only)
+
+Two pre-launch-review findings closed with no theme change; recorded here because both were
+resolved by a judgment call worth not re-litigating.
+
+**The `all-products` smart collection was deleted rather than repaired.** Its rules were
+`VARIANT_PRICE > -1` OR `VARIANT_INVENTORY < 0` on match-any: the first condition matched every
+product and the second matched nothing, so it worked by accident, and flipping the match toggle to
+"all" in Admin would have silently emptied it. Deletion won over an honest rule because nothing
+referenced it: every "shop all" surface in the theme (footer, hero buttons, 404, button defaults)
+points at Shopify's built-in `/collections/all`, and `snippets/breadcrumbs.liquid` deliberately
+excluded the handle from breadcrumb parents (the exclusion entry is a harmless string and stays).
+If catalog-page control (image, description, SEO fields, sort, exclusions) is ever wanted, the
+move is a new collection with the handle `all`, which overrides the built-in at the same URL; do
+not recreate `all-products`.
+
+**The collection-list finding was resolved with collection images, not a menu repoint.** Featured
+and Healthcare got images in Admin (logo-tag closeup and Huddle nurse closeup; Vitals already had
+`blue-zip-3.jpg`), so `/collections` now renders three imaged cards. The Catalog menu entry still
+points at `/collections`, which is deliberate. Residual known issue: Featured and Healthcare hold
+the same five products, so the list page still shows overlapping slices; that is the
+`docs/collection-differentiation-runbook.md` problem, not this one.
+
 ## Variant SKUs adopted, with the tooling that maintains them (unreleased)
 
 All 431 variants had a null SKU. The identifier was deferred on 2026-07-29 pending three questions,
