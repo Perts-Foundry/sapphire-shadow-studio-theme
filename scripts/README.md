@@ -27,6 +27,11 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
 - `blank-inventory/`: update shared-blank stock and the `custom.inventory_blank_sku` variant
   metafield, cooperating with the inventory-sync Flow. Writes to the **live store**, through gated
   plan artifacts. See [`blank-inventory/README.md`](blank-inventory/README.md).
+- `sku/`: derive, audit and apply variant SKUs from committed code tables. Writes to the **live
+  store** through gated, hashed plan artifacts. Driven by the `sku` Claude skill. See
+  [`sku/README.md`](sku/README.md) and [`../docs/sku-scheme.md`](../docs/sku-scheme.md). Orthogonal
+  to `blank-inventory/`: a SKU identifies the finished piece, `custom.inventory_blank_sku` the
+  shared blank garment.
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).
