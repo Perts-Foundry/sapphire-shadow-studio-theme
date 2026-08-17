@@ -51,9 +51,3 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
   current blank is confirmed "premium 8 oz. heavyweight fleece" (live product descriptions); tie any
   shrink figure to the real fiber content, not a cotton default. Consider whether weight/composition
   belong on the product description instead.
-
-- [ ] **Body-chest to size lookup (imp 4).** For shoppers without a reference garment: an optional
-  per-size recommended body-chest range in the profile, rendered as a companion column or a small
-  "which size fits your chest" lookup. Note the women's microfleece vest has **no** body-measurement
-  column at all (no derived circumference, no fits-chest range), so it is the blank this would help
-  most.

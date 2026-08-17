@@ -116,12 +116,19 @@ test('every explain string appears exactly once in its own prose', () => {
 });
 
 test('the vest has no sleeve or chest-circumference paragraph, with no conditional anywhere', () => {
-  // The point of the refactor: the vest has no such columns, so it gets no such prose.
+  // The point of the refactor: the vest has no such columns, so it gets no such prose. Fits Chest
+  // is a body-fit range, not a derived garment circumference, so the circumference assertion holds.
   const html = proseOf(byId['vest-microfleece-womens']);
   assert.doesNotMatch(html, /sleeve/i);
   assert.doesNotMatch(html, /circumference/i);
   assert.doesNotMatch(html, /sweatshirt/i);
-  assert.deepStrictEqual(labelsIn(html), ['Choosing your size.', 'US Size', 'Bust (laid flat)', 'Body length']);
+  assert.deepStrictEqual(labelsIn(html), [
+    'Choosing your size.',
+    'US Size',
+    'Bust (laid flat)',
+    'Fits Chest',
+    'Body length',
+  ]);
 });
 
 test('the quarter-zip gains its zipper paragraph the same way', () => {
