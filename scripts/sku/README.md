@@ -56,9 +56,15 @@ Artifacts and receipts live **outside the repository**, in `~/.local/state/sku-t
 convention for tool state in a public repo rather than a second "safe to commit" class.
 
 ```
-plan  ->  plan-<planId>.json     the contract, hashed, includes the tables hash
-apply ->  receipt-<planId>.json  per-row outcome and each row's PRIOR SKU
+plan  ->  plan-<planId>.json                the contract, hashed, includes the tables hash
+apply ->  receipt-<planId>.json             per-row outcome and each row's PRIOR SKU
+apply ->  transcript-<planId>.log           everything apply printed, teed line by line
+          transcript-<planId>-dry-run.log   (the dry-run's own copy; re-runs overwrite it)
 ```
+
+The transcript exists because apply's output is gated: the operator approves against it, so a shell
+pipe or a truncating harness must never be able to drop lines unrecoverably. Its path is printed in
+apply's header.
 
 **An artifact is single-use.** The receipt file's existence is the spend record, and `apply` refuses
 a plan that already has one. Re-running a partially applied plan would skip the rows that landed
@@ -83,6 +89,7 @@ a second write path with a fraction of the review. See `docs/sku-scheme.md`.
 | `lib/artifact.mjs` | Hashed artifacts and incremental receipts |
 | `lib/apply.mjs` | Executes an artifact: baseline guard, batching, per-row outcomes |
 | `lib/mutations.mjs` | The one mutation, and per-row `userErrors` unpacking |
+| `lib/transcript.mjs` | Tees apply's gated output to a transcript file |
 | `lib/workdir.mjs` | Outside-repo working directory |
 | `check-tables.mjs` | Offline table lint (`npm run sku:tables`) |
 

@@ -36,6 +36,13 @@ Applies to every STOP in this file.
   a STOP or authorises the next step, however it is phrased.
 - **Present verbatim, in an adaptive fence** whose backtick run is longer than any run inside the
   output. Do not summarise a gate's contents: a gate the operator cannot check is not a gate.
+- **Run every gated command bare: never pipe or truncate its output.** No `tail`, `head`, `grep`
+  or any other filter on audit, plan, show, dry-run, apply or verify; a pipe can silently drop
+  failed-row lines before the operator sees them, and it reports the filter's exit code instead of
+  the tool's. If the harness persists a large output to a file, read and present from that file.
+  `apply` (dry-run included) also tees its full output to a transcript file next to the receipt
+  (the path is printed in its header); if presentation is ever in doubt, the transcript is the
+  verbatim record.
 - **A tables change voids everything downstream.** Any edit to `tables.json` invalidates every plan
   artifact and every approval that preceded it. `apply` enforces this through the tables hash
   embedded in the artifact; restart at step 1 regardless.
@@ -64,7 +71,9 @@ Applies to every STOP in this file.
    the artifact is the contract and `apply` re-derives nothing from it.
 
 5. **`apply --plan <artifact> --dry-run`.** Present verbatim. It performs the live baseline re-read
-   and reports what would be written, but writes nothing.
+   and reports what would be written, but writes nothing. Both apply modes print a `transcript`
+   path in their header and tee their full output there; use it whenever the terminal copy may be
+   incomplete.
    **STOP, separately, before the live run.** A dry-run approval is not an apply approval.
    Then `apply --plan <artifact>`.
 
