@@ -20,6 +20,8 @@
     "contrast:lint": "node scripts/contrast/check-contrast.mjs",
     "a11y:test": "node --test scripts/a11y/test/*.test.mjs",
     "blank-inventory:guard": "node scripts/blank-inventory/check-no-real-blank-ids.mjs",
+    "sku:test": "node --test scripts/sku/test/*.test.mjs",
+    "sku:tables": "node scripts/sku/check-tables.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs",
     "applique-grid:test": "node --test scripts/applique-grid/test/*.test.mjs",
     "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs"

@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "readme": "Variant SKU code tables. APPEND-ONLY: never reuse a retired code, and never edit a code that has shipped. Keys are the exact live option-value strings; copy them from `sku audit` output rather than retyping. See docs/sku-scheme.md before adding anything.",
+  "ambiguityExemptions": ["GIFT"],
+  "colors": {
+    "Black": "BLK",
+    "Grey Heather": "GRH",
+    "Classic Navy": "NVY"
+  },
+  "designs": {
+    "lead-ii": {
+      "RN (Registered Nurse)": "RN",
+      "LPN (Licensed Practical Nurse)": "LPN",
+      "CNA (Certified Nursing Assistant)": "CNA",
+      "EMT (Emergency Medical Technician)": "EMT",
+      "Medic": "MDC",
+      "LVT (Licensed Vet Tech)": "LVT",
+      "RVT (Registered Vet Tech)": "RVT",
+      "CVT (Certified Vet Tech)": "CVT"
+    },
+    "huddle": {
+      "Nurse": "NRS",
+      "EMT": "EMT",
+      "Medic": "MDC",
+      "Vet Tech": "VTT"
+    }
+  },
+  "denominations": {
+    "$10.00": "010",
+    "$25.00": "025",
+    "$50.00": "050",
+    "$100.00": "100",
+    "$150.00": "150"
+  },
+  "products": {
+    "lead-ii-crewneck": {
+      "code": "L2CN",
+      "title": "Lead II Crewneck",
+      "designNamespace": "lead-ii",
+      "segments": [
+        { "kind": "design", "option": "Design" },
+        { "kind": "color", "option": "Color" },
+        { "kind": "size", "option": "Size" }
+      ]
+    },
+    "lead-ii-quarter-zip": {
+      "code": "L2QZ",
+      "title": "Lead II Quarter-Zip",
+      "designNamespace": "lead-ii",
+      "segments": [
+        { "kind": "design", "option": "Design" },
+        { "kind": "color", "option": "Color" },
+        { "kind": "size", "option": "Size" }
+      ]
+    },
+    "lead-ii-vest-womens": {
+      "code": "L2VW",
+      "title": "Lead II Vest - Women's",
+      "designNamespace": "lead-ii",
+      "segments": [
+        { "kind": "design", "option": "Design" },
+        { "kind": "color", "option": "Color" },
+        { "kind": "size", "option": "Size" }
+      ]
+    },
+    "huddle-crewneck": {
+      "code": "HDCN",
+      "title": "Huddle Crewneck",
+      "designNamespace": "huddle",
+      "segments": [
+        { "kind": "design", "option": "Design" },
+        { "kind": "color", "option": "Color" },
+        { "kind": "size", "option": "Size" }
+      ]
+    },
+    "shift-fuel-crewneck": {
+      "code": "SFCN",
+      "title": "Shift Fuel Crewneck",
+      "segments": [
+        { "kind": "color", "option": "Color" },
+        { "kind": "size", "option": "Size" }
+      ]
+    },
+    "sapphire-shadow-studio-gift-card": {
+      "code": "GIFT",
+      "title": "Sapphire Shadow Studio Gift Card",
+      "skuWritable": true,
+      "segments": [{ "kind": "denomination", "option": "Denominations" }]
+    }
+  }
+}

@@ -1,5 +1,101 @@
 # Release Notes
 
+## Variant SKUs adopted, with the tooling that maintains them (unreleased)
+
+All 431 variants had a null SKU. The identifier was deferred on 2026-07-29 pending three questions,
+and this change answers them and adopts one: `<PRODUCT>-<DESIGN>-<COLOR>-<SIZE>`, derived from each
+variant's own public option values through committed code tables. The scheme, the code inventory and
+the runbook for adding a code live in `docs/sku-scheme.md`; the tool is `scripts/sku/`; the operator
+gates are the `sku` skill. No SKU has been written yet: this change ships the tooling, and the
+backfill is an operator-gated run after merge.
+
+### The decision, on operational merits rather than SEO ones
+
+The original SEO framing was overstated and is recorded here so it is not re-litigated. Google
+Merchant Center's required per-variant identifier is `id`, which Shopify fills from the variant id;
+SKU maps only to the optional `mpn`, and made-to-order goods with no GTIN set
+`identifier_exists: false` either way. What SKUs actually buy is operational: readable packing
+slips, exports that sort into the order a batch is worked in, a value frozen onto the order line at
+purchase, and a join key for later barcode tooling. There is no `SSS-` brand prefix; on a
+single-brand store it carries no information and costs four characters of a 16-character budget.
+
+The real cost was never new products, it was new option values. One new colour on a Lead II product
+creates 48 variants. That is why the tables are data (`scripts/sku/tables.json`) rather than logic:
+adding a colour is one row and the tool then fills all 48, and `audit` names the exact live option
+string to use as the key.
+
+### Cross-layer contracts worth knowing before touching this
+
+- **The tables are the source of truth and are append-only.** A retired code is never reused,
+  because every historical order line, export and packing slip already carries it. The git history
+  of `tables.json`, not the current file, is the authority on what has been used.
+- **A tables edit voids every approved plan.** Each plan artifact embeds the tables hash and `apply`
+  refuses on a mismatch. Without that, an edit between approval and apply would produce a different
+  but perfectly plausible set of writes under the same approval, because a SKU is a pure function of
+  the tables.
+- **The leading-zero rule is about the assembled SKU, not the segments.** A SKU must never start
+  with `0` (spreadsheets and some barcode tooling strip it), but gift denominations are deliberately
+  zero-padded (`GIFT-050`). Do not "fix" the padding.
+- **A half-populated SKU field is worse than an empty one**, because a SKU filter then silently
+  returns an incomplete set. That is why the planner refuses the whole plan on any unmapped value,
+  duplicate expected SKU, or collision with a live SKU, rather than writing the rows it can.
+- **A SKU is not `custom.inventory_blank_sku`.** One identifies the finished piece as sold and is
+  public; the other identifies the shared blank garment and embeds supplier data that must never
+  reach this public repo. `docs/sku-scheme.md` has the comparison table.
+- **Applique patterns stay out of the SKU.** They are a line-item property backed by
+  `scripts/applique-grid/patterns.json`, on a different change clock from the variants.
+
+### Two things settled against the live API rather than from memory
+
+**`ProductVariantsBulkInput` has no top-level `sku` field.** The SKU lives on the variant's inventory
+item, so the input is `inventoryItem: { sku }`; a top-level `sku` is rejected by the schema outright.
+Verified with `validate_graphql_codeblocks` against the pinned API version. The response selects
+`productVariants { id sku }` and deliberately not `inventoryItem { sku }`, because reading the nested
+inventory item adds a `read_inventory` scope requirement to a tool that otherwise needs only
+`write_products`. `assertScopes` in `scripts/blank-inventory/lib/admin.mjs` grew an optional
+`required` parameter for that reason: demanding `write_inventory` of a tool that never touches
+inventory would train the operator to widen the app's grants for no reason.
+
+**Gift cards go through the same write path.** Shopify's dedicated `giftCardProductSet` is
+deliberately not used: it performs a full replacement of the variant list, a catastrophic blast
+radius for setting one field. If the API turns out to refuse SKU writes on gift-card variants, the
+answer is the `skuWritable: false` flag on that product entry, which moves its nulls into an
+**exempt** class so the steady state stays "0 actionable nulls and exit 0" instead of permanent
+failure.
+
+### A defect the dry run caught before any write existed
+
+The first end-to-end rehearsal failed all 431 rows with "missing field(s): product". `apply`'s
+baseline guard re-reads each product's variants **nested under the product**, so those nodes carry no
+`product` field and no options, but the read was asserting the full catalogue-wide variant shape.
+The fix splits the assertion: `assertVariantShape` for the catalogue read, `assertSkuShape` (an id
+and a selected `sku`) for the baseline re-read. Each read is now strict about what it consumes rather
+than about what some other read consumes. The regression is covered in
+`scripts/sku/test/catalogue.test.mjs`.
+
+The narrower assertion still refuses a node with no `sku` **key**, which is not pedantry: an
+unselected field and a null value are indistinguishable downstream, so a query that stopped selecting
+`sku` would read as "no SKU everywhere" and plan a write over every real one.
+
+### Recovery is manual from the receipt, by design
+
+There is no `revert` command. Every receipt row records the prior SKU (the baseline is read anyway,
+to guard against a row that moved between plan and apply), so recovery is applying those baselines
+back through the same gated flow. An automatic rollback would be a second write path with a fraction
+of the review, which is the wrong shape for the one field whose corruption is hardest to notice. A
+plan artifact is also single-use: the receipt file's existence is the spend record, because
+re-running a partially applied plan would skip the rows that landed while retrying the rest against a
+store that has since moved.
+
+### CI
+
+`npm run sku:test` and `npm run sku:tables` are two separate `validate` steps so a failure attributes
+cleanly: a broken table is an operator edit, a broken test is a code change. Both are offline. The
+test step's zero-tests guard is anchored to the reporter's own summary line by field position rather
+than a loose `grep` for "tests N", which a test *name* can match; the lint step fails when it reports
+zero codes checked, so an emptied `tables.json` cannot pass vacuously. Nothing live runs in CI, and
+the enforcement behind that is the credential boundary: the validate job holds no Shopify token.
+
 ## The last two deferred review findings closed without code (unreleased)
 
 [SA-9] and [AR-Gap-1] were the final entries in `TODO.md`'s "Deferred review findings" section;

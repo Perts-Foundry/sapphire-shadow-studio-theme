@@ -190,16 +190,22 @@ export function createAdminClient(opts = {}) {
 /**
  * Verify the app grants what this tool needs. Capability is not authorization: a passing scope
  * check never substitutes for an operator approval gate.
+ *
+ * `required` is a parameter because this client is shared with scripts/sku/, which writes variant
+ * SKUs and needs only write_products. Demanding write_inventory of a tool that never touches
+ * inventory would train the operator to widen the app's grants for no reason.
+ *
  * @param {AdminClient} client
+ * @param {string[]} [required] - defaults to this module's REQUIRED_SCOPES
  * @returns {Promise<string[]>} the granted scopes
  */
-export async function assertScopes(client) {
+export async function assertScopes(client, required = REQUIRED_SCOPES) {
   const granted = await client.scopes();
-  const missing = missingScopes(granted);
+  const missing = missingScopes(granted, required);
   if (missing.length) {
     throw new Error(
       `Missing required scope(s): ${missing.join(', ')}. The app must grant ` +
-        `${REQUIRED_SCOPES.join(' + ')}. Apply the changes in Admin by hand until then.`
+        `${required.join(' + ')}. Apply the changes in Admin by hand until then.`
     );
   }
   return granted;
