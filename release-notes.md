@@ -33,11 +33,16 @@ to text for this branch. The featured-content column is unaffected: it keys off 
 type, and a catalog parent still resolves `collections.all`, which is why the desktop dropdown keeps
 its product cards alongside the generated list.
 
+**Order is the `collections` drop's order, and it is not operator-controllable.** No `sort` filter is applied, so the dropdown lists collections the way Liquid hands them over. There is no way to pin one first short of renaming it or giving the link an authored submenu again, which turns the whole feature off. That is also what the 50-item cap means in practice: at 51 collections it is the tail of that order that silently stops appearing.
+
 **The list is capped at 50, which is Liquid's own per-loop ceiling, not a design choice.** The cap is
 written out explicitly (`limit: 50`, and the desktop column math takes `collections.size | at_most:
-50`) so the column count cannot describe more items than the loop emits. At three collections none of
-this is visible; at 51 the nav would silently stop listing everything, which is the point at which a
-generated dropdown stops being the right shape for the menu.
+50`) so the column count cannot describe more items than the loop emits. The span is clamped to 4 for
+the same reason: `mega-menu__column--span-N` is only defined up to 4, and 41 collections were enough
+to compute 5, at which point the column would fall back to a single grid cell while its inner
+`column-count` kept laying out five. At three collections none of this is visible; at 51 the nav
+would silently stop listing everything, which is the point at which a generated dropdown stops being
+the right shape for the menu.
 
 ## Fits Chest column on the women's microfleece vest size chart (unreleased)
 

@@ -22,6 +22,15 @@ three are resolved, see `release-notes.md`.) What the pass verified as clean is 
 `release-notes.md`, not here, so it does not get re-audited. The 2026-08-14 backlog triage closed out
 several of the pass's other findings.
 
+- [ ] **`docs/collection-differentiation-runbook.md` is stale on two counts.** Its Risks > Discovery
+  paragraph reasons from `all-products` (deleted 2026-08-16) and from "one nav", and the "fewer
+  collections" paragraph still lists `all-products` as one of four names for one catalogue. Both
+  premises are gone: every published collection is now its own nav entry on desktop and mobile, so
+  `featured` and `healthcare` (identical five products) sit adjacent in the dropdown as two labels
+  for one grid, which makes the differentiation work more urgent, not less. The runbook also wants a
+  short "before you create, rename, publish, or merge a collection" preamble, since collection titles
+  are now storefront nav copy.
+
 - [ ] **[LAUNCH BLOCKER] All 431 variants weigh 0 lb while Expedited is weight-tiered.** The live rate
   table on the General profile prices Expedited at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9),
   and $80 (9+).

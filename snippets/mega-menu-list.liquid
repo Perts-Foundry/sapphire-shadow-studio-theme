@@ -95,7 +95,10 @@
         assign links_before_wrap = links_before_wrap | minus: 1
       endif
       assign break_after_float = links_before_wrap | times: 1.0
-      assign column_span = dynamic_count | divided_by: break_after_float | ceil | at_least: 1
+      # Clamped to 4: `mega-menu__column--span-N` is only defined up to 4, and a
+      # wider span would silently fall back to one grid cell while the inner
+      # `column-count` kept laying out more columns inside it.
+      assign column_span = dynamic_count | divided_by: break_after_float | ceil | at_least: 1 | at_most: 4
       assign column_count = column_span
     %}
     <li class="mega-menu__column mega-menu__column--span-{{ column_span }}">
