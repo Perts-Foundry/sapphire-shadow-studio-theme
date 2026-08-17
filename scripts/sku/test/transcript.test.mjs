@@ -34,6 +34,33 @@ test('withTranscript truncates a stale transcript from an earlier run', async ()
   assert.equal(readFileSync(file, 'utf8'), 'fresh\n');
 });
 
+// The sole production caller (cmdApply) is async and logs across await boundaries, so the tee must
+// stay installed until the callback settles, not just until it returns its promise.
+test('withTranscript keeps the tee installed across await boundaries', async () => {
+  const file = path.join(tmp(), 't.log');
+  await withTranscript(file, async () => {
+    console.log('before await');
+    await new Promise((resolve) => setImmediate(resolve));
+    console.log('after await');
+  });
+  assert.equal(readFileSync(file, 'utf8'), 'before await\nafter await\n');
+});
+
+test('withTranscript records lines logged after an await when the callback then rejects', async () => {
+  const file = path.join(tmp(), 't.log');
+  const originalLog = console.log;
+  await assert.rejects(
+    withTranscript(file, async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      console.log('post-await, pre-crash');
+      throw new Error('async crash');
+    }),
+    /async crash/
+  );
+  assert.equal(console.log, originalLog);
+  assert.equal(readFileSync(file, 'utf8'), 'post-await, pre-crash\n');
+});
+
 test('withTranscript restores console on success and on throw', async () => {
   const dir = tmp();
   const originalLog = console.log;

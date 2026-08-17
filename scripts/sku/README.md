@@ -58,7 +58,7 @@ convention for tool state in a public repo rather than a second "safe to commit"
 ```
 plan  ->  plan-<planId>.json                the contract, hashed, includes the tables hash
 apply ->  receipt-<planId>.json             per-row outcome and each row's PRIOR SKU
-apply ->  transcript-<planId>.log           everything apply printed, teed line by line
+apply ->  transcript-<planId>.log           apply's gated output, teed line by line
           transcript-<planId>-dry-run.log   (the dry-run's own copy; re-runs overwrite it)
 ```
 
