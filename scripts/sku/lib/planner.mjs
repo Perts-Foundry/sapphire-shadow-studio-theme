@@ -63,6 +63,14 @@ export function buildPlan(report, opts = {}) {
       continue;
     }
     if (r.status === OK || r.status === MISS) continue;
+    if (r.status === MISMATCH && !r.writable) {
+      refused.push({
+        variantId: r.variantId,
+        productHandle: r.productHandle,
+        reason: `has SKU "${r.sku}" but derives "${r.expected}"; product is marked skuWritable: false in tables.json, so no write is planned`,
+      });
+      continue;
+    }
     if (r.status === MISMATCH && !includeMismatches) {
       refused.push({
         variantId: r.variantId,

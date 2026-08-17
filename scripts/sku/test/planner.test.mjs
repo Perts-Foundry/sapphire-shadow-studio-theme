@@ -74,6 +74,19 @@ test('an exempt product is refused into the not-in-plan list, not written', () =
   assert.match(plan.refused[0].reason, /skuWritable: false/);
 });
 
+test('a mismatch on an exempt product stays refused even with --include-mismatches', () => {
+  const tables = JSON.parse(JSON.stringify(TABLES));
+  tables.products['sapphire-shadow-studio-gift-card'].skuWritable = false;
+  const rows = [
+    variant('sapphire-shadow-studio-gift-card', { Denominations: '$10.00' }, { id: 'g1', sku: 'HAND-TYPED' }),
+    variant('shift-fuel-crewneck', { Color: 'Black', Size: 'M' }, { id: 'v1' }),
+  ];
+  const plan = planOf(tables, rows, { includeMismatches: true });
+  assert.deepEqual(plan.rows.map((r) => r.variantId), ['v1']);
+  assert.equal(plan.refused[0].variantId, 'g1');
+  assert.match(plan.refused[0].reason, /skuWritable: false/);
+});
+
 test('nothing to write is a refusal, not an empty plan that looks applicable', () => {
   const rows = [variant('shift-fuel-crewneck', { Color: 'Black', Size: 'M' }, { sku: 'SFCN-BLK-M' })];
   assert.throws(() => planOf(TABLES, rows), /nothing to write/);

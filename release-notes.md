@@ -20,8 +20,8 @@ purchase, and a join key for later barcode tooling. There is no `SSS-` brand pre
 single-brand store it carries no information and costs four characters of a 16-character budget.
 
 The real cost was never new products, it was new option values. One new colour on a Lead II product
-creates 36 variants. That is why the tables are data (`scripts/sku/tables.json`) rather than logic:
-adding a colour is one row and the tool then fills all 36, and `audit` names the exact live option
+creates 48 variants. That is why the tables are data (`scripts/sku/tables.json`) rather than logic:
+adding a colour is one row and the tool then fills all 48, and `audit` names the exact live option
 string to use as the key.
 
 ### Cross-layer contracts worth knowing before touching this

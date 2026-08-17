@@ -122,7 +122,7 @@ it.
    Start the pipeline again from `audit`.
 
 New **option values on an existing product** are the real ongoing cost, not new products. One new
-colour on `lead-ii-crewneck` creates 36 variants (8 designs x 6 sizes) and needs exactly one new
+colour on `lead-ii-crewneck` creates 48 variants (8 designs x 6 sizes) and needs exactly one new
 table row; the tool then fills all 36. A half-populated SKU field is worse than an empty one,
 because a SKU filter silently returns an incomplete set, so run `audit` after any option change.
 
