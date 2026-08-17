@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { previewUrl, classifyPreview, getAuthCookie, originOf } from '../get-auth-cookie.mjs';
+import { previewUrl, classifyPreview, getAuthCookie, originOf, isTransientPreviewFailure } from '../get-auth-cookie.mjs';
 
 const BASE = 'https://shop.example';
 const THEME = '999';
@@ -292,6 +292,99 @@ test('a connection failure on the probe is NOT retried; it fails closed at once'
   assert.equal(probes, 1);
   assert.equal(out.ok, false);
   assert.match(out.reason, /connection failure/);
+});
+
+test('isTransientPreviewFailure: only a 3xx bounce to /password qualifies', () => {
+  assert.equal(isTransientPreviewFailure({ status: 302, redirectPath: '/password' }), true);
+  assert.equal(isTransientPreviewFailure({ status: 302, redirectPath: '/password?foo=1' }), true);
+  assert.equal(isTransientPreviewFailure({ status: 302, redirectPath: '/elsewhere' }), false);
+  assert.equal(isTransientPreviewFailure({ status: 200, redirectPath: null }), false);
+  assert.equal(isTransientPreviewFailure({ status: null, redirectPath: null }), false);
+  assert.equal(isTransientPreviewFailure({ status: 404, redirectPath: null }), false);
+});
+
+test('a preview bounce to /password is retried and succeeds once servable', async () => {
+  // The CI failure this retry exists for: the probe raced the preview-theme
+  // push, auth succeeded, and the preview request was 302-bounced back to the
+  // password wall. On the next attempt the theme has become servable.
+  const slept = [];
+  let probes = 0;
+  const fetchImpl = authedFetch(() => {
+    probes += 1;
+    if (probes === 1) return res({ status: 302, headers: { location: '/password' } });
+    return res({ status: 200, headers: timing(THEME), cookies: ['preview_theme=999'] });
+  });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    authBackoff: [1, 2], sleepImpl: async (ms) => { slept.push(ms); },
+  });
+  assert.equal(probes, 2);
+  assert.deepEqual(slept, [1]);
+  assert.equal(out.ok, true, out.reason);
+  assert.ok(out.log.some((l) => /preview probe: 302 theme=- redirect=\/password/.test(l)), 'the probe line must surface the redirect target');
+  assert.ok(out.log.some((l) => /preview not ready .* retry 1\/2/.test(l)), 'the retry must be logged');
+});
+
+test('a bounce retry re-authenticates from a cleared jar', async () => {
+  let posts = 0;
+  let probes = 0;
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.endsWith('/password') && opts.method === 'POST') {
+      posts += 1;
+      return res({ status: 302, headers: { location: '/' }, cookies: ['d=1'] });
+    }
+    if (url.endsWith('/password')) return res({ status: 200 });
+    if (url.includes('preview_theme_id')) {
+      probes += 1;
+      if (probes === 1) return res({ status: 302, headers: { location: '/password' } });
+      return res({ status: 200, headers: timing(THEME) });
+    }
+    return res({ status: 302, headers: { location: '/password' } });
+  };
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    authBackoff: [1], sleepImpl: async () => {},
+  });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(posts, 2, 'the password must be re-posted after a bounce, in case the digest cookie went stale');
+});
+
+test('a preview that never stops bouncing exhausts retries and fails closed', async () => {
+  const slept = [];
+  let probes = 0;
+  const fetchImpl = authedFetch(() => {
+    probes += 1;
+    return res({ status: 302, headers: { location: '/password' } });
+  });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    authBackoff: [1, 2], sleepImpl: async (ms) => { slept.push(ms); },
+  });
+  assert.equal(probes, 3, 'one attempt per authBackoff entry, then give up');
+  assert.deepEqual(slept, [1, 2]);
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /expected 200, got 302/);
+  assert.match(out.reason, /redirect to \/password persisted across 3 attempts/);
+  assert.equal(out.cookie, '');
+});
+
+test('the wrong theme being served is never retried', async () => {
+  // Auth ok, pin failed, live theme served: the silent-fallback case must
+  // still fail on the first attempt, not after minutes of retrying.
+  const slept = [];
+  let probes = 0;
+  const fetchImpl = authedFetch(() => {
+    probes += 1;
+    return res({ status: 200, headers: timing('111') });
+  });
+  const out = await getAuthCookie({
+    baseUrl: BASE, themeId: THEME, password: 'p', fetchImpl,
+    authBackoff: [1, 2], sleepImpl: async (ms) => { slept.push(ms); },
+  });
+  assert.equal(probes, 1);
+  assert.deepEqual(slept, []);
+  assert.equal(out.ok, false);
+  assert.match(out.reason, /served theme 111/);
 });
 
 test('a 5xx on the password POST reports error, matching smoke.mjs', async () => {
