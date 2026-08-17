@@ -10,9 +10,13 @@ existed and had no user.
 
 **Where the numbers come from, since they are otherwise unexplainable later.** Bust laid flat
 doubles to garment circumference (34.5 / 36.5 / 38.5 / 41.5 / 44.5 / 47.5 in). Each size's range is
-that circumference minus roughly 2 to 4.5 inches of layering ease, which is what a vest worn over a
-base layer needs, and the ranges are then tiled contiguously (30-32, 32-34, 34-37, 37-40, 40-43,
-43-46) so no chest measurement can fall between two sizes. The operator confirmed the table before
+that circumference minus layering ease, which is what a vest worn over a base layer needs: the low
+end of every range sits a constant 4.5 inches under the circumference, and the high end sits 2.5
+inches under at XS and S, 1.5 inches at M and up, which is what tiling the ranges contiguously
+(30-32, 32-34, 34-37, 37-40, 40-43, 43-46) costs once the blank's own size steps stop being even.
+Contiguity is the property worth preserving: no chest measurement can fall between two sizes. The
+constant low-end ease is the fit promise; the high-end figure is a consequence of it. The operator
+confirmed the table before
 it was written; a fit range is a merchandising claim, not a transcription of a manufacturer spec, so
 it does not get regenerated from the blank's numbers on a whim. Widening the ease shifts every row.
 
