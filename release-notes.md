@@ -1,5 +1,33 @@
 # Release Notes
 
+## Fits Chest column on the women's microfleece vest size chart (unreleased)
+
+The vest was the one blank whose chart offered no way in for a shopper without a reference garment:
+bust laid flat and body length only, no derived circumference and no fit range. It now carries a
+`body_chest_range` column, "Fits Chest", in both outputs. No engine change was needed; the `range`
+kind, the role's sane-range and monotonicity validation, and the accordion paragraph all already
+existed and had no user.
+
+**Where the numbers come from, since they are otherwise unexplainable later.** Bust laid flat
+doubles to garment circumference (34.5 / 36.5 / 38.5 / 41.5 / 44.5 / 47.5 in). Each size's range is
+that circumference minus roughly 2 to 4.5 inches of layering ease, which is what a vest worn over a
+base layer needs, and the ranges are then tiled contiguously (30-32, 32-34, 34-37, 37-40, 40-43,
+43-46) so no chest measurement can fall between two sizes. The operator confirmed the table before
+it was written; a fit range is a merchandising claim, not a transcription of a manufacturer spec, so
+it does not get regenerated from the blank's numbers on a whim. Widening the ease shifts every row.
+
+**Two conventions this column follows on purpose.** It carries no `badge` and no `how`: those bind a
+column to an anchor point on the garment diagram, and this is a body measurement, so a badge would
+also fail validation. Its body-measurement instruction (soft tape, fullest part of the chest,
+parallel to the floor) lives in the column's own `explain`, per the rule in `copy.md` that shared
+copy never tells a shopper to measure themselves; the other two blanks have no such column and must
+not inherit the instruction. The vest profile's `how_to.note` gained an exception clause for the
+same reason, while the shared accordion intro's laid-flat framing was left alone.
+
+`test/table-block.test.mjs` pins the vest's paragraph-label list, so the assertion that the vest
+grows no sleeve or circumference prose keeps its teeth; the added label is the only edit it needed.
+The refreshed PNG is an operator upload in Admin, not a repo artifact.
+
 ## Collection-list cleanup: all-products deleted, bare collections imaged (2026-08-16, Admin-only)
 
 Two pre-launch-review findings closed with no theme change; recorded here because both were
