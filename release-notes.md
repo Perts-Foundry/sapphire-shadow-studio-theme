@@ -1,5 +1,33 @@
 # Release Notes
 
+## The last two deferred review findings closed without code (unreleased)
+
+[SA-9] and [AR-Gap-1] were the final entries in `TODO.md`'s "Deferred review findings" section;
+both are now closed as decisions rather than implementations, and the section is gone.
+
+**[SA-9] closed: keep the single `validate` required context.** The item's original complaint
+(four separate required contexts on `main`) was already solved by the single-`validate`-job
+consolidation; what remained was only whether to keep that arrangement or split it back out. The
+answer is keep it. Splitting into per-check jobs would buy parallel wall-clock time and per-check
+status badges, at the cost of more `ci_check_contexts` entries to keep in sync in the private
+infrastructure repo, the loss of the one consolidated CI report comment, and more surface for the
+failure mode [DS-10] documented: rename a job here and `main` requires a context that no longer
+reports. For a solo-dev repo with a fast validate job, one rolled-up context is the right shape.
+The infrastructure repo's `github.tf` already carries an in-file comment explaining why
+`["validate"]` is sufficient, so nothing changes there either.
+
+**[AR-Gap-1] closed as won't-do: no issue-based deploy audit ledger.** The gap (workflow logs
+expire after 90 days, so no durable auto-deploy history) is real but already half-covered:
+`deploy.yml`'s "Record live-deploy marker" step keeps `refs/deploy-markers/live` on the last
+actually-deployed commit, and `main`'s squash-merge history is itself a permanent, ordered record
+of every deploy, since a deploy and a squash-merge are the same event in this pipeline. The
+proposed extra step (append a structured one-line comment per deploy to a pinned
+`auto-deploy-audit` issue) would add a second bookkeeping surface, a hardcoded issue number, and a
+public-repo issue to keep locked, to answer questions the merge history already answers. If a
+parseable ledger is ever actually needed, the design is on record: a `continue-on-error`
+github-script step after the marker step, `issues: write` is already granted, fields from
+`needs.gate.outputs`, fixed-separator line format.
+
 ## Admin backlog batch, and a silent truncation in the media uploader (unreleased)
 
 Five Admin-side backlog items were cleared against the live store: the gift card's empty
