@@ -46,20 +46,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   `custom.inventory_blank_sku`, which identifies the shared blank garment rather than the finished
   piece, so the two do not collide.
 
-- [ ] **Reshoot Shift Fuel's Grey Heather full-garment photos.** The stealth-colourway copy shipped,
-  but the merchandising half did not, and a media reorder cannot deliver it. White thread on light
-  heather survives neither downscaling nor a full-garment framing: at the 96px a cart line-item
-  thumbnail renders, `shift-fuel_crew-sweater_grey-heather_flat-1.jpg` shows no design at all, and
-  the angled shot is no better. The other three Grey Heather products are fine (Huddle's `VETTECH`
-  applique is legible at 96px, and both Lead II lines show a visible mark), so this is one blank
-  garment on one product, not a colourway-wide problem.
-  A media reorder is not the fix and would be a no-op: `snippets/product-media-gallery-content.liquid`
-  pins the selected variant's attached media to gallery position 1, so the attached hero outranks
-  Admin media order. Changing which photo leads means changing the hero, and Shopify caps a variant
-  at one attached media, so that means detaching first. The durable fix is a full-garment Grey
-  Heather shot that survives downscaling (raking light, or a tighter three-quarter crop that keeps
-  the lettering large), after which the hero can be re-pointed. Photography plus Admin.
-
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
@@ -83,9 +69,6 @@ several of the pass's other findings.
   no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
   under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
   plus possibly the template.
-- [ ] **The gift card product has no photograph.** The description shipped, so the page is no longer
-  blank, but its only media is still the 500x500 `SSS-Square-White-BG-svg.svg` logo. It is the one
-  product page with no photograph. Admin (product media).
 - [ ] **Three of the four collections have no collection image**, and the "Catalog" menu entry points
   at `/collections`, which renders all four as cards. Only The Vitals Collection has an image; the
   other three fall back to a product photo or a placeholder. That page also shows Featured and All

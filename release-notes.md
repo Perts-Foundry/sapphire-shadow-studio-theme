@@ -63,9 +63,23 @@ means changing which photo leads a colour requires detaching the hero first, not
 A planned one-off reorder script for Shift Fuel's Grey Heather was dropped on this basis: it would
 have been a live write with no visible effect.
 
-The Grey Heather merchandising item stays open in `TODO.md` as a reshoot rather than a reorder, since
-white thread on light heather shows nothing at the 96px a cart thumbnail renders, and the flat and
-angled shots are equally blank. The root cause is the photography, not the media order.
+### Two halves deliberately did not land, and are not in `TODO.md`
+
+The backlog is kept to open actions, and the operator's call on this pass was to close both parent
+items out rather than carry a remainder. Recorded here instead so the decisions are not lost:
+
+**Shift Fuel's Grey Heather is still a blank-looking garment**, and a media reorder will not fix it.
+White thread on light heather shows no design at the 96px a cart thumbnail renders, on the flat and
+angled shots alike; only the close-up reveals it. The hero decision was flat-everywhere with no
+per-product exception, so that colour's cart thumbnail and gallery lead are both the blank flat.
+Anyone revisiting this should reach for the camera, not the media order: the position-1 pin above
+means the hero has to be detached and re-pointed, and the durable fix is a full-garment shot that
+survives downscaling (raking light, or a tighter crop that keeps the lettering large). The other
+three Grey Heather products are unaffected, so this is one photograph on one product.
+
+**The gift card still has no photograph.** The description shipped and the page is no longer blank,
+but its only media remains the 500x500 logo SVG, making it the one product page with no photograph.
+The photograph was out of scope for this pass by design; the description was the whole of it.
 
 ## Accessibility baseline burn-down (unreleased)
 
