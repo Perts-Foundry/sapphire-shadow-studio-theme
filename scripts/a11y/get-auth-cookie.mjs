@@ -125,6 +125,29 @@ export function classifyPreview({ status, themeDesc, expectedThemeId, finalHost,
 }
 
 /**
+ * Is a failed preview probe worth retrying the whole auth+probe sequence for?
+ * True only for the one transient shape observed in CI: an authenticated
+ * session whose preview request is 3xx-bounced back to the password wall,
+ * which is what Shopify serves in the window between a preview theme being
+ * pushed and it becoming renderable (and what a transiently stale
+ * storefront_digest cookie produces). Everything else keeps its existing
+ * fail-closed semantics: connection failures, interstitials (200 without a
+ * theme id) and the wrong theme being served all fail at once, because
+ * retrying them either cannot help or would mask the exact silent-fallback
+ * failure this script exists to catch.
+ * @param {{status: number|null, redirectPath: string|null}} pinned
+ * @returns {boolean}
+ * @example
+ *   isTransientPreviewFailure({ status: 302, redirectPath: '/password' }) // true
+ */
+export function isTransientPreviewFailure(pinned) {
+  return pinned.status !== null
+    && pinned.status >= 300 && pinned.status < 400
+    && typeof pinned.redirectPath === 'string'
+    && /^\/password/.test(pinned.redirectPath);
+}
+
+/**
  * One request chain, following redirects manually so cookies are captured at
  * every hop and a /password bounce is visible rather than followed away.
  * @returns {Promise<{status: number|null, themeDesc: string|null, finalHost: string|null, redirectPath: string|null}>}
@@ -208,6 +231,7 @@ export async function getAuthCookie({
   fetchImpl = globalThis.fetch,
   timeoutMs = 30000,
   backoff = [8000, 20000],
+  authBackoff = [15000, 30000, 60000, 60000],
   sleepImpl = sleep,
 } = {}) {
   const jar = new Map();
@@ -227,33 +251,71 @@ export async function getAuthCookie({
   //    Unlike smoke.mjs, every non-success outcome fails here. There is no
   //    reduced-coverage fallback to drop to; an unauthenticated pa11y run would
   //    audit the password page and report green on it.
-  if (mode === 'LOCKED') {
-    if (!password) {
-      return {
-        ok: false, cookie: '', mode, log,
-        reason: 'storefront is password-locked but STOREFRONT_PASSWORD is empty',
-      };
-    }
-    const outcome = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep: sleepImpl, backoff });
-    say(`auth: ${outcome}`);
-    if (outcome !== 'success') {
-      return { ok: false, cookie: '', mode, log, reason: `storefront password ${outcome}` };
-    }
+  if (mode === 'LOCKED' && !password) {
+    return {
+      ok: false, cookie: '', mode, log,
+      reason: 'storefront is password-locked but STOREFRONT_PASSWORD is empty',
+    };
   }
 
-  // 3. Pin the preview theme, then assert we actually got it. The pin arrives
-  //    as a cookie on this request, so the same request both sets and proves it.
-  const pinned = await probe(previewUrl(baseUrl, themeId), opts);
-  say(`preview probe: ${pinned.status ?? '000'} theme=${pinned.themeDesc ?? '-'}`);
-  const verdict = classifyPreview({
-    status: pinned.status,
-    themeDesc: pinned.themeDesc,
-    expectedThemeId: themeId,
-    finalHost: pinned.finalHost,
-    expectedHost,
-  });
-  if (!verdict.ok) {
-    return { ok: false, cookie: '', canonicalBaseUrl: baseUrl, mode, log, reason: verdict.reason };
+  // Steps 2 and 3 run inside a retry loop keyed on ONE failure shape: an
+  // authenticated session whose preview request is bounced back to /password
+  // (isTransientPreviewFailure). CI hits this when the probe races the
+  // preview-theme push; Shopify serves the bounce for a short window after the
+  // push succeeds. Each retry starts from a cleared jar and re-authenticates,
+  // in case the digest cookie itself went stale. Every other failure keeps its
+  // one-shot fail-closed behaviour, so a wrong password, a wrong theme or an
+  // interstitial still fails on the first attempt.
+  let pinned; let verdict;
+  const attempts = authBackoff.length + 1;
+  for (let attempt = 0; ; attempt += 1) {
+    // 2. Authenticate when locked, through smoke.mjs's own auth flow rather
+    //    than a second copy of it: the header set, the retry rules and the
+    //    success/rejected/throttled/error distinction are all decided there.
+    //    Unlike smoke.mjs, every non-success outcome fails here. There is no
+    //    reduced-coverage fallback to drop to; an unauthenticated pa11y run
+    //    would audit the password page and report green on it.
+    if (mode === 'LOCKED') {
+      if (attempt > 0) jar.clear();
+      const outcome = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep: sleepImpl, backoff });
+      say(`auth: ${outcome}`);
+      if (outcome !== 'success') {
+        // A rejected password can only mean the secret is wrong; retrying it
+        // would just hammer the wall. throttled/error already exhausted their
+        // own backoff inside authenticateStorefront, so on the first attempt
+        // they keep failing at once; on a retry attempt (where the loop's own
+        // clock is already running) they get to ride the remaining schedule.
+        if (outcome === 'rejected' || attempt === 0 || attempt >= authBackoff.length) {
+          return { ok: false, cookie: '', mode, log, reason: `storefront password ${outcome}` };
+        }
+        say(`auth ${outcome}; retry ${attempt + 1}/${authBackoff.length} in ${authBackoff[attempt] / 1000}s`);
+        await sleepImpl(authBackoff[attempt]);
+        continue;
+      }
+    }
+
+    // 3. Pin the preview theme, then assert we actually got it. The pin
+    //    arrives as a cookie on this request, so the same request both sets
+    //    and proves it.
+    pinned = await probe(previewUrl(baseUrl, themeId), opts);
+    say(`preview probe: ${pinned.status ?? '000'} theme=${pinned.themeDesc ?? '-'}${pinned.redirectPath ? ` redirect=${pinned.redirectPath}` : ''}`);
+    verdict = classifyPreview({
+      status: pinned.status,
+      themeDesc: pinned.themeDesc,
+      expectedThemeId: themeId,
+      finalHost: pinned.finalHost,
+      expectedHost,
+    });
+    if (verdict.ok) break;
+    if (isTransientPreviewFailure(pinned) && attempt < authBackoff.length) {
+      say(`preview not ready (redirect to /password); retry ${attempt + 1}/${authBackoff.length} in ${authBackoff[attempt] / 1000}s`);
+      await sleepImpl(authBackoff[attempt]);
+      continue;
+    }
+    const reason = isTransientPreviewFailure(pinned)
+      ? `${verdict.reason} (redirect to /password persisted across ${attempts} attempts)`
+      : verdict.reason;
+    return { ok: false, cookie: '', canonicalBaseUrl: baseUrl, mode, log, reason };
   }
 
   // Hand back the origin the store actually canonicalised to, so pa11y can
