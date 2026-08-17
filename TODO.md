@@ -36,19 +36,6 @@ several of the pass's other findings.
   no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
   under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
   plus possibly the template.
-- [ ] **Three of the four collections have no collection image**, and the "Catalog" menu entry points
-  at `/collections`, which renders all four as cards. Only The Vitals Collection has an image; the
-  other three fall back to a product photo or a placeholder. That page also shows Featured and All
-  Products alongside the two real collections, which is the collection-list equivalent of the
-  duplicate-grid problem tracked in `docs/collection-differentiation-runbook.md`. Admin (collection images, or point Catalog at
-  `/collections/all`).
-- [ ] **The `all-products` smart collection's rules are junk that happens to work.** They are
-  `VARIANT_PRICE > -1` OR `VARIANT_INVENTORY < 0`, matching on any condition: the first rule catches
-  everything and the second matches nothing. Flipping the match to "all conditions" in Admin would
-  empty the collection silently. Replace with a single honest rule, or make it manual. Note the footer
-  "All Products" link points at `/collections/all` (Shopify's built-in), not at this collection, so
-  the blast radius today is the collection-list page. Admin.
-
 ## Size-chart tooling
 
 Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent
