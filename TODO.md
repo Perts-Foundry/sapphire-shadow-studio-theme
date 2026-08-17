@@ -9,8 +9,7 @@ why it went that way), write that into `release-notes.md` as part of the same ch
 item here.
 
 Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas),
-[Size-chart tooling](#size-chart-tooling) (`scripts/size-chart/`),
-[Deferred review findings](#deferred-review-findings) (from pre-PR reviews).
+[Size-chart tooling](#size-chart-tooling) (`scripts/size-chart/`).
 
 ## Product and storefront
 
@@ -103,15 +102,3 @@ those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1
   "which size fits your chest" lookup. Note the women's microfleece vest has **no** body-measurement
   column at all (no derived circumference, no fits-chest range), so it is the blank this would help
   most.
-
-## Deferred review findings
-
-Deferred findings from pre-PR reviews.
-
-### Important
-
-- [ ] **[SA-9]** Aggregate required-status check. Filed when `main` required four separate contexts. The single-`validate`-job consolidation since then already delivers the practical outcome: `main` requires exactly one context, `validate / validate`, whose final status gate rolls up all twelve steps. What is still open is whether that is the arrangement to keep, and any change lands in the private infrastructure repo (`ci_check_contexts`), not here. (security-auditor, 2026-05-03; re-scoped 2026-08-15)
-
-### Architecture gaps (longer-horizon)
-
-- [ ] **[AR-Gap-1]** No long-lived audit trail beyond GitHub's 90-day workflow log retention. Add a small step at the end of each successful auto-deploy that appends a one-line entry to a long-lived `auto-deploy-audit` GitHub issue. Write each entry in a structured, machine-readable line format (fixed fields, predictable separators) rather than prose, so a later tool can parse the history without scraping. (architecture-reviewer, 2026-05-03; absorbed [AR-Gap-3] 2026-08-14)
