@@ -33,6 +33,27 @@ to text for this branch. The featured-content column is unaffected: it keys off 
 type, and a catalog parent still resolves `collections.all`, which is why the desktop dropdown keeps
 its product cards alongside the generated list.
 
+**Hovering or focusing a collection previews its products, from pre-rendered panels.** The
+featured-products column used to be a fixed set (the first three of `collections.all`), which read as
+decoration rather than a preview of whatever the cursor was on. Each collection now has its own panel
+in the same column and `assets/mega-menu-preview.js` toggles which one is shown. Pre-rendering beats
+fetching here only because the catalog is six products: a Section Rendering API call would add a
+loading state, an abort path, and a visible delay on the first hover of every item, in exchange for
+markup that is currently cheap. That trade flips as the catalog grows, and the panels are the first
+thing to reconsider when it does.
+
+**Four accessibility properties hold this feature up, and three of them are invisible until broken.**
+Focus previews exactly as hover does, so the feature is not pointer-only. Inactive panels are
+`hidden`, not merely transparent, because a transparent panel keeps its product links in the tab
+order and a keyboard user would tab into cards nobody can see. Each panel carries its own accessible
+name, so the swap is identifiable rather than an unannounced content change. The fade is dropped
+under `prefers-reduced-motion`. None of these are covered by CI.
+
+**The pointer bindings sit on the exact elements entered and left, and that is not a style choice.**
+`assets/component.js` resolves `pointerenter` and `pointerleave` against the event target only, with
+no ancestor walk (`focus` and `blur` are the ones allowed to bubble). Moving `on:pointerleave` up to a
+wrapper for tidiness would silently stop the reset from ever firing.
+
 **Order is the `collections` drop's order, and it is not operator-controllable.** No `sort` filter is applied, so the dropdown lists collections the way Liquid hands them over. There is no way to pin one first short of renaming it or giving the link an authored submenu again, which turns the whole feature off. That is also what the 50-item cap means in practice: at 51 collections it is the tail of that order that silently stops appearing.
 
 **The list is capped at 50, which is Liquid's own per-loop ceiling, not a design choice.** The cap is
