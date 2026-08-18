@@ -74,6 +74,12 @@
       assign collection_object = parent_link.object
     elsif parent_link.type == 'catalog_link' or parent_link.type == 'collections_link'
       assign collection_object = collections.all
+      # For the generated collections list, the resting panel highlights the
+      # Featured collection rather than a slice of the whole catalog, so the
+      # first paint matches what hovering "Featured" shows.
+      if dynamic_collections and collections['featured'] != blank
+        assign collection_object = collections['featured']
+      endif
     else
       assign menu_content_type = 'text'
     endif
@@ -366,7 +372,7 @@
         {% if eager_loading %}
           {% paginate collection_object.products by max_featured_products %}
             {% for item in collection_object.products %}
-              <li class="mega-menu__content-list-item {% if forloop.index > max_featured_products_tablet %} mega-menu__content-list-item--hidden-tablet{% endif %}">
+              <li class="mega-menu__content-list-item color-scheme-1 {% if forloop.index > max_featured_products_tablet %} mega-menu__content-list-item--hidden-tablet{% endif %}">
                 {% render 'resource-card',
                   resource: item,
                   resource_type: 'product',
@@ -395,7 +401,7 @@
             hidden
           >
             {% for item in collection.products limit: max_featured_products %}
-              <li class="mega-menu__content-list-item {% if forloop.index > max_featured_products_tablet %} mega-menu__content-list-item--hidden-tablet{% endif %}">
+              <li class="mega-menu__content-list-item color-scheme-1 {% if forloop.index > max_featured_products_tablet %} mega-menu__content-list-item--hidden-tablet{% endif %}">
                 {% render 'resource-card',
                   resource: item,
                   resource_type: 'product',

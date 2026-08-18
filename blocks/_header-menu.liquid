@@ -725,6 +725,31 @@
     transition: opacity var(--animation-speed) var(--animation-easing);
   }
 
+  /* Match the product-card look used by the collection grid and the homepage
+     featured list: each item is a scheme-1 surface with the same radius,
+     padding, and gap the templates configure on the _product-card block
+     (border_radius 24, padding 16, product_card_gap 8), with the same type
+     treatment on title and price. The color-scheme-1 class on the item (set in
+     mega-menu-list.liquid) supplies the scheme variables. */
+  .mega-menu__content-list--products .mega-menu__content-list-item {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    border-radius: 24px;
+    padding: 16px;
+  }
+
+  .mega-menu__content-list--products .resource-card__title {
+    font-family: var(--font-subheading--family);
+    font-size: 1rem;
+    color: var(--color-foreground-heading);
+  }
+
+  .mega-menu__content-list--products .resource-card__content .price {
+    font-family: var(--font-body--family);
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+
   /* The base class sets display: grid, and author CSS beats the UA sheet's
      [hidden] rule, so without this the "hidden" panels stay laid out: they
      stack below the active one (pushing it out of the clipped submenu) and
