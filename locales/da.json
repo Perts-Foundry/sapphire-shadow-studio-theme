@@ -67,7 +67,8 @@
     "remove": "Fjern",
     "view_pricing_info": "Vis prisoplysninger",
     "open_hotspot": "Åbn hotspot",
-    "slideshow": "Diasshow"
+    "slideshow": "Diasshow",
+    "products_from_collection": "TODO: Products from {{ collection }}"
   },
   "actions": {
     "add_to_cart": "Læg i indkøbskurven",

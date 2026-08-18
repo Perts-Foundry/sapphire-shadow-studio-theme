@@ -67,7 +67,8 @@
     "remove": "Премахване",
     "view_pricing_info": "Преглед на информация за ценообразуването",
     "open_hotspot": "Отваряне на гореща точка",
-    "slideshow": "Слайдшоу"
+    "slideshow": "Слайдшоу",
+    "products_from_collection": "TODO: Products from {{ collection }}"
   },
   "actions": {
     "add_to_cart": "Добавяне към количката",

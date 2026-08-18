@@ -20,6 +20,7 @@
     "slider_label": "スライダー"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3Dモデルを再生",
     "play_video": "ビデオを再生",

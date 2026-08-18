@@ -9,6 +9,7 @@
  */
 {
   "accessibility": {
+    "products_from_collection": "Products from {{ collection }}",
     "breadcrumb": "Breadcrumb",
     "account": "Account",
     "footer_navigation": "Footer navigation",

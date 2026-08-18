@@ -20,6 +20,7 @@
     "slider_label": "Ползунок"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Открыть объемную модель",
     "play_video": "Воспроизвести видео",

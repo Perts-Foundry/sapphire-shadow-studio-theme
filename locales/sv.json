@@ -20,6 +20,7 @@
     "slider_label": "Bild"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Spela 3D-modell",
     "play_video": "Spela video",

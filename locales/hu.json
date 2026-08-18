@@ -20,6 +20,7 @@
     "slider_label": "Csúszka"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3D-modell lejátszása",
     "play_video": "Videó lejátszása",

@@ -38,6 +38,7 @@
     "slider_label": "Cursor"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Redă modelul 3D",
     "play_video": "Redă videoclipul",

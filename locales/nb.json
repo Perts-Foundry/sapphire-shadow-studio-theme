@@ -20,6 +20,7 @@
     "slider_label": "Glidefelt"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Spill av 3D-modell",
     "play_video": "Spill av video",

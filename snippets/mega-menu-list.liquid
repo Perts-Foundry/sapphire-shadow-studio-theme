@@ -78,11 +78,26 @@
       assign menu_content_type = 'text'
     endif
   endif
+
+  # Hovering or focusing a generated collection link swaps the featured-products
+  # column to that collection's products. Every panel is pre-rendered, so the
+  # swap is instant and needs no network call; `mega-menu-preview.js` only
+  # toggles which one is shown.
+  assign preview_enabled = false
+  if dynamic_collections and menu_content_type == 'featured_products'
+    assign preview_enabled = true
+  endif
 %}
+{%- if preview_enabled -%}
+  <mega-menu-preview class="mega-menu__preview">
+{%- endif -%}
 <ul
   data-menu-list-id="{{ id }}"
   class="mega-menu__list list-unstyled"
   style="--menu-image-border-radius: {{ image_border_radius }}px;"
+  {% if preview_enabled %}
+    on:pointerleave="/reset"
+  {% endif %}
 >
   {% if dynamic_collections %}
     {% liquid
@@ -116,6 +131,12 @@
             <a
               href="{{ collection.url }}"
               class="mega-menu__link"
+              {% if preview_enabled %}
+                ref="previewTriggers[]"
+                data-preview-target="{{ collection.handle }}"
+                on:pointerenter="/preview"
+                on:focus="/preview"
+              {% endif %}
             >
               <span class="mega-menu__link-title wrap-text">{{- collection.title -}}</span>
             </a>
@@ -336,7 +357,11 @@
       style="--menu-content-columns-desktop: {{ max_product_columns }}; --menu-content-columns-tablet: {{ max_product_columns_tablet }}; --resource-card-corner-radius: {{ image_border_radius }}px;"
     >
       <ul
-        class="mega-menu__content-list mega-menu__content-list--products list-unstyled"
+        class="mega-menu__content-list mega-menu__content-list--products mega-menu__content-list--active list-unstyled"
+        {% if preview_enabled %}
+          ref="previewPanels[]"
+          data-preview-panel=""
+        {% endif %}
       >
         {% if eager_loading %}
           {% paginate collection_object.products by max_featured_products %}
@@ -354,6 +379,35 @@
           {% endpaginate %}
         {% endif %}
       </ul>
+      {%- comment -%}
+        One pre-rendered panel per collection. They are `hidden`, not just
+        transparent, so their product links stay out of the tab order until the
+        panel is shown, and each carries its own accessible name so the swap is
+        identifiable rather than an unexplained content change.
+      {%- endcomment -%}
+      {% if preview_enabled and eager_loading %}
+        {% for collection in collections limit: 50 %}
+          <ul
+            class="mega-menu__content-list mega-menu__content-list--products list-unstyled"
+            ref="previewPanels[]"
+            data-preview-panel="{{ collection.handle }}"
+            aria-label="{{ 'accessibility.products_from_collection' | t: collection: collection.title }}"
+            hidden
+          >
+            {% for item in collection.products limit: max_featured_products %}
+              <li class="mega-menu__content-list-item {% if forloop.index > max_featured_products_tablet %} mega-menu__content-list-item--hidden-tablet{% endif %}">
+                {% render 'resource-card',
+                  resource: item,
+                  resource_type: 'product',
+                  image_hover: true,
+                  image_aspect_ratio: content_aspect_ratio,
+                  image_sizes: image_sizes
+                %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endfor %}
+      {% endif %}
     </span>
   {% when 'featured_collections' %}
     {% assign collection_handles = collection_handles | split: ',' | uniq %}
@@ -395,3 +449,6 @@
       </ul>
     </span>
 {% endcase %}
+{%- if preview_enabled -%}
+  </mega-menu-preview>
+{%- endif -%}

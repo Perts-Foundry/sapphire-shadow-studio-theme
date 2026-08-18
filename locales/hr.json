@@ -20,6 +20,7 @@
     "slider_label": "Kliznik"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Reproduciraj 3D model",
     "play_video": "Reproduciraj videozapis",

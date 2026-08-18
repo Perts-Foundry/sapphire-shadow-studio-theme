@@ -216,6 +216,12 @@
         type="module"
         fetchpriority="low"
       ></script>
+
+      <script
+        src="{{ 'mega-menu-preview.js' | asset_url }}"
+        type="module"
+        fetchpriority="low"
+      ></script>
     </header-menu>
 {% endcase %}
 
@@ -707,6 +713,26 @@
 
   .mega-menu__content-list li {
     white-space: normal;
+  }
+
+  /* Dynamic collections preview: the wrapper must not disturb the mega menu grid */
+  .mega-menu__preview {
+    display: contents;
+  }
+
+  .mega-menu__content-list[data-preview-panel] {
+    opacity: 0;
+    transition: opacity var(--animation-speed) var(--animation-easing);
+  }
+
+  .mega-menu__content-list[data-preview-panel].mega-menu__content-list--active {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mega-menu__content-list[data-preview-panel] {
+      transition: none;
+    }
   }
 
   /* mega more menu */

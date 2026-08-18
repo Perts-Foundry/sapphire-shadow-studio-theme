@@ -20,6 +20,7 @@
     "slider_label": "滑块"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "演示 3D 模型",
     "play_video": "播放视频",

@@ -20,6 +20,7 @@
     "slider_label": "Liukusäädin"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Toista 3D-malli",
     "play_video": "Toista video",

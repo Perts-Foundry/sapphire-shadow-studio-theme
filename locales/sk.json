@@ -20,6 +20,7 @@
     "slider_label": "Jazdec"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Prehrať 3D model",
     "play_video": "Prehrať video",

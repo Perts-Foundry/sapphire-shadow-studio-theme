@@ -67,7 +67,8 @@
     "remove": "Entfernen",
     "view_pricing_info": "Preisinformationen anzeigen",
     "open_hotspot": "Hotspot öffnen",
-    "slideshow": "Slideshow"
+    "slideshow": "Slideshow",
+    "products_from_collection": "TODO: Products from {{ collection }}"
   },
   "actions": {
     "add_to_cart": "In den Warenkorb legen",
