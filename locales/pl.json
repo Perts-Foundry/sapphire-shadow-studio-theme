@@ -73,6 +73,7 @@
     "slideshow": "Pokaz slajdów"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Dodaj do koszyka",
     "clear_all": "Wyczyść wszystko",
     "remove": "Usuń",

@@ -71,6 +71,7 @@
     "slideshow": "Tayangan slide"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Tambahkan ke keranjang",
     "clear_all": "Hapus semua",
     "remove": "Hapus",

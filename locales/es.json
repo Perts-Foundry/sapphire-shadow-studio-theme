@@ -72,6 +72,7 @@
     "slideshow": "Presentación de diapositivas"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Agregar al carrito",
     "clear_all": "Borrar todo",
     "remove": "Eliminar",

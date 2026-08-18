@@ -71,6 +71,7 @@
     "slideshow": "Bildspel"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Lägg till i varukorgen",
     "clear_all": "Rensa alla",
     "remove": "Ta bort",

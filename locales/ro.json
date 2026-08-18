@@ -90,6 +90,7 @@
     "slideshow": "Prezentare de diapozitive"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Adaugă în coș",
     "clear_all": "Golește tot",
     "remove": "Elimină",

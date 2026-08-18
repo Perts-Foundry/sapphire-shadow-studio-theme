@@ -73,6 +73,7 @@
     "slideshow": "Slikovni prikaz"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Dodaj v košarico",
     "clear_all": "Počisti vse",
     "remove": "Odstrani",

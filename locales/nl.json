@@ -71,6 +71,7 @@
     "slideshow": "Diavoorstelling"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Aan winkelwagen toevoegen",
     "clear_all": "Alles wissen",
     "remove": "Verwijderen",

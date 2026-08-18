@@ -73,6 +73,7 @@
     "slideshow": "Слайд-шоу"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Добавить в корзину",
     "clear_all": "Удалить все",
     "remove": "Удалить",

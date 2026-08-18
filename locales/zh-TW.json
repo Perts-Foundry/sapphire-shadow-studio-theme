@@ -71,6 +71,7 @@
     "slideshow": "素材輪播"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "加入購物車",
     "clear_all": "全部清除",
     "remove": "移除",

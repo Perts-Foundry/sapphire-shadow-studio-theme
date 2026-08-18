@@ -90,6 +90,7 @@
     "slideshow": "Presentazione"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Aggiungi al carrello",
     "clear_all": "Cancella tutto",
     "remove": "Rimuovi",

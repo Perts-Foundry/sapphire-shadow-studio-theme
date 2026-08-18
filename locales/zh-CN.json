@@ -71,6 +71,7 @@
     "slideshow": "幻灯片"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "添加到购物车",
     "clear_all": "全部清除",
     "remove": "删除",

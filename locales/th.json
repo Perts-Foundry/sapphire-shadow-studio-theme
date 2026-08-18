@@ -71,6 +71,7 @@
     "slideshow": "สไลด์โชว์"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "เพิ่มลงในตะกร้าสินค้า",
     "clear_all": "ล้างทั้งหมด",
     "remove": "ลบออก",

@@ -73,6 +73,7 @@
     "slideshow": "Prezentácia"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Pridať do košíka",
     "clear_all": "Vymazať všetko",
     "remove": "Odstrániť",

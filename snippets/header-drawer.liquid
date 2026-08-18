@@ -189,6 +189,20 @@
                               </a>
                             </li>
                           {%- endfor -%}
+                          <li
+                            class="menu-drawer__list-item"
+                            style="--menu-drawer-animation-index: {{ collections.size | at_most: 50 | plus: 1 }};"
+                          >
+                            <a
+                              id="HeaderDrawer-{{ link.handle }}-view-all-collections"
+                              href="{{ routes.collections_url }}"
+                              class="menu-drawer__menu-item menu-drawer__menu-item--child menu-drawer__view-all-link focus-inset"
+                            >
+                              <span class="menu-drawer__menu-item-text wrap-text">
+                                {{- 'actions.view_all_collections' | t -}}
+                              </span>
+                            </a>
+                          </li>
                         {%- else -%}
                           {%- for childlink in link.links -%}
                             <li
@@ -271,6 +285,19 @@
                           </a>
                         </li>
                       {%- endfor -%}
+                      <li
+                        class="menu-drawer__list-item"
+                        style="--menu-drawer-animation-index: {{ animation_index | plus: 1 }};"
+                      >
+                        <a
+                          href="{{ routes.collections_url }}"
+                          class="menu-drawer__menu-item menu-drawer__menu-item--child menu-drawer__animated-element menu-drawer__view-all-link focus-inset"
+                        >
+                          <span class="menu-drawer__menu-item-text wrap-text">
+                            {{- 'actions.view_all_collections' | t -}}
+                          </span>
+                        </a>
+                      </li>
                     {%- else -%}
                       {%- for childlink in link.links -%}
                         <li

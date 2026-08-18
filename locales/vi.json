@@ -71,6 +71,7 @@
     "slideshow": "Bản trình chiếu"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Thêm vào giỏ hàng",
     "clear_all": "Xóa tất cả",
     "remove": "Xóa",

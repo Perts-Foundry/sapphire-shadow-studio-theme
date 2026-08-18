@@ -72,6 +72,7 @@
     "slideshow": "Diaporama"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Ajouter au panier",
     "clear_all": "Tout effacer",
     "remove": "Supprimer",

@@ -149,6 +149,9 @@
           </li>
         {% endfor %}
       </ul>
+      <a href="{{ routes.collections_url }}" class="mega-menu__link mega-menu__view-all-link">
+        <span class="mega-menu__link-title">{{ 'actions.view_all_collections' | t }}</span>
+      </a>
     </li>
   {% else %}
     {% for link in parent_link.links %}

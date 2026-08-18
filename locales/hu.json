@@ -71,6 +71,7 @@
     "slideshow": "Diavetítés"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Hozzáadás a kosárhoz",
     "clear_all": "Az összes törléses",
     "remove": "Eltávolítás",
