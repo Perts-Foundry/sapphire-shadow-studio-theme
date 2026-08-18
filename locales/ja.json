@@ -20,6 +20,7 @@
     "slider_label": "スライダー"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3Dモデルを再生",
     "play_video": "ビデオを再生",
@@ -70,6 +71,7 @@
     "slideshow": "スライドショー"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "カートに追加",
     "clear_all": "すべてクリア",
     "remove": "削除",

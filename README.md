@@ -171,6 +171,9 @@ Upstream Horizon files carrying intentional local changes. Taking theirs on any 
 | `sections/header.liquid` | Organization JSON-LD removed (now `snippets/structured-data.liquid`) and the `index`-guarded visually-hidden `<h1>` removed (the hero supplies the homepage heading). |
 | `snippets/meta-tags.liquid` | `og:image` forced to `https:`; the `twitter:site` tag removed along with its broken handle parse. |
 | `blocks/email-signup.liquid` | Input text and placeholder colors read `--color-input-text` / `--color-input-text-rgb` instead of upstream's hardcoded `rgb(255 255 255)`, which rendered white-on-white on the light-scheme password page. |
+| `blocks/_header-menu.liquid` | The dynamic collections dropdown trigger (`is_dynamic`) and the `role="menuitem"` / `role="presentation"` removals. |
+| `snippets/mega-menu-list.liquid` | The `dynamic_collections` branch. The whole static branch is re-indented inside its `{% else %}`, so an upstream change conflicts across the entire file: resolve by re-applying the `dynamic_collections` branch onto theirs, never by keeping ours wholesale. |
+| `snippets/header-drawer.liquid` | The dynamic collections submenu in both 2-level branches, plus `localization_style: 'drawer'` passed to `localization-form`. |
 
 ## Development and contributing
 

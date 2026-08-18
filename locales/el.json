@@ -67,9 +67,11 @@
     "remove": "Κατάργηση",
     "view_pricing_info": "Προβολή πληροφοριών τιμολόγησης",
     "open_hotspot": "Άνοιγμα hotspot",
-    "slideshow": "Προβολή διαφανειών"
+    "slideshow": "Προβολή διαφανειών",
+    "products_from_collection": "TODO: Products from {{ collection }}"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Προσθήκη στο καλάθι",
     "clear_all": "Διαγραφή όλων",
     "remove": "Κατάργηση",

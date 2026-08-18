@@ -20,6 +20,7 @@
     "slider_label": "Csúszka"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3D-modell lejátszása",
     "play_video": "Videó lejátszása",
@@ -70,6 +71,7 @@
     "slideshow": "Diavetítés"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Hozzáadás a kosárhoz",
     "clear_all": "Az összes törléses",
     "remove": "Eltávolítás",

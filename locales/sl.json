@@ -20,6 +20,7 @@
     "slider_label": "Drsnik"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Predvajaj 3D-model",
     "play_video": "Predvajaj videoposnetek",
@@ -72,6 +73,7 @@
     "slideshow": "Slikovni prikaz"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Dodaj v košarico",
     "clear_all": "Počisti vse",
     "remove": "Odstrani",

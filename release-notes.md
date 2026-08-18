@@ -1,5 +1,70 @@
 # Release Notes
 
+## Dynamic collections dropdown on the main menu (unreleased)
+
+The Shop link's dropdown is not authored in Admin. **A top-level menu link that has no children of
+its own, points at the catalog or the collection list (`catalog_link` / `collections_link`, which is
+what "All products" and "All collections" become in the menu editor), and sits on a store with at
+least one published collection gets a submenu built from Liquid's global `collections` drop.** Add a
+collection in Admin and it appears in the nav on the next page render; no menu edit, no repo script,
+no sync run. This is the whole reason the feature exists: a static Shopify menu cannot track the
+catalog, and the alternative was a scheduled job reconciling menu items against collections.
+
+**The trigger is the thing to know before editing the menu.** It is implicit, so a future editor
+adding a second "All products" link somewhere in the main menu will silently get a second dynamic
+dropdown, and giving the Shop link a single hand-authored child in Admin silently turns the dynamic
+list off (an authored submenu always wins). Neither is checked anywhere: nothing in CI parses the
+menu, and the menu lives outside the repo entirely. The `collections.size > 0` half of the trigger
+is not defensive noise; without it a store with no published collections renders a link that
+advertises a dropdown (`aria-haspopup`, `aria-expanded`) over an empty panel.
+
+**Three surfaces, one convention.** `blocks/_header-menu.liquid` computes the trigger and passes
+`dynamic_collections` into `snippets/mega-menu-list.liquid` (desktop, including the "More" overflow
+popover, which reuses the same markup); `snippets/header-drawer.liquid` recomputes it for the mobile
+drawer. The drawer's accordion and flat branches both handle it, because `drawer_accordion` is
+currently `false` and the flat branch is the live path; implementing only the accordion branch, as
+originally planned, would have shipped nothing on mobile. The drawer's 3-level branch deliberately
+does not support it: the menu is two levels, and the feature would disappear if a third level were
+ever added there.
+
+**The dynamic list is always plain text, even when the block's media type is `collection_images`.**
+That mode reads images off static child links, and a dynamic parent has none, so both files downgrade
+to text for this branch. The featured-content column is unaffected: it keys off the parent link's own
+type, and a catalog parent still resolves `collections.all`, which is why the desktop dropdown keeps
+its product cards alongside the generated list.
+
+**Hovering or focusing a collection previews its products, from pre-rendered panels.** The
+featured-products column used to be a fixed set (the first three of `collections.all`), which read as
+decoration rather than a preview of whatever the cursor was on. Each collection now has its own panel
+in the same column and `assets/mega-menu-preview.js` toggles which one is shown. Pre-rendering beats
+fetching here only because the catalog is six products: a Section Rendering API call would add a
+loading state, an abort path, and a visible delay on the first hover of every item, in exchange for
+markup that is currently cheap. That trade flips as the catalog grows, and the panels are the first
+thing to reconsider when it does.
+
+**Four accessibility properties hold this feature up, and three of them are invisible until broken.**
+Focus previews exactly as hover does, so the feature is not pointer-only. Inactive panels are
+`hidden`, not merely transparent, because a transparent panel keeps its product links in the tab
+order and a keyboard user would tab into cards nobody can see. Each panel carries its own accessible
+name, so the swap is identifiable rather than an unannounced content change. The fade is dropped
+under `prefers-reduced-motion`. None of these are covered by CI.
+
+**The pointer bindings sit on the exact elements entered and left, and that is not a style choice.**
+`assets/component.js` resolves `pointerenter` and `pointerleave` against the event target only, with
+no ancestor walk (`focus` and `blur` are the ones allowed to bubble). Moving `on:pointerleave` up to a
+wrapper for tidiness would silently stop the reset from ever firing.
+
+**Order is the `collections` drop's order, and it is not operator-controllable.** No `sort` filter is applied, so the dropdown lists collections the way Liquid hands them over. There is no way to pin one first short of renaming it or giving the link an authored submenu again, which turns the whole feature off. That is also what the 50-item cap means in practice: at 51 collections it is the tail of that order that silently stops appearing.
+
+**The list is capped at 50, which is Liquid's own per-loop ceiling, not a design choice.** The cap is
+written out explicitly (`limit: 50`, and the desktop column math takes `collections.size | at_most:
+50`) so the column count cannot describe more items than the loop emits. The span is clamped to 4 for
+the same reason: `mega-menu__column--span-N` is only defined up to 4, and 41 collections were enough
+to compute 5, at which point the column would fall back to a single grid cell while its inner
+`column-count` kept laying out five. At three collections none of this is visible; at 51 the nav
+would silently stop listing everything, which is the point at which a generated dropdown stops being
+the right shape for the menu.
+
 ## Fits Chest column on the women's microfleece vest size chart (unreleased)
 
 The vest was the one blank whose chart offered no way in for a shopper without a reference garment:

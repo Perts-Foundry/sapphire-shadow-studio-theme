@@ -20,6 +20,7 @@
     "slider_label": "Carrusel"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Reproducir el modelo 3D",
     "play_video": "Reproducir el video",
@@ -71,6 +72,7 @@
     "slideshow": "Presentación de diapositivas"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Agregar al carrito",
     "clear_all": "Borrar todo",
     "remove": "Eliminar",

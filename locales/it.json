@@ -38,6 +38,7 @@
     "slider_label": "Cursore"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Riproduci modello 3D",
     "play_video": "Riproduci video",
@@ -89,6 +90,7 @@
     "slideshow": "Presentazione"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Aggiungi al carrello",
     "clear_all": "Cancella tutto",
     "remove": "Rimuovi",

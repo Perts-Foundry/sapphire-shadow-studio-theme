@@ -9,6 +9,7 @@
  */
 {
   "accessibility": {
+    "products_from_collection": "Products from {{ collection }}",
     "breadcrumb": "Breadcrumb",
     "account": "Account",
     "footer_navigation": "Footer navigation",
@@ -102,6 +103,8 @@
     "view_in_your_space": "View in your space",
     // Button to view complete collection/product list
     "view_all": "View all",
+    // Link at the bottom of the generated collections dropdown to the collections list page
+    "view_all_collections": "View all collections",
     "more": "More",
     "zoom": "Zoom",
     "close_dialog": "Close dialog",

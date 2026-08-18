@@ -20,6 +20,7 @@
     "slider_label": "滑块"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "演示 3D 模型",
     "play_video": "播放视频",
@@ -70,6 +71,7 @@
     "slideshow": "幻灯片"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "添加到购物车",
     "clear_all": "全部清除",
     "remove": "删除",

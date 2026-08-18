@@ -20,6 +20,7 @@
     "slider_label": "Slankiklis"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Paleisti 3D modelį",
     "play_video": "Paleisti vaizdo įrašą",
@@ -72,6 +73,7 @@
     "slideshow": "Skaidrių demonstracija"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Įdėti į krepšelį",
     "clear_all": "Išvalyti viską",
     "remove": "Pašalinti",

@@ -20,6 +20,7 @@
     "slider_label": "Slider"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Putar model 3D",
     "play_video": "Putar video",
@@ -70,6 +71,7 @@
     "slideshow": "Tayangan slide"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Tambahkan ke keranjang",
     "clear_all": "Hapus semua",
     "remove": "Hapus",

@@ -20,6 +20,7 @@
     "slider_label": "슬라이더"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3D 모델 재생",
     "play_video": "동영상 재생",
@@ -70,6 +71,7 @@
     "slideshow": "슬라이드 쇼"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "카트에 추가",
     "clear_all": "모두 지우기",
     "remove": "제거",

@@ -20,6 +20,7 @@
     "slider_label": "Jazdec"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Prehrať 3D model",
     "play_video": "Prehrať video",
@@ -72,6 +73,7 @@
     "slideshow": "Prezentácia"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Pridať do košíka",
     "clear_all": "Vymazať všetko",
     "remove": "Odstrániť",

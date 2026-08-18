@@ -20,6 +20,7 @@
     "slider_label": "投影播放器"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "播放 3D 模型",
     "play_video": "播放影片",
@@ -70,6 +71,7 @@
     "slideshow": "素材輪播"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "加入購物車",
     "clear_all": "全部清除",
     "remove": "移除",

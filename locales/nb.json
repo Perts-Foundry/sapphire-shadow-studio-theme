@@ -20,6 +20,7 @@
     "slider_label": "Glidefelt"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Spill av 3D-modell",
     "play_video": "Spill av video",
@@ -70,6 +71,7 @@
     "slideshow": "Lysbildefremvisning"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Legg i handlekurv",
     "clear_all": "Fjern alle",
     "remove": "Fjern",

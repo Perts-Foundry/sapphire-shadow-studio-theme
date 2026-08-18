@@ -20,6 +20,7 @@
     "slider_label": "Kaydırıcı"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "3B modeli oynat",
     "play_video": "Videoyu oynat",
@@ -70,6 +71,7 @@
     "slideshow": "Slayt gösterisi"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Sepete ekle",
     "clear_all": "Tümünü temizle",
     "remove": "Kaldır",

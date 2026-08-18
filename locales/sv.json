@@ -20,6 +20,7 @@
     "slider_label": "Bild"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Spela 3D-modell",
     "play_video": "Spela video",
@@ -70,6 +71,7 @@
     "slideshow": "Bildspel"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Lägg till i varukorgen",
     "clear_all": "Rensa alla",
     "remove": "Ta bort",

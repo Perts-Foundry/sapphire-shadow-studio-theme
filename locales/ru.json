@@ -20,6 +20,7 @@
     "slider_label": "Ползунок"
   },
   "accessibility": {
+    "products_from_collection": "TODO: Products from {{ collection }}",
     "breadcrumb": "TODO: Breadcrumb",
     "play_model": "Открыть объемную модель",
     "play_video": "Воспроизвести видео",
@@ -72,6 +73,7 @@
     "slideshow": "Слайд-шоу"
   },
   "actions": {
+    "view_all_collections": "TODO: View all collections",
     "add_to_cart": "Добавить в корзину",
     "clear_all": "Удалить все",
     "remove": "Удалить",
