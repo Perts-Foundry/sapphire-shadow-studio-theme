@@ -725,6 +725,14 @@
     transition: opacity var(--animation-speed) var(--animation-easing);
   }
 
+  /* The base class sets display: grid, and author CSS beats the UA sheet's
+     [hidden] rule, so without this the "hidden" panels stay laid out: they
+     stack below the active one (pushing it out of the clipped submenu) and
+     keep their product links in the tab order. */
+  .mega-menu__content-list[hidden] {
+    display: none;
+  }
+
   .mega-menu__content-list[data-preview-panel].mega-menu__content-list--active {
     opacity: 1;
   }
