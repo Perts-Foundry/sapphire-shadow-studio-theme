@@ -8,8 +8,7 @@ work left behind reasoning worth keeping (a corrected mistake, a cross-layer con
 why it went that way), write that into `release-notes.md` as part of the same change, then remove the
 item here.
 
-Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas),
-[Size-chart tooling](#size-chart-tooling) (`scripts/size-chart/`).
+Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas).
 
 ## Product and storefront
 
@@ -45,18 +44,3 @@ several of the pass's other findings.
   no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
   under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
   plus possibly the template.
-## Size-chart tooling
-
-Follow-ups from the customer-needs vs. size-chart gap analysis (2026-07-14). Garment-independent
-wording lives in `scripts/size-chart/copy.md`; per-garment data and per-measurement prose live in
-`scripts/size-chart/profiles/<blank>.json`; the on-page accordion and the PNG both regenerate from
-those. See `scripts/size-chart/README.md` for the tooling. Importance (imp) is 1 (nice-to-have) to
-5 (decisive for choosing a size / avoiding a wrong-size order).
-
-- [ ] **Fabric & care block (imp 4/3).** Add an optional `fabric` object to the profile schema
-  (`pre_shrunk` bool + `care` string + weight / composition / stretch) and render a compact
-  "Fabric & care" line beneath the table in both outputs. Pre-shrunk status is the one fabric fact
-  with a direct sizing consequence on a non-returnable garment (buy-measured vs. size-up). The
-  current blank is confirmed "premium 8 oz. heavyweight fleece" (live product descriptions); tie any
-  shrink figure to the real fiber content, not a cotton default. Consider whether weight/composition
-  belong on the product description instead.
