@@ -9,7 +9,7 @@ custom-code editor.
 | File | Purpose |
 |---|---|
 | `campaign-shell.liquid` | Reusable base. Clone it to start a new campaign. |
-| `welcome.liquid` | "You are on the list" welcome automation. |
+| `welcome.liquid` | Welcome automation, **written for prelaunch**. See the launch swap below. |
 
 ## The repo file is the source of truth
 
@@ -105,6 +105,25 @@ in this directory.** The palette is lifted from `config/settings_data.json`, fro
 colour schemes: navy `#071e3f` (`sss-dark-scheme`'s `background`) and accent blue `#0071C2`
 (`sss-dark-scheme`'s `primary_button_background`), plus light blue `#e1edf5` (`scheme-4`'s
 `background`), used here as the page surround.
+
+## `welcome.liquid` is the prelaunch version, and has to be changed at launch
+
+While the storefront password is on, every storefront URL resolves to Shopify's "Opening soon"
+page. A welcome email whose links all dead-end on a password wall is the fastest way to make a new
+subscriber think the brand is broken, so the prelaunch welcome sends nobody there: the header
+wordmark is plain text, the footer names the domain without linking it, and the single button points
+at Instagram, which is public.
+
+That makes the file **wrong the day the password comes off**, and nothing will tell you so. The file
+header lists the four edits to make together (relink the wordmark, repoint the button in both of its
+halves, relink the footer domain, rewrite the "What happens next" section along with the subject,
+preview text, and preheader). Do them in one sitting; each one alone leaves the email half-migrated.
+
+Two things about that button. Its URL is **hardcoded**, because Shopify Email has no `settings`
+object to read `settings.social_instagram_link` from, so it duplicates the value in
+`config/settings_data.json` and nothing reconciles the two: change the profile URL in theme settings
+and this file goes stale silently. And the prelaunch copy **promises no launch date**, deliberately.
+A date in a sent email cannot be corrected, and a date that slips is worse than no date at all.
 
 ## Shipping and policy copy: do not restate it here
 

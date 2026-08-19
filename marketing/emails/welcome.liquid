@@ -1,22 +1,45 @@
 {%- comment -%}
   ==========================================================================
-  TEMPLATE: Welcome / you are on the list
-  SUBJECT: You are on the list
-  PREVIEW TEXT: Thanks for signing up. Here is what we are making.
+  TEMPLATE: Welcome / you are in early (PRELAUNCH VERSION)
+  SUBJECT: You are in early
+  PREVIEW TEXT: The shop is not open yet. You will be first through the door.
   SEGMENT / AUTOMATION: "Customer signs up" welcome automation (all new
-    email subscribers, prelaunch and after)
-  DISCOUNT CODE: none yet. If a launch code is created in Admin, uncomment
-    the discount row below and put the code in it.
+    email subscribers, while the storefront is still password-protected)
+  DISCOUNT CODE: none yet. If a founding-subscriber code is created in Admin,
+    uncomment the discount row below and put the code in it.
   LAST VERIFIED: not yet test-sent
   ==========================================================================
   Not a theme file. Pasted whole into Shopify Email's custom-code editor.
   Cloned from campaign-shell.liquid; branding is duplicated on purpose, so a
   palette change has to be made in both files. See marketing/emails/README.md.
 
+  THIS VERSION ASSUMES THE STOREFRONT PASSWORD IS STILL ON. Every storefront
+  URL currently resolves to Shopify's "Opening soon" password page, so this
+  email deliberately does not send anyone there: the wordmark is plain text,
+  the footer names the domain without linking it, and the one button points at
+  Instagram, which is public. A welcome email whose links all dead-end on a
+  password wall is the fastest way to make a new subscriber think the brand is
+  broken.
+
+  AT LAUNCH, when the password comes off, change these four things together:
+    1. Wrap the header wordmark in a link to {{ shop.url }} (markup below).
+    2. Repoint the button at {{ shop.url }}, in BOTH the VML and anchor halves,
+       and change both labels to match.
+    3. Link the footer's {{ shop.domain }} back to {{ shop.url }}.
+    4. Rewrite the "What happens next" section, which is written for a shop
+       that has not opened, and update SUBJECT and PREVIEW TEXT above plus the
+       preheader div to match.
+
+  The Instagram URL below is hardcoded because Shopify Email has no `settings`
+  object. It duplicates `settings.social_instagram_link` in
+  config/settings_data.json, and nothing reconciles the two: changing the
+  profile URL in theme settings leaves this file stale.
+
   Deliberately says nothing specific about shipping rates, thresholds, or
   turnaround times. That copy already has four sources of truth (see the
   shipping section of the repo's CLAUDE.md) and an email is a fifth that
-  nothing reconciles and that cannot be corrected once sent.
+  nothing reconciles and that cannot be corrected once sent. It also promises
+  no launch date, on purpose: a date that slips is worse than no date.
 {%- endcomment -%}
 <!doctype html>
 <html lang="en">
@@ -41,7 +64,7 @@
   <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
     <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #e1edf5;">
       {%- comment -%} Preheader. Keep in step with the PREVIEW TEXT header line and the editor field. {%- endcomment -%}
-      Thanks for signing up. Here is what we are making.
+      The shop is not open yet. You will be first through the door.
       &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
     </div>
 
@@ -50,12 +73,14 @@
         <td align="center" style="padding: 24px 12px;">
           <table role="presentation" class="ssb-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #ffffff; border-radius: 4px;">
 
-            <!-- Header -->
+            <!--
+              Header. The wordmark is plain text while the storefront password is on,
+              because {{ shop.url }} is the password page. At launch, wrap the span:
+              <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: none;"> ... </a>
+            -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 4px 4px 0 0;">
-                <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: none;">
-                  <span style="font-family: Helvetica, Arial, sans-serif; font-size: 20px; line-height: 26px; font-weight: bold; letter-spacing: 1px; color: #ffffff; text-transform: uppercase;">{{ shop.name }}</span>
-                </a>
+                <span style="font-family: Helvetica, Arial, sans-serif; font-size: 20px; line-height: 26px; font-weight: bold; letter-spacing: 1px; color: #ffffff; text-transform: uppercase;">{{ shop.name }}</span>
               </td>
             </tr>
 
@@ -63,47 +88,53 @@
             <tr>
               <td class="ssb-pad" style="padding: 36px 32px 8px 32px;">
                 <h1 class="ssb-h1" style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 30px; line-height: 36px; font-weight: bold; color: #071e3f;">
-                  You are on the list
+                  You are in early
                 </h1>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
                   Hey {{ customer.first_name | default: 'friend' }},
                 </p>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
-                  Thanks for signing up. We are a small custom craft studio: a two-person,
-                  husband-and-wife operation making embroidered apparel one piece at a time.
-                  No mass production, no cutting corners.
+                  Thanks for signing up before there is anything to buy. That is the part we
+                  appreciate most, honestly.
                 </p>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
-                  Everything we make passes one test: would we want to own it ourselves? If the
-                  answer is no, it does not make it into the shop.
+                  Sapphire Shadow Studio is a small custom craft studio. We are Maddie and Seth,
+                  a husband-and-wife team making embroidered apparel one piece at a time. No mass
+                  production, no cutting corners, just pieces we would want to own ourselves.
                 </p>
               </td>
             </tr>
 
-            <!-- What to expect -->
+            <!-- What happens next. Written for a shop that has not opened; rewrite at launch. -->
             <tr>
               <td class="ssb-pad" style="padding: 8px 32px 8px 32px;">
                 <h2 style="margin: 0 0 12px 0; font-family: Helvetica, Arial, sans-serif; font-size: 18px; line-height: 24px; font-weight: bold; color: #071e3f;">
                   What happens next
                 </h2>
                 <p style="margin: 0 0 12px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
-                  We are still getting the shop ready. You will hear from us when it opens, and
-                  after that only when there is something worth your attention: a new piece, a
-                  restock, or a design we are proud of. We do not send filler.
+                  The shop is not open yet. We are still finishing pieces, shooting photos, and
+                  getting the last details right, because we would rather open a little late than
+                  open with something we are not proud of.
+                </p>
+                <p style="margin: 0 0 12px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
+                  When the doors open, this list hears first. That is the whole point of it. Until
+                  then we will leave your inbox alone: we write when there is something real to
+                  show you, and not otherwise.
                 </p>
               </td>
             </tr>
 
             <!--
-              Optional launch-discount row. Uncomment once the code exists in Admin,
-              and replace LAUNCHCODE with the real code.
+              Optional founding-subscriber discount row. Uncomment once the code exists in
+              Admin, and replace LAUNCHCODE with the real code. Do not commit a code that is
+              meant to stay private until launch day; this repo is public.
             <tr>
               <td class="ssb-pad" style="padding: 8px 32px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #e1edf5; border-radius: 4px;">
                   <tr>
                     <td align="center" style="padding: 20px 24px;">
                       <p style="margin: 0 0 6px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #071e3f;">
-                        Your launch-day code
+                        Yours for opening day
                       </p>
                       <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 22px; line-height: 28px; font-weight: bold; letter-spacing: 2px; color: #071e3f;">
                         LAUNCHCODE
@@ -115,26 +146,33 @@
             </tr>
             -->
 
-            <!-- Call to action. Bulletproof button: VML for Outlook, an anchor everywhere else. -->
+            <!--
+              Call to action. Bulletproof button: VML for Outlook, an anchor everywhere else.
+              Points at Instagram, not the storefront, because the storefront is password-gated
+              until launch. Keep the two labels and the two hrefs identical.
+            -->
             <tr>
               <td class="ssb-pad" align="center" style="padding: 20px 32px 8px 32px;">
                 <table role="presentation" class="ssb-button" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td align="center" bgcolor="#0071C2" style="border-radius: 4px;">
                       <!--[if mso]>
-                      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ shop.url }}/pages/about" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="9%" stroke="f" fillcolor="#0071C2">
+                      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://www.instagram.com/sapphire_shadow_studio" style="height:48px;v-text-anchor:middle;width:300px;" arcsize="9%" stroke="f" fillcolor="#0071C2">
                         <w:anchorlock/>
-                        <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;">Meet the studio</center>
+                        <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;">See what we are making</center>
                       </v:roundrect>
                       <![endif]-->
                       <!--[if !mso]><!-- -->
-                      <a href="{{ shop.url }}/pages/about" style="display: inline-block; padding: 14px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 4px; background-color: #0071C2; mso-hide: all;">
-                        Meet the studio
+                      <a href="https://www.instagram.com/sapphire_shadow_studio" style="display: inline-block; padding: 14px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 4px; background-color: #0071C2; mso-hide: all;">
+                        See what we are making
                       </a>
                       <!--<![endif]-->
                     </td>
                   </tr>
                 </table>
+                <p style="margin: 12px 0 0 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #555555;">
+                  Works in progress, finished pieces, and the occasional studio cat.
+                </p>
               </td>
             </tr>
 
@@ -142,13 +180,17 @@
             <tr>
               <td class="ssb-pad" style="padding: 16px 32px 36px 32px;">
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 22px; color: #555555;">
-                  Got a project in mind? Custom work is what we like best. Reply to this email and
-                  tell us about it.
+                  Already have a project in mind? Custom work is what we like best, and you do not
+                  have to wait for opening day to ask about it. Just reply to this email and tell us
+                  what you are thinking.
                 </p>
               </td>
             </tr>
 
-            <!-- Footer -->
+            <!--
+              Footer. The domain is plain text while the password is on; at launch, wrap it:
+              <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;">{{ shop.domain }}</a>
+            -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 0 0 4px 4px;">
                 <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #ffffff;">
@@ -159,8 +201,7 @@
                   <a href="mailto:{{ shop.email }}" style="color: #ffffff; text-decoration: underline;">{{ shop.email }}</a>.
                 </p>
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8e6;">
-                  You are getting this because you signed up at
-                  <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;">{{ shop.domain }}</a>.
+                  You are getting this because you asked to hear from {{ shop.domain }} when it opens.
                   <a href="{{ unsubscribe_url }}" style="color: #ffffff; text-decoration: underline;">Unsubscribe</a>.
                 </p>
                 {{ open_tracking }}

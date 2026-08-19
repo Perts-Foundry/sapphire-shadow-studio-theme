@@ -95,6 +95,23 @@ Admin API can read it back. This is the same shape as the social-links and shipp
 already documented in `CLAUDE.md`, and the README states the rule (copy editor changes back in the
 same sitting). Reversal is a `git revert` plus a re-paste; nothing here deploys.
 
+**`welcome.liquid` is written for a store that has not opened, and that is a state with an expiry
+date.** The storefront password is on, so every storefront URL resolves to Shopify's "Opening soon"
+page. The first draft of this email led with a "Meet the studio" button pointing at `/pages/about`,
+which is a password wall to every recipient: the one thing most likely to make a new subscriber
+conclude the brand is broken. The prelaunch version links nobody to the storefront. The wordmark is
+plain text, the footer names the domain without linking it, and the single button goes to Instagram,
+which is public. The file header and the directory README both carry the four-part launch swap, because
+the file becomes wrong the day the password comes off and nothing anywhere will say so.
+
+The Instagram URL is hardcoded, and has to be: Shopify Email has no `settings` object, so
+`settings.social_instagram_link` is unreachable from an email. That is a fourth copy of a social URL
+in a repo whose `CLAUDE.md` already documents two of them drifting. It is recorded rather than solved;
+there is no mechanism available that would solve it.
+
+The copy also promises no launch date. A date cannot be corrected once the send is out, and a date
+that slips reads worse than no date at all.
+
 **`welcome.liquid` deliberately carries no shipping figures.** Shipping rates, the free-shipping
 threshold, and turnaround already have four sources of truth. A sent email would be a fifth, and the
 only one that cannot be corrected after the fact, so the templates link to the policy and FAQ pages
