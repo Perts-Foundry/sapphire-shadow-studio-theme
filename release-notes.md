@@ -33,6 +33,15 @@ what discharges WCAG 2.2.2 for the page's three decorative loops; that is a sepa
 deviation, recorded in `docs/accessibility-patterns.md` next to the announcement bar's existing
 one.
 
+**The brand gradient is contained to a panel behind the countdown, not run across the page.**
+It started section-wide, which is how the announcement bar does it. Previewing that showed the
+cost: the logo is a mid-blue wordmark on transparency, and a shifting multi-hue field behind it
+left it reading as blue on blue. The gradient now lives on the countdown block's `::before`, masked
+to a radial fade so it ends without an edge, and everything outside it is the flat `#071e3f` scheme
+ground, where the logo reads in its own colour at its own size. `settings.logo_inverse` is the
+theme's intended answer to a logo on a dark ground, but it currently points at the same asset as
+`settings.logo`, so asking for it changes nothing.
+
 **The dark treatment reaches outside the section, so it is hardcoded in the layout.** A scheme class
 on the section alone leaves the storefront-password dialog and the footer white, and the dialog is
 full-viewport, so it would flash a white panel over a dark page. The class therefore sits on

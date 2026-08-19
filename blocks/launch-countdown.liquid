@@ -146,8 +146,9 @@
     --launch-countdown-tile-gap: 0.28em;
     position: relative;
     /*
-     * Own stacking context, so the z-index: -1 glow below stays behind this
-     * block's own content instead of dropping behind the section background.
+     * Own stacking context, so the z-index: -1 gradient panel below stays
+     * behind this block's own content instead of dropping behind the section
+     * background.
      */
     isolation: isolate;
     display: flex;
@@ -162,17 +163,33 @@
   }
 
   /*
-   * Slow breathing glow behind the lockup. Only opacity and transform are
-   * animated, so it stays off the paint path; the section gradient in
-   * sections/password.liquid is the one paint-path animation on this page.
+   * The animated brand gradient, contained to a soft panel behind the lockup
+   * rather than run across the whole page. The colour ramp is the one from
+   * sections/header-announcements.liquid; the keyframes are adapted, because
+   * that precedent pans a 90deg ramp on one axis across a thin band and this
+   * is a 135deg ramp across a block, so both axes move. Every stop stays dark
+   * enough to keep white text well above 4.5:1.
+   *
+   * Confining it is deliberate: the logo sits on the flat #071e3f page ground
+   * outside this panel, where it reads in its own blue rather than competing
+   * with a shifting multi-hue field. The radial mask is what makes the panel
+   * end in a fade instead of a visible edge.
+   *
+   * Animating background-position is paint-triggering rather than
+   * compositor-only, and this is the only such animation on the page: the
+   * sweep bar and the digit ticks animate transform and opacity instead. The
+   * paint cost is much smaller here than it was section-wide.
    */
   .launch-countdown::before {
     content: "";
     position: absolute;
-    inset: -20% -10%;
+    inset: -18% -12%;
     z-index: -1;
     pointer-events: none;
-    background: radial-gradient(ellipse at center, rgb(var(--color-primary-rgb) / 0.3), transparent 70%);
+    background-image: linear-gradient(135deg, #071e3f, #123a8c, #3a1a6b, #6b1a52, #0a5563, #123a8c, #071e3f);
+    background-size: 300% 300%;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 40%, transparent 75%);
+    mask-image: radial-gradient(ellipse at center, #000 40%, transparent 75%);
   }
 
   .launch-countdown__eyebrow {
@@ -289,7 +306,7 @@
    */
   @media (prefers-reduced-motion: no-preference) {
     .launch-countdown::before {
-      animation: launch-countdown-glow 12s ease-in-out infinite;
+      animation: launch-countdown-panel 28s ease-in-out infinite;
     }
 
     .launch-countdown__unit {
@@ -323,16 +340,14 @@
     }
   }
 
-  @keyframes launch-countdown-glow {
+  @keyframes launch-countdown-panel {
     0%,
     100% {
-      opacity: 0.55;
-      transform: scale(0.95);
+      background-position: 0% 0%;
     }
 
     50% {
-      opacity: 1;
-      transform: scale(1.05);
+      background-position: 100% 100%;
     }
   }
 
