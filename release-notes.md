@@ -1,5 +1,71 @@
 # Release Notes
 
+## Launch countdown on the password page (unreleased)
+
+The pre-launch gate showed "Opening soon" with no date, in the Horizon default white scheme, so it
+read as a placeholder rather than as the store. It now carries a live countdown to a hardcoded
+launch instant and renders in the brand's `sss-dark-scheme`. The whole surface is temporary: the
+removal list is the standing `TODO.md` item, not this file.
+
+**The launch instant is three literals that move together, and nothing checks that they agree.**
+`blocks/launch-countdown.liquid` assigns `launch_at` (the machine-readable instant, also handed to
+JS through `data-launch-at`) plus two hand-authored display strings: the visible date line and the
+screen-reader sentence. The obvious alternative, deriving all three from
+`launch_at` with the `date` filter, was rejected because that filter renders in the **shop's**
+timezone, so the page would silently misstate the time if the shop timezone were ever not Eastern.
+The cost of that choice is that changing the date in one place and not the others ticks the digits
+toward the new date while the visible lockup and the accessible sentence keep asserting the old one.
+Nothing errors and nothing in CI catches it, so the three assignments are kept adjacent in one
+`{% liquid %}` block with a doc note saying they move as a unit.
+
+**The date line is set in the heading face, not the brand cursive.** It was cursive, and the
+cursive looked like two fonts in one line: Dancing Script draws its lowercase as connected script
+and its capitals and digits as upright formal letters, and a date is mostly digits and capitals.
+Verified rather than assumed, since "two fonts" normally means a missing glyph falling back:
+`document.fonts.check` returns true for lowercase, uppercase, digits and the middot, and the string
+renders whole with no fallback in the stack. So it was always one font, and the fix was typographic,
+not a font swap. That also made the block the only thing on the password page using Dancing Script,
+so its duplicated `@font-face` and 42 KB preload came out; `sections/hero.liquid` still carries the
+original for the homepage lockup.
+
+**The countdown's eyebrow is the page's `<h1>`.** The template used to carry an "Opening soon" text
+block for that, which the gradient panel behind the countdown ended up washing out, and which said
+less than the countdown directly beneath it. Removing it took the page's only heading with it, so
+the heading role moved onto the eyebrow. Nothing in CI checks heading structure, so adding a heading
+back to the template means demoting that one by hand.
+
+**Zero-padding is asymmetric on purpose, on both sides of the wire.** The house idiom
+`value | prepend: '0' | slice: -2, 2` is correct for 1 and 2 digit inputs but truncates 3 digit
+ones: `100` becomes `"0100"`, and the slice returns `"00"`, dropping the hundreds digit. Days can
+exceed 99, so days renders unpadded and only hours, minutes and seconds are padded. This is a
+cross-layer contract: `assets/launch-countdown.js` has to mirror it exactly, because the Liquid
+output is what paints first and the JS output is what replaces it a moment later. A mismatch is not
+a crash, it is a visible jump between first paint and the first tick.
+
+**The digits are `aria-hidden` with a static visually-hidden equivalent, not an `aria-live`
+region.** That is a deliberate exception to the repo's global "auto-updating regions get
+`aria-live`" rule, since a per-second live region floods a screen reader for no benefit. It is not
+what discharges WCAG 2.2.2 for the page's three decorative loops; that is a separate accepted
+deviation, recorded in `docs/accessibility-patterns.md` next to the announcement bar's existing
+one.
+
+**The brand gradient is contained to a panel behind the countdown, not run across the page.**
+It started section-wide, which is how the announcement bar does it. Previewing that showed the
+cost: the logo is a mid-blue wordmark on transparency, and a shifting multi-hue field behind it
+left it reading as blue on blue. The gradient now lives on the countdown block's `::before`, masked
+to a radial fade so it ends without an edge, and everything outside it is the flat `#071e3f` scheme
+ground, where the logo reads in its own colour at its own size. `settings.logo_inverse` is the
+theme's intended answer to a logo on a dark ground, but it currently points at the same asset as
+`settings.logo`, so asking for it changes nothing.
+
+**The dark treatment reaches outside the section, so it is hardcoded in the layout.** A scheme class
+on the section alone leaves the storefront-password dialog and the footer white, and the dialog is
+full-viewport, so it would flash a white panel over a dark page. The class therefore sits on
+`<body>` in `layout/password.liquid`, where there are no section settings to read a scheme id from.
+Deleting `sss-dark-scheme` in Admin degrades the page to the default scheme rather than breaking it.
+All three password files are upstream Horizon files and now carry rows in README's
+"Deviations that must survive a merge" table.
+
 ## Dynamic collections dropdown on the main menu (unreleased)
 
 The Shop link's dropdown is not authored in Admin. **A top-level menu link that has no children of

@@ -1,0 +1,435 @@
+{%- doc -%}
+  Live countdown to the public launch, rendered on the password page only.
+  Temporary by design: the whole block, its script, and its entry in
+  `templates/password.json` are deleted when the storefront password gate comes
+  off (tracked in TODO.md).
+
+  Three things move together and are all defined in the single {% liquid %}
+  block below: `launch_at` (the machine-readable instant, also handed to JS via
+  `data-launch-at`), the visible date line, and the spoken one. The two display
+  strings are hand-authored rather than derived from `launch_at` with the
+  `date` filter because that filter renders in the *shop's* timezone, which
+  would silently misstate the time if the shop timezone is ever not Eastern.
+  Change one, change all three.
+
+  Strings here are literal English with no locale keys, matching the Vacation
+  Mode settings group's existing precedent. The surface is deleted at launch,
+  so there is nothing to translate and nothing to unwind out of the locale
+  files.
+
+  Zero-padding is asymmetric on purpose. The idiom
+  `{{ value | prepend: '0' | slice: -2, 2 }}` is correct for 1 and 2 digit
+  inputs but truncates 3 digit ones, so days renders unpadded and only
+  hours / minutes / seconds are padded to two. `assets/launch-countdown.js`
+  mirrors that exactly; a mismatch shows up as a visible jump between first
+  paint and the first tick.
+
+  Accessibility, deliberately: the ticking digits are `aria-hidden` and the
+  accessible equivalent is a *static* visually-hidden sentence naming the
+  target instant. This is a deliberate exception to the repo's global
+  "auto-updating regions get `aria-live`" rule, because a per-second live
+  region floods a screen reader for no benefit. It does **not** discharge
+  WCAG 2.2.2 (pause / stop / hide for the decorative loops); that is a
+  separate accepted deviation recorded in `docs/accessibility-patterns.md`.
+
+  The eyebrow is the page's `<h1>`, and the only one. It used to be a `<p>`,
+  because `templates/password.json` carried an "Opening soon" text block that
+  supplied the heading; that block was removed, so the heading role moved here.
+  Nothing in CI checks heading structure, so if a heading is ever added back to
+  the template, demote this one by hand.
+
+  The schema declares `"tag": null` and this file emits its own root element,
+  so `{{ block.shopify_attributes }}` has to be applied by hand or the block
+  is not selectable in the theme editor.
+{%- enddoc -%}
+
+{%- liquid
+  assign launch_at = '2026-09-03T09:00:00-04:00'
+  assign launch_date_display = 'September 3, 2026 · 9:00 AM ET'
+  assign launch_date_spoken = 'September 3, 2026 at 9:00 AM Eastern Time'
+
+  comment
+    Server-rendered initial values, so the digits are right before JS runs and
+    for visitors without JS. These can be briefly stale if Shopify edge-caches
+    the password page; JS corrects them on the first tick.
+  endcomment
+  assign launch_epoch = launch_at | date: '%s' | plus: 0
+  assign now_epoch = 'now' | date: '%s' | plus: 0
+  assign remaining = launch_epoch | minus: now_epoch
+  if remaining < 0
+    assign remaining = 0
+  endif
+  assign init_days = remaining | divided_by: 86400
+  assign init_hours = remaining | modulo: 86400 | divided_by: 3600
+  assign init_minutes = remaining | modulo: 3600 | divided_by: 60
+  assign init_seconds = remaining | modulo: 60
+  assign init_hours = init_hours | prepend: '0' | slice: -2, 2
+  assign init_minutes = init_minutes | prepend: '0' | slice: -2, 2
+  assign init_seconds = init_seconds | prepend: '0' | slice: -2, 2
+-%}
+
+<launch-countdown-component
+  class="launch-countdown"
+  data-launch-at="{{ launch_at }}"
+  {{ block.shopify_attributes }}
+>
+  <h1 class="launch-countdown__eyebrow">
+    <span class="launch-countdown__star" aria-hidden="true">
+      {{- 'sss-star.svg' | inline_asset_content -}}
+    </span>
+    The studio opens in
+    <span class="launch-countdown__star" aria-hidden="true">
+      {{- 'sss-star.svg' | inline_asset_content -}}
+    </span>
+  </h1>
+
+  <div class="launch-countdown__units" aria-hidden="true">
+    <div class="launch-countdown__unit" style="--unit-index: 0">
+      <span class="launch-countdown__value" ref="days">{{ init_days }}</span>
+      <span class="launch-countdown__label">Days</span>
+    </div>
+    <div class="launch-countdown__unit" style="--unit-index: 1">
+      <span class="launch-countdown__value" ref="hours">{{ init_hours }}</span>
+      <span class="launch-countdown__label">Hours</span>
+    </div>
+    <div class="launch-countdown__unit" style="--unit-index: 2">
+      <span class="launch-countdown__value" ref="minutes">{{ init_minutes }}</span>
+      <span class="launch-countdown__label">Minutes</span>
+    </div>
+    <div class="launch-countdown__unit launch-countdown__unit--seconds" style="--unit-index: 3">
+      <span class="launch-countdown__value" ref="seconds">{{ init_seconds }}</span>
+      <span class="launch-countdown__label">Seconds</span>
+    </div>
+  </div>
+
+  {%- comment -%}
+    Static accessible equivalent for the aria-hidden digits above. Carries no
+    `ref`: nothing in the JS reads it, and a ref here would falsely imply
+    planned dynamic behaviour.
+  {%- endcomment -%}
+  <p class="visually-hidden">Launching {{ launch_date_spoken }}.</p>
+
+  <p class="launch-countdown__date">{{ launch_date_display }}</p>
+</launch-countdown-component>
+
+{% stylesheet %}
+  /*
+   * Launch countdown lockup. Sized in em off the theme h1 size so every part
+   * scales together, the same way .hero-lockup does. Colors come from the
+   * ambient color scheme tokens, so the block follows whatever scheme wraps
+   * it (sss-dark-scheme on the password page today).
+   */
+  .launch-countdown {
+    --launch-countdown-star-size: 0.6em;
+    --launch-countdown-star-gap: 0.35em;
+    --launch-countdown-tile-gap: 0.28em;
+    position: relative;
+    /*
+     * Own stacking context, so the z-index: -1 gradient panel below stays
+     * behind this block's own content instead of dropping behind the section
+     * background.
+     */
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0;
+    font-size: var(--font-h1--size);
+    line-height: 1;
+    text-align: center;
+    color: var(--color-foreground-heading);
+  }
+
+  /*
+   * The animated brand gradient, contained to a soft panel behind the lockup
+   * rather than run across the whole page. The colour ramp is the one from
+   * sections/header-announcements.liquid; the keyframes are adapted, because
+   * that precedent pans a 90deg ramp on one axis across a thin band and this
+   * is a 135deg ramp across a block, so both axes move. Every stop stays dark
+   * enough to keep white text well above 4.5:1.
+   *
+   * Confining it is deliberate: the logo sits on the flat #071e3f page ground
+   * outside this panel, where it reads in its own blue rather than competing
+   * with a shifting multi-hue field. The radial mask is what makes the panel
+   * end in a fade instead of a visible edge.
+   *
+   * The block-start bleed is small for that reason. At -42% it was 42% of a
+   * block height, which grew as the block did and climbed into the lower half
+   * of the logo at every viewport narrower or shorter than a 1440x900 desktop.
+   * The clearance below the logo is a fixed ~44px (the logo block's own bottom
+   * padding plus the section gap), so the bleed has to stay well under that.
+   *
+   * Animating background-position is paint-triggering rather than
+   * compositor-only, and this is the only such animation on the page: the
+   * digit ticks and the tile entrance animate transform and opacity instead.
+   * The paint cost is much smaller here than it was section-wide.
+   */
+  .launch-countdown::before {
+    content: "";
+    position: absolute;
+    /*
+     * Asymmetric on purpose: the bloom is centred on the tiles and pulled up
+     * off the newsletter line below, which otherwise sat on the brightest part
+     * of the ramp and read as grey despite being pure white.
+     */
+    inset: -16% -45% -14%;
+    z-index: -1;
+    pointer-events: none;
+    background-image: linear-gradient(135deg, #071e3f, #123a8c, #3a1a6b, #6b1a52, #0a5563, #123a8c, #071e3f);
+    background-size: 300% 300%;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 38%, transparent 80%);
+    mask-image: radial-gradient(ellipse at center, #000 38%, transparent 80%);
+  }
+
+  /*
+   * This is the page's h1. The explicit font-weight and font-size are what stop
+   * it inheriting heading scale from the theme: it is a tracked eyebrow that
+   * happens to carry the heading role, not a display heading.
+   */
+  .launch-countdown__eyebrow {
+    /*
+     * Deliberately not a flex row. As flex items the two stars were pushed to
+     * the far edges the moment the text wrapped, which it does at mobile
+     * widths, leaving them stranded either side of a two-line heading. Inline
+     * stars wrap with the words instead.
+     */
+    display: block;
+    margin: 0;
+    font-family: inherit;
+    font-size: 0.36em;
+    font-weight: 400;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    text-wrap: balance;
+    opacity: var(--opacity-85);
+  }
+
+  .launch-countdown__star {
+    display: inline-block;
+    vertical-align: middle;
+    margin-inline: var(--launch-countdown-star-gap);
+    line-height: 0;
+    color: inherit;
+  }
+
+  .launch-countdown__star svg {
+    display: block;
+    width: var(--launch-countdown-star-size);
+    height: var(--launch-countdown-star-size);
+  }
+
+  .launch-countdown__units {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--launch-countdown-tile-gap);
+  }
+
+  .launch-countdown__unit {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2em;
+    min-inline-size: 3.2em;
+    padding: var(--padding-lg) var(--padding-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--style-border-radius-buttons-primary);
+    background: rgb(var(--color-foreground-rgb) / var(--opacity-5-15));
+    box-shadow: var(--shadow-popover), 0 0 40px rgb(var(--color-primary-rgb) / 0.25);
+  }
+
+  /*
+   * The digits sit in a fixed two-character box. `tabular-nums` alone was not
+   * enough: it equalises the digits *within* a face that ships the feature, but
+   * the tile widths are content-sized, so any difference in the rendered string
+   * still resized the whole row once a second. A `min-inline-size` in `ch`
+   * fixes the box regardless, and the value centres inside it. Days is allowed
+   * to grow past it (a three digit day count must not be clipped); it changes
+   * once a day rather than once a second, so it cannot read as jitter.
+   */
+  .launch-countdown__value {
+    font-family: var(--font-heading--family);
+    font-weight: 700;
+    font-size: 1em;
+    font-variant-numeric: tabular-nums;
+    min-inline-size: 2ch;
+    line-height: 0.9;
+    text-align: center;
+    color: var(--color-foreground-heading);
+  }
+
+  .launch-countdown__label {
+    font-size: 0.26em;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    /*
+     * Near-white rather than the #3399E0 accent: the accent sits close to 5:1
+     * on #071e3f, which is too tight for text this small.
+     */
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-85));
+  }
+
+  /*
+   * The heading face, not the brand cursive. The cursive was one font, but
+   * Dancing Script draws its lowercase as connected script and its capitals
+   * and digits as upright formal letters, so a string of month, digits and a
+   * timezone read as two typefaces in one line. A date is mostly digits and
+   * capitals, which is exactly what that face is least uniform at. Tracked
+   * caps in the heading font make the line one voice, and echo the eyebrow.
+   *
+   * This is also why the block no longer self-hosts Dancing Script: it was the
+   * only thing on the password page using it, so the duplicated @font-face and
+   * its 42 KB preload went with it. sections/hero.liquid still has the
+   * original for the homepage lockup.
+   */
+  .launch-countdown__date {
+    margin: 0;
+    font-family: var(--font-heading--family);
+    font-weight: 600;
+    font-size: 0.32em;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    line-height: 1.4;
+    color: var(--color-foreground-heading);
+  }
+
+  /*
+   * Mobile keeps all four units on one row rather than wrapping to 2x2, which
+   * cost a whole extra screen of height and pushed the signup below the fold.
+   * Everything that buys horizontal room is tuned here rather than by shrinking
+   * the digits alone: the tiles lose their min-inline-size and most of their
+   * inline padding, the gap tightens, and the label tracking drops hard, since
+   * "SECONDS" at the desktop 0.28em is what actually sets the tile width.
+   *
+   * Those tile widths are set by their label, not by the viewport, so the
+   * label size and tracking are what buy the inline padding back: at 0.22em /
+   * 0.06em "SECONDS" filled 56px of a 60px box and sat on the tile border.
+   * Shrinking the label is what makes room for real padding without widening
+   * the row.
+   */
+  @media screen and (max-width: 749px) {
+    /*
+     * The block takes the full inline size here so the four 1fr columns below
+     * divide a *definite* width. Without it the grid was shrink-to-fit, so the
+     * columns were sized by their content and the whole row breathed as the
+     * digits changed. Four equal tiles is also the tidier read at this size.
+     */
+    .launch-countdown {
+      --launch-countdown-tile-gap: 0.14em;
+      gap: 0.4em;
+      inline-size: 100%;
+    }
+
+    .launch-countdown__eyebrow {
+      font-size: 0.27em;
+      letter-spacing: 0.15em;
+    }
+
+    .launch-countdown__date {
+      font-size: 0.24em;
+      letter-spacing: 0.1em;
+    }
+
+    .launch-countdown__units {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      inline-size: 100%;
+    }
+
+    .launch-countdown__unit {
+      min-inline-size: 0;
+      gap: 0.12em;
+      padding: var(--padding-xs) var(--padding-2xs);
+    }
+
+    .launch-countdown__value {
+      font-size: 0.8em;
+    }
+
+    .launch-countdown__label {
+      font-size: 0.19em;
+      letter-spacing: 0.04em;
+    }
+  }
+
+  /*
+   * All motion is gated behind `no-preference` rather than opted out of under
+   * `reduce`. The announcement bar uses the opt-out idiom; mixing the two on
+   * one page makes them disagree on any engine that does not support the media
+   * feature, so this file applies one idiom consistently.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .launch-countdown::before {
+      animation: launch-countdown-panel 28s ease-in-out infinite;
+    }
+
+    .launch-countdown__unit {
+      animation: launch-countdown-enter 0.7s var(--animation-timing-fade-in) both;
+      animation-delay: calc(var(--unit-index) * 0.06s);
+    }
+
+    .launch-countdown__value[data-tick] {
+      animation: launch-countdown-tick 0.28s var(--animation-timing-fade-in);
+    }
+  }
+
+  @keyframes launch-countdown-panel {
+    0%,
+    100% {
+      background-position: 0% 0%;
+    }
+
+    50% {
+      background-position: 100% 100%;
+    }
+  }
+
+  @keyframes launch-countdown-enter {
+    from {
+      filter: blur(12px);
+      opacity: 0;
+      transform: translateY(0.15em);
+    }
+
+    to {
+      filter: blur(0);
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes launch-countdown-tick {
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    45% {
+      opacity: 0.35;
+      transform: translateY(-0.12em);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Launch countdown",
+  "tag": null,
+  "settings": [],
+  "presets": [
+    {
+      "name": "Launch countdown",
+      "category": "t:categories.custom"
+    }
+  ]
+}
+{% endschema %}

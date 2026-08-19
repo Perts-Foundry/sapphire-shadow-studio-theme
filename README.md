@@ -170,10 +170,13 @@ Upstream Horizon files carrying intentional local changes. Taking theirs on any 
 | `sections/featured-product-information.liquid` | Same guard. |
 | `sections/header.liquid` | Organization JSON-LD removed (now `snippets/structured-data.liquid`) and the `index`-guarded visually-hidden `<h1>` removed (the hero supplies the homepage heading). |
 | `snippets/meta-tags.liquid` | `og:image` forced to `https:`; the `twitter:site` tag removed along with its broken handle parse. |
-| `blocks/email-signup.liquid` | Input text and placeholder colors read `--color-input-text` / `--color-input-text-rgb` instead of upstream's hardcoded `rgb(255 255 255)`, which rendered white-on-white on the light-scheme password page. |
+| `blocks/email-signup.liquid` | Input text and placeholder colors read `--color-input-text` / `--color-input-text-rgb` instead of upstream's hardcoded `rgb(255 255 255)`, which rendered white-on-white on any light color scheme (the password page, then on the default scheme it shipped with). |
 | `blocks/_header-menu.liquid` | The dynamic collections dropdown trigger (`is_dynamic`) and the `role="menuitem"` / `role="presentation"` removals. |
 | `snippets/mega-menu-list.liquid` | The `dynamic_collections` branch. The whole static branch is re-indented inside its `{% else %}`, so an upstream change conflicts across the entire file: resolve by re-applying the `dynamic_collections` branch onto theirs, never by keeping ours wholesale. |
 | `snippets/header-drawer.liquid` | The dynamic collections submenu in both 2-level branches, plus `localization_style: 'drawer'` passed to `localization-form`. |
+| `layout/password.liquid` | `color-sss-dark-scheme` hardcoded on `<body>`. The layout has no section settings to read a scheme from, and the class has to reach the storefront-password dialog and the footer, which sit outside the section. |
+| `sections/password.liquid` | `shop.password_message` is no longer rendered (the Admin value contradicts the countdown), and `background-color` / `color` are forced on `.password-dialog` so the dialog does not flash a white full-screen panel over the dark page. |
+| `sections/password-footer.liquid` | The `color_scheme` schema default is `sss-dark-scheme`, not `scheme-1`. There is no stored override, so the schema default is what renders. |
 
 ## Development and contributing
 
