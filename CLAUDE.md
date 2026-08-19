@@ -67,7 +67,7 @@ README documents the workflow surface (`validate` / `preview` / `deploy` / `sync
 
 ### Code changes
 
-Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
+Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. Exception: `marketing/emails/*.liquid` are Shopify Email templates, not theme code; treat the validator's output there as syntax-only and ignore its undefined-object findings (`marketing/emails/README.md` explains why, and the real check is a test send). The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
 
 ### Backlog hygiene (`TODO.md`)
 
@@ -299,6 +299,8 @@ import { createAdminClient } from "./scripts/blank-inventory/lib/admin.mjs";
 const c = createAdminClient();
 console.log(JSON.stringify(await c.gql(`{ shop { shopPolicies { type title body } } }`)));'
 ```
+
+A campaign email would be a fifth source, and the only one that cannot be corrected after it is sent, so `marketing/emails/` templates deliberately link to the policy and FAQ pages instead of restating a rate, a threshold, or a turnaround.
 
 `write_shipping` is not granted, so rate names are read-only from here and renaming is an operator task in Admin. Also note `blocks/price.liquid`'s `show_shipping_info` setting hardcodes "$8 flat rate shipping and free shipping over $75 threshold" in an editor `info` string, so it goes stale if either theme setting changes.
 

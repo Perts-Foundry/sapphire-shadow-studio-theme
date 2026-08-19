@@ -77,7 +77,11 @@ There is no way to push a campaign template; the only path into a campaign is a 
 whole document into the custom-code editor, which is desktop-only. Keeping the files in `templates/`
 or `snippets/` would have put non-theme code inside the deployed surface, where `shopify theme push`
 would ship it and a future reader would reasonably assume it renders somewhere. A top-level
-`marketing/` directory is untouched by `deploy.yml` and reads as what it is.
+`marketing/` directory reads as what it is, and nothing in it reaches the live theme. Note where
+that protection actually comes from: there is no `.shopifyignore`, and `deploy.yml` pushes the whole
+working tree, so what keeps `marketing/` out of the upload is the Shopify CLI's own allowlist of
+recognised theme directories, not anything repo-side. A future CLI that widened that allowlist would
+change the answer silently.
 
 **`marketing/**` is in `.theme-check.yml`'s ignore list for the same reason, not as a convenience.**
 Email Liquid resolves objects that a theme does not have (`unsubscribe_url`, `open_tracking`,
@@ -96,9 +100,12 @@ threshold, and turnaround already have four sources of truth. A sent email would
 only one that cannot be corrected after the fact, so the templates link to the policy and FAQ pages
 instead of restating numbers.
 
-**Branding is duplicated per file on purpose.** No partials, no build step (an org rule, and Shopify
-Email accepts exactly one pasted document anyway), so header, footer, and palette are copied into
-each template and a palette change has to be made in all of them. The README says so.
+**Branding is duplicated per file on purpose.** No partials and no build step (the repo has no
+bundler, and Shopify Email accepts exactly one pasted document anyway), so header, footer, and
+palette are copied into each template and a palette change has to be made in all of them. The README
+says so, and records that the palette is lifted from two different colour schemes in
+`config/settings_data.json`: navy and accent blue from `sss-dark-scheme`, the light-blue surround
+from `scheme-4`.
 
 Two platform details worth keeping: `{{ unsubscribe_url }}` is required in every custom Liquid email
 and `{{ open_tracking }}` is required whenever open tracking is on, both conventionally in the

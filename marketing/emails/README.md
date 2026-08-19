@@ -30,8 +30,11 @@ The Shopify Email custom-code editor is **desktop only**; it cannot be opened on
 2. Pick the option for a custom-coded / custom Liquid email rather than a drag-and-drop template.
 3. Paste the **whole file**, including the leading `{% comment %}` header. The header is a comment,
    so it never renders; leaving it in keeps the pasted copy traceable back to this repo.
-4. Set the **subject line** and **preview text** from the file's header block. They are campaign
-   fields in the editor, not part of the pasted body, which is why they live in the header here.
+4. Set the **subject line** and **preview text** in the editor's campaign fields, copying them from
+   the file's header block. They are editor fields rather than markup, which is why the file records
+   them in a comment. A clone of `campaign-shell.liquid` has placeholders there; fill them in.
+   The preview text has a second home: the hidden **preheader `<div>`** at the top of `<body>`, which
+   many inboxes render in place of the campaign field. Keep the two saying the same thing.
 5. Send a **test email to the owner address** and check it in Gmail desktop and Gmail mobile at
    minimum. This test send is the real validation for these files; see below.
 6. Confirm the unsubscribe link resolves in the test send.
@@ -68,9 +71,17 @@ Email clients are not browsers. Keep to these when editing or cloning:
 
 - **Tables for layout.** No flexbox, no grid, no floats. `role="presentation"` on every layout table
   so screen readers do not announce them as data tables.
-- **600 px content width**, centred, with a `max-width: 100%` mobile fallback.
+- **600 px content width**, centred. The container carries `width: 600px; max-width: 600px` inline,
+  and the thing that makes it reflow on a phone is the one rule in the `@media (max-width: 620px)`
+  block: `.ssb-container { width: 100% !important; }`. Keep both halves; the inline width alone does
+  not reflow, and the media query alone does not constrain the desktop width.
 - **Inline styles for everything that matters.** The single `<style>` block holds media queries only,
-  because Gmail's web client drops most of what a `<style>` block declares.
+  because Gmail's web client drops most of what a `<style>` block declares. That is also why the
+  responsive behaviour above is the one thing not inline: there is nowhere else a media query can go.
+- **The preheader `<div>` duplicates the preview text**, and is a paired edit. It is the hidden block
+  at the top of `<body>`, and many inboxes render it instead of the campaign's preview-text field.
+  Change the preview text and you have three places to keep in step: the file's `PREVIEW TEXT:`
+  header line, this `<div>`, and the field in the Shopify Email editor.
 - **No web fonts.** `Helvetica, Arial, sans-serif`. The storefront's Inter does not load reliably in
   email clients, and a half-loaded font is worse than a consistent fallback.
 - **Explicit `width` and `height` attributes on every `<img>`, plus real `alt` text.** Clients do not
@@ -86,11 +97,14 @@ Email clients are not browsers. Keep to these when editing or cloning:
 
 ## Branding is duplicated on purpose
 
-Each file is self-contained: no partials, no includes, no build step (an org rule, and Shopify Email
-would not resolve them anyway, since it takes one pasted document). The header, footer, and palette
+Each file is self-contained: no partials, no includes, no build step. The repo has no bundler or
+transpiler to begin with, and Shopify Email would not resolve a partial anyway, since it takes one
+pasted document and nothing else. The header, footer, and palette
 are therefore copied into every template. **A palette or footer change has to be made in every file
-in this directory.** The palette comes from the theme's Sapphire scheme in
-`config/settings_data.json`: navy `#071e3f`, accent blue `#0071C2`, light blue `#e1edf5`.
+in this directory.** The palette is lifted from `config/settings_data.json`, from two different
+colour schemes: navy `#071e3f` (`sss-dark-scheme`'s `background`) and accent blue `#0071C2`
+(`sss-dark-scheme`'s `primary_button_background`), plus light blue `#e1edf5` (`scheme-4`'s
+`background`), used here as the page surround.
 
 ## Shipping and policy copy: do not restate it here
 
