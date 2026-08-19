@@ -42,7 +42,7 @@ npx shopify theme check      # lint with theme-check
 
 ## Repo layout
 
-Standard Shopify theme structure. There is no bundler or transpiler; the directories below are the shipped surface.
+Standard Shopify theme structure. There is no bundler or transpiler; the directories below are the shipped surface, apart from the last row, which is marked as not shipped.
 
 | Path | Contents |
 |---|---|
@@ -54,6 +54,7 @@ Standard Shopify theme structure. There is no bundler or transpiler; the directo
 | `assets/` | Flat directory of CSS, JS, images, fonts (shipped as-is, no build) |
 | `locales/` | Translation files; `en.default.json` is canonical |
 | `config/` | `settings_schema.json` and `settings_data.json` |
+| `marketing/emails/` | Shopify Email campaign templates. **Not shipped**: pasted by hand into the Shopify Email editor, ignored by `theme-check`. See [`marketing/emails/README.md`](marketing/emails/README.md) |
 
 Theme conventions (component framework, BEM/CSS rules, block development, accessibility) live in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md).
 

@@ -66,6 +66,47 @@ Deleting `sss-dark-scheme` in Admin degrades the page to the default scheme rath
 All three password files are upstream Horizon files and now carry rows in README's
 "Deviations that must survive a merge" table.
 
+## Shopify Email templates live in the repo, outside the theme (unreleased)
+
+`marketing/emails/` holds custom-coded Liquid/HTML emails for Shopify Email campaigns and
+automations: `campaign-shell.liquid` (clone it for a new campaign) and `welcome.liquid` (the
+"you are on the list" automation), plus a README that is the operating manual.
+
+**They sit outside the theme directories because Shopify Email has no API and no theme surface.**
+There is no way to push a campaign template; the only path into a campaign is a human pasting the
+whole document into the custom-code editor, which is desktop-only. Keeping the files in `templates/`
+or `snippets/` would have put non-theme code inside the deployed surface, where `shopify theme push`
+would ship it and a future reader would reasonably assume it renders somewhere. A top-level
+`marketing/` directory is untouched by `deploy.yml` and reads as what it is.
+
+**`marketing/**` is in `.theme-check.yml`'s ignore list for the same reason, not as a convenience.**
+Email Liquid resolves objects that a theme does not have (`unsubscribe_url`, `open_tracking`,
+`email.*`) and lacks the ones a theme does (`section`, `block`, `settings`). Every email template
+would therefore emit undefined-object findings forever. The ignore landed in the same change as the
+templates so CI never went red on an intermediate push.
+
+**The repo file is canonical, and drift is the failure mode to watch.** An edit made inside the
+Shopify Email editor while testing is invisible to everything here: no CI check, no script, and no
+Admin API can read it back. This is the same shape as the social-links and shipping-copy drift
+already documented in `CLAUDE.md`, and the README states the rule (copy editor changes back in the
+same sitting). Reversal is a `git revert` plus a re-paste; nothing here deploys.
+
+**`welcome.liquid` deliberately carries no shipping figures.** Shipping rates, the free-shipping
+threshold, and turnaround already have four sources of truth. A sent email would be a fifth, and the
+only one that cannot be corrected after the fact, so the templates link to the policy and FAQ pages
+instead of restating numbers.
+
+**Branding is duplicated per file on purpose.** No partials, no build step (an org rule, and Shopify
+Email accepts exactly one pasted document anyway), so header, footer, and palette are copied into
+each template and a palette change has to be made in all of them. The README says so.
+
+Two platform details worth keeping: `{{ unsubscribe_url }}` is required in every custom Liquid email
+and `{{ open_tracking }}` is required whenever open tracking is on, both conventionally in the
+footer, and both fail **silently** until a test send. Shopify's own example spells the second one
+`open_tracking_block` in one place, so that is the first thing to try if a send records no opens.
+The cap is 500 KB per custom-coded email (50 KB for a custom Liquid section inside a drag-and-drop
+email). Validation is the operator's test send; nothing automated proves an email renders in an inbox.
+
 ## Dynamic collections dropdown on the main menu (unreleased)
 
 The Shop link's dropdown is not authored in Admin. **A top-level menu link that has no children of
