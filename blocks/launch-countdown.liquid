@@ -1,0 +1,393 @@
+{%- doc -%}
+  Live countdown to the public launch, rendered on the password page only.
+  Temporary by design: the whole block, its script, and its entry in
+  `templates/password.json` are deleted when the storefront password gate comes
+  off (tracked in TODO.md).
+
+  Four things move together and are all defined in the single {% liquid %}
+  block below: `launch_at` (the machine-readable instant, also handed to JS via
+  `data-launch-at`) and the three display strings. The display strings are
+  hand-authored rather than derived from `launch_at` with the `date` filter
+  because that filter renders in the *shop's* timezone, which would silently
+  misstate the time if the shop timezone is ever not Eastern. Change one,
+  change all four.
+
+  Strings here are literal English with no locale keys, matching the Vacation
+  Mode settings group's existing precedent. The surface is deleted at launch,
+  so there is nothing to translate and nothing to unwind out of the locale
+  files.
+
+  Zero-padding is asymmetric on purpose. The idiom
+  `{{ value | prepend: '0' | slice: -2, 2 }}` is correct for 1 and 2 digit
+  inputs but truncates 3 digit ones, so days renders unpadded and only
+  hours / minutes / seconds are padded to two. `assets/launch-countdown.js`
+  mirrors that exactly; a mismatch shows up as a visible jump between first
+  paint and the first tick.
+
+  Accessibility, deliberately: the ticking digits are `aria-hidden` and the
+  accessible equivalent is a *static* visually-hidden sentence naming the
+  target instant. This is a deliberate exception to the repo's global
+  "auto-updating regions get `aria-live`" rule, because a per-second live
+  region floods a screen reader for no benefit. It does **not** discharge
+  WCAG 2.2.2 (pause / stop / hide for the decorative loops); that is a
+  separate accepted deviation recorded in `docs/accessibility-patterns.md`.
+
+  The eyebrow is a `<p>`, not a heading: `templates/password.json` already
+  supplies the page's single `<h1>` ("Opening soon").
+
+  The `@font-face` below is duplicated from `sections/hero.liquid`, which is
+  the original and does not render on the password page. It lives in
+  `{% style %}` rather than `{% stylesheet %}` because `{% stylesheet %}` does
+  not evaluate Liquid, so `asset_url` would not resolve there.
+
+  The schema declares `"tag": null` and this file emits its own root element,
+  so `{{ block.shopify_attributes }}` has to be applied by hand or the block
+  is not selectable in the theme editor.
+{%- enddoc -%}
+
+{%- liquid
+  assign launch_at = '2026-09-03T09:00:00-04:00'
+  assign launch_date_cursive = 'September 3'
+  assign launch_date_rest = '2026 · 9:00 AM ET'
+  assign launch_date_spoken = 'September 3, 2026 at 9:00 AM Eastern Time'
+
+  comment
+    Server-rendered initial values, so the digits are right before JS runs and
+    for visitors without JS. These can be briefly stale if Shopify edge-caches
+    the password page; JS corrects them on the first tick.
+  endcomment
+  assign launch_epoch = launch_at | date: '%s' | plus: 0
+  assign now_epoch = 'now' | date: '%s' | plus: 0
+  assign remaining = launch_epoch | minus: now_epoch
+  if remaining < 0
+    assign remaining = 0
+  endif
+  assign init_days = remaining | divided_by: 86400
+  assign init_hours = remaining | modulo: 86400 | divided_by: 3600
+  assign init_minutes = remaining | modulo: 3600 | divided_by: 60
+  assign init_seconds = remaining | modulo: 60
+  assign init_hours = init_hours | prepend: '0' | slice: -2, 2
+  assign init_minutes = init_minutes | prepend: '0' | slice: -2, 2
+  assign init_seconds = init_seconds | prepend: '0' | slice: -2, 2
+-%}
+
+{{
+  'dancing-script.woff2'
+  | asset_url
+  | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous'
+}}
+{% style %}
+  @font-face {
+    font-family: "Dancing Script";
+    src: url("{{ 'dancing-script.woff2' | asset_url }}") format("woff2");
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
+  }
+{% endstyle %}
+
+<launch-countdown-component
+  class="launch-countdown"
+  data-launch-at="{{ launch_at }}"
+  {{ block.shopify_attributes }}
+>
+  <p class="launch-countdown__eyebrow">
+    <span class="launch-countdown__star" aria-hidden="true">
+      {{- 'sss-star.svg' | inline_asset_content -}}
+    </span>
+    The studio opens in
+    <span class="launch-countdown__star" aria-hidden="true">
+      {{- 'sss-star.svg' | inline_asset_content -}}
+    </span>
+  </p>
+
+  <div class="launch-countdown__units" aria-hidden="true">
+    <div class="launch-countdown__unit" style="--unit-index: 0">
+      <span class="launch-countdown__value" ref="days">{{ init_days }}</span>
+      <span class="launch-countdown__label">Days</span>
+    </div>
+    <div class="launch-countdown__unit" style="--unit-index: 1">
+      <span class="launch-countdown__value" ref="hours">{{ init_hours }}</span>
+      <span class="launch-countdown__label">Hours</span>
+    </div>
+    <div class="launch-countdown__unit" style="--unit-index: 2">
+      <span class="launch-countdown__value" ref="minutes">{{ init_minutes }}</span>
+      <span class="launch-countdown__label">Minutes</span>
+    </div>
+    <div class="launch-countdown__unit launch-countdown__unit--seconds" style="--unit-index: 3">
+      <span class="launch-countdown__value" ref="seconds">{{ init_seconds }}</span>
+      <span class="launch-countdown__label">Seconds</span>
+    </div>
+  </div>
+
+  {%- comment -%}
+    Static accessible equivalent for the aria-hidden digits above. Carries no
+    `ref`: nothing in the JS reads it, and a ref here would falsely imply
+    planned dynamic behaviour.
+  {%- endcomment -%}
+  <p class="visually-hidden">Launching {{ launch_date_spoken }}.</p>
+
+  <p class="launch-countdown__date">
+    <span class="launch-countdown__date-cursive">{{ launch_date_cursive }}</span>
+    <span class="launch-countdown__date-rest">{{ launch_date_rest }}</span>
+  </p>
+</launch-countdown-component>
+
+{% stylesheet %}
+  /*
+   * Launch countdown lockup. Sized in em off the theme h1 size so every part
+   * scales together, the same way .hero-lockup does. Colors come from the
+   * ambient color scheme tokens, so the block follows whatever scheme wraps
+   * it (sss-dark-scheme on the password page today).
+   */
+  .launch-countdown {
+    --launch-countdown-star-size: 0.6em;
+    --launch-countdown-star-gap: 0.35em;
+    --launch-countdown-tile-gap: 0.28em;
+    position: relative;
+    /*
+     * Own stacking context, so the z-index: -1 glow below stays behind this
+     * block's own content instead of dropping behind the section background.
+     */
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0;
+    font-size: var(--font-h1--size);
+    line-height: 1;
+    text-align: center;
+    color: var(--color-foreground-heading);
+  }
+
+  /*
+   * Slow breathing glow behind the lockup. Only opacity and transform are
+   * animated, so it stays off the paint path; the section gradient in
+   * sections/password.liquid is the one paint-path animation on this page.
+   */
+  .launch-countdown::before {
+    content: "";
+    position: absolute;
+    inset: -20% -10%;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, rgb(var(--color-primary-rgb) / 0.3), transparent 70%);
+  }
+
+  .launch-countdown__eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--launch-countdown-star-gap);
+    margin: 0;
+    font-size: 0.36em;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    opacity: var(--opacity-85);
+  }
+
+  .launch-countdown__star {
+    display: flex;
+    flex: none;
+    line-height: 0;
+    color: inherit;
+  }
+
+  .launch-countdown__star svg {
+    display: block;
+    width: var(--launch-countdown-star-size);
+    height: var(--launch-countdown-star-size);
+  }
+
+  .launch-countdown__units {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--launch-countdown-tile-gap);
+  }
+
+  .launch-countdown__unit {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2em;
+    min-inline-size: 3.2em;
+    padding: var(--padding-lg) var(--padding-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--style-border-radius-buttons-primary);
+    background: rgb(var(--color-foreground-rgb) / var(--opacity-5-15));
+    box-shadow: var(--shadow-popover), 0 0 40px rgb(var(--color-primary-rgb) / 0.25);
+  }
+
+  .launch-countdown__value {
+    font-family: var(--font-heading--family);
+    font-weight: 700;
+    font-size: 1em;
+    /* Tabular figures are what stop the tiles jittering as digits change. */
+    font-variant-numeric: tabular-nums;
+    line-height: 0.9;
+    color: var(--color-foreground-heading);
+  }
+
+  .launch-countdown__label {
+    font-size: 0.26em;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    /*
+     * Near-white rather than the #3399E0 accent: the accent sits close to 5:1
+     * on #071e3f, which is too tight for text this small.
+     */
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-85));
+  }
+
+  .launch-countdown__date {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.3em;
+    margin: 0;
+  }
+
+  .launch-countdown__date-cursive {
+    /* Dancing Script is self-hosted by the @font-face declared in this
+       block's style tag; the system scripts are transient fallbacks. */
+    font-family: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
+    font-weight: 600;
+    font-size: 0.6em;
+    line-height: 1;
+  }
+
+  .launch-countdown__date-rest {
+    font-size: 0.3em;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: var(--opacity-85);
+  }
+
+  @media screen and (max-width: 749px) {
+    .launch-countdown__units {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      inline-size: 100%;
+    }
+
+    .launch-countdown__unit {
+      min-inline-size: 0;
+    }
+  }
+
+  /*
+   * All motion is gated behind `no-preference` rather than opted out of under
+   * `reduce`. The announcement bar uses the opt-out idiom; mixing the two on
+   * one page makes them disagree on any engine that does not support the media
+   * feature, so this file applies one idiom consistently.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .launch-countdown::before {
+      animation: launch-countdown-glow 12s ease-in-out infinite;
+    }
+
+    .launch-countdown__unit {
+      animation: launch-countdown-enter 0.7s var(--animation-timing-fade-in) both;
+      animation-delay: calc(var(--unit-index) * 0.06s);
+    }
+
+    .launch-countdown__value[data-tick] {
+      animation: launch-countdown-tick 0.28s var(--animation-timing-fade-in);
+    }
+
+    /*
+     * One sapphire sweep per minute under the seconds tile. scaleX with a left
+     * origin rather than a width or background-position animation, so it stays
+     * compositor-only. Stopped once the clock has expired.
+     */
+    .launch-countdown__unit--seconds::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      inset-block-end: 0;
+      block-size: 1px;
+      background: var(--color-primary);
+      transform: scaleX(0);
+      transform-origin: left;
+      animation: launch-countdown-sweep 60s linear infinite;
+    }
+
+    .launch-countdown[data-elapsed] .launch-countdown__unit--seconds::after {
+      animation: none;
+    }
+  }
+
+  @keyframes launch-countdown-glow {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(0.95);
+    }
+
+    50% {
+      opacity: 1;
+      transform: scale(1.05);
+    }
+  }
+
+  @keyframes launch-countdown-enter {
+    from {
+      filter: blur(12px);
+      opacity: 0;
+      transform: translateY(0.15em);
+    }
+
+    to {
+      filter: blur(0);
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes launch-countdown-tick {
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    45% {
+      opacity: 0.35;
+      transform: translateY(-0.12em);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes launch-countdown-sweep {
+    from {
+      transform: scaleX(0);
+    }
+
+    to {
+      transform: scaleX(1);
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Launch countdown",
+  "tag": null,
+  "settings": [],
+  "presets": [
+    {
+      "name": "Launch countdown",
+      "category": "t:categories.custom"
+    }
+  ]
+}
+{% endschema %}

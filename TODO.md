@@ -12,6 +12,14 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
+- [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
+  `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the
+  `launch_countdown` entry in `templates/password.json`, and the countdown deviation entry in
+  `docs/accessibility-patterns.md`. Decide separately whether the dark password-page treatment stays
+  (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
+  `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
+  involved, so there is nothing to unwind there.
+
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,

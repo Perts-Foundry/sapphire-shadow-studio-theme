@@ -271,6 +271,22 @@
   </script>
 {% endif %}
 
+{%- comment -%}
+  Password-page launch countdown. Temporary: this block goes away with
+  blocks/launch-countdown.liquid when the storefront password gate comes off.
+  No importmap entry, because nothing imports it; the two modules it imports
+  are already mapped. No fetchpriority="low" either, because the whole point of
+  this page is a live clock and there is nothing competing with it. The guard
+  hedges the way the product guard above does, since template.name is not
+  reliably populated on every page type.
+{%- endcomment -%}
+{% if request.page_type == 'password' or template.name == 'password' %}
+  <script
+    src="{{ 'launch-countdown.js' | asset_url }}"
+    type="module"
+  ></script>
+{% endif %}
+
 {% if settings.transition_to_main_product %}
   <script
     src="{{ 'product-card-link.js' | asset_url }}"

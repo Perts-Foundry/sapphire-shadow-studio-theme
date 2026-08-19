@@ -32,6 +32,10 @@ Where the theme knowingly differs from a pattern above. Each entry is a decision
 - **Rotation toggle.** The pattern says one toggle with a dynamic `aria-label`. `snippets/slideshow-controls.liquid` and `sections/header-announcements.liquid` both render **two static buttons** (pause and play) and show exactly one via CSS keyed off the `paused` attribute. This is an accepted ARIA APG variant, each button carries a correct static label, and it avoids threading label state through every caller. Revisit if `slideshow-controls` is ever refactored.
 - **Next / Previous at the ends.** The pattern says never disabled. The resource-list carousel sets `infinite: false` (the wrap machinery is what produced the visible snap back to the first slide, see `snippets/resource-list-carousel.liquid`), so the arrows do disable at the ends, and `assets/base.css` hides disabled arrows outright. Autoplay compensates with `autoplay-direction="alternate"`, which turns around at the ends rather than wrapping.
 
+### Launch countdown (password page)
+
+- **No pause control for the decorative loops.** The pre-launch password page carries three loops that start automatically and run well past 5 seconds: a 28s section gradient (`sections/password.liquid`), a roughly 12s breathing glow and a 60s per-minute sweep bar (`blocks/launch-countdown.liquid`). WCAG 2.2.2 asks for an on-page mechanism to pause, stop or hide them; these carry only a `prefers-reduced-motion` gate and no visible control. This matches the existing, accepted treatment of the announcement bar's infinite background gradient (`sections/header-announcements.liquid`), which likewise has a pause control for slide *rotation* but none for the gradient. Accepted because the surface is temporary and is deleted at public launch. The ticking digits themselves are `aria-hidden` with a static visually-hidden equivalent naming the launch instant, which is a separate concern and is not what discharges 2.2.2.
+
 ### Known gaps, not yet decisions
 
 Inherited from Horizon and not yet addressed; unlike the entries above these are worth closing when the surrounding code is next touched.
