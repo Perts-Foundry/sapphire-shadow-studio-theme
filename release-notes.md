@@ -124,6 +124,28 @@ says so, and records that the palette is lifted from two different colour scheme
 `config/settings_data.json`: navy and accent blue from `sss-dark-scheme`, the light-blue surround
 from `scheme-4`.
 
+**Shopify Email rejects Liquid comment tags, and that was only discoverable by pasting.** Both
+templates originally opened with a Liquid comment block carrying the campaign metadata. The editor
+refuses it: one comment tag anywhere makes the whole template invalid, with `Syntax not valid on
+line N` and a blank preview. Verified in the live editor on 2026-08-19 by bisection: removing the
+header block moved the error from line 1 to line 23, the inline preheader comment, and converting
+every comment to HTML form cleared it and rendered the email correctly. Neither form of whitespace
+control makes a difference, and the variable names were ruled out as the cause along the way.
+
+The consequence is a rule rather than a one-time fix: HTML comments are the only kind available, so
+**every comment ships in the sent email's source.** The shell's TODO markers now have to be deleted
+as they are satisfied rather than left behind, and nothing that should not travel with the email can
+live in a comment. Both file headers say so.
+
+Two things this also settled, both of which the docs left ambiguous. `{{ unsubscribe_url }}` works,
+resolving to a real `/account/unsubscribe/...` URL, even though the editor's placeholder text names
+`{{ unsubscribe_link }}`; and `{{ open_tracking }}` is accepted, even though the placeholder names
+`{{ open_tracking_block }}`. Do not "fix" either one to the other spelling.
+
+Worth recording for the next time: `theme check` and an HTML structural parse both passed this file
+while it was unpastable. Pasting into the editor is the only check that catches this class of defect,
+it is free, and it is safe, because a template is not a campaign and cannot send.
+
 Two platform details worth keeping: `{{ unsubscribe_url }}` is required in every custom Liquid email
 and `{{ open_tracking }}` is required whenever open tracking is on, both conventionally in the
 footer, and both fail **silently** until a test send. Shopify's own example spells the second one

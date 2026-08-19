@@ -1,4 +1,4 @@
-{%- comment -%}
+<!--
   ==========================================================================
   TEMPLATE: Welcome / you are in early (PRELAUNCH VERSION)
   SUBJECT: You are in early
@@ -12,6 +12,14 @@
   Not a theme file. Pasted whole into Shopify Email's custom-code editor.
   Cloned from campaign-shell.liquid; branding is duplicated on purpose, so a
   palette change has to be made in both files. See marketing/emails/README.md.
+
+  EVERY COMMENT HERE IS AN HTML COMMENT, INCLUDING THIS ONE, AND THAT IS
+  DELIBERATE. Shopify Email's editor rejects Liquid comment tags outright:
+  a Liquid comment tag anywhere in the document fails validation with
+  "Syntax not valid on line N" and the preview goes blank. HTML comments are
+  the only kind that work, so everything written here ships inside the sent
+  email's source. Keep comments free of anything that should not travel with
+  the email, a live discount code most of all.
 
   THIS VERSION ASSUMES THE STOREFRONT PASSWORD IS STILL ON. Every storefront
   URL currently resolves to Shopify's "Opening soon" password page, so this
@@ -40,7 +48,7 @@
   shipping section of the repo's CLAUDE.md) and an email is a fifth that
   nothing reconciles and that cannot be corrected once sent. It also promises
   no launch date, on purpose: a date that slips is worse than no date.
-{%- endcomment -%}
+-->
 <!doctype html>
 <html lang="en">
   <head>
@@ -63,7 +71,7 @@
   </head>
   <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
     <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #e1edf5;">
-      {%- comment -%} Preheader. Keep in step with the PREVIEW TEXT header line and the editor field. {%- endcomment -%}
+      <!-- Preheader. Keep in step with the PREVIEW TEXT header line and the editor field. -->
       The shop is not open yet. You will be first through the door.
       &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
     </div>

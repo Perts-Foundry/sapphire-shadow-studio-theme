@@ -40,18 +40,32 @@ The Shopify Email custom-code editor is **desktop only**; it cannot be opened on
 6. Confirm the unsubscribe link resolves in the test send.
 7. Update `LAST VERIFIED` in the file's header with the date of that successful test, and commit.
 
+## No Liquid comment tags. None. Anywhere.
+
+**Shopify Email's custom-code editor rejects Liquid comment tags outright.** One anywhere in the
+document turns the whole template invalid: the editor shows `Syntax not valid on line N` and the
+preview pane goes blank. The line number tracks the comment, so moving it just moves the error.
+This was confirmed in the live editor on 2026-08-19, against the real files, both with the
+whitespace-stripping form and the plain one.
+
+HTML comments are the only kind that work, and both templates now use them exclusively. That has a
+consequence worth internalising: **every comment ships inside the sent email's source.** So delete
+each TODO marker as you satisfy it rather than leaving it for later, and never write anything into a
+comment that should not travel with the email, a live discount code most of all.
+
 ## Shopify's contract
 
 These are the platform requirements the templates satisfy. Getting them wrong usually fails
 **silently** until a test send, which is why step 5 above is not optional.
 
-- **`{{ unsubscribe_url }}` is required** in every custom Liquid email. (`{{ unsubscribe_link }}`,
-  which emits a whole ready-made link instead of a bare URL, is the accepted alternative. These
-  templates use `unsubscribe_url` inside their own styled `<a>`.)
-- **`{{ open_tracking }}` is required when open tracking is on** for the campaign. Shopify's own
-  example puts it in the footer, which is where these templates put it. Some of Shopify's docs
-  spell the example variable `open_tracking_block`; if a test send fails to record opens, try that
-  spelling before assuming the markup is at fault.
+- **`{{ unsubscribe_url }}` is required** in every custom Liquid email, and it works: in the live
+  editor it resolved to a real `/account/unsubscribe/...` URL inside these templates' own styled
+  `<a>`. Note that the editor's placeholder text names `{{ unsubscribe_link }}` instead, which emits
+  a whole ready-made link rather than a bare URL. Both are accepted; do not "fix" one to the other.
+- **`{{ open_tracking }}` is required when open tracking is on** for the campaign, and the editor
+  accepts it. It renders to nothing visible, which is expected. The editor's placeholder text names
+  `{{ open_tracking_block }}`; if a test send records no opens, try that spelling before assuming
+  the markup is at fault.
 - **500 KB cap** on a custom-coded Liquid email (a custom Liquid *section* inside a drag-and-drop
   email is capped at 50 KB instead). These templates are a few KB; the cap only becomes real if
   someone inlines a base64 image, so do not.
@@ -150,7 +164,13 @@ There is no automated check for these files, by design:
   (`unsubscribe_url`, `open_tracking`, `email.*`) that do not exist in a theme, so every one of them
   would be flagged as undefined.
 - `validate_theme_codeblocks` is worth running once on a new template as a **syntax-only** sanity
-  pass: act on unclosed tags and bad filters, ignore anything it says about undefined objects.
+  pass: act on unclosed tags and bad filters, ignore anything it says about undefined objects. Note
+  that it will not catch the one defect that actually blocks a paste, since a Liquid comment tag is
+  perfectly valid theme Liquid and only Shopify Email rejects it.
+- **Pasting into the editor is itself a check, and a cheap one.** It validates on every keystroke and
+  renders a live preview against a sample customer, so it catches what nothing local can. It is safe:
+  a template is not a campaign and cannot send. This is where the Liquid-comment prohibition above was
+  found, after the file had already passed `theme check` and an HTML structural parse.
 - Opening a file in a browser is a useful structural check. Liquid tags render as literal text, but
   the layout and styles are inspectable.
 - **The test send is the real test.** Nothing before it proves the email renders in an inbox.

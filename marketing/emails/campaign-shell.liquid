@@ -1,4 +1,4 @@
-{%- comment -%}
+<!--
   ==========================================================================
   TEMPLATE: Campaign shell (clone this file to start a new campaign)
   SUBJECT: <set in the Shopify Email editor, not in this file>
@@ -13,7 +13,16 @@
   external CSS, no web fonts).
 
   Things to replace when cloning are marked TODO in comments.
-{%- endcomment -%}
+
+  EVERY COMMENT HERE IS AN HTML COMMENT, INCLUDING THIS ONE, AND THAT IS
+  DELIBERATE. Shopify Email's editor rejects Liquid comment tags outright:
+  one anywhere in the document fails validation with "Syntax not valid on
+  line N" and the preview goes blank. HTML comments are the only kind that
+  work, which means everything written here ships inside the sent email's
+  source. Two consequences. Delete each TODO marker as you satisfy it, or it
+  goes out with the campaign. And never put anything in a comment that should
+  not travel with the email, a live discount code most of all.
+-->
 <!doctype html>
 <html lang="en">
   <head>
@@ -36,11 +45,11 @@
   </head>
   <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
     <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #e1edf5;">
-      {%- comment -%}
+      <!--
         TODO: preheader. The line many inboxes show next to the subject, in place of the
         campaign's preview-text field. Under about 90 characters, and keep it saying the
         same thing as the PREVIEW TEXT header line above and the field in the editor.
-      {%- endcomment -%}
+      -->
       A short line that earns the open.
       &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
     </div>
@@ -74,14 +83,14 @@
             <tr>
               <td class="ssb-pad" style="padding: 36px 32px 8px 32px;">
                 <h1 class="ssb-h1" style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 30px; line-height: 36px; font-weight: bold; color: #071e3f;">
-                  {%- comment -%} TODO: headline. {%- endcomment -%}
+                  <!-- TODO: headline. -->
                   Headline goes here
                 </h1>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
                   Hey {{ customer.first_name | default: 'friend' }},
                 </p>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
-                  {%- comment -%} TODO: body copy. Brand voice: plain, direct, no filler. {%- endcomment -%}
+                  <!-- TODO: body copy. Brand voice: plain, direct, no filler. -->
                   Opening paragraph.
                 </p>
               </td>
@@ -101,7 +110,7 @@
                       <![endif]-->
                       <!--[if !mso]><!-- -->
                       <a href="{{ shop.url }}" style="display: inline-block; padding: 14px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 4px; background-color: #0071C2; mso-hide: all;">
-                        {%- comment -%} TODO: button label and destination. Keep the label and the VML <center> label identical. {%- endcomment -%}
+                        <!-- TODO: button label and destination. Keep the label and the VML <center> label identical. -->
                         Shop the studio
                       </a>
                       <!--<![endif]-->
@@ -115,7 +124,7 @@
             <tr>
               <td class="ssb-pad" style="padding: 16px 32px 36px 32px;">
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 22px; color: #555555;">
-                  {%- comment -%} TODO: secondary note, or delete this row. {%- endcomment -%}
+                  <!-- TODO: secondary note, or delete this row. -->
                   Smaller closing note.
                 </p>
               </td>
