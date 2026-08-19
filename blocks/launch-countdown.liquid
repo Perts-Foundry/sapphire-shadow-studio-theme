@@ -242,13 +242,23 @@
     box-shadow: var(--shadow-popover), 0 0 40px rgb(var(--color-primary-rgb) / 0.25);
   }
 
+  /*
+   * The digits sit in a fixed two-character box. `tabular-nums` alone was not
+   * enough: it equalises the digits *within* a face that ships the feature, but
+   * the tile widths are content-sized, so any difference in the rendered string
+   * still resized the whole row once a second. A `min-inline-size` in `ch`
+   * fixes the box regardless, and the value centres inside it. Days is allowed
+   * to grow past it (a three digit day count must not be clipped); it changes
+   * once a day rather than once a second, so it cannot read as jitter.
+   */
   .launch-countdown__value {
     font-family: var(--font-heading--family);
     font-weight: 700;
     font-size: 1em;
-    /* Tabular figures are what stop the tiles jittering as digits change. */
     font-variant-numeric: tabular-nums;
+    min-inline-size: 2ch;
     line-height: 0.9;
+    text-align: center;
     color: var(--color-foreground-heading);
   }
 
@@ -302,9 +312,16 @@
    * the row.
    */
   @media screen and (max-width: 749px) {
+    /*
+     * The block takes the full inline size here so the four 1fr columns below
+     * divide a *definite* width. Without it the grid was shrink-to-fit, so the
+     * columns were sized by their content and the whole row breathed as the
+     * digits changed. Four equal tiles is also the tidier read at this size.
+     */
     .launch-countdown {
       --launch-countdown-tile-gap: 0.14em;
       gap: 0.4em;
+      inline-size: 100%;
     }
 
     .launch-countdown__eyebrow {
