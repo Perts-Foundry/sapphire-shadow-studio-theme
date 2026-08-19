@@ -281,26 +281,49 @@
     color: var(--color-foreground-heading);
   }
 
+  /*
+   * Mobile keeps all four units on one row rather than wrapping to 2x2, which
+   * cost a whole extra screen of height and pushed the signup below the fold.
+   * Everything that buys horizontal room is tuned here rather than by shrinking
+   * the digits alone: the tiles lose their min-inline-size and most of their
+   * inline padding, the gap tightens, and the label tracking drops hard, since
+   * "SECONDS" at the desktop 0.28em is what actually sets the tile width.
+   */
   @media screen and (max-width: 749px) {
-    /* Tighter tracking so the heading and the date each hold one fewer line. */
+    .launch-countdown {
+      --launch-countdown-tile-gap: 0.14em;
+      gap: 0.4em;
+    }
+
     .launch-countdown__eyebrow {
-      font-size: 0.3em;
-      letter-spacing: 0.2em;
+      font-size: 0.27em;
+      letter-spacing: 0.15em;
     }
 
     .launch-countdown__date {
-      font-size: 0.28em;
-      letter-spacing: 0.16em;
+      font-size: 0.24em;
+      letter-spacing: 0.1em;
     }
 
     .launch-countdown__units {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       inline-size: 100%;
     }
 
     .launch-countdown__unit {
       min-inline-size: 0;
+      gap: 0.12em;
+      padding: var(--padding-xs) var(--padding-3xs);
+    }
+
+    .launch-countdown__value {
+      font-size: 0.8em;
+    }
+
+    .launch-countdown__label {
+      font-size: 0.22em;
+      letter-spacing: 0.06em;
     }
   }
 
