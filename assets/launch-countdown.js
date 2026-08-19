@@ -51,6 +51,13 @@ export class LaunchCountdown extends Component {
     this.#targetTime = target.getTime();
 
     this.#render();
+
+    // A target already in the past (a stale gate, or clock skew) is fully
+    // handled by that first render, which writes zeros and sets data-elapsed.
+    // Arming the interval anyway would spin up a timer whose only job is to
+    // clear itself one second later.
+    if (this.dataset.elapsed !== undefined) return;
+
     this.#interval = setInterval(this.#render, 1000);
     document.addEventListener('visibilitychange', this.#handleVisibilityChange);
   }
