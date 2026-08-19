@@ -7,16 +7,22 @@ read as a placeholder rather than as the store. It now carries a live countdown 
 launch instant and renders in the brand's `sss-dark-scheme`. The whole surface is temporary: the
 removal list is the standing `TODO.md` item, not this file.
 
-**The launch instant is four literals that move together, and nothing checks that they agree.**
+**The launch instant is three literals that move together, and nothing checks that they agree.**
 `blocks/launch-countdown.liquid` assigns `launch_at` (the machine-readable instant, also handed to
-JS through `data-launch-at`) plus three hand-authored display strings: the cursive date, the rest of
-the date line, and the screen-reader sentence. The obvious alternative, deriving all three from
+JS through `data-launch-at`) plus two hand-authored display strings: the visible date line and the
+screen-reader sentence. The obvious alternative, deriving all three from
 `launch_at` with the `date` filter, was rejected because that filter renders in the **shop's**
 timezone, so the page would silently misstate the time if the shop timezone were ever not Eastern.
-The cost of that choice is that changing the date in one place and not the other three ticks the
-digits toward the new date while the visible lockup and the accessible sentence keep asserting the
-old one. Nothing errors and nothing in CI catches it, so the four assignments are kept adjacent in
-one `{% liquid %}` block with a doc note saying they move as a unit.
+The cost of that choice is that changing the date in one place and not the others ticks the digits
+toward the new date while the visible lockup and the accessible sentence keep asserting the old one.
+Nothing errors and nothing in CI catches it, so the three assignments are kept adjacent in one
+`{% liquid %}` block with a doc note saying they move as a unit.
+
+**The countdown's eyebrow is the page's `<h1>`.** The template used to carry an "Opening soon" text
+block for that, which the gradient panel behind the countdown ended up washing out, and which said
+less than the countdown directly beneath it. Removing it took the page's only heading with it, so
+the heading role moved onto the eyebrow. Nothing in CI checks heading structure, so adding a heading
+back to the template means demoting that one by hand.
 
 **Zero-padding is asymmetric on purpose, on both sides of the wire.** The house idiom
 `value | prepend: '0' | slice: -2, 2` is correct for 1 and 2 digit inputs but truncates 3 digit

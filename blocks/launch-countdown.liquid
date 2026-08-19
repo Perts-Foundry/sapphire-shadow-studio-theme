@@ -4,13 +4,13 @@
   `templates/password.json` are deleted when the storefront password gate comes
   off (tracked in TODO.md).
 
-  Four things move together and are all defined in the single {% liquid %}
+  Three things move together and are all defined in the single {% liquid %}
   block below: `launch_at` (the machine-readable instant, also handed to JS via
-  `data-launch-at`) and the three display strings. The display strings are
-  hand-authored rather than derived from `launch_at` with the `date` filter
-  because that filter renders in the *shop's* timezone, which would silently
-  misstate the time if the shop timezone is ever not Eastern. Change one,
-  change all four.
+  `data-launch-at`), the visible date line, and the spoken one. The two display
+  strings are hand-authored rather than derived from `launch_at` with the
+  `date` filter because that filter renders in the *shop's* timezone, which
+  would silently misstate the time if the shop timezone is ever not Eastern.
+  Change one, change all three.
 
   Strings here are literal English with no locale keys, matching the Vacation
   Mode settings group's existing precedent. The surface is deleted at launch,
@@ -32,8 +32,11 @@
   WCAG 2.2.2 (pause / stop / hide for the decorative loops); that is a
   separate accepted deviation recorded in `docs/accessibility-patterns.md`.
 
-  The eyebrow is a `<p>`, not a heading: `templates/password.json` already
-  supplies the page's single `<h1>` ("Opening soon").
+  The eyebrow is the page's `<h1>`, and the only one. It used to be a `<p>`,
+  because `templates/password.json` carried an "Opening soon" text block that
+  supplied the heading; that block was removed, so the heading role moved here.
+  Nothing in CI checks heading structure, so if a heading is ever added back to
+  the template, demote this one by hand.
 
   The `@font-face` below is duplicated from `sections/hero.liquid`, which is
   the original and does not render on the password page. It lives in
@@ -47,8 +50,7 @@
 
 {%- liquid
   assign launch_at = '2026-09-03T09:00:00-04:00'
-  assign launch_date_cursive = 'September 3'
-  assign launch_date_rest = '2026 · 9:00 AM ET'
+  assign launch_date_display = 'September 3, 2026 · 9:00 AM ET'
   assign launch_date_spoken = 'September 3, 2026 at 9:00 AM Eastern Time'
 
   comment
@@ -91,7 +93,7 @@
   data-launch-at="{{ launch_at }}"
   {{ block.shopify_attributes }}
 >
-  <p class="launch-countdown__eyebrow">
+  <h1 class="launch-countdown__eyebrow">
     <span class="launch-countdown__star" aria-hidden="true">
       {{- 'sss-star.svg' | inline_asset_content -}}
     </span>
@@ -99,7 +101,7 @@
     <span class="launch-countdown__star" aria-hidden="true">
       {{- 'sss-star.svg' | inline_asset_content -}}
     </span>
-  </p>
+  </h1>
 
   <div class="launch-countdown__units" aria-hidden="true">
     <div class="launch-countdown__unit" style="--unit-index: 0">
@@ -127,10 +129,7 @@
   {%- endcomment -%}
   <p class="visually-hidden">Launching {{ launch_date_spoken }}.</p>
 
-  <p class="launch-countdown__date">
-    <span class="launch-countdown__date-cursive">{{ launch_date_cursive }}</span>
-    <span class="launch-countdown__date-rest">{{ launch_date_rest }}</span>
-  </p>
+  <p class="launch-countdown__date">{{ launch_date_display }}</p>
 </launch-countdown-component>
 
 {% stylesheet %}
@@ -192,13 +191,20 @@
     mask-image: radial-gradient(ellipse at center, #000 38%, transparent 80%);
   }
 
+  /*
+   * This is the page's h1. The explicit font-weight and font-size are what stop
+   * it inheriting heading scale from the theme: it is a tracked eyebrow that
+   * happens to carry the heading role, not a display heading.
+   */
   .launch-countdown__eyebrow {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: var(--launch-countdown-star-gap);
     margin: 0;
+    font-family: inherit;
     font-size: 0.36em;
+    font-weight: 400;
     letter-spacing: 0.35em;
     text-transform: uppercase;
     opacity: var(--opacity-85);
@@ -261,29 +267,20 @@
     color: rgb(var(--color-foreground-rgb) / var(--opacity-85));
   }
 
+  /*
+   * The whole date line is one cursive string. It was split into a cursive
+   * date and a tracked uppercase remainder, echoing the hero lockup, which
+   * read as two typographic voices in one sentence.
+   *
+   * Dancing Script is self-hosted by the @font-face declared in this block's
+   * style tag; the system scripts are transient fallbacks.
+   */
   .launch-countdown__date {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: center;
-    gap: 0.3em;
     margin: 0;
-  }
-
-  .launch-countdown__date-cursive {
-    /* Dancing Script is self-hosted by the @font-face declared in this
-       block's style tag; the system scripts are transient fallbacks. */
     font-family: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
     font-weight: 600;
-    font-size: 0.6em;
-    line-height: 1;
-  }
-
-  .launch-countdown__date-rest {
-    font-size: 0.3em;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    opacity: var(--opacity-85);
+    font-size: 0.62em;
+    line-height: 1.2;
   }
 
   @media screen and (max-width: 749px) {
