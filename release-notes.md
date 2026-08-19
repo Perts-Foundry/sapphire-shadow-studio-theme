@@ -18,6 +18,16 @@ toward the new date while the visible lockup and the accessible sentence keep as
 Nothing errors and nothing in CI catches it, so the three assignments are kept adjacent in one
 `{% liquid %}` block with a doc note saying they move as a unit.
 
+**The date line is set in the heading face, not the brand cursive.** It was cursive, and the
+cursive looked like two fonts in one line: Dancing Script draws its lowercase as connected script
+and its capitals and digits as upright formal letters, and a date is mostly digits and capitals.
+Verified rather than assumed, since "two fonts" normally means a missing glyph falling back:
+`document.fonts.check` returns true for lowercase, uppercase, digits and the middot, and the string
+renders whole with no fallback in the stack. So it was always one font, and the fix was typographic,
+not a font swap. That also made the block the only thing on the password page using Dancing Script,
+so its duplicated `@font-face` and 42 KB preload came out; `sections/hero.liquid` still carries the
+original for the homepage lockup.
+
 **The countdown's eyebrow is the page's `<h1>`.** The template used to carry an "Opening soon" text
 block for that, which the gradient panel behind the countdown ended up washing out, and which said
 less than the countdown directly beneath it. Removing it took the page's only heading with it, so

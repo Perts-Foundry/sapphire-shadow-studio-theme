@@ -38,11 +38,6 @@
   Nothing in CI checks heading structure, so if a heading is ever added back to
   the template, demote this one by hand.
 
-  The `@font-face` below is duplicated from `sections/hero.liquid`, which is
-  the original and does not render on the password page. It lives in
-  `{% style %}` rather than `{% stylesheet %}` because `{% stylesheet %}` does
-  not evaluate Liquid, so `asset_url` would not resolve there.
-
   The schema declares `"tag": null` and this file emits its own root element,
   so `{{ block.shopify_attributes }}` has to be applied by hand or the block
   is not selectable in the theme editor.
@@ -72,21 +67,6 @@
   assign init_minutes = init_minutes | prepend: '0' | slice: -2, 2
   assign init_seconds = init_seconds | prepend: '0' | slice: -2, 2
 -%}
-
-{{
-  'dancing-script.woff2'
-  | asset_url
-  | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous'
-}}
-{% style %}
-  @font-face {
-    font-family: "Dancing Script";
-    src: url("{{ 'dancing-script.woff2' | asset_url }}") format("woff2");
-    font-weight: 400 700;
-    font-style: normal;
-    font-display: swap;
-  }
-{% endstyle %}
 
 <launch-countdown-component
   class="launch-countdown"
@@ -278,19 +258,27 @@
   }
 
   /*
-   * The whole date line is one cursive string. It was split into a cursive
-   * date and a tracked uppercase remainder, echoing the hero lockup, which
-   * read as two typographic voices in one sentence.
+   * The heading face, not the brand cursive. The cursive was one font, but
+   * Dancing Script draws its lowercase as connected script and its capitals
+   * and digits as upright formal letters, so a string of month, digits and a
+   * timezone read as two typefaces in one line. A date is mostly digits and
+   * capitals, which is exactly what that face is least uniform at. Tracked
+   * caps in the heading font make the line one voice, and echo the eyebrow.
    *
-   * Dancing Script is self-hosted by the @font-face declared in this block's
-   * style tag; the system scripts are transient fallbacks.
+   * This is also why the block no longer self-hosts Dancing Script: it was the
+   * only thing on the password page using it, so the duplicated @font-face and
+   * its 42 KB preload went with it. sections/hero.liquid still has the
+   * original for the homepage lockup.
    */
   .launch-countdown__date {
     margin: 0;
-    font-family: "Dancing Script", "Brush Script MT", "Segoe Script", cursive;
+    font-family: var(--font-heading--family);
     font-weight: 600;
-    font-size: 0.62em;
-    line-height: 1.2;
+    font-size: 0.32em;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    line-height: 1.4;
+    color: var(--color-foreground-heading);
   }
 
   @media screen and (max-width: 749px) {
@@ -301,7 +289,8 @@
     }
 
     .launch-countdown__date {
-      font-size: 0.52em;
+      font-size: 0.28em;
+      letter-spacing: 0.16em;
     }
 
     .launch-countdown__units {
