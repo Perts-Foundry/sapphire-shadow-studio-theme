@@ -197,22 +197,27 @@
    * happens to carry the heading role, not a display heading.
    */
   .launch-countdown__eyebrow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--launch-countdown-star-gap);
+    /*
+     * Deliberately not a flex row. As flex items the two stars were pushed to
+     * the far edges the moment the text wrapped, which it does at mobile
+     * widths, leaving them stranded either side of a two-line heading. Inline
+     * stars wrap with the words instead.
+     */
+    display: block;
     margin: 0;
     font-family: inherit;
     font-size: 0.36em;
     font-weight: 400;
     letter-spacing: 0.35em;
     text-transform: uppercase;
+    text-wrap: balance;
     opacity: var(--opacity-85);
   }
 
   .launch-countdown__star {
-    display: flex;
-    flex: none;
+    display: inline-block;
+    vertical-align: middle;
+    margin-inline: var(--launch-countdown-star-gap);
     line-height: 0;
     color: inherit;
   }
@@ -284,6 +289,16 @@
   }
 
   @media screen and (max-width: 749px) {
+    /* Tighter tracking so the heading and the date each hold one fewer line. */
+    .launch-countdown__eyebrow {
+      font-size: 0.3em;
+      letter-spacing: 0.2em;
+    }
+
+    .launch-countdown__date {
+      font-size: 0.52em;
+    }
+
     .launch-countdown__units {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
