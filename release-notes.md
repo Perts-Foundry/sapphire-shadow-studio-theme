@@ -101,7 +101,7 @@ page. The first draft of this email led with a "Meet the studio" button pointing
 which is a password wall to every recipient: the one thing most likely to make a new subscriber
 conclude the brand is broken. The prelaunch version links nobody to the storefront. The wordmark is
 plain text, the footer names the domain without linking it, and the single button goes to Instagram,
-which is public. The file header and the directory README both carry the four-part launch swap, because
+which is public. The directory README carries the four-part launch swap, and is the only place that does, because
 the file becomes wrong the day the password comes off and nothing anywhere will say so.
 
 The Instagram URL is hardcoded, and has to be: Shopify Email has no `settings` object, so
@@ -133,9 +133,15 @@ every comment to HTML form cleared it and rendered the email correctly. Neither 
 control makes a difference, and the variable names were ruled out as the cause along the way.
 
 The consequence is a rule rather than a one-time fix: HTML comments are the only kind available, so
-**every comment ships in the sent email's source.** The shell's TODO markers now have to be deleted
-as they are satisfied rather than left behind, and nothing that should not travel with the email can
-live in a comment. Both file headers say so.
+**every comment ships in the sent email's source**, where any recipient can read it. The first answer
+to that was discipline (delete each TODO as it is satisfied, keep discount codes out of comments),
+which is a rule that has to hold on every future edit to stay true. The rule the templates settled on
+instead is structural: **they carry no comments at all.** Campaign metadata, launch checklists,
+rationale, and TODO markers live in `marketing/emails/README.md`, which nobody receives. The shell
+marks its fill-in spots with ALL-CAPS visible text (`HEADLINE GOES HERE`, `BUTTON LABEL`), so a
+forgotten one is glaring in the editor preview and in the test send rather than invisible in a
+comment. The only comments left in either file are the Outlook conditionals around the button, which
+are functional markup.
 
 Two things this also settled, both of which the docs left ambiguous. `{{ unsubscribe_url }}` works,
 resolving to a real `/account/unsubscribe/...` URL, even though the editor's placeholder text names

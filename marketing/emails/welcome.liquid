@@ -1,54 +1,3 @@
-<!--
-  ==========================================================================
-  TEMPLATE: Welcome / you are in early (PRELAUNCH VERSION)
-  SUBJECT: You are in early
-  PREVIEW TEXT: The shop is not open yet. You will be first through the door.
-  SEGMENT / AUTOMATION: "Customer signs up" welcome automation (all new
-    email subscribers, while the storefront is still password-protected)
-  DISCOUNT CODE: none yet. If a founding-subscriber code is created in Admin,
-    uncomment the discount row below and put the code in it.
-  LAST VERIFIED: not yet test-sent
-  ==========================================================================
-  Not a theme file. Pasted whole into Shopify Email's custom-code editor.
-  Cloned from campaign-shell.liquid; branding is duplicated on purpose, so a
-  palette change has to be made in both files. See marketing/emails/README.md.
-
-  EVERY COMMENT HERE IS AN HTML COMMENT, INCLUDING THIS ONE, AND THAT IS
-  DELIBERATE. Shopify Email's editor rejects Liquid comment tags outright:
-  a Liquid comment tag anywhere in the document fails validation with
-  "Syntax not valid on line N" and the preview goes blank. HTML comments are
-  the only kind that work, so everything written here ships inside the sent
-  email's source. Keep comments free of anything that should not travel with
-  the email, a live discount code most of all.
-
-  THIS VERSION ASSUMES THE STOREFRONT PASSWORD IS STILL ON. Every storefront
-  URL currently resolves to Shopify's "Opening soon" password page, so this
-  email deliberately does not send anyone there: the wordmark is plain text,
-  the footer names the domain without linking it, and the one button points at
-  Instagram, which is public. A welcome email whose links all dead-end on a
-  password wall is the fastest way to make a new subscriber think the brand is
-  broken.
-
-  AT LAUNCH, when the password comes off, change these four things together:
-    1. Wrap the header wordmark in a link to {{ shop.url }} (markup below).
-    2. Repoint the button at {{ shop.url }}, in BOTH the VML and anchor halves,
-       and change both labels to match.
-    3. Link the footer's {{ shop.domain }} back to {{ shop.url }}.
-    4. Rewrite the "What happens next" section, which is written for a shop
-       that has not opened, and update SUBJECT and PREVIEW TEXT above plus the
-       preheader div to match.
-
-  The Instagram URL below is hardcoded because Shopify Email has no `settings`
-  object. It duplicates `settings.social_instagram_link` in
-  config/settings_data.json, and nothing reconciles the two: changing the
-  profile URL in theme settings leaves this file stale.
-
-  Deliberately says nothing specific about shipping rates, thresholds, or
-  turnaround times. That copy already has four sources of truth (see the
-  shipping section of the repo's CLAUDE.md) and an email is a fifth that
-  nothing reconciles and that cannot be corrected once sent. It also promises
-  no launch date, on purpose: a date that slips is worse than no date.
--->
 <!doctype html>
 <html lang="en">
   <head>
@@ -59,20 +8,18 @@
     <meta name="supported-color-schemes" content="light">
     <title>{{ shop.name }}</title>
     <style>
-      /* Media queries only. Everything else is inline, because Gmail's web
-         client drops most of what a style block declares. */
       @media only screen and (max-width: 620px) {
         .ssb-container { width: 100% !important; }
         .ssb-pad { padding-left: 20px !important; padding-right: 20px !important; }
         .ssb-h1 { font-size: 26px !important; line-height: 32px !important; }
+        .ssb-button, .ssb-button td { width: 100% !important; }
         .ssb-button a { display: block !important; }
       }
     </style>
   </head>
   <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
     <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #e1edf5;">
-      <!-- Preheader. Keep in step with the PREVIEW TEXT header line and the editor field. -->
-      The shop is not open yet. You will be first through the door.
+      You are in early. The shop is not open yet, and you will be first through the door.
       &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
     </div>
 
@@ -81,18 +28,12 @@
         <td align="center" style="padding: 24px 12px;">
           <table role="presentation" class="ssb-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #ffffff; border-radius: 4px;">
 
-            <!--
-              Header. The wordmark is plain text while the storefront password is on,
-              because {{ shop.url }} is the password page. At launch, wrap the span:
-              <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: none;"> ... </a>
-            -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 4px 4px 0 0;">
                 <span style="font-family: Helvetica, Arial, sans-serif; font-size: 20px; line-height: 26px; font-weight: bold; letter-spacing: 1px; color: #ffffff; text-transform: uppercase;">{{ shop.name }}</span>
               </td>
             </tr>
 
-            <!-- Hero text -->
             <tr>
               <td class="ssb-pad" style="padding: 36px 32px 8px 32px;">
                 <h1 class="ssb-h1" style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 30px; line-height: 36px; font-weight: bold; color: #071e3f;">
@@ -113,7 +54,6 @@
               </td>
             </tr>
 
-            <!-- What happens next. Written for a shop that has not opened; rewrite at launch. -->
             <tr>
               <td class="ssb-pad" style="padding: 8px 32px 8px 32px;">
                 <h2 style="margin: 0 0 12px 0; font-family: Helvetica, Arial, sans-serif; font-size: 18px; line-height: 24px; font-weight: bold; color: #071e3f;">
@@ -132,33 +72,6 @@
               </td>
             </tr>
 
-            <!--
-              Optional founding-subscriber discount row. Uncomment once the code exists in
-              Admin, and replace LAUNCHCODE with the real code. Do not commit a code that is
-              meant to stay private until launch day; this repo is public.
-            <tr>
-              <td class="ssb-pad" style="padding: 8px 32px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #e1edf5; border-radius: 4px;">
-                  <tr>
-                    <td align="center" style="padding: 20px 24px;">
-                      <p style="margin: 0 0 6px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #071e3f;">
-                        Yours for opening day
-                      </p>
-                      <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 22px; line-height: 28px; font-weight: bold; letter-spacing: 2px; color: #071e3f;">
-                        LAUNCHCODE
-                      </p>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            -->
-
-            <!--
-              Call to action. Bulletproof button: VML for Outlook, an anchor everywhere else.
-              Points at Instagram, not the storefront, because the storefront is password-gated
-              until launch. Keep the two labels and the two hrefs identical.
-            -->
             <tr>
               <td class="ssb-pad" align="center" style="padding: 20px 32px 8px 32px;">
                 <table role="presentation" class="ssb-button" cellpadding="0" cellspacing="0" border="0">
@@ -184,7 +97,6 @@
               </td>
             </tr>
 
-            <!-- Secondary text -->
             <tr>
               <td class="ssb-pad" style="padding: 16px 32px 36px 32px;">
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 22px; color: #555555;">
@@ -195,10 +107,6 @@
               </td>
             </tr>
 
-            <!--
-              Footer. The domain is plain text while the password is on; at launch, wrap it:
-              <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;">{{ shop.domain }}</a>
-            -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 0 0 4px 4px;">
                 <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #ffffff;">
@@ -207,6 +115,10 @@
                 <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8e6;">
                   Questions? Reply to this email, or write to
                   <a href="mailto:{{ shop.email }}" style="color: #ffffff; text-decoration: underline;">{{ shop.email }}</a>.
+                </p>
+                <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8e6;">
+                  Add us to your contacts, so the note about opening day lands in your inbox and not
+                  somewhere you never look.
                 </p>
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8e6;">
                   You are getting this because you asked to hear from {{ shop.domain }} when it opens.

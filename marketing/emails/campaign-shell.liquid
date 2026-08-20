@@ -1,28 +1,3 @@
-<!--
-  ==========================================================================
-  TEMPLATE: Campaign shell (clone this file to start a new campaign)
-  SUBJECT: <set in the Shopify Email editor, not in this file>
-  PREVIEW TEXT: <set in the Shopify Email editor, not in this file>
-  SEGMENT / AUTOMATION: <who receives this>
-  DISCOUNT CODE: <none, or the code created in Admin before sending>
-  LAST VERIFIED: <YYYY-MM-DD of the last test send that rendered correctly>
-  ==========================================================================
-  Not a theme file. This is pasted whole into Shopify Email's custom-code
-  editor. See marketing/emails/README.md for the paste procedure and for the
-  email-HTML rules this markup follows (600 px tables, inline styles, no
-  external CSS, no web fonts).
-
-  Things to replace when cloning are marked TODO in comments.
-
-  EVERY COMMENT HERE IS AN HTML COMMENT, INCLUDING THIS ONE, AND THAT IS
-  DELIBERATE. Shopify Email's editor rejects Liquid comment tags outright:
-  one anywhere in the document fails validation with "Syntax not valid on
-  line N" and the preview goes blank. HTML comments are the only kind that
-  work, which means everything written here ships inside the sent email's
-  source. Two consequences. Delete each TODO marker as you satisfy it, or it
-  goes out with the campaign. And never put anything in a comment that should
-  not travel with the email, a live discount code most of all.
--->
 <!doctype html>
 <html lang="en">
   <head>
@@ -33,24 +8,18 @@
     <meta name="supported-color-schemes" content="light">
     <title>{{ shop.name }}</title>
     <style>
-      /* Media queries only. Everything else is inline, because Gmail's web
-         client drops most of what a style block declares. */
       @media only screen and (max-width: 620px) {
         .ssb-container { width: 100% !important; }
         .ssb-pad { padding-left: 20px !important; padding-right: 20px !important; }
         .ssb-h1 { font-size: 26px !important; line-height: 32px !important; }
+        .ssb-button, .ssb-button td { width: 100% !important; }
         .ssb-button a { display: block !important; }
       }
     </style>
   </head>
   <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
     <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #e1edf5;">
-      <!--
-        TODO: preheader. The line many inboxes show next to the subject, in place of the
-        campaign's preview-text field. Under about 90 characters, and keep it saying the
-        same thing as the PREVIEW TEXT header line above and the field in the editor.
-      -->
-      A short line that earns the open.
+      PREHEADER GOES HERE, UNDER ABOUT 90 CHARACTERS
       &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
     </div>
 
@@ -59,7 +28,6 @@
         <td align="center" style="padding: 24px 12px;">
           <table role="presentation" class="ssb-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #ffffff; border-radius: 4px;">
 
-            <!-- Header -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 4px 4px 0 0;">
                 <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: none;">
@@ -68,35 +36,20 @@
               </td>
             </tr>
 
-            <!--
-              Optional image block. Uncomment, then set a Shopify Files URL and a real
-              width and height: email clients do not compute intrinsic size, and many
-              block images by default, so the alt text has to carry the meaning.
-            <tr>
-              <td style="padding: 0;">
-                <img src="https://cdn.shopify.com/REPLACE-ME.jpg" alt="Describe the image in a few words" width="600" height="400" style="display: block; width: 100%; max-width: 600px; height: auto; border: 0;">
-              </td>
-            </tr>
-            -->
-
-            <!-- Hero text -->
             <tr>
               <td class="ssb-pad" style="padding: 36px 32px 8px 32px;">
                 <h1 class="ssb-h1" style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 30px; line-height: 36px; font-weight: bold; color: #071e3f;">
-                  <!-- TODO: headline. -->
-                  Headline goes here
+                  HEADLINE GOES HERE
                 </h1>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
                   Hey {{ customer.first_name | default: 'friend' }},
                 </p>
                 <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
-                  <!-- TODO: body copy. Brand voice: plain, direct, no filler. -->
-                  Opening paragraph.
+                  BODY COPY GOES HERE
                 </p>
               </td>
             </tr>
 
-            <!-- Call to action. Bulletproof button: VML for Outlook, an anchor everywhere else. -->
             <tr>
               <td class="ssb-pad" align="center" style="padding: 16px 32px 8px 32px;">
                 <table role="presentation" class="ssb-button" cellpadding="0" cellspacing="0" border="0">
@@ -105,13 +58,12 @@
                       <!--[if mso]>
                       <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ shop.url }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="9%" stroke="f" fillcolor="#0071C2">
                         <w:anchorlock/>
-                        <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;">Shop the studio</center>
+                        <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;">BUTTON LABEL</center>
                       </v:roundrect>
                       <![endif]-->
                       <!--[if !mso]><!-- -->
                       <a href="{{ shop.url }}" style="display: inline-block; padding: 14px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 4px; background-color: #0071C2; mso-hide: all;">
-                        <!-- TODO: button label and destination. Keep the label and the VML <center> label identical. -->
-                        Shop the studio
+                        BUTTON LABEL
                       </a>
                       <!--<![endif]-->
                     </td>
@@ -120,17 +72,14 @@
               </td>
             </tr>
 
-            <!-- Secondary text -->
             <tr>
               <td class="ssb-pad" style="padding: 16px 32px 36px 32px;">
                 <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 22px; color: #555555;">
-                  <!-- TODO: secondary note, or delete this row. -->
-                  Smaller closing note.
+                  SECONDARY NOTE GOES HERE, OR DELETE THIS ROW
                 </p>
               </td>
             </tr>
 
-            <!-- Footer -->
             <tr>
               <td class="ssb-pad" align="center" style="background-color: #071e3f; padding: 28px 32px; border-radius: 0 0 4px 4px;">
                 <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #ffffff;">
