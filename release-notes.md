@@ -2327,6 +2327,11 @@ The Lead II products carry eight Design values, one per credential, and the list
 
 Two consequences to know before changing the threshold:
 
+> **Later amended.** There was a third consequence, unknown when this shipped: collapsing an option
+> to the select branch emits no fieldset, which broke the `data-fieldset-index` numbering the
+> variant-picker JS depends on. See "Variant button index: fieldset numbering vs. option numbering"
+> at the top of this file.
+
 - **The size option collapses too**, once it has enough values (`XS`..`2XL` is six). The select branch renders the size-guide link itself, so `#SizeChart` survives the switch.
 - **A swatch option past the threshold loses its swatches**, because the select branch renders plain text options and the theme has no swatch-inside-dropdown rendering. Not hit today: no color option has swatches configured, and at the default threshold of 4 a three-color product stays on buttons anyway.
 
