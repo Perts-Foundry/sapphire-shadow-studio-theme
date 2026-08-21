@@ -290,7 +290,7 @@ wall. And a link written as `{{ shop.url }}/products/<handle>` starts resolving 
 on launch day with no edit at all, which takes work out of the swap below rather than adding it.
 
 What that costs: while the gate is up, the six product tiles, the header logo and the button all
-land on the same countdown page. The line above the grid ("A preview of what opens on September 3")
+land on the same countdown page. The line above the grid ("A preview of what is available at launch")
 is what keeps that honest, so do not delete it before the gate comes down. The button is labelled
 "Visit the studio" rather than anything promising browsable product, for the same reason, and the
 Instagram link under it is the one destination in the email that is genuinely browsable today.
@@ -303,8 +303,9 @@ the only record. Make all five edits in one sitting; each one alone leaves the e
    on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
    thing is. This is tracked alongside the password-page countdown in `TODO.md`, because the two
    surfaces state the same instant and should be retired together.
-2. **Delete the "A preview of what opens on September 3" line** above the product grid. Once the
-   tiles reach real product pages it is both false and unnecessary.
+2. **Delete the "A preview of what is available at launch" line** above the product grid. It no
+   longer names a date, so it will not go stale on a specific day, but it still reads as prelaunch
+   and once the tiles reach real product pages it is unnecessary.
 3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
    update the subject, the preview text, the preheader `<div>`, and the metadata table above in the
    same sitting. Note what it currently promises: "you will hear it from us by email before we
