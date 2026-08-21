@@ -1,5 +1,34 @@
 # Release Notes
 
+## Variant button index: fieldset numbering vs. option numbering (unreleased)
+
+Selecting the LAST color on a product page left the button blank: white label text on a white
+button, with no selected pill behind it. Only the last value of a button-style option could show it,
+and only after a click.
+
+The cause is a contract between `snippets/variant-main-picker.liquid` and
+`assets/variant-picker.js` that the theme's long-option dropdown addition broke. The snippet
+numbered `data-fieldset-index` with `forloop.index0`, the option's position among ALL options. The
+JS reads that attribute as an index into `refs.fieldsets`, which holds only the fieldsets that
+actually rendered. Upstream Horizon renders one fieldset per option, so the two numberings agree.
+Once an option past `settings.variant_dropdown_threshold` collapses to the select branch, which
+emits no fieldset, they diverge: on a Design / Color / Size product where Design and Size both
+collapse, Color rendered `data-fieldset-index="1"` while it sat at index 0 of a one-element array.
+`updateSelectedOption` looks up `fieldsets[1]`, gets `undefined`, and its whole state-update block is
+guarded behind `if (radios && checkedIndices && fieldset)`, so it silently did nothing.
+
+The visible failure came from that no-op leaving `data-current-checked="true"` on the FIRST value
+forever. The 3-or-more wrap-around rule
+`.variant-option--buttons:has(:nth-of-type(3)) ...:has([data-current-checked=true]):first-of-type ~
+label:last-of-type` then held the last label's pill at `calc(100% + 1px)`, translated out of the
+button and clipped away, while `:has(:checked)` still applied the selected white text color. Middle
+values were unaffected, which is why the bug looked specific to one color.
+
+The fix numbers `data-fieldset-index` by rendered fieldsets, not by loop position. The durable rule:
+`data-fieldset-index` is an index into the rendered-fieldset array, so anything that makes an option
+skip the fieldset branch has to keep that numbering dense. Nothing in CI checks it, and the failure
+is silent in the DOM and only visible on the last value of the last button option.
+
 ## Launch countdown on the password page (unreleased)
 
 The pre-launch gate showed "Opening soon" with no date, in the Horizon default white scheme, so it

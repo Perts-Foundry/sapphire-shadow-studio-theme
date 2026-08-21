@@ -60,6 +60,17 @@
     {%- endif -%}
 
     <form class="variant-picker__form">
+      {%- comment -%}
+        Position of the next BUTTON/SWATCH fieldset among the fieldsets that actually render, which
+        is not the same as the option's position in the loop: the long-option dropdown rule below
+        sends any option past `settings.variant_dropdown_threshold` to the select branch, which
+        emits no fieldset. `data-fieldset-index` is read by assets/variant-picker.js as an index
+        into `refs.fieldsets`, an array of the rendered fieldsets only, so numbering it by
+        `forloop.index0` points past the end of that array as soon as one option collapses, and the
+        click handler silently no-ops (stale `data-current-checked`, so the selected-option pill
+        never moves and its white label text lands on white).
+      {%- endcomment -%}
+      {%- assign rendered_fieldset_index = 0 -%}
       {%- for product_option in product_resource.options_with_values -%}
         {%- liquid
           assign swatch_count = product_option.values | map: 'swatch' | compact | size
@@ -117,7 +128,7 @@
           reading it here would ignore the swatch and threshold decisions made per option.
         {%- endcomment -%}
         {%- if variant_style == 'swatch' or variant_style == 'buttons' -%}
-          {%- assign fieldset_index = forloop.index0 -%}
+          {%- assign fieldset_index = rendered_fieldset_index -%}
           {%- liquid
             assign is_size_option = false
             if product_option.position == size_position_num
@@ -225,6 +236,7 @@
               {% endstyle %}
             {% endif %}
           </fieldset>
+          {%- assign rendered_fieldset_index = rendered_fieldset_index | plus: 1 -%}
         {%- elsif variant_style == 'dropdowns' -%}
           {%
             # There is an opportunity to build a custom select component that will allow us to style the select element further (animation for dropdown, swatches shown in the dropdown options, etc)
