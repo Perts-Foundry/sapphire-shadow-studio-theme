@@ -35,7 +35,7 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, test sends plus first real campaign |
+| `welcome.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, test sends, first campaign, and the live automation |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 Preview text lives in the editor field and in this table, and **nowhere in the template**. Both
@@ -92,17 +92,32 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   editor it resolved to a real `/account/unsubscribe/...` URL inside these templates' own styled
   `<a>`. Note that the editor's placeholder text names `{{ unsubscribe_link }}` instead, which emits
   a whole ready-made link rather than a bare URL. Both are accepted; do not "fix" one to the other.
-- **The unsubscribe link does not work while the storefront password is on.** `unsubscribe_url`
-  resolves to `/account/unsubscribe/<token>` on the primary online store domain, and that domain is
-  behind the gate: an anonymous request to it returns `302 -> /password`, exactly as `/cart` and
-  `/policies/*` do. Shopify's docs are explicit that the variable "will always point to the primary
-  online store domain and can't be modified to direct elsewhere", so there is no template-side fix.
-  Verified against a placeholder token on 2026-08-21; re-test with a real token from a real send
-  before treating it as settled. This matters more than it looks: a subscriber who cannot
-  unsubscribe reports spam instead, which is the single worst deliverability signal there is, and an
-  opt-out mechanism that does not function is a compliance problem, not just an annoyance. Until the
-  gate comes down the mitigation is manual: the footer invites a reply, so honour any reply asking
-  to be removed by unsubscribing that customer in Admin.
+- **There are two unsubscribe paths, and only one of them is in the template.** This was written up
+  the other way round first, as a single broken link, which overstated it.
+
+  The one that matters most is a **header**, and Shopify adds it without being asked. The first real
+  automation send, 2026-08-21, carried
+  `List-Unsubscribe: <https://email.shopifyapps.com/subscriptions/unsubscribe?token=...>` together
+  with `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, both inside the DKIM `h=` list, so both
+  are signed. That is what Gmail and Yahoo require of bulk senders and what Gmail renders as its own
+  Unsubscribe control beside the sender name. `email.shopifyapps.com` is a Shopify host on Shopify
+  infrastructure, unrelated to this storefront, so **it is not behind the password gate**: a bogus
+  token there answers `302 -> /login` on its own domain, where `/cart` on the storefront answers
+  `302 -> /password`. The header path works today.
+
+  The one in the footer is `{{ unsubscribe_url }}`, which resolves to `/account/unsubscribe/<token>`
+  on the storefront domain. On a real send it is first rewritten through `/_t/c/v3/<token>`, which
+  clears the gate, but what that forwards to is an ordinary storefront path, and the placeholder
+  form of it answers `302 -> /password`. Whether a real token does the same is **still untested**,
+  because the only way to find out is to click it in a delivered email; resolving it from a terminal
+  would either register a false click or unsubscribe a real person. Shopify's docs say the URL
+  cannot be repointed, so there is no template-side fix either way.
+
+  If the footer link does turn out to dead-end, the consequence is smaller than it first appeared,
+  because the header path still gives every Gmail and Yahoo recipient a working one-click opt-out.
+  It is still worth knowing: a subscriber who cannot unsubscribe reports spam instead, which is the
+  worst deliverability signal there is. The manual fallback is that the footer invites a reply, so
+  honour any reply asking to be removed by unsubscribing that customer in Admin.
 - **`{{ open_tracking_block }}` is the open-tracking variable, not `{{ open_tracking }}`.** Shopify's
   own documentation says both: its prose calls the variable `open_tracking`, its example code in the
   same page uses `{{ open_tracking_block }}`. The editor settles it. With open tracking on and

@@ -37,23 +37,15 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   every subscriber's inbox retroactively false, and there is nothing that can correct it. The
   announcement campaign itself does not exist yet; clone `marketing/emails/campaign-shell.liquid`.
 
-- [ ] **Click the unsubscribe link in a real send and see where it lands.** Narrowed on 2026-08-21
-  but still open. On a real send the link is rewritten to `/_t/c/v3/<token>`, and that redirector
-  clears the password gate, so the first hop is fine. What it forwards to is
-  `/account/unsubscribe/<token>`, an ordinary storefront path, and the placeholder form of that path
-  answers `302 -> /password`. If the real one does too, subscribers cannot opt out, and a subscriber
-  who cannot unsubscribe reports spam instead. Shopify's docs say the URL cannot be repointed, so
-  the only fixes would be dropping the storefront password or handling opt-outs by hand from the
-  reply address. The test is one click in a delivered email, then re-subscribe; nothing here can
-  run it, because resolving that URL from the terminal would either register a false click or
-  actually unsubscribe someone.
-
-- [ ] **Confirm `List-Unsubscribe` headers appear on a real send.** The 2026-08-21 test send carried
-  no `List-Unsubscribe` or `List-Unsubscribe-Post` header. Test sends often omit them, so this is
-  probably a test-mode artifact rather than a real gap, but Gmail and Yahoo both expect one-click
-  unsubscribe from bulk senders and it is worth confirming on the first genuine automation send
-  rather than assuming. The first real campaign went out the same day; only its body was captured,
-  so its headers are still unread.
+- [ ] **Click the footer unsubscribe link in a delivered email and see where it lands.** Lower
+  priority than it looks, and the reason is worth keeping: the live automation's `List-Unsubscribe`
+  header points at `email.shopifyapps.com`, which is not behind the storefront password, so every
+  Gmail and Yahoo recipient already has a working one-click opt-out through the client's own
+  control. What is untested is the link in the footer, which forwards to `/account/unsubscribe/`
+  on the gated storefront domain. Nothing here can run the test: resolving that URL from a terminal
+  would either register a false click or unsubscribe a real person. Click it, see whether the
+  password page appears, then re-subscribe. If it does dead-end there is no template-side fix,
+  because Shopify's docs say the URL cannot be repointed.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
