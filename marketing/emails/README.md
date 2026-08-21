@@ -307,7 +307,10 @@ the only record. Make all five edits in one sitting; each one alone leaves the e
    tiles reach real product pages it is both false and unnecessary.
 3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
    update the subject, the preview text, the preheader `<div>`, and the metadata table above in the
-   same sitting.
+   same sitting. Note what it currently promises: "you will hear it from us by email before we
+   announce it anywhere else." That fixes the order of launch day, list first and social second,
+   and it is tracked in `TODO.md` because it is a commitment the email has already made to every
+   subscriber who received it. It cannot be corrected after the fact.
 4. **Relabel the button.** "Visit the studio" was chosen to promise nothing the gate could not
    deliver. With the gate down it can say what it means, in **both** halves: the VML `<center>` text
    and the anchor text have to match each other or Outlook and everyone else read different labels.

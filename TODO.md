@@ -30,6 +30,13 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   `settings_data.json` is an Admin-sync surface, so decide whether the edit goes through the sync
   theme or the repo before making it.
 
+- [ ] **Email the list before announcing the launch publicly.** `marketing/emails/welcome.liquid`
+  tells every subscriber "you will hear it from us by email before we announce it anywhere else",
+  so the launch sequence is: send the list first, then post to Instagram, Facebook and TikTok, then
+  take the storefront password off. Getting that order wrong makes a promise already sitting in
+  every subscriber's inbox retroactively false, and there is nothing that can correct it. The
+  announcement campaign itself does not exist yet; clone `marketing/emails/campaign-shell.liquid`.
+
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
