@@ -210,7 +210,7 @@ request, which is the only reason they work in an inbox at all. Re-check that af
 | Asset | URL |
 |---|---|
 | Logo (header, both templates) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480` |
-| Product hero (`welcome.liquid`) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/lead2_crew-sweater_black_cna_flat-1.jpg?width=600&height=400&crop=center` |
+| Product hero (`welcome.liquid`) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/lead2_crew-sweater_group_flat-1.jpg?width=600&height=400&crop=center` |
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
 | TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
@@ -284,10 +284,13 @@ the only record. Make all six edits in one sitting; each one alone leaves the em
    on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
    thing is. This is tracked alongside the password-page countdown in `TODO.md`, because the two
    surfaces state the same instant and should be retired together.
-5. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
-   update the subject, the preview text, the preheader `<div>`, and the metadata table above together.
-6. **Re-check the hero image.** It points at one product's flat shot; at launch there may be a
-   better one, and there will certainly be a reason to look.
+5. **Rewrite the "What happens next" section.** It carries the whole message of the email, and all
+   of it is written for a shop that has not opened. Update the subject, the preview text, the
+   preheader `<div>`, and the metadata table above in the same sitting.
+6. **Re-check the hero image.** It points at the three-colourway group shot of the personalised
+   crewneck, chosen because it shows a name on the garment and is already 3:2, so the 600x400
+   transform is not really a crop. At launch there may be a better one, and there will certainly be
+   a reason to look.
 
 Two things about that button. Its URL is **hardcoded**, because Shopify Email has no `settings`
 object to read `settings.social_instagram_link` from, so it duplicates the value in
