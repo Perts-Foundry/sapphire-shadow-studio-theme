@@ -42,7 +42,7 @@ npx shopify theme check      # lint with theme-check
 
 ## Repo layout
 
-Standard Shopify theme structure. There is no bundler or transpiler; the directories below are the shipped surface.
+Standard Shopify theme structure. There is no bundler or transpiler; the directories below are the shipped surface, except where a row says otherwise.
 
 | Path | Contents |
 |---|---|
@@ -54,6 +54,7 @@ Standard Shopify theme structure. There is no bundler or transpiler; the directo
 | `assets/` | Flat directory of CSS, JS, images, fonts (shipped as-is, no build) |
 | `locales/` | Translation files; `en.default.json` is canonical |
 | `config/` | `settings_schema.json` and `settings_data.json` |
+| `marketing/emails/` | Shopify Email campaign templates. **Not shipped**: pasted by hand into the Shopify Email editor, ignored by `theme-check`. See [`marketing/emails/README.md`](marketing/emails/README.md) |
 
 Theme conventions (component framework, BEM/CSS rules, block development, accessibility) live in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md).
 
@@ -78,7 +79,7 @@ Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate` | PR opened / synchronize / reopened (same-repo heads) | Two jobs. `deploy-preview` (skipped for drafts and Dependabot) creates a per-PR unpublished theme `pr-<n>-preview` and comments the link. `validate` (needs `deploy-preview`, runs even when it is skipped or fails) sequentially runs `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `seo-review`, `applique-grid`, `product-images`, `smoke` deploy smoke-test units, the blank-id guard, and the contrast lint), `actionlint`, `zizmor`, `gitleaks`, and a pa11y-ci accessibility audit of the preview theme, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
+| `validate` | PR opened / synchronize / reopened (same-repo heads) | Two jobs. `deploy-preview` (skipped for drafts and Dependabot) creates a per-PR unpublished theme `pr-<n>-preview` and comments the link. `validate` (needs `deploy-preview`, runs even when it is skipped or fails) sequentially runs `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `seo-review`, `applique-grid`, `email-icons`, `product-images`, `smoke` deploy smoke-test units, the blank-id guard, and the contrast lint), `actionlint`, `zizmor`, `gitleaks`, and a pa11y-ci accessibility audit of the preview theme, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
 | `preview` | PR closed | Deletes the PR's `pr-<n>-preview` theme and marks the preview comment deleted. |
 | `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
 | `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**`. Both `workflow_run` paths gate on Validate's `validate` **job**, not the whole run, so a failed `deploy-preview` (a Shopify hiccup, not a code problem) does not block auto-deploy | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
@@ -192,7 +193,7 @@ To lint the workflow YAML the way CI does (same shellcheck excludes):
 SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint
 ```
 
-`.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
+`.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). It also ignores two paths: `node_modules/**`, and `marketing/**`, whose Shopify Email templates are not theme code and use objects (`unsubscribe_url`, `open_tracking_block`, `email.*`) that no theme defines. Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
 
 Before opening a PR, run `theme dev` and `theme check` locally, and follow the conventions and accessibility patterns in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). House style is enforced as a hard rule: no em dashes anywhere in the repo.
 

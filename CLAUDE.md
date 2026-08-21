@@ -67,7 +67,7 @@ README documents the workflow surface (`validate` / `preview` / `deploy` / `sync
 
 ### Code changes
 
-Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
+Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it doesn't cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file, it catches schema/filter/tag errors earlier than CI's `theme-check` step. Exception: `marketing/emails/*.liquid` are Shopify Email templates, not theme code; treat the validator's output there as syntax-only and ignore its undefined-object findings (`marketing/emails/README.md` explains why, and the real check is a test send). The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table, respectively.
 
 ### Backlog hygiene (`TODO.md`)
 
@@ -113,7 +113,7 @@ GitHub Actions auto-redacts `secrets.*` in logs (`***`); `vars.*` is plaintext. 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific triggers:
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs` suites do have `node --test` suites; run test-engineer when any changes. `blank-inventory/` writes to live inventory and `upload-product-media.mjs` writes live product media, so those two are the higher-risk.
+- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs` suites do have `node --test` suites; run test-engineer when any changes. `blank-inventory/` writes to live inventory and `upload-product-media.mjs` writes live product media, so those two are the higher-risk.
 - **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
@@ -299,6 +299,8 @@ import { createAdminClient } from "./scripts/blank-inventory/lib/admin.mjs";
 const c = createAdminClient();
 console.log(JSON.stringify(await c.gql(`{ shop { shopPolicies { type title body } } }`)));'
 ```
+
+A campaign email would be a fifth source, and the only one that cannot be corrected after it is sent, so `marketing/emails/` templates deliberately link to the policy and FAQ pages instead of restating a rate, a threshold, or a turnaround.
 
 `write_shipping` is not granted, so rate names are read-only from here and renaming is an operator task in Admin. Also note `blocks/price.liquid`'s `show_shipping_info` setting hardcodes "$8 flat rate shipping and free shipping over $75 threshold" in an editor `info` string, so it goes stale if either theme setting changes.
 

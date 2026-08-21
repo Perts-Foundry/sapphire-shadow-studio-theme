@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>{{ shop.name }}</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .ssb-container { width: 100% !important; }
+        .ssb-pad { padding-left: 20px !important; padding-right: 20px !important; }
+        .ssb-h1 { font-size: 26px !important; line-height: 32px !important; }
+        .ssb-button, .ssb-button td { width: 100% !important; }
+        .ssb-button a { display: block !important; }
+      }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #e1edf5; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #e1edf5;">
+      <tr>
+        <td align="center" style="padding: 24px 12px;">
+          <table role="presentation" class="ssb-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #ffffff; border-radius: 4px;">
+
+            <tr>
+              <td class="ssb-pad" align="center" bgcolor="#071e3f" style="background-color: #071e3f; padding: 28px 32px; border-radius: 4px 4px 0 0;">
+                <a href="{{ shop.url }}" style="font-family: Helvetica, Arial, sans-serif; font-size: 20px; line-height: 26px; font-weight: bold; letter-spacing: 1px; color: #ffffff; text-decoration: none;">
+                  <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480" alt="Sapphire Shadow Studio" width="240" height="89" style="display: block; width: 240px; max-width: 100%; height: auto; border: 0;">
+                </a>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ssb-pad" style="padding: 36px 32px 8px 32px;">
+                <h1 class="ssb-h1" style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 30px; line-height: 36px; font-weight: bold; color: #071e3f;">
+                  HEADLINE GOES HERE
+                </h1>
+                <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
+                  Hey {{ customer.first_name | default: 'friend' }},
+                </p>
+                <p style="margin: 0 0 16px 0; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 24px; color: #333333;">
+                  BODY COPY GOES HERE
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ssb-pad" align="center" style="padding: 16px 32px 8px 32px;">
+                <table role="presentation" class="ssb-button" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" bgcolor="#0071C2" style="border-radius: 4px;">
+                      <!--[if mso]>
+                      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ shop.url }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="9%" stroke="f" fillcolor="#0071C2">
+                        <w:anchorlock/>
+                        <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;">BUTTON LABEL</center>
+                      </v:roundrect>
+                      <![endif]-->
+                      <!--[if !mso]><!-- -->
+                      <a href="{{ shop.url }}" style="display: inline-block; padding: 14px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 4px; background-color: #0071C2; mso-hide: all;">
+                        BUTTON LABEL
+                      </a>
+                      <!--<![endif]-->
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ssb-pad" style="padding: 16px 32px 36px 32px;">
+                <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 22px; color: #555555;">
+                  SECONDARY NOTE GOES HERE, OR DELETE THIS ROW
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ssb-pad" align="center" bgcolor="#071e3f" style="background-color: #071e3f; padding: 28px 32px; border-radius: 0 0 4px 4px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 0 18px 0;">
+                  <tr>
+                    <td align="center" style="padding: 0 8px; white-space: nowrap;">
+                      <a href="https://www.instagram.com/sapphire_shadow_studio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
+                        <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram
+                      </a>
+                    </td>
+                    <td align="center" style="padding: 0 8px; white-space: nowrap;">
+                      <a href="https://www.facebook.com/sapphireshadowstudio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
+                        <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Facebook
+                      </a>
+                    </td>
+                    <td align="center" style="padding: 0 8px; white-space: nowrap;">
+                      <a href="https://www.tiktok.com/@sapphire_shadow_studio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
+                        <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;TikTok
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #ffffff;">
+                  {{ shop.name }}
+                </p>
+                <p style="margin: 0 0 10px 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8ea;">
+                  Questions? Reply to this email, or write to
+                  <a href="mailto:contact@sapphireshadowstudio.com" style="color: #ffffff; text-decoration: underline;">contact@sapphireshadowstudio.com</a>.
+                </p>
+                <p style="margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #c9d8ea;">
+                  You are getting this because you signed up at
+                  <a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;">{{ shop.domain }}</a>.
+                  <a href="{{ unsubscribe_url }}" style="color: #ffffff; text-decoration: underline;">Unsubscribe</a>.
+                </p>
+                {{ open_tracking_block }}
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

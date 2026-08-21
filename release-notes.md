@@ -95,6 +95,160 @@ Deleting `sss-dark-scheme` in Admin degrades the page to the default scheme rath
 All three password files are upstream Horizon files and now carry rows in README's
 "Deviations that must survive a merge" table.
 
+## Shopify Email templates live in the repo, outside the theme (unreleased)
+
+`marketing/emails/` holds custom-coded Liquid/HTML emails for Shopify Email campaigns and
+automations: `campaign-shell.liquid` (clone it for a new campaign) and `welcome.liquid` (the
+"you are on the list" automation), plus a README that is the operating manual.
+
+**They sit outside the theme directories because Shopify Email has no API and no theme surface.**
+There is no way to push a campaign template; the only path into a campaign is a human pasting the
+whole document into the custom-code editor, which is desktop-only. Keeping the files in `templates/`
+or `snippets/` would have put non-theme code inside the deployed surface, where `shopify theme push`
+would ship it and a future reader would reasonably assume it renders somewhere. A top-level
+`marketing/` directory reads as what it is, and nothing in it reaches the live theme. Note where
+that protection actually comes from: there is no `.shopifyignore`, and `deploy.yml` pushes the whole
+working tree, so what keeps `marketing/` out of the upload is the Shopify CLI's own allowlist of
+recognised theme directories, not anything repo-side. A future CLI that widened that allowlist would
+change the answer silently.
+
+**`marketing/**` is in `.theme-check.yml`'s ignore list for the same reason, not as a convenience.**
+Email Liquid resolves objects that a theme does not have (`unsubscribe_url`, `open_tracking`,
+`email.*`) and lacks the ones a theme does (`section`, `block`, `settings`). Every email template
+would therefore emit undefined-object findings forever. The ignore landed in the same change as the
+templates so CI never went red on an intermediate push.
+
+**The repo file is canonical, and drift is the failure mode to watch.** An edit made inside the
+Shopify Email editor while testing is invisible to everything here: no CI check, no script, and no
+Admin API can read it back. This is the same shape as the social-links and shipping-copy drift
+already documented in `CLAUDE.md`, and the README states the rule (copy editor changes back in the
+same sitting). Reversal is a `git revert` plus a re-paste; nothing here deploys.
+
+**`welcome.liquid` is written for a store that has not opened, and that is a state with an expiry
+date.** The storefront password is on, so every storefront URL resolves to Shopify's "Opening soon"
+page. The first draft of this email led with a "Meet the studio" button pointing at `/pages/about`,
+which is a password wall to every recipient: the one thing most likely to make a new subscriber
+conclude the brand is broken. The prelaunch version links nobody to the storefront. The header
+logo is an unlinked image, the footer names the domain without linking it, and the single button
+goes to Instagram, which is public, as do the three links in the footer's social row. The directory README carries the four-part launch swap, and is the only place that does, because
+the file becomes wrong the day the password comes off and nothing anywhere will say so.
+
+The Instagram URL is hardcoded, and has to be: Shopify Email has no `settings` object, so
+`settings.social_instagram_link` is unreachable from an email. That is a fourth copy of a social URL
+in a repo whose `CLAUDE.md` already documents two of them drifting. It is recorded rather than solved;
+there is no mechanism available that would solve it.
+
+The copy originally promised no launch date, for the reason that a date cannot be corrected once the
+send is out. That was later reversed on purpose; see the entry below.
+
+**`welcome.liquid` deliberately carries no shipping figures.** Shipping rates, the free-shipping
+threshold, and turnaround already have four sources of truth. A sent email would be a fifth, and the
+only one that cannot be corrected after the fact, so the templates link to the policy and FAQ pages
+instead of restating numbers.
+
+**Branding is duplicated per file on purpose.** No partials and no build step (the repo has no
+bundler, and Shopify Email accepts exactly one pasted document anyway), so header, footer, and
+palette are copied into each template and a palette change has to be made in all of them. The README
+says so, and records that the palette is lifted from two different colour schemes in
+`config/settings_data.json`: navy and accent blue from `sss-dark-scheme`, the light-blue surround
+from `scheme-4`.
+
+**Shopify Email rejects Liquid comment tags, and that was only discoverable by pasting.** Both
+templates originally opened with a Liquid comment block carrying the campaign metadata. The editor
+refuses it: one comment tag anywhere makes the whole template invalid, with `Syntax not valid on
+line N` and a blank preview. Verified in the live editor on 2026-08-19 by bisection: removing the
+header block moved the error from line 1 to line 23, the inline preheader comment, and converting
+every comment to HTML form cleared it and rendered the email correctly. Neither form of whitespace
+control makes a difference, and the variable names were ruled out as the cause along the way.
+
+The consequence is a rule rather than a one-time fix: HTML comments are the only kind available, so
+**every comment ships in the sent email's source**, where any recipient can read it. The first answer
+to that was discipline (delete each TODO as it is satisfied, keep discount codes out of comments),
+which is a rule that has to hold on every future edit to stay true. The rule the templates settled on
+instead is structural: **they carry no comments at all.** Campaign metadata, launch checklists,
+rationale, and TODO markers live in `marketing/emails/README.md`, which nobody receives. The shell
+marks its fill-in spots with ALL-CAPS visible text (`HEADLINE GOES HERE`, `BUTTON LABEL`), so a
+forgotten one is glaring in the editor preview and in the test send rather than invisible in a
+comment. The only comments left in either file are the Outlook conditionals around the button, which
+are functional markup.
+
+**The welcome email now names the launch date, reversing this entry's own earlier rule.** The first
+version promised no date, on the reasoning that a sent email cannot be corrected and a date that
+slips reads worse than no date at all. That reasoning assumed the date was the email's to withhold,
+and it is not: `blocks/launch-countdown.liquid` commits publicly to 2026-09-03 09:00 ET, the
+password page ticks down to it, and the Instagram bio repeats it. A subscriber reads the welcome
+minutes after watching that countdown, so "the shop is not open yet" followed by "we would rather
+open a little late" read as evasion rather than caution, and the hedge is gone. The residual risk is
+unchanged and unmitigable: this is an **automation**, so every message already sent carries whatever
+the template said when it sent, and editing the template only fixes future sends. If the date slips,
+the correction is a follow-up campaign to the list, not an edit to this file. The date is rendered as
+two static tiles echoing the password page's countdown tiles, because an email cannot tick.
+
+**`{{ shop.email }}` came out of both footers.** It is not on Shopify's documented object list for
+custom Liquid emails, so it may render empty, and an empty contact line fails silently: the footer
+looks intact and simply offers the reader no address. It was also the wrong mailbox even when it
+worked, since the store's account address is not the customer-facing one. Both footers now hardcode
+`contact@sapphireshadowstudio.com`, a brand address already published on the storefront.
+`shop.address` is documented and available, and is deliberately unused: no postal address appears in
+these templates.
+
+**The social icons are rasterised PNGs hosted on Shopify Files, and the path data is duplicated on
+purpose.** Email clients do not render SVG, so the theme's own `inline_asset_content` route was
+unavailable, and `snippets/icon.liquid`'s `currentColor` fills have no cascade to inherit from in an
+inbox. `scripts/email-icons/render-email-icons.mjs` wraps three path strings copied out of that
+snippet (its `instagram`, `facebook` and `tiktok` branches) in a standalone SVG with the fill baked
+to the footer's body colour, and rasterises them with the `sharp` devDependency the size-chart
+renderer already uses; no new dependency. The alternative, parsing the Liquid `{% case %}` at build
+time to extract the paths, is worse than the duplication: it makes tooling depend on the shape of a
+template that has no contract. The copy is guarded by a test that fails when either side drifts, and
+a second test fails when the committed PNGs stop matching what the renderer produces.
+`upload-email-icons.mjs` puts those PNGs into Shopify Files behind a per-file `--upload` flag and
+skips any name already present, because `fileCreate` has no content dedup and a duplicate would
+silently orphan the URL the templates point at.
+
+**A bare icon row is an images-off trap, and `alt` does not save it.** A client that blocks images
+sizes the blocked image to its `width`/`height` attributes and clips the alt text to that box, so a
+28 px icon shows about four characters: "Insta", "Face", "TikT". That was verified in a browser
+against the real markup, which is why the row pairs each icon with a visible text label inside the
+same anchor and marks the icon `alt=""`, the visible label carrying the meaning. With images blocked
+the footer reads "Instagram Facebook TikTok" in its own body colour. The header logo has the same
+exposure and no room for a label, so its cell sets an explicit light `color` and its alt text lands
+white on navy rather than near-black on navy.
+
+**The email's Facebook URL is a fourth spelling of a link this repo already stores twice.**
+`config/settings_data.json` and `sections/footer-group.json` both hold the numeric
+`facebook.com/profile.php?id=...` form; Shopify's Brand settings holds the vanity
+`facebook.com/sapphireshadowstudio`, which resolves. The email uses the vanity form, because that is
+what a reader should see. Reconciling the theme's two copies is a separate change and is not tracked
+anywhere: `settings_data.json` is an Admin-sync surface, so whoever picks it up has to decide first
+whether the edit goes through the sync theme or the repo.
+
+**The footer body colour was `#c9d8e6`, one digit off from the brand token.**
+`scripts/size-chart/lib/svg-shared.mjs` says `#c9d8ea`. That was a transcription slip rather than a
+choice, and both templates now match that token set, which this change adopts as the emails'
+reference palette: navy `BG`, tile-face `PANEL`, eyebrow `ACCENT_LT`, body `BODY`. It is the same
+answer the size-chart renderer reached, for the same reason: a renderer outside Liquid cannot read a
+colour scheme. Two colours stay outside the set on purpose. The button keeps `#0071C2` because that
+is `sss-dark-scheme`'s `primary_button_background`, the storefront's real CTA colour, so the button
+a subscriber clicks matches the button they land on; and the page surround keeps `scheme-4`'s
+`#e1edf5`, which has no size-chart equivalent because a PNG has no surround.
+
+Two things this also settled, both of which the docs left ambiguous. `{{ unsubscribe_url }}` works,
+resolving to a real `/account/unsubscribe/...` URL, even though the editor's placeholder text names
+`{{ unsubscribe_link }}`; and `{{ open_tracking }}` is accepted, even though the placeholder names
+`{{ open_tracking_block }}`. Do not "fix" either one to the other spelling.
+
+Worth recording for the next time: `theme check` and an HTML structural parse both passed this file
+while it was unpastable. Pasting into the editor is the only check that catches this class of defect,
+it is free, and it is safe, because a template is not a campaign and cannot send.
+
+Two platform details worth keeping: `{{ unsubscribe_url }}` is required in every custom Liquid email
+and `{{ open_tracking }}` is required whenever open tracking is on, both conventionally in the
+footer, and both fail **silently** until a test send. Shopify's own example spells the second one
+`open_tracking_block` in one place, so that is the first thing to try if a send records no opens.
+The cap is 500 KB per custom-coded email (50 KB for a custom Liquid section inside a drag-and-drop
+email). Validation is the operator's test send; nothing automated proves an email renders in an inbox.
+
 ## Dynamic collections dropdown on the main menu (unreleased)
 
 The Shop link's dropdown is not authored in Admin. **A top-level menu link that has no children of
