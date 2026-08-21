@@ -102,6 +102,9 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   10 in the body. Every personalization variable needs a fallback, because a subscriber who joined
   through a footer form has an email and nothing else. That is what
   `{{ customer.first_name | default: 'friend' }}` is for; do not drop the `default`.
+  `campaign-shell.liquid` carries that greeting. `welcome.liquid` deliberately does not:
+  it uses no `customer` variable at all, so it reads the same for every subscriber and there
+  is no fallback to get wrong.
 
 ## Email-HTML rules these templates follow
 
