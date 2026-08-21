@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Ränder",
     "collapsible_row": "Einklappbare Zeile",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Überlagerte Slideshow"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "Autoplay",
     "background": "Hintergrund",
     "border_radius": "Eckenradius",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Fixierte Schaltfläche „In den Warenkorb“"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apfel",
     "arrow": "Pfeil",
     "banana": "Banane",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Entdecke unsere kuratierte Kollektion mit handverlesenen Favoriten, die Stil und Qualität vereinen.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "Einklappbare Zeile",
     "button_label": "Jetzt einkaufen",
     "heading": "Überschrift",

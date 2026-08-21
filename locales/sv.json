@@ -334,5 +334,9 @@
       "default_title": "Standardtitel",
       "sticky_add_to_cart": "Fält för att lägga till snabbt i varukorgen"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

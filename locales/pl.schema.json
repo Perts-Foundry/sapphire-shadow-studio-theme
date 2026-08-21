@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Obramowania",
     "collapsible_row": "Zwijany wiersz",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Warstwowy pokaz slajdów"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "Autoodtwarzanie",
     "background": "Tło",
     "border_radius": "Promień narożnika",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Przypięte dodawanie do koszyka"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Strzałka",
     "banana": "Banan",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Odkryj naszą kolekcję starannie wybranych produktów, które są połączeniem stylu i jakości.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "Wiersz zwijany",
     "button_label": "Kup teraz",
     "heading": "Nagłówek",

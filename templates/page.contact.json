@@ -135,11 +135,24 @@
             }
           },
           "block_order": []
+        },
+        "follow_us_contact": {
+          "type": "follow-us",
+          "name": "Follow us",
+          "settings": {
+            "heading": "Follow us",
+            "variant": "handles",
+            "layout": "row",
+            "size": "20px",
+            "alignment": "left"
+          },
+          "blocks": {}
         }
       },
       "block_order": [
         "preamble",
-        "contact_form_UwiCkQ"
+        "contact_form_UwiCkQ",
+        "follow_us_contact"
       ],
       "name": "t:names.contact_form",
       "settings": {

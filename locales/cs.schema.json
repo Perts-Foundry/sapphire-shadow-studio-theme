@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Ohraničení",
     "collapsible_row": "Sbalitelný řádek",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Vrstvená prezentace"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Zarovnání",
     "autoplay": "Automatické přehrávání",
     "background": "Pozadí",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Přilepené tlačítko Přidat do košíku"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Šipka",
     "auto": "Automaticky",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Objevte naši pečlivě sestavenou kolekci s vybranými oblíbenými kousky, které spojují styl a kvalitu.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Nakupujte nyní",
     "collapsible_row": "Rozbalovací řádek",
     "heading": "Nadpis",

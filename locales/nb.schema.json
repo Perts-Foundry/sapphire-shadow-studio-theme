@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Kanter",
     "collapsible_row": "Sammenleggbar rad",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Lagdelt lysbildefremvisning"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Justering",
     "autoplay": "Autospill",
     "background": "Bakgrunn",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Festet «Legg i handlekurv»"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Eple",
     "arrow": "Pil",
     "auto": "Auto",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Oppdag vår utvalgte samling med håndplukkede favoritter som kombinerer stil og kvalitet.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Handle nå",
     "collapsible_row": "Sammenleggbar rad",
     "heading": "Overskrift",

@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Bordes",
     "collapsible_row": "Fila plegable",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Presentación de diapositivas en capas"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Alineación",
     "autoplay": "Reproducción automática",
     "background": "Fondo",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Agregar al carrito fijo"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Flecha",
     "auto": "Auto",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Descubre nuestra colección seleccionada con favoritos seleccionados a mano que combinan estilo y calidad.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Comprar ahora",
     "collapsible_row": "Fila plegable",
     "heading": "Título",

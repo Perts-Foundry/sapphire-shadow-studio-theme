@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Kenarlıklar",
     "collapsible_row": "Daraltılabilir satır",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Katmanlı slayt gösterisi"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "Otomatik oynatma",
     "background": "Arka plan",
     "border_radius": "Köşe yarıçapı",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Sabit sepete ekle"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Ok",
     "banana": "Muz",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Stil ve kaliteyi bir araya getiren, özenle seçilmiş favorilerden oluşan koleksiyonumuzu keşfedin.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "Daraltılabilir satır",
     "button_label": "Hemen alışveriş yap",
     "heading": "Başlık",

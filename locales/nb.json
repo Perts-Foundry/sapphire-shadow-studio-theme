@@ -334,5 +334,9 @@
       "default_title": "Standardtittel",
       "sticky_add_to_cart": "Hurtiglinje for «Legg i handlekurv»"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

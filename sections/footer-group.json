@@ -137,11 +137,96 @@
             "padding-inline-end": 0
           },
           "blocks": {}
+        },
+        "group_follow": {
+          "type": "group",
+          "name": "Follow us",
+          "settings": {
+            "content_direction": "column",
+            "vertical_on_mobile": true,
+            "horizontal_alignment": "flex-start",
+            "vertical_alignment": "center",
+            "align_baseline": false,
+            "horizontal_alignment_flex_direction_column": "flex-start",
+            "vertical_alignment_flex_direction_column": "center",
+            "gap": 6,
+            "width": "fill",
+            "custom_width": 100,
+            "width_mobile": "fill",
+            "custom_width_mobile": 100,
+            "height": "fit",
+            "custom_height": 100,
+            "inherit_color_scheme": true,
+            "color_scheme": "",
+            "background_media": "none",
+            "video_position": "cover",
+            "background_image_position": "cover",
+            "border": "none",
+            "border_width": 1,
+            "border_opacity": 100,
+            "border_radius": 0,
+            "toggle_overlay": false,
+            "overlay_color": "#00000026",
+            "overlay_style": "solid",
+            "gradient_direction": "to top",
+            "link": "",
+            "open_in_new_tab": false,
+            "placeholder": "",
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {
+            "text_follow_heading": {
+              "type": "text",
+              "name": "Heading",
+              "settings": {
+                "text": "<h2>Follow us</h2>",
+                "width": "100%",
+                "max_width": "normal",
+                "alignment": "left",
+                "type_preset": "custom",
+                "font": "var(--font-accent--family)",
+                "font_size": "1.125rem",
+                "line_height": "normal",
+                "letter_spacing": "normal",
+                "case": "none",
+                "wrap": "pretty",
+                "color": "var(--color-foreground)",
+                "background": false,
+                "background_color": "#00000026",
+                "corner_radius": 0,
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
+            "follow_us_footer": {
+              "type": "follow-us",
+              "name": "Follow us",
+              "settings": {
+                "heading": "",
+                "variant": "handles",
+                "layout": "stack",
+                "size": "20px",
+                "alignment": "left"
+              },
+              "blocks": {}
+            }
+          },
+          "block_order": [
+            "text_follow_heading",
+            "follow_us_footer"
+          ]
         }
       },
       "block_order": [
         "group_wErUQf",
-        "email-signup_HafH7P"
+        "email-signup_HafH7P",
+        "group_follow"
       ],
       "name": "t:names.footer",
       "settings": {
@@ -293,21 +378,13 @@
           "blocks": {}
         },
         "social_icons": {
-          "type": "social-links",
+          "type": "follow-us",
           "settings": {
-            "facebook_url": "https://www.facebook.com/profile.php?id=61583934266282",
-            "instagram_url": "https://www.instagram.com/sapphire_shadow_studio",
-            "youtube_url": "",
-            "tiktok_url": "https://www.tiktok.com/@sapphire_shadow_studio",
-            "twitter_url": "",
-            "threads_url": "",
-            "linkedin_url": "",
-            "bluesky_url": "",
-            "snapchat_url": "",
-            "pinterest_url": "",
-            "tumblr_url": "",
-            "vimeo_url": "",
-            "custom_url": ""
+            "heading": "",
+            "variant": "compact",
+            "layout": "row",
+            "size": "16px",
+            "alignment": "right"
           },
           "blocks": {}
         }

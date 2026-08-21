@@ -787,6 +787,17 @@
             </drawer-localization-component>
           {% endif %}
         {%- endif -%}
+
+        {%- comment -%}
+          `.menu-drawer__utility-links` is a flex column pinned to the bottom of the drawer,
+          so the social row needs its own horizontal wrapper rather than inheriting it.
+        {%- endcomment -%}
+        {% render 'social-links',
+          variant: 'handles',
+          layout: 'row',
+          size: '20px',
+          class: 'menu-drawer__social'
+        %}
       </div>
 
       {% liquid
@@ -1311,6 +1322,20 @@
     margin-block: auto var(--padding-sm);
     margin-inline-start: var(--padding-xl);
     background-color: rgb(var(--color-foreground) 0.03);
+  }
+
+  .menu-drawer__social {
+    padding-block: var(--padding-sm);
+  }
+
+  .menu-drawer__social .social-links__list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: var(--gap-lg);
+  }
+
+  .menu-drawer__social .social-links__link {
+    color: rgb(var(--color-foreground));
   }
 
   .menu-drawer__account {

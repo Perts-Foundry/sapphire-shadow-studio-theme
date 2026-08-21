@@ -77,10 +77,23 @@
             "icon_color": "#000000"
           },
           "blocks": {}
+        },
+        "follow_us_about": {
+          "type": "follow-us",
+          "name": "Follow us",
+          "settings": {
+            "heading": "Follow us",
+            "variant": "handles",
+            "layout": "row",
+            "size": "20px",
+            "alignment": "left"
+          },
+          "blocks": {}
         }
       },
       "block_order": [
-        "ai_gen_block_23c928c_UaLftP"
+        "ai_gen_block_23c928c_UaLftP",
+        "follow_us_about"
       ],
       "settings": {
         "content_direction": "column",

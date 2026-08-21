@@ -165,6 +165,7 @@
         "logo_position": "center",
         "menu_position": "left",
         "menu_row": "top",
+        "show_social_icons": true,
         "show_search": true,
         "search_position": "right",
         "search_row": "top",

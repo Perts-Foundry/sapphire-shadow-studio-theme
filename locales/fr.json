@@ -341,5 +341,9 @@
       "success_moderated": "Commentaire publié, en attente de modération",
       "success": "Commentaire publié"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

@@ -348,5 +348,9 @@
       "success_moderated": "Komentar je bil objavljen, čakanje na odobritev",
       "success": "Komentar je bil objavljen"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

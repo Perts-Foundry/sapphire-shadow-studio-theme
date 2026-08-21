@@ -334,5 +334,9 @@
       "success_moderated": "コメントを投稿しました。承認待ちです",
       "success": "コメントを投稿しました"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

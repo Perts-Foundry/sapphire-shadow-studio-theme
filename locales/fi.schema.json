@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Reunukset",
     "collapsible_row": "Supistettava rivi",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Kerroksittainen diaesitys"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Tasaus",
     "autoplay": "Automaattinen toisto",
     "background": "Tausta",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Kiinteä Lisää ostoskoriin -toiminto"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Omena",
     "arrow": "Nuoli",
     "auto": "Automaattinen",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Tutustu kuratoituun kokoelmaamme, joka sisältää käsin valittuja suosikkeja, joissa yhdistyvät tyyli ja laatu.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Osta nyt",
     "collapsible_row": "Kutistettava rivi",
     "heading": "Otsikko",

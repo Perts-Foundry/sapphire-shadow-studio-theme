@@ -1,0 +1,131 @@
+{% doc %}
+  Placeable wrapper around `snippets/social-links.liquid`.
+
+  Exposes display settings only. The URLs come from the five `settings.social_*_link` theme
+  settings, deliberately: a block cannot read another block's settings, so per-block URL
+  fields would reintroduce the second source of truth this block exists to remove. To change
+  a profile URL, edit Theme settings > Social media.
+
+  Shared `.social-links__*` CSS lives in the snippet, not here, so the header and drawer
+  instances stay styled when this block is absent. Only the wrapper's own alignment rules
+  belong in this file.
+{% enddoc %}
+
+{% liquid
+  case block.settings.alignment
+    when 'center'
+      assign alignment_value = 'center'
+    when 'right'
+      assign alignment_value = 'flex-end'
+    else
+      assign alignment_value = 'flex-start'
+  endcase
+%}
+
+<div
+  class="follow-us"
+  style="--follow-us-alignment: {{ alignment_value }};"
+  {{ block.shopify_attributes }}
+>
+  {% render 'social-links',
+    variant: block.settings.variant,
+    layout: block.settings.layout,
+    size: block.settings.size,
+    heading: block.settings.heading
+  %}
+</div>
+
+{% stylesheet %}
+  .follow-us {
+    display: flex;
+    flex-direction: column;
+    align-items: var(--follow-us-alignment, flex-start);
+  }
+
+  .follow-us .social-links {
+    align-items: var(--follow-us-alignment, flex-start);
+  }
+
+  .follow-us .social-links__list {
+    justify-content: var(--follow-us-alignment, flex-start);
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "t:names.follow_us",
+  "tag": null,
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:settings.heading",
+      "default": "t:text_defaults.follow_us"
+    },
+    {
+      "type": "select",
+      "id": "variant",
+      "label": "t:settings.style",
+      "options": [
+        {
+          "value": "handles",
+          "label": "t:options.handles"
+        },
+        {
+          "value": "compact",
+          "label": "t:options.compact"
+        }
+      ],
+      "default": "handles"
+    },
+    {
+      "type": "select",
+      "id": "layout",
+      "label": "t:settings.layout",
+      "options": [
+        {
+          "value": "row",
+          "label": "t:options.horizontal"
+        },
+        {
+          "value": "stack",
+          "label": "t:options.vertical"
+        }
+      ],
+      "default": "row"
+    },
+    {
+      "type": "select",
+      "id": "size",
+      "label": "t:settings.size",
+      "options": [
+        {
+          "value": "16px",
+          "label": "t:options.small"
+        },
+        {
+          "value": "20px",
+          "label": "t:options.medium"
+        },
+        {
+          "value": "24px",
+          "label": "t:options.large"
+        }
+      ],
+      "default": "20px"
+    },
+    {
+      "type": "text_alignment",
+      "id": "alignment",
+      "label": "t:settings.alignment",
+      "default": "left"
+    }
+  ],
+  "presets": [
+    {
+      "name": "t:names.follow_us",
+      "category": "t:categories.footer"
+    }
+  ]
+}
+{% endschema %}

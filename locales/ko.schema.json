@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "테두리",
     "collapsible_row": "축소 가능 행",
@@ -201,6 +202,7 @@
     "layered_slideshow": "레이어드 슬라이드 쇼"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "자동 재생",
     "background": "배경",
     "border_radius": "모서리 반경",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "고정 카트 추가"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "화살표",
     "banana": "바나나",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>스타일과 품질을 겸비한 엄선된 인기 제품으로 구성된 큐레이션 컬렉션을 만나보세요.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "축소 가능 행",
     "button_label": "지금 쇼핑하기",
     "heading": "제목",

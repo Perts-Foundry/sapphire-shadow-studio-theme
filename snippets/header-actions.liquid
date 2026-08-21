@@ -26,6 +26,20 @@
 <header-actions
   {{- block.shopify_attributes -}}
 >
+  {%- comment -%}
+    Desktop only. The mobile drawer carries its own social row, so the mobile header stays
+    uncrowded. This sits in header-actions rather than the header-row slot machinery because
+    `sections/header.liquid` builds its slot order across eight branches; a new token would
+    mean touching all eight plus a `when` arm in `snippets/header-row.liquid`.
+  {%- endcomment -%}
+  {% if section.settings.show_social_icons %}
+    {% render 'social-links',
+      variant: 'compact',
+      size: '20px',
+      class: 'header-actions__social mobile:hidden'
+    %}
+  {% endif %}
+
   {% if shop.customer_accounts_enabled %}
     <script
       src="{{ 'dialog.js' | asset_url }}"
@@ -580,6 +594,14 @@
 
   .header__column--right header-actions {
     margin-inline-start: calc(var(--gap-md) * -1);
+  }
+
+  .header-actions__social {
+    justify-content: center;
+  }
+
+  .header-actions__social .social-links__link {
+    color: var(--color-foreground);
   }
 
   .header-actions__action {

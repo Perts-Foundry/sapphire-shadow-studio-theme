@@ -1,5 +1,71 @@
 # Release Notes
 
+## Social links on every surface, from one source of truth (unreleased)
+
+Social links used to render in exactly one place, as three muted icons in the footer utilities
+bar, and their URLs lived in two unreconciled places. They now render on the footer, the homepage,
+the desktop header, the mobile drawer, About, Contact and FAQ, all from the five
+`settings.social_*_link` theme settings, through the single new `snippets/social-links.liquid`.
+
+**The consolidation was the point, not a side effect.** The old footer block
+(`blocks/social-links.liquid`) carried its own thirteen `*_url` block settings in
+`sections/footer-group.json`, while `snippets/structured-data-organization.liquid` read the theme
+settings for `sameAs`. They happened to agree, but nothing reconciled them and no test covered it.
+Adding six more surfaces on top of two sources would have multiplied the drift, so the URLs moved
+to theme settings only. This is the pattern `CLAUDE.md` already prescribes for two blocks that must
+agree on a value, and `snippets/size-option-position.liquid` is the model it names.
+
+**The seven extra platforms were dropped rather than promoted to settings.** The old block also
+supported Threads, LinkedIn, Bluesky, Snapchat, Tumblr, Vimeo and a custom URL. All seven were
+blank, and none of them reached `sameAs`, so keeping them would have meant adding seven
+`settings_schema.json` entries and seven `sameAs` branches to preserve capability nobody was using.
+The trade accepted here is that adding a platform later is a code change to the snippet plus a
+theme setting, not an editor field. If one becomes a near-term plan, it goes in as a settings entry
+rather than being wedged into the block.
+
+**`blocks/social-links.liquid` was left in place rather than migrated or deleted.** It is upstream
+Horizon; editing it creates conflicts at the next upstream merge, and deleting it makes that merge
+noisier still. It now sits unused exactly as `blocks/_social-link.liquid` and
+`blocks/_footer-social-icons.liquid` already did. Its `footer-utilities__icons` class was declared
+and styled nowhere, so nothing had to be carried forward. The failure mode to watch for is someone
+finding it by grep and editing it expecting the storefront to change; `CLAUDE.md` names all three
+files literally so that grep lands on the warning too.
+
+**The shared CSS lives in the snippet's `{% stylesheet %}`, not in `blocks/follow-us.liquid`.**
+This is load-bearing rather than stylistic. `snippets/header-actions.liquid` and
+`snippets/header-drawer.liquid` render the snippet directly and never touch the block, and Shopify
+subsets block CSS to the pages where that block renders. Rules kept in the block would have left
+the header and drawer styled only by accident, via the always-present footer instance, and would
+have broken silently the moment that footer block was removed or hidden. Only the block wrapper's
+own alignment rules stayed in the block, where their scope is correct.
+
+**Handle derivation is why the Facebook URL had to change.** The snippet shows an `@handle` derived
+from each URL's last path segment. The query string and fragment are dropped first, so a profile
+URL carrying `?utm_source=...` still yields its real handle; the fallback guard (`.php`, `?`, `=`,
+or a blank result) is then applied to the extracted segment only, never to the whole URL. The
+stored Facebook value was `facebook.com/profile.php?id=61583934266282`, which passes the
+has-a-profile-path check but yields no usable handle, so it would have rendered the bare word
+"Facebook" beside four real handles. It was changed to the vanity form
+`facebook.com/sapphireshadowstudio`, which also makes the `sameAs` entry a nicer identifier. The
+forward-looking rule, recorded in `CLAUDE.md` because nothing in CI enforces it: keep these
+settings in vanity-slug form.
+
+**The header row went into `header-actions`, not the header-row slot machinery.**
+`sections/header.liquid` builds its slot `order` string across eight `assign order = ...` branches,
+one per localization-by-search-position combination. A `social` token would have meant editing all
+eight, adding a `capture`, adding a `when` arm to `snippets/header-row.liquid`, and adding two
+position and row schema selects, for a row that only ever appears in one place. Inserting into
+`header-actions` is one insertion point and reuses the existing `.header-actions__action` sizing.
+The cost is that the row cannot be repositioned from the editor, only toggled, via the new
+`show_social_icons` header setting (schema default `false`, on for this store). Mobile is covered
+by the drawer, so the header row is `mobile:hidden` and the mobile header stays uncrowded.
+
+**Two surfaces use `compact` (icon only) rather than visible handles, for space, not by
+downgrade.** The header row sits inside the right-side actions cluster beside search, account and
+cart; the footer utilities bar is a single `text-wrap: nowrap` line already holding the copyright.
+Three `@handle` strings in either would wrap or crowd out what is there. `variant` is a
+per-instance block setting, so switching either to handles is a one-word JSON change.
+
 ## Variant button index: fieldset numbering vs. option numbering (unreleased)
 
 Selecting the LAST color on a product page left the button blank: white label text on a white

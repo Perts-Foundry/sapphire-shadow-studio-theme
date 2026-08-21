@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "邊框",
     "collapsible_row": "可摺疊列",
@@ -201,6 +202,7 @@
     "layered_slideshow": "分層輪播"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "對齊",
     "autoplay": "自動播放",
     "background": "背景",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "固定加入購物車"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "箭頭",
     "auto": "自動",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>探索我們精心策劃的商品系列，精選兼具風格與品質的人氣款。</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "立即選購",
     "collapsible_row": "可摺疊列",
     "heading": "標題",
