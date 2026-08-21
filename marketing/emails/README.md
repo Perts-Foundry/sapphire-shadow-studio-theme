@@ -110,6 +110,20 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   and the 2026-08-21 test send carried no tracking pixel at all, because the unrecognised variable
   simply rendered to nothing. Both templates now use `{{ open_tracking_block }}`. It renders to
   nothing visible either way, so the only symptom of getting it wrong is opens that never record.
+
+  Open tracking itself is a **store-wide** setting, not a campaign or template one: Admin >
+  **Apps** > **Messaging** > **Settings** > **Open tracking**, set to "Optimize open tracking" as of
+  2026-08-21. Leave it there. The "Tracks all email opens" option sounds stricter but is worse data:
+  Apple Mail Privacy Protection prefetches images for every Apple Mail recipient, so it books an
+  open whether or not a human looked. "Ask for consent" is the one to avoid outright, because
+  Shopify injects an "Opt in to email open tracking" link into the footer, and this footer is
+  hand-composed with no room reserved for it.
+
+  With that setting on, **neither 2026-08-21 test send carried a tracking pixel**, with either
+  spelling of the variable. Since the store-wide setting is not "Do not track", the likeliest
+  explanation is that test sends do not inject the pixel at all. That is inference, not proof: the
+  first real automation send is what settles it. Do not go changing the variable again on the
+  strength of a test send showing no pixel.
 - **500 KB cap** on a custom-coded Liquid email (a custom Liquid *section* inside a drag-and-drop
   email is capped at 50 KB instead). These templates are a few KB; the cap only becomes real if
   someone inlines a base64 image, so do not.
