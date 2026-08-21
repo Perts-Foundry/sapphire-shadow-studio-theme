@@ -37,19 +37,23 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   every subscriber's inbox retroactively false, and there is nothing that can correct it. The
   announcement campaign itself does not exist yet; clone `marketing/emails/campaign-shell.liquid`.
 
-- [ ] **Re-test the unsubscribe link once there is a real send.** `unsubscribe_url` points at
-  `/account/unsubscribe/<token>` on the storefront domain, and that domain currently answers
-  `302 -> /password` to anonymous requests, so the link probably dead-ends at the password gate. It
-  was checked with the placeholder token a test send emits, not a real one, so it is not proven
-  either way. Shopify's docs say the URL cannot be repointed, so if it is confirmed broken the only
-  fixes are removing the storefront password or handling opt-outs by hand from the reply address.
-  A subscriber who cannot unsubscribe reports spam instead.
+- [ ] **Click the unsubscribe link in a real send and see where it lands.** Narrowed on 2026-08-21
+  but still open. On a real send the link is rewritten to `/_t/c/v3/<token>`, and that redirector
+  clears the password gate, so the first hop is fine. What it forwards to is
+  `/account/unsubscribe/<token>`, an ordinary storefront path, and the placeholder form of that path
+  answers `302 -> /password`. If the real one does too, subscribers cannot opt out, and a subscriber
+  who cannot unsubscribe reports spam instead. Shopify's docs say the URL cannot be repointed, so
+  the only fixes would be dropping the storefront password or handling opt-outs by hand from the
+  reply address. The test is one click in a delivered email, then re-subscribe; nothing here can
+  run it, because resolving that URL from the terminal would either register a false click or
+  actually unsubscribe someone.
 
 - [ ] **Confirm `List-Unsubscribe` headers appear on a real send.** The 2026-08-21 test send carried
   no `List-Unsubscribe` or `List-Unsubscribe-Post` header. Test sends often omit them, so this is
   probably a test-mode artifact rather than a real gap, but Gmail and Yahoo both expect one-click
   unsubscribe from bulk senders and it is worth confirming on the first genuine automation send
-  rather than assuming.
+  rather than assuming. The first real campaign went out the same day; only its body was captured,
+  so its headers are still unread.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against

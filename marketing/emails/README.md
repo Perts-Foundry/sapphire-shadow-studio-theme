@@ -35,7 +35,7 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome.liquid` | Welcome to Sapphire Shadow Studio | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, headers reviewed |
+| `welcome.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, test sends plus first real campaign |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 Preview text lives in the editor field and in this table, and **nowhere in the template**. Both
@@ -119,11 +119,28 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   Shopify injects an "Opt in to email open tracking" link into the footer, and this footer is
   hand-composed with no room reserved for it.
 
-  With that setting on, **neither 2026-08-21 test send carried a tracking pixel**, with either
-  spelling of the variable. Since the store-wide setting is not "Do not track", the likeliest
-  explanation is that test sends do not inject the pixel at all. That is inference, not proof: the
-  first real automation send is what settles it. Do not go changing the variable again on the
-  strength of a test send showing no pixel.
+  **Test sends do not carry the pixel. Real sends do.** Neither 2026-08-21 test send contained one,
+  with either spelling of the variable, which is what made the wrong spelling so hard to spot. The
+  first real campaign the same day ended with
+  `<img src="https://sapphireshadowstudio.com/_t/open/...` immediately before `</body>`, so
+  `{{ open_tracking_block }}` is confirmed working. Never diagnose this from a test send.
+- **A real send is not what you pasted, in two ways a test send never shows.** Confirmed against the
+  first campaign, 2026-08-21.
+
+  **Every link is rewritten** to `https://<shop domain>/_t/c/v3/<token>`, the unsubscribe link
+  included. That redirector is **exempt from the storefront password gate**: `/_t/c/v3/<bad token>`
+  answers `301` to the store root and `/_t/open/<bad token>` answers `200`, where `/cart` answers
+  `302 -> /password`. So click and open tracking both work while the gate is up. The link
+  *destinations* are still ordinary storefront URLs and still gated, so a click lands on the
+  password page exactly as before, no better and no worse.
+
+  **The `<head>` is emptied.** Shopify moves `<meta>`, `<title>` and the whole `<style>` block into
+  the top of `<body>`, after its own preheader divs, and drops `lang="en"` from `<html>`. Test sends
+  keep the head intact, so this only appears on the real thing. Two consequences worth knowing and
+  neither fixable from the template: the mobile media query now lives in `<body>`, which most
+  clients still honour but none promise to, so check a real send on a phone rather than a test one;
+  and the missing `lang` costs screen readers their language hint.
+
 - **500 KB cap** on a custom-coded Liquid email (a custom Liquid *section* inside a drag-and-drop
   email is capped at 50 KB instead). These templates are a few KB; the cap only becomes real if
   someone inlines a base64 image, so do not.
