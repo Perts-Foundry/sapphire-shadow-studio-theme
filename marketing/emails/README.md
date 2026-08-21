@@ -35,7 +35,7 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome.liquid` | Welcome to Sapphire Shadow Studio | You are in early. The shop is not open yet, and you will be first through the door. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | Not yet test-sent |
+| `welcome.liquid` | Welcome to Sapphire Shadow Studio | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | Not yet test-sent |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 The preview text has a second home: the hidden **preheader `<div>`** at the top of `<body>`, which
@@ -85,11 +85,19 @@ These are the platform requirements the templates satisfy. Getting them wrong us
 - **500 KB cap** on a custom-coded Liquid email (a custom Liquid *section* inside a drag-and-drop
   email is capped at 50 KB instead). These templates are a few KB; the cap only becomes real if
   someone inlines a base64 image, so do not.
-- **Available Liquid objects**: `shop.*` (name, domain, url, email, address), `customer.*` (name,
-  email, orders_count, tags, and so on), `email.*` (subject, preview text), `all_products`, and, on
-  the abandoned-checkout automation only, `abandoned_checkout.*` (checkout url, first five line
-  items, totals, addresses) and `abandoned_visit.*`. Theme objects such as `section`, `block`,
-  `settings`, and `collections` **do not exist here**.
+- **Available Liquid objects**, per Shopify's documented list: `shop.name`, `shop.domain`,
+  `shop.url`, `shop.shopify_domain`, `shop.address` (with its subfields), `customer.*` (name, email,
+  orders_count, tags, and so on), `email.subject`, `email.preview_text`, `all_products`,
+  `unsubscribe_url`, `open_tracking`, and, on the abandoned-checkout automation only,
+  `abandoned_checkout.*` (checkout url, first five line items, totals, addresses) and
+  `abandoned_visit.*`. Theme objects such as `section`, `block`, `settings`, and `collections` **do
+  not exist here**.
+- **`shop.email` is not on that list**, which is why neither template uses it any more. It may
+  render empty, and an empty contact line is a silent failure: the footer looks fine and simply
+  offers the reader no address. The store's account address is also not the customer-facing one, so
+  even a working `shop.email` would have printed the wrong mailbox. Both footers now hardcode
+  `contact@sapphireshadowstudio.com`.
+- **`shop.address` exists and is deliberately unused.** No postal address appears in these templates.
 - **Personalization limits**: keep it to about 2 variables in the subject or preview text and about
   10 in the body. Every personalization variable needs a fallback, because a subscriber who joined
   through a footer form has an email and nothing else. That is what
@@ -121,6 +129,14 @@ Email clients are not browsers. Keep to these when editing or cloning:
 - **Dark-mode-safe colours.** `color-scheme: light` plus `supported-color-schemes: light` in the head,
   and explicit background *and* foreground colours on every element that sets either. A background
   set without its text colour is the classic dark-mode invisibility bug.
+- **An icon row carries its own visible label.** A row of bare icons is one of the ugliest
+  images-off failures there is: three broken-image boxes and no way to tell what they linked to. The
+  footer's social row therefore pairs each icon with the network's name in text, and the icon itself
+  is `alt=""` (decorative), because the visible label already says what the alt text would have.
+  With images blocked the row degrades to "Instagram Facebook TikTok" in the footer's own body
+  colour. Do **not** try to carry the meaning in `alt` alone: a client sizes a blocked image to its
+  `width`/`height` attributes and clips the alt text to that box, so a 28 px icon shows about four
+  characters of it.
 - **Absolute URLs only**, built from `{{ shop.url }}`. There is no relative base in an inbox.
 - **No JavaScript, no external stylesheets, no forms.** They are stripped or blocked.
 
@@ -141,44 +157,152 @@ size, and many block images by default, which is why the `alt` text has to stand
 </tr>
 ```
 
+**Date tile panel.** Two static tiles on a navy panel, echoing the countdown tiles on the password
+page. `welcome.liquid` carries this; the shell does not, because a date is campaign content. An
+email cannot tick, so the tiles are hand-typed text and there is nothing to recalculate. The eyebrow
+matches `blocks/launch-countdown.liquid`'s own, so a screen reader hears "The studio opens Sep 3
+2026 9:00 AM Eastern" as one sentence. At 375 px the two tiles come to roughly 250 px inside a
+335 px content box, so no media query is involved.
+
+```html
+<tr>
+  <td class="ssb-pad" align="center" style="padding: 8px 32px 24px 32px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#071e3f" style="background-color: #071e3f; border-radius: 4px;">
+      <tr>
+        <td align="center" style="padding: 24px 16px;">
+          <p style="margin: 0 0 14px 0; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #3aa0e6;">The studio opens</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+            <tr>
+              <td align="center" bgcolor="#0c2c56" style="background-color: #0c2c56; padding: 14px 20px; border-radius: 4px;">
+                <span style="font-family: Helvetica, Arial, sans-serif; font-size: 24px; line-height: 28px; font-weight: bold; color: #ffffff;">Sep 3</span><br>
+                <span style="font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; letter-spacing: 1px; color: #c9d8ea;">2026</span>
+              </td>
+              <td style="width: 12px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+              <td align="center" bgcolor="#0c2c56" style="background-color: #0c2c56; padding: 14px 20px; border-radius: 4px;">
+                <span style="font-family: Helvetica, Arial, sans-serif; font-size: 24px; line-height: 28px; font-weight: bold; color: #ffffff;">9:00 AM</span><br>
+                <span style="font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; letter-spacing: 1px; color: #c9d8ea;">Eastern</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+```
+
+**Social icon row.** Both templates carry this at the top of the navy footer cell. One cell per
+network, one link per network, icon and label inside the same anchor so the whole chip is clickable.
+The icon is `alt=""` on purpose; see the images-off rule above.
+
+```html
+<td align="center" style="padding: 0 8px; white-space: nowrap;">
+  <a href="https://www.instagram.com/sapphire_shadow_studio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
+    <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram
+  </a>
+</td>
+```
+
+**The hosted assets.** Everything the templates reference lives in Shopify Files and is served by
+the CDN, which is **not** behind the storefront password: all five URLs return 200 to an anonymous
+request, which is the only reason they work in an inbox at all. Re-check that after any change here.
+
+| Asset | URL |
+|---|---|
+| Logo (header, both templates) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480` |
+| Product hero (`welcome.liquid`) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/lead2_crew-sweater_black_cna_flat-1.jpg?width=600&height=400&crop=center` |
+| Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
+| Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
+| TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
+
+The `?width=` and `?width=&height=&crop=` suffixes are Shopify's CDN image transforms, so the
+inbox downloads a 240 px logo and a 600x400 hero rather than a 2048 px original and a 4000x4000
+one. In the `src` attribute the `&` between transform parameters is written `&amp;`. Drop any `?v=`
+cache buster: it is not part of the file's identity.
+
+The three icons are generated, not hand-drawn. `scripts/email-icons/render-email-icons.mjs`
+rasterises them from path data copied out of `snippets/icon.liquid` into 56 px PNGs (2x the 28 px
+display size) under `marketing/emails/assets/`, and
+`scripts/email-icons/upload-email-icons.mjs` uploads those committed PNGs to Shopify Files. Email
+cannot render SVG, which is why the theme's own inline icons could not be reused directly. Re-run
+the renderer if the theme's icons change; `npm run email-icons:test` fails if the copied path data
+and the committed PNGs stop agreeing with their sources.
+
 ## Branding is duplicated on purpose
 
 Each file is self-contained: no partials, no includes, no build step. The repo has no bundler or
 transpiler to begin with, and Shopify Email would not resolve a partial anyway, since it takes one
-pasted document and nothing else. The header, footer, and palette are therefore copied into every
-template. **A palette or footer change has to be made in every file in this directory.** The palette
-is lifted from `config/settings_data.json`, from two different colour schemes: navy `#071e3f`
-(`sss-dark-scheme`'s `background`) and accent blue `#0071C2` (`sss-dark-scheme`'s
-`primary_button_background`), plus light blue `#e1edf5` (`scheme-4`'s `background`), used here as
-the page surround.
+pasted document and nothing else. The header, footer, social row, and palette are therefore copied
+into every template. **A palette or footer change has to be made in every file in this directory.**
+
+The palette is the resolved-hex token set in `scripts/size-chart/lib/svg-shared.mjs`, which already
+solved this problem for the size-chart PNGs: a renderer outside Liquid cannot read a colour scheme,
+so the storefront's "Sapphire Shadow" scheme is written out there as literal hexes. The email uses
+the same file as its reference rather than resolving `config/settings_data.json` a second time.
+
+| Role | Value | Token |
+|---|---|---|
+| Navy header, footer, tile panel | `#071e3f` | `BG` |
+| Tile faces | `#0c2c56` | `PANEL` |
+| Eyebrow on navy | `#3aa0e6` | `ACCENT_LT` |
+| Footer text, tile sublabels, social labels | `#c9d8ea` | `BODY` |
+| Button | `#0071C2` | not a token; see below |
+| Page surround | `#e1edf5` | not a token; `scheme-4`'s `background` |
+
+Two of those are deliberate exceptions. The **button** keeps `#0071C2`, which is
+`sss-dark-scheme`'s `primary_button_background` in `config/settings_data.json` and therefore the
+storefront's actual CTA colour: a button a subscriber clicks in the email should be the same blue as
+the button they land on. The **page surround** is `scheme-4`'s `background`, and has no equivalent
+in the size-chart token set because a PNG has no surround.
+
+The footer text used to be `#c9d8e6`, one digit off from `BODY`. That was a transcription slip, not a
+choice, and both files now say `#c9d8ea`. Only `scripts/email-icons/` reads the token set
+programmatically (it bakes `BODY` into the icon PNGs); the templates hold literal hexes, because
+Shopify Email has no `settings` object and no way to resolve anything.
 
 ## `welcome.liquid` is the prelaunch version, and has to be changed at launch
 
 While the storefront password is on, every storefront URL resolves to Shopify's "Opening soon"
 page. A welcome email whose links all dead-end on a password wall is the fastest way to make a new
-subscriber think the brand is broken, so the prelaunch welcome sends nobody there: the header
-wordmark is plain text, the footer names the domain without linking it, and the single button points
-at Instagram, which is public.
+subscriber think the brand is broken, so the prelaunch welcome sends nobody there: the header logo
+is an unlinked image, the footer names the domain without linking it, and the single button points
+at Instagram, which is public. The three social links in the footer are public too. Note that this is
+the one place the two templates diverge on shared chrome: `campaign-shell.liquid` links its header
+logo, because a campaign cloned from it is not necessarily prelaunch.
 
 That makes the file **wrong the day the password comes off**, and nothing will tell you so. Nothing
 in the file itself says this either, because notes in a template ship to subscribers. This section is
-the only record. Make all four edits in one sitting; each one alone leaves the email half-migrated.
+the only record. Make all six edits in one sitting; each one alone leaves the email half-migrated.
 
-1. **Relink the wordmark.** Wrap the header `<span>` in
-   `<a href="{{ shop.url }}" style="color: #ffffff; text-decoration: none;"> ... </a>`, matching
-   `campaign-shell.liquid`.
+1. **Relink the header logo.** Wrap the header `<img>` in
+   `<a href="{{ shop.url }}" style="..."> ... </a>`, matching `campaign-shell.liquid`.
 2. **Repoint the button** at `{{ shop.url }}` in **both** halves, the VML `href` and the anchor
    `href`, and change both labels to match each other.
 3. **Relink the footer domain.** Wrap `{{ shop.domain }}` in
    `<a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;"> ... </a>`.
-4. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
+4. **Remove or repoint the date tiles.** Once the store is open, "The studio opens Sep 3" is stale
+   on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
+   thing is. This is tracked alongside the password-page countdown in `TODO.md`, because the two
+   surfaces state the same instant and should be retired together.
+5. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
    update the subject, the preview text, the preheader `<div>`, and the metadata table above together.
+6. **Re-check the hero image.** It points at one product's flat shot; at launch there may be a
+   better one, and there will certainly be a reason to look.
 
 Two things about that button. Its URL is **hardcoded**, because Shopify Email has no `settings`
 object to read `settings.social_instagram_link` from, so it duplicates the value in
 `config/settings_data.json` and nothing reconciles the two: change the profile URL in theme settings
-and this file goes stale silently. And the prelaunch copy **promises no launch date**, deliberately.
-A date in a sent email cannot be corrected, and a date that slips is worse than no date at all.
+and this file goes stale silently. The same is true of the three URLs in the social row.
+
+**The copy names a launch date, and that is a reversal.** This file used to argue the opposite: that
+a date in a sent email cannot be corrected, so no date was better than a date that slips. The reason
+it changed is that the date stopped being the email's to withhold. `blocks/launch-countdown.liquid`
+commits publicly to 2026-09-03 09:00 ET, the password page ticks down to it, and the Instagram bio
+repeats it, so a subscriber reads this email minutes after watching that countdown. Saying only "not
+open yet" there reads as evasion, not caution. The residual risk is real and cannot be designed away:
+this is an **automation**, so every send carries whatever date the template said at the time, and
+editing the template fixes future sends only. If September 3 slips, the correction is a follow-up
+campaign to the list, not an edit here.
 
 ## Shipping and policy copy: do not restate it here
 
@@ -194,8 +318,11 @@ Campaign copy is committed to a public repository and gets the same treatment as
 (see the Sensitive Content section of the repo's `CLAUDE.md`): no personal emails, phone numbers, or
 addresses; no test-send address, which is why this file says "the owner address" rather than naming
 one; no sub-state location detail; no discount codes that are meant to stay private until launch.
-Contact details in the footers come from `{{ shop.email }}` and `{{ shop.domain }}` at render time
-rather than being typed in as literals, which keeps them correct and keeps them out of the diff.
+The footers name `contact@sapphireshadowstudio.com` as a literal. That is a brand address, already
+published on the storefront's contact page, and it is committed here on purpose: `shop.email` is not
+a documented variable for these emails (see Shopify's contract above), and it holds the store's
+account address rather than the customer-facing one. `{{ shop.domain }}` still renders at send
+time.
 
 ## Testing and validation
 
@@ -214,5 +341,15 @@ There is no automated check for these files, by design:
   found, after the file had already passed `theme check` and an HTML structural parse.
 - Opening a file in a browser is a useful structural check for layout and styles, and worth doing at
   a desktop width and at a phone width. Liquid tags render as literal text unless you substitute
-  values first, which is worth doing for anything inside an `href`.
+  values first, which is worth doing for anything inside an `href`. Two more browser passes are worth
+  the minute they cost: **with the `<style>` block deleted** (the client-drops-CSS case, which is
+  most of them) and **with every image `src` pointed at a dead URL** (the images-off case, which is
+  the default in a lot of inboxes). The second one is how the footer's icon labels got there.
+- `npm run email-icons:test` covers the icon tooling, not the templates: it fails if the path data
+  copied into `scripts/email-icons/lib/icons.mjs` drifts from `snippets/icon.liquid`, or if the PNGs
+  committed under `assets/` stop matching what the renderer produces. Nothing tests the templates
+  themselves.
+- **Confirm every CDN asset URL returns 200 to an anonymous request** after changing one. The
+  storefront is password-protected and the CDN is not, so it is easy to paste a URL that works in
+  your logged-in browser and reaches no subscriber.
 - **The test send is the real test.** Nothing before it proves the email renders in an inbox.

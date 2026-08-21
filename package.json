@@ -24,7 +24,8 @@
     "sku:tables": "node scripts/sku/check-tables.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs",
     "applique-grid:test": "node --test scripts/applique-grid/test/*.test.mjs",
-    "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs"
+    "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs",
+    "email-icons:test": "node --test scripts/email-icons/test/*.test.mjs"
   },
   "devDependencies": {
     "@shopify/cli": "4.6.1",

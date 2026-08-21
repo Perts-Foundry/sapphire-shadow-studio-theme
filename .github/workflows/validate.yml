@@ -518,6 +518,37 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── email-icons tooling tests ──────────────────────────────
+      # `scripts/email-icons/` renders the social icons the Shopify Email
+      # templates point at. Two invariants are worth CI: the icon path data is a
+      # hand copy of three branches of snippets/icon.liquid, and the PNGs under
+      # marketing/emails/assets/ are the record of what was uploaded to Shopify
+      # Files. Both drift silently otherwise, in a surface nothing else covers
+      # (theme-check ignores marketing/**). Unit-only: the upload script's live
+      # half is operator-invoked and this job holds no Shopify credential.
+      - name: Email icon tests
+        id: email-icons
+        run: |
+          set +e
+          OUTPUT=$(npm run email-icons:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Same "green on zero tests" guard as the suites above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::email-icons suite reported ${TESTS_RUN:-0} tests. The glob in the email-icons:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Blank-id leak guard ────────────────────────────────────
       # Blank ids embed the supplier name and style number, which are sensitive for
       # this public repo. Gitleaks matches token-shaped strings and does not catch
@@ -919,6 +950,7 @@ jobs:
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
+          EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
@@ -938,7 +970,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft
@@ -991,6 +1023,7 @@ jobs:
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
+          EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
@@ -1009,6 +1042,7 @@ jobs:
           SKU_OUTPUT: ${{ steps.sku.outputs.output }}
           SKU_TABLES_OUTPUT: ${{ steps.sku-tables.outputs.output }}
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
+          EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
           CONTRAST_OUTPUT: ${{ steps.contrast.outputs.output }}
           SMOKE_TEST_OUTPUT: ${{ steps.smoke-test.outputs.output }}
@@ -1055,6 +1089,7 @@ jobs:
             const skuTables = process.env.SKU_TABLES_EXIT;
             const seoReview = process.env.SEO_REVIEW_EXIT;
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
+            const emailIcons = process.env.EMAIL_ICONS_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const contrast = process.env.CONTRAST_EXIT;
             const a11y = process.env.A11Y_EXIT;
@@ -1073,6 +1108,7 @@ jobs:
             const skuTablesOut = sanitize(process.env.SKU_TABLES_OUTPUT) || 'No output';
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
+            const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const contrastOut = sanitize(process.env.CONTRAST_OUTPUT) || 'No output';
             // NOT run through sanitize(): the a11y summary is markdown built
@@ -1152,6 +1188,7 @@ jobs:
               `| **SKU tables** | \`npm run sku:tables\` | ${status(skuTables)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
+              `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
               `| **Contrast + a11y** | \`npm run contrast:lint\` + tests | ${status(contrast)} |`,
               `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
@@ -1190,6 +1227,7 @@ jobs:
               { title: 'SKU tables', tool: 'npm run sku:tables', out: skuTablesOut, exit: skuTables },
               { title: 'SEO review', tool: 'npm run seo-review:test', out: seoReviewOut, exit: seoReview },
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
+              { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
               { title: 'Deploy smoke', tool: 'npm run smoke:test', out: smokeTestOut, exit: smokeTest },
@@ -1301,6 +1339,7 @@ jobs:
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
+          EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
@@ -1335,6 +1374,7 @@ jobs:
           check_exit "sku-tables" "$SKU_TABLES_EXIT"
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
+          check_exit "email-icons" "$EMAIL_ICONS_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "contrast" "$CONTRAST_EXIT"
           # 0 when the audit passed OR when deploy-preview was skipped by

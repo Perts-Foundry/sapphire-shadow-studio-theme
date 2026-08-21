@@ -40,6 +40,12 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   (`applique-grid/patterns.json`) in agreement. Writes to the **live store** through gated
   dry-run plans. Driven by the `applique-grid` Claude skill. See
   [`applique-grid/README.md`](applique-grid/README.md).
+- `email-icons/`: render the social icons the Shopify Email templates use, and upload them to
+  Shopify Files. Email clients cannot render SVG, so the theme's own inline icons are copied as
+  path data, rasterised to committed PNGs under `marketing/emails/assets/`, and hosted on the CDN.
+  The uploader writes to the **live store** (Files only, one file per explicit `--upload` flag, and
+  never an overwrite). Rationale and the resulting CDN URLs:
+  [`../marketing/emails/README.md`](../marketing/emails/README.md).
 
 The `product-images` Claude skill (`.claude/skills/product-images/`) drives the whole pipeline end to
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it

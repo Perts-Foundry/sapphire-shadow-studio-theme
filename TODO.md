@@ -18,7 +18,17 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   `docs/accessibility-patterns.md`. Decide separately whether the dark password-page treatment stays
   (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
-  involved, so there is nothing to unwind there.
+  involved, so there is nothing to unwind there. **The welcome email states the same instant** in
+  its date-tile panel (`marketing/emails/welcome.liquid`), so retire the two together: remove or
+  repoint the tiles as part of this item, and work the rest of the six-step launch swap in
+  `marketing/emails/README.md` at the same time.
+
+- [ ] **Reconcile the Facebook URL across its four homes.** `config/settings_data.json` and
+  `sections/footer-group.json` both hold `facebook.com/profile.php?id=61583934266282`; Shopify's
+  Brand settings holds the vanity `facebook.com/sapphireshadowstudio`, which resolves, and
+  `marketing/emails/*.liquid` use the vanity form. The theme's two copies are the ones to change.
+  `settings_data.json` is an Admin-sync surface, so decide whether the edit goes through the sync
+  theme or the repo before making it.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
