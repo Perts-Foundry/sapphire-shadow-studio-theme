@@ -193,7 +193,7 @@ To lint the workflow YAML the way CI does (same shellcheck excludes):
 SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint
 ```
 
-`.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). It also ignores two paths: `node_modules/**`, and `marketing/**`, whose Shopify Email templates are not theme code and use objects (`unsubscribe_url`, `open_tracking`, `email.*`) that no theme defines. Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
+`.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). It also ignores two paths: `node_modules/**`, and `marketing/**`, whose Shopify Email templates are not theme code and use objects (`unsubscribe_url`, `open_tracking_block`, `email.*`) that no theme defines. Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
 
 Before opening a PR, run `theme dev` and `theme check` locally, and follow the conventions and accessibility patterns in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). House style is enforced as a hard rule: no em dashes anywhere in the repo.
 

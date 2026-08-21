@@ -3,7 +3,7 @@ ignore:
   - node_modules/**
   # Shopify Email campaign templates (marketing/emails/). Pasted by hand into
   # the Shopify Email custom-code editor, never pushed to a theme. They use
-  # email-only objects (unsubscribe_url, open_tracking, email.*) that do not
+  # email-only objects (unsubscribe_url, open_tracking_block, email.*) that do not
   # exist in a theme, so theme-check would flag every one as undefined.
   - marketing/**
 

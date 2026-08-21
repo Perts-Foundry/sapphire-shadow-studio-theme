@@ -94,17 +94,20 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   opt-out mechanism that does not function is a compliance problem, not just an annoyance. Until the
   gate comes down the mitigation is manual: the footer invites a reply, so honour any reply asking
   to be removed by unsubscribing that customer in Admin.
-- **`{{ open_tracking }}` is required when open tracking is on** for the campaign, and the editor
-  accepts it. It renders to nothing visible, which is expected. The editor's placeholder text names
-  `{{ open_tracking_block }}`; if a test send records no opens, try that spelling before assuming
-  the markup is at fault.
+- **`{{ open_tracking_block }}` is the open-tracking variable, not `{{ open_tracking }}`.** Shopify's
+  own documentation says both: its prose calls the variable `open_tracking`, its example code in the
+  same page uses `{{ open_tracking_block }}`. The editor settles it. With open tracking on and
+  `{{ open_tracking }}` in the file, the editor raises "Add `{{ open_tracking_block }}` variable",
+  and the 2026-08-21 test send carried no tracking pixel at all, because the unrecognised variable
+  simply rendered to nothing. Both templates now use `{{ open_tracking_block }}`. It renders to
+  nothing visible either way, so the only symptom of getting it wrong is opens that never record.
 - **500 KB cap** on a custom-coded Liquid email (a custom Liquid *section* inside a drag-and-drop
   email is capped at 50 KB instead). These templates are a few KB; the cap only becomes real if
   someone inlines a base64 image, so do not.
 - **Available Liquid objects**, per Shopify's documented list: `shop.name`, `shop.domain`,
   `shop.url`, `shop.shopify_domain`, `shop.address` (with its subfields), `customer.*` (name, email,
   orders_count, tags, and so on), `email.subject`, `email.preview_text`, `all_products`,
-  `unsubscribe_url`, `open_tracking`, and, on the abandoned-checkout automation only,
+  `unsubscribe_url`, `open_tracking_block`, and, on the abandoned-checkout automation only,
   `abandoned_checkout.*` (checkout url, first five line items, totals, addresses) and
   `abandoned_visit.*`. Theme objects such as `section`, `block`, `settings`, and `collections` **do
   not exist here**.
@@ -378,7 +381,7 @@ time.
 There is no automated check for these files, by design:
 
 - `theme-check` ignores `marketing/**` (see `.theme-check.yml`). Email Liquid uses objects
-  (`unsubscribe_url`, `open_tracking`, `email.*`) that do not exist in a theme, so every one of them
+  (`unsubscribe_url`, `open_tracking_block`, `email.*`) that do not exist in a theme, so every one of them
   would be flagged as undefined.
 - `validate_theme_codeblocks` is worth running once on a new template as a **syntax-only** sanity
   pass: act on unclosed tags and bad filters, ignore anything it says about undefined objects. Note
