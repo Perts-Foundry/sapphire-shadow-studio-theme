@@ -69,6 +69,15 @@ The Shopify Email custom-code editor is **desktop only**; it cannot be opened on
 4. Set the **subject line** and **preview text** from the campaign metadata table above. If you
    change either, update the table in the same sitting. There is nothing to change in the template:
    Shopify builds the preheader from the field.
+
+   **Re-check both fields every time you re-paste the template.** They belong to the campaign or
+   automation, not to the saved custom template, so pasting new markup does not carry them over.
+   Two test sends on 2026-08-21 show the failure: the first arrived as
+   `Subject: [TEST] Welcome to Sapphire Shadow Studio` with a Shopify-built preheader, the second,
+   after a re-paste, as a bare `Subject: [TEST]` with no preheader at all, because both fields were
+   empty. A blank subject on a real send is worse than a bad one: it reads as broken to a recipient
+   and to a spam filter. An empty preview-text field is milder, since the inbox then falls back to
+   the first visible text, which is the headline.
 5. Send a **test email to the owner address** and check it in Gmail desktop and Gmail mobile at
    minimum. This test send is the real validation for these files; see below.
 6. Confirm the unsubscribe link resolves in the test send.
