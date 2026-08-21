@@ -2,9 +2,11 @@
   Renders the store's social profile links. This is the only renderer for social links
   anywhere on the storefront.
 
-  It reads the five `settings.social_*_link` theme settings and nothing else, so the visible
-  links and the Organization `sameAs` array in `snippets/structured-data-organization.liquid`
-  cannot drift apart. A theme block cannot read another block's settings, so block-level URL
+  It reads the five `settings.social_*_link` theme settings and nothing else, so the URL
+  *values* here and in the Organization `sameAs` array
+  (`snippets/structured-data-organization.liquid`) cannot drift apart. The platform list is
+  still duplicated in that snippet as `social_keys`, so adding a platform means editing both.
+  A theme block cannot read another block's settings, so block-level URL
   settings would mean two sources of truth; one global set keeps them honest. This mirrors
   `snippets/size-option-position.liquid`, the repo's other shared-settings snippet.
 
@@ -52,12 +54,23 @@
     assign social_style = '--social-links-icon-size: ' | append: size | append: ';'
   endif
 
+  # This must apply exactly the per-item visibility test used below, not merely
+  # "some setting is non-blank". A store whose only configured URLs were bare platform
+  # homepages would otherwise get a wrapper and an ARIA-labelled but empty list.
   assign social_rendered = false
   for social_platform in social_platforms
     assign social_setting_key = 'social_' | append: social_platform | append: '_link'
-    if settings[social_setting_key] != blank
-      assign social_rendered = true
-      break
+    assign social_probe_url = settings[social_setting_key]
+    if social_probe_url != blank
+      if request.design_mode
+        assign social_rendered = true
+        break
+      endif
+      assign social_probe_parts = social_probe_url | split: '//' | last | split: '/'
+      if social_probe_parts.size > 1 and social_probe_parts[1] != ''
+        assign social_rendered = true
+        break
+      endif
     endif
   endfor
 -%}
@@ -150,7 +163,7 @@
           <li class="social-links__item{% unless social_has_profile %} social-links__item--disabled{% endunless %}">
             <a
               class="social-links__link"
-              href="{{ social_url }}"
+              href="{{ social_url | escape }}"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="{{ social_accessible_name | escape }}"
@@ -165,7 +178,7 @@
               >
                 {%- render 'icon', icon: social_platform -%}
               </svg>
-              <span class="social-links__label">{{ social_label }}</span>
+              <span class="social-links__label">{{ social_label | escape }}</span>
             </a>
           </li>
         {%- endif -%}

@@ -15,21 +15,31 @@ Adding six more surfaces on top of two sources would have multiplied the drift, 
 to theme settings only. This is the pattern `CLAUDE.md` already prescribes for two blocks that must
 agree on a value, and `snippets/size-option-position.liquid` is the model it names.
 
-**The seven extra platforms were dropped rather than promoted to settings.** The old block also
-supported Threads, LinkedIn, Bluesky, Snapchat, Tumblr, Vimeo and a custom URL. All seven were
-blank, and none of them reached `sameAs`, so keeping them would have meant adding seven
-`settings_schema.json` entries and seven `sameAs` branches to preserve capability nobody was using.
+**The eight extra platforms were dropped rather than promoted to settings.** The old block had
+thirteen URL fields; the five that survive leave Threads, LinkedIn, Bluesky, Snapchat, Tumblr,
+Vimeo, a custom URL, and X/Twitter. All eight were blank, and none of them reached `sameAs`, so
+keeping them would have meant adding eight `settings_schema.json` entries and eight `sameAs`
+branches to preserve capability nobody was using. X is a special case: `CLAUDE.md` records why
+there is deliberately no `social_twitter_link` theme setting, so it cannot come back by the
+settings route either.
 The trade accepted here is that adding a platform later is a code change to the snippet plus a
 theme setting, not an editor field. If one becomes a near-term plan, it goes in as a settings entry
 rather than being wedged into the block.
 
-**`blocks/social-links.liquid` was left in place rather than migrated or deleted.** It is upstream
-Horizon; editing it creates conflicts at the next upstream merge, and deleting it makes that merge
-noisier still. It now sits unused exactly as `blocks/_social-link.liquid` and
-`blocks/_footer-social-icons.liquid` already did. Its `footer-utilities__icons` class was declared
-and styled nowhere, so nothing had to be carried forward. The failure mode to watch for is someone
-finding it by grep and editing it expecting the storefront to change; `CLAUDE.md` names all three
-files literally so that grep lands on the warning too.
+**`blocks/social-links.liquid` was left in place rather than migrated or deleted, but it was taken
+off the footer schemas.** The file itself is upstream Horizon; editing it creates conflicts at the
+next upstream merge, and deleting it makes that merge noisier still. Leaving the file alone is not
+the same as making it unreachable, though: `social-links` stayed an allowed block type in
+`sections/footer.liquid` and `sections/footer-utilities.liquid`, and the latter's
+`policies_and_links` preset still placed one. Either route hands an operator a fresh thirteen-field
+URL block through the editor, restoring the second source of truth as a `footer-group.json` diff on
+a reconcile PR that no grep for the block *file* would catch. So both schema entries are gone and
+the preset now places `follow-us`. One route survives on purpose: the block carries its own
+`presets` entry, so it is still offered on sections that declare `@theme`, and closing that would
+mean editing the upstream file. `CLAUDE.md` names it, along with `blocks/_social-link.liquid` and
+`blocks/_footer-social-icons.liquid`, so a grep for any of the three lands on the warning.
+Its `footer-utilities__icons` class was declared and styled nowhere, so nothing had to be carried
+forward.
 
 **The shared CSS lives in the snippet's `{% stylesheet %}`, not in `blocks/follow-us.liquid`.**
 This is load-bearing rather than stylistic. `snippets/header-actions.liquid` and
@@ -58,7 +68,25 @@ position and row schema selects, for a row that only ever appears in one place. 
 `header-actions` is one insertion point and reuses the existing `.header-actions__action` sizing.
 The cost is that the row cannot be repositioned from the editor, only toggled, via the new
 `show_social_icons` header setting (schema default `false`, on for this store). Mobile is covered
-by the drawer, so the header row is `mobile:hidden` and the mobile header stays uncrowded.
+by the drawer, so the header row is `mobile:hidden` and the mobile header stays uncrowded. The
+drawer row is gated on that same setting rather than being unconditional: a merchant switching off
+"Social icons" means the header, and the drawer is this feature's mobile half, not a separate
+surface, so one toggle governing both is the least surprising behaviour.
+
+**The `sameAs` array gained the renderer's has-a-profile-path test.** It previously skipped only
+blank settings, so a bare platform homepage would have rendered nowhere on the storefront while
+still asserting the entity claim that snippet's own doc block prohibits. That was invisible before,
+because there was no second consumer of the same settings to disagree with. Today's three URLs all
+have path segments, so the emitted array is byte-identical; the change closes a divergence rather
+than fixing a live defect. The platform list is still duplicated between the two snippets, which is
+the one piece of coupling this consolidation did not remove: `social_keys` there and
+`social_platforms` in the renderer must be edited together, and `CLAUDE.md` says so.
+
+**The footer carries two instances, not one.** The main footer gained a third column (heading plus
+a stacked list of handles), and the utilities bar kept its existing block id with the type swapped
+to `follow-us` in compact form. `sections/footer.liquid` derives its grid from
+`section.blocks.size`, so two columns became three with no CSS work, and reusing the utilities
+block id left `block_order` and the `.utilities--blocks-2` layout class undisturbed.
 
 **Two surfaces use `compact` (icon only) rather than visible handles, for space, not by
 downgrade.** The header row sits inside the right-side actions cluster beside search, account and

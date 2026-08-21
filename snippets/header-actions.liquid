@@ -596,8 +596,12 @@
     margin-inline-start: calc(var(--gap-md) * -1);
   }
 
+  /*
+   * `header-actions` is a row flex, and `.social-links` is itself a column flex, so
+   * centring here is `align-self` on the item, not `justify-content` on its own main axis.
+   */
   .header-actions__social {
-    justify-content: center;
+    align-self: center;
   }
 
   .header-actions__social .social-links__link {
