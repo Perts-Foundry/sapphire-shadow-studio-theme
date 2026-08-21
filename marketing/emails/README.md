@@ -375,16 +375,17 @@ the only record. Make all five edits in one sitting; each one alone leaves the e
 
 1. **Remove or repoint the date tiles.** Once the store is open, "The studio opens Sep 3" is stale
    on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
-   thing is. This is tracked alongside the password-page countdown in `TODO.md`, because the two
-   surfaces state the same instant and should be retired together.
+   thing is. `blocks/launch-countdown.liquid` states the same instant on the password page, so the
+   two should be retired together. Nothing links them, so this list is the only place that says so.
 2. **Delete the "A preview of what is available at launch" line** above the product grid. It no
    longer names a date, so it will not go stale on a specific day, but it still reads as prelaunch
    and once the tiles reach real product pages it is unnecessary.
 3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
    update the subject, the preview text, and the metadata table above in the same sitting. Note what it currently promises: "you will hear it from us by email before we
-   announce it anywhere else." That fixes the order of launch day, list first and social second,
-   and it is tracked in `TODO.md` because it is a commitment the email has already made to every
-   subscriber who received it. It cannot be corrected after the fact.
+   announce it anywhere else." That fixes the order of launch day: **email the list first, then post
+   to social, then take the storefront password off.** It is a commitment the email has already made
+   to every subscriber who received it, it cannot be corrected after the fact, and nothing in the
+   repo enforces it. This paragraph is the only record.
 4. **Relabel the button.** "Visit the studio" was chosen to promise nothing the gate could not
    deliver. With the gate down it can say what it means, in **both** halves: the VML `<center>` text
    and the anchor text have to match each other or Outlook and everyone else read different labels.

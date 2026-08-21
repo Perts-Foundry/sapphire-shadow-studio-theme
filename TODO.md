@@ -18,34 +18,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   `docs/accessibility-patterns.md`. Decide separately whether the dark password-page treatment stays
   (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
-  involved, so there is nothing to unwind there. **The welcome email states the same instant** in
-  its date-tile panel (`marketing/emails/welcome.liquid`), so retire the two together: remove or
-  repoint the tiles as part of this item, and work the rest of the six-step launch swap in
-  `marketing/emails/README.md` at the same time.
-
-- [ ] **Reconcile the Facebook URL across its four homes.** `config/settings_data.json` and
-  `sections/footer-group.json` both hold `facebook.com/profile.php?id=61583934266282`; Shopify's
-  Brand settings holds the vanity `facebook.com/sapphireshadowstudio`, which resolves, and
-  `marketing/emails/*.liquid` use the vanity form. The theme's two copies are the ones to change.
-  `settings_data.json` is an Admin-sync surface, so decide whether the edit goes through the sync
-  theme or the repo before making it.
-
-- [ ] **Email the list before announcing the launch publicly.** `marketing/emails/welcome.liquid`
-  tells every subscriber "you will hear it from us by email before we announce it anywhere else",
-  so the launch sequence is: send the list first, then post to Instagram, Facebook and TikTok, then
-  take the storefront password off. Getting that order wrong makes a promise already sitting in
-  every subscriber's inbox retroactively false, and there is nothing that can correct it. The
-  announcement campaign itself does not exist yet; clone `marketing/emails/campaign-shell.liquid`.
-
-- [ ] **Click the footer unsubscribe link in a delivered email and see where it lands.** Lower
-  priority than it looks, and the reason is worth keeping: the live automation's `List-Unsubscribe`
-  header points at `email.shopifyapps.com`, which is not behind the storefront password, so every
-  Gmail and Yahoo recipient already has a working one-click opt-out through the client's own
-  control. What is untested is the link in the footer, which forwards to `/account/unsubscribe/`
-  on the gated storefront domain. Nothing here can run the test: resolving that URL from a terminal
-  would either register a false click or unsubscribe a real person. Click it, see whether the
-  password page appears, then re-subscribe. If it does dead-end there is no template-side fix,
-  because Shopify's docs say the URL cannot be repointed.
+  involved, so there is nothing to unwind there.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against

@@ -219,8 +219,9 @@ white on navy rather than near-black on navy.
 `config/settings_data.json` and `sections/footer-group.json` both hold the numeric
 `facebook.com/profile.php?id=...` form; Shopify's Brand settings holds the vanity
 `facebook.com/sapphireshadowstudio`, which resolves. The email uses the vanity form, because that is
-what a reader should see. Reconciling the theme's two copies is a separate change
-(`settings_data.json` is an Admin-sync surface) and is tracked in `TODO.md`.
+what a reader should see. Reconciling the theme's two copies is a separate change and is not tracked
+anywhere: `settings_data.json` is an Admin-sync surface, so whoever picks it up has to decide first
+whether the edit goes through the sync theme or the repo.
 
 **The footer body colour was `#c9d8e6`, one digit off from the brand token.**
 `scripts/size-chart/lib/svg-shared.mjs` says `#c9d8ea`. That was a transcription slip rather than a
