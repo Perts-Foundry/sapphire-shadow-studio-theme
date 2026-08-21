@@ -4,8 +4,10 @@
 
 Social links used to render in exactly one place, as three muted icons in the footer utilities
 bar, and their URLs lived in two unreconciled places. They now render on the footer, the homepage,
-the desktop header, the mobile drawer, About, Contact and FAQ, all from the five
-`settings.social_*_link` theme settings, through the single new `snippets/social-links.liquid`.
+the desktop header and the mobile drawer, all from the five `settings.social_*_link` theme
+settings, through the single new `snippets/social-links.liquid`. The first cut of this work also
+placed them on About, Contact and FAQ and kept the utilities-bar icons; a visual walk cut those
+back, for the reasons in the last three paragraphs of this entry.
 
 **The consolidation was the point, not a side effect.** The old footer block
 (`blocks/social-links.liquid`) carried its own thirteen `*_url` block settings in
@@ -82,17 +84,53 @@ than fixing a live defect. The platform list is still duplicated between the two
 the one piece of coupling this consolidation did not remove: `social_keys` there and
 `social_platforms` in the renderer must be edited together, and `CLAUDE.md` says so.
 
-**The footer carries two instances, not one.** The main footer gained a third column (heading plus
-a stacked list of handles), and the utilities bar kept its existing block id with the type swapped
-to `follow-us` in compact form. `sections/footer.liquid` derives its grid from
-`section.blocks.size`, so two columns became three with no CSS work, and reusing the utilities
-block id left `block_order` and the `.utilities--blocks-2` layout class undisturbed.
+**The footer gained a third column.** It is a heading plus a stacked list of handles.
+`sections/footer.liquid` derives its grid from `section.blocks.size`, so two columns became three
+with no CSS work. The utilities bar briefly carried a second instance as well, reusing the old
+block id with the type swapped to `follow-us` in compact form; that instance is gone (see the
+one-treatment-per-region paragraph below) and the utilities bar is back to copyright and policy
+links.
 
-**Two surfaces use `compact` (icon only) rather than visible handles, for space, not by
-downgrade.** The header row sits inside the right-side actions cluster beside search, account and
-cart; the footer utilities bar is a single `text-wrap: nowrap` line already holding the copyright.
-Three `@handle` strings in either would wrap or crowd out what is there. `variant` is a
-per-instance block setting, so switching either to handles is a one-word JSON change.
+**The header row uses `compact` (icon only) rather than visible handles, for space, not by
+downgrade.** It sits inside the right-side actions cluster beside search, account and cart, where
+three `@handle` strings would crowd out what is there. The utilities-bar instance was compact for
+the same reason, a single `text-wrap: nowrap` line already holding the copyright, before it was
+removed. `variant` is a per-instance block setting, so switching the header to handles is a
+one-word JSON change.
+
+**One handle treatment per page region, which cost three placements and the utilities-bar icons.**
+A visual walk of the preview theme showed the same three handles four times in a single homepage
+viewport: header icons, the new closing section, the new footer column, and the utilities bar under
+it. Repetition at that density stops reading as an invitation and starts reading as a template
+artifact, and the footer's two instances sat close enough that they looked like one list broken in
+half. So the utilities-bar instance came out (the footer column is the footer's follow surface) and
+the About, Contact and FAQ page-level blocks came out with it. Those three were the weakest of the
+set on their own terms as well: each was a bare heading and three handles appended after the page
+content, with no supporting copy, and About and Contact left-aligned theirs while FAQ centred its,
+so the same component read as three different things. The footer follow column carries those pages
+now. What stayed placeable did not change: `follow-us` is still an allowed block type on both footer
+schemas and the block is still offered in the editor, so restoring any of these is an editor action
+rather than a code change. `social-links` stays off both schemas; that is the reintroduction route
+this branch deliberately closed, and it is not reopened by removing an instance.
+
+**The homepage section kept its place by being differentiated, not by being defended.** It sits
+last before the footer, and on `scheme-1` it painted a white band across the cream-to-dark run that
+the editorial and closing sections establish, so it read as a seam before the footer rather than as
+a section of the page. Moving it to `scheme-3` (`#eef1ea`) puts it on the same band as its two
+siblings, and an eyebrow (`FOLLOW ALONG`, copying `cta_eyebrow`'s settings verbatim) gives it the
+same three-part lockup they use. The section now differs from its neighbours in content, not in
+chrome, which is the reason to keep it while the page-level blocks go: the homepage placement earns
+its space by matching the page, and the page placements earned nothing by not matching theirs.
+
+**The accessible name follows the handle, not the variant.** It used to be branch on
+`social_variant`: `handles` got "Facebook: @sapphireshadowstudio", `compact` got "Facebook". Same
+destination, two names, which is the thing a screen-reader user notices when the header and the
+footer disagree. WCAG 2.5.3 (Label in Name) settles which way to unify: where the visible label is
+the handle, the accessible name has to contain it, so the compact variant lengthens to match rather
+than the handles variant shortening. Keying on `social_handle_valid` instead also fixes a latent
+case the variant test could not see: a URL that derives no handle falls back to the platform name
+for its label, which the old handles branch would have rendered as "Facebook: Facebook". No new
+locale keys, since both message forms already existed.
 
 ## Variant button index: fieldset numbering vs. option numbering (unreleased)
 

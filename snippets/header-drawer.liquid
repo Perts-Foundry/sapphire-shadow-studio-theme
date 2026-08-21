@@ -1336,8 +1336,8 @@
   }
 
   .menu-drawer__social .social-links__list {
-    flex-direction: row;
-    flex-wrap: wrap;
+    /* No direction override: the snippet's own mobile rule stacks the handles below 749px,
+       which is every width the drawer opens at. */
     column-gap: var(--gap-lg);
   }
 

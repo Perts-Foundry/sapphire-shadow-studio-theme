@@ -376,22 +376,10 @@
             "case": "none"
           },
           "blocks": {}
-        },
-        "social_icons": {
-          "type": "follow-us",
-          "settings": {
-            "heading": "",
-            "variant": "compact",
-            "layout": "row",
-            "size": "16px",
-            "alignment": "right"
-          },
-          "blocks": {}
         }
       },
       "block_order": [
-        "copyright",
-        "social_icons"
+        "copyright"
       ],
       "settings": {
         "section_width": "page-width",
