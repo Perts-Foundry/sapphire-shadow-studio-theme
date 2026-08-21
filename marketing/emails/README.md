@@ -206,14 +206,30 @@ The icon is `alt=""` on purpose; see the images-off rule above.
 </td>
 ```
 
+**Product grid.** Six product tiles, two across, three rows, each tile an image and a bold label
+inside one anchor pointing at `{{ shop.url }}/products/<handle>`. `welcome.liquid` carries it; copy
+it from there rather than from here, so there is only one copy to keep current. Two things about it
+are load-bearing. The label is not decoration: with images blocked, a tile is a broken-image box
+sized to its `width`/`height` attributes, so a grid without labels degrades to six empty boxes and
+the reader cannot tell what any of them were. And the cells are `width="50%"` with the image at
+`width: 100%`, not fixed pixel widths, which is why the grid reflows on a phone with no media query
+of its own.
+
 **The hosted assets.** Everything the templates reference lives in Shopify Files and is served by
-the CDN, which is **not** behind the storefront password: all five URLs return 200 to an anonymous
+the CDN, which is **not** behind the storefront password: all ten URLs return 200 to an anonymous
 request, which is the only reason they work in an inbox at all. Re-check that after any change here.
+
+Paths below shown as `.../` are relative to `https://cdn.shopify.com/s/files/1/0958/0874/9868/files`.
 
 | Asset | URL |
 |---|---|
 | Logo (header, both templates) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480` |
-| Product hero (`welcome.liquid`) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/lead2_crew-sweater_group_flat-1.jpg?width=600&height=400&crop=center` |
+| Product grid, Lead II Crewneck (`welcome.liquid`) | `.../lead2_crew-sweater_classic-navy_rn_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Huddle Crewneck | `.../huddle_crew-sweater_grey-heather_vet-tech_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Shift Fuel Crewneck | `.../shift-fuel_crew-sweater_black_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Lead II Quarter-Zip | `.../lead2_quarter-zip_classic-navy_medic_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Lead II Vest | `.../lead2_vest_black_rn_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Gift Card | `.../SSS-Square-White-BG-png.png?width=500&height=500&crop=center` |
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
 | TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
@@ -265,40 +281,48 @@ Shopify Email has no `settings` object and no way to resolve anything.
 
 ## `welcome.liquid` is the prelaunch version, and has to be changed at launch
 
-While the storefront password is on, every storefront URL resolves to Shopify's "Opening soon"
-page. A welcome email whose links all dead-end on a password wall is the fastest way to make a new
-subscriber think the brand is broken, so the prelaunch welcome sends nobody there: the header logo
-is an unlinked image, the footer names the domain without linking it, and the single button points
-at Instagram, which is public. The three social links in the footer are public too. Note that this is
-the one place the two templates diverge on shared chrome: `campaign-shell.liquid` links its header
-logo, because a campaign cloned from it is not necessarily prelaunch.
+**The storefront links point at the storefront, on purpose, even though it is still gated.** That is
+a reversal of what this file used to say. The old reasoning was that every storefront URL resolves
+to Shopify's "Opening soon" page, so a link there dead-ends and reads as a broken brand. Two things
+changed it. `blocks/launch-countdown.liquid` restyled that gate in the brand scheme and put a live
+countdown on it, so a click now lands on an on-brand page that answers "when?" instead of a generic
+wall. And a link written as `{{ shop.url }}/products/<handle>` starts resolving to the real product
+on launch day with no edit at all, which takes work out of the swap below rather than adding it.
 
-That makes the file **wrong the day the password comes off**, and nothing will tell you so. Nothing
-in the file itself says this either, because notes in a template ship to subscribers. This section is
-the only record. Make all six edits in one sitting; each one alone leaves the email half-migrated.
+What that costs: while the gate is up, the six product tiles, the header logo and the button all
+land on the same countdown page. The line above the grid ("A preview of what opens on September 3")
+is what keeps that honest, so do not delete it before the gate comes down. The button is labelled
+"Visit the studio" rather than anything promising browsable product, for the same reason, and the
+Instagram link under it is the one destination in the email that is genuinely browsable today.
 
-1. **Relink the header logo.** Wrap the header `<img>` in
-   `<a href="{{ shop.url }}" style="..."> ... </a>`, matching `campaign-shell.liquid`.
-2. **Repoint the button** at `{{ shop.url }}` in **both** halves, the VML `href` and the anchor
-   `href`, and change both labels to match each other.
-3. **Relink the footer domain.** Wrap `{{ shop.domain }}` in
-   `<a href="{{ shop.url }}" style="color: #ffffff; text-decoration: underline;"> ... </a>`.
-4. **Remove or repoint the date tiles.** Once the store is open, "The studio opens Sep 3" is stale
+The file is still **wrong the day the password comes off**, and nothing will tell you so. Nothing in
+the file itself says this either, because notes in a template ship to subscribers. This section is
+the only record. Make all five edits in one sitting; each one alone leaves the email half-migrated.
+
+1. **Remove or repoint the date tiles.** Once the store is open, "The studio opens Sep 3" is stale
    on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
    thing is. This is tracked alongside the password-page countdown in `TODO.md`, because the two
    surfaces state the same instant and should be retired together.
-5. **Rewrite the "What happens next" section.** It carries the whole message of the email, and all
-   of it is written for a shop that has not opened. Update the subject, the preview text, the
-   preheader `<div>`, and the metadata table above in the same sitting.
-6. **Re-check the hero image.** It points at the three-colourway group shot of the personalised
-   crewneck, chosen because it shows a name on the garment and is already 3:2, so the 600x400
-   transform is not really a crop. At launch there may be a better one, and there will certainly be
-   a reason to look.
+2. **Delete the "A preview of what opens on September 3" line** above the product grid. Once the
+   tiles reach real product pages it is both false and unnecessary.
+3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
+   update the subject, the preview text, the preheader `<div>`, and the metadata table above in the
+   same sitting.
+4. **Relabel the button.** "Visit the studio" was chosen to promise nothing the gate could not
+   deliver. With the gate down it can say what it means, in **both** halves: the VML `<center>` text
+   and the anchor text have to match each other or Outlook and everyone else read different labels.
+5. **Re-check the product grid.** Six tiles, two across, hardcoded to the six products that existed
+   when it was written. A product added, renamed, or unpublished since then leaves a tile pointing
+   at a 404 or the catalogue looking smaller than it is, and nothing checks the handles. The grid
+   deliberately uses varied colourways rather than each product's featured image, which are all the
+   black colourway and would have made six near-identical tiles.
 
-Two things about that button. Its URL is **hardcoded**, because Shopify Email has no `settings`
-object to read `settings.social_instagram_link` from, so it duplicates the value in
-`config/settings_data.json` and nothing reconciles the two: change the profile URL in theme settings
-and this file goes stale silently. The same is true of the three URLs in the social row.
+Two things about the buttons and links. The Instagram URL is **hardcoded**, because Shopify Email
+has no `settings` object to read `settings.social_instagram_link` from, so it duplicates the value
+in `config/settings_data.json` and nothing reconciles the two: change the profile URL in theme
+settings and this file goes stale silently. The same is true of the three URLs in the social row.
+The storefront links are the opposite case and that is why they are written as `{{ shop.url }}`
+rather than a literal domain: Shopify resolves it at send time, so there is nothing to keep in sync.
 
 **The copy names a launch date, and that is a reversal.** This file used to argue the opposite: that
 a date in a sent email cannot be corrected, so no date was better than a date that slips. The reason
