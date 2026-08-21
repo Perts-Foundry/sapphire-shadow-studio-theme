@@ -35,12 +35,16 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome.liquid` | Welcome to Sapphire Shadow Studio | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | Not yet test-sent |
+| `welcome.liquid` | Welcome to Sapphire Shadow Studio | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, headers reviewed |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
-The preview text has a second home: the hidden **preheader `<div>`** at the top of `<body>`, which
-many inboxes render in place of the campaign field. Change one and you change three things: this
-table, that `<div>`, and the field in the editor.
+Preview text lives in the editor field and in this table, and **nowhere in the template**. Both
+files used to carry a hidden preheader `<div>` as a second home for it. A real test send on
+2026-08-21 showed why that was wrong: **Shopify injects its own preheader `div` from the field**,
+followed by its own spacer run, so the template's copy made the text appear twice in the delivered
+source, with the inbox preview line at risk of reading it twice over. The template's copy is gone;
+the field is the only source. Leave the field blank and the preview falls back to the first visible
+text, which is the headline, and that is an acceptable failure.
 
 ## The repo file is the source of truth
 
@@ -63,7 +67,8 @@ The Shopify Email custom-code editor is **desktop only**; it cannot be opened on
    placeholders. A clone of `campaign-shell.liquid` still has its ALL-CAPS placeholders to replace,
    and they are visible text, so anything you miss is obvious in the preview and in the test send.
 4. Set the **subject line** and **preview text** from the campaign metadata table above. If you
-   change either, update the table and the preheader `<div>` in the same sitting.
+   change either, update the table in the same sitting. There is nothing to change in the template:
+   Shopify builds the preheader from the field.
 5. Send a **test email to the owner address** and check it in Gmail desktop and Gmail mobile at
    minimum. This test send is the real validation for these files; see below.
 6. Confirm the unsubscribe link resolves in the test send.
@@ -78,6 +83,17 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   editor it resolved to a real `/account/unsubscribe/...` URL inside these templates' own styled
   `<a>`. Note that the editor's placeholder text names `{{ unsubscribe_link }}` instead, which emits
   a whole ready-made link rather than a bare URL. Both are accepted; do not "fix" one to the other.
+- **The unsubscribe link does not work while the storefront password is on.** `unsubscribe_url`
+  resolves to `/account/unsubscribe/<token>` on the primary online store domain, and that domain is
+  behind the gate: an anonymous request to it returns `302 -> /password`, exactly as `/cart` and
+  `/policies/*` do. Shopify's docs are explicit that the variable "will always point to the primary
+  online store domain and can't be modified to direct elsewhere", so there is no template-side fix.
+  Verified against a placeholder token on 2026-08-21; re-test with a real token from a real send
+  before treating it as settled. This matters more than it looks: a subscriber who cannot
+  unsubscribe reports spam instead, which is the single worst deliverability signal there is, and an
+  opt-out mechanism that does not function is a compliance problem, not just an annoyance. Until the
+  gate comes down the mitigation is manual: the footer invites a reply, so honour any reply asking
+  to be removed by unsubscribing that customer in Admin.
 - **`{{ open_tracking }}` is required when open tracking is on** for the campaign, and the editor
   accepts it. It renders to nothing visible, which is expected. The editor's placeholder text names
   `{{ open_tracking_block }}`; if a test send records no opens, try that spelling before assuming
@@ -307,8 +323,7 @@ the only record. Make all five edits in one sitting; each one alone leaves the e
    longer names a date, so it will not go stale on a specific day, but it still reads as prelaunch
    and once the tiles reach real product pages it is unnecessary.
 3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
-   update the subject, the preview text, the preheader `<div>`, and the metadata table above in the
-   same sitting. Note what it currently promises: "you will hear it from us by email before we
+   update the subject, the preview text, and the metadata table above in the same sitting. Note what it currently promises: "you will hear it from us by email before we
    announce it anywhere else." That fixes the order of launch day, list first and social second,
    and it is tracked in `TODO.md` because it is a commitment the email has already made to every
    subscriber who received it. It cannot be corrected after the fact.

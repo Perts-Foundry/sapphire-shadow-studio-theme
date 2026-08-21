@@ -37,6 +37,20 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   every subscriber's inbox retroactively false, and there is nothing that can correct it. The
   announcement campaign itself does not exist yet; clone `marketing/emails/campaign-shell.liquid`.
 
+- [ ] **Re-test the unsubscribe link once there is a real send.** `unsubscribe_url` points at
+  `/account/unsubscribe/<token>` on the storefront domain, and that domain currently answers
+  `302 -> /password` to anonymous requests, so the link probably dead-ends at the password gate. It
+  was checked with the placeholder token a test send emits, not a real one, so it is not proven
+  either way. Shopify's docs say the URL cannot be repointed, so if it is confirmed broken the only
+  fixes are removing the storefront password or handling opt-outs by hand from the reply address.
+  A subscriber who cannot unsubscribe reports spam instead.
+
+- [ ] **Confirm `List-Unsubscribe` headers appear on a real send.** The 2026-08-21 test send carried
+  no `List-Unsubscribe` or `List-Unsubscribe-Post` header. Test sends often omit them, so this is
+  probably a test-mode artifact rather than a real gap, but Gmail and Yahoo both expect one-click
+  unsubscribe from bulk senders and it is worth confirming on the first genuine automation send
+  rather than assuming.
+
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
