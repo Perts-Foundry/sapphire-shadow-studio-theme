@@ -105,24 +105,11 @@
                 "padding-inline-end": 0
               },
               "blocks": {}
-            },
-            "follow_us_footer": {
-              "type": "follow-us",
-              "name": "Follow us",
-              "settings": {
-                "heading": "",
-                "variant": "compact",
-                "layout": "row",
-                "size": "24px",
-                "alignment": "left"
-              },
-              "blocks": {}
             }
           },
           "block_order": [
             "text_pF6rVi",
-            "text_HafH7P",
-            "follow_us_footer"
+            "text_HafH7P"
           ]
         },
         "email-signup_HafH7P": {
@@ -150,11 +137,24 @@
             "padding-inline-end": 0
           },
           "blocks": {}
+        },
+        "follow_us_footer": {
+          "type": "follow-us",
+          "name": "Follow us",
+          "settings": {
+            "heading": "",
+            "variant": "compact",
+            "layout": "row",
+            "size": "24px",
+            "alignment": "right"
+          },
+          "blocks": {}
         }
       },
       "block_order": [
         "group_wErUQf",
-        "email-signup_HafH7P"
+        "email-signup_HafH7P",
+        "follow_us_footer"
       ],
       "name": "t:names.footer",
       "settings": {

@@ -23,7 +23,7 @@
 %}
 
 <div
-  class="follow-us"
+  class="follow-us{% if block.settings.pill_links %} follow-us--pills{% endif %}"
   style="--follow-us-alignment: {{ alignment_value }};"
   {{ block.shopify_attributes }}
 >
@@ -48,6 +48,37 @@
 
   .follow-us .social-links__list {
     justify-content: var(--follow-us-alignment, flex-start);
+  }
+
+  /* Pill treatment: each handle becomes a bordered pill that lifts on hover. */
+  .follow-us--pills .social-links__list {
+    gap: var(--gap-sm, 8px);
+  }
+
+  .follow-us--pills .social-links__link {
+    padding-inline: var(--padding-md, 16px) var(--padding-lg, 20px);
+    border: 1px solid rgb(var(--color-border-rgb) / 0.6);
+    border-radius: var(--style-border-radius-pills, 999px);
+    background-color: rgb(var(--color-background-rgb));
+    gap: var(--gap-xs, 8px);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+  }
+
+  .follow-us--pills .social-links__link:hover,
+  .follow-us--pills .social-links__link:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgb(var(--color-shadow-rgb, 0 0 0) / 0.12);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .follow-us--pills .social-links__link {
+      transition: none;
+    }
+
+    .follow-us--pills .social-links__link:hover,
+    .follow-us--pills .social-links__link:focus-visible {
+      transform: none;
+    }
   }
 {% endstylesheet %}
 
@@ -113,6 +144,12 @@
         }
       ],
       "default": "20px"
+    },
+    {
+      "type": "checkbox",
+      "id": "pill_links",
+      "label": "t:settings.pill_links",
+      "default": false
     },
     {
       "type": "text_alignment",

@@ -766,6 +766,7 @@
     "col_6": "6 columns"
   },
   "settings": {
+    "pill_links": "Pill links",
     "social_icons": "Social icons",
     "accordion": "Accordion",
     "account": "Account",

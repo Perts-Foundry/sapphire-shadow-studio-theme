@@ -787,7 +787,7 @@
             "align_baseline": false,
             "horizontal_alignment_flex_direction_column": "center",
             "vertical_alignment_flex_direction_column": "center",
-            "gap": 16,
+            "gap": 20,
             "width": "fill",
             "custom_width": 100,
             "width_mobile": "fill",
@@ -840,28 +840,10 @@
               "blocks": {}
             },
             "follow_heading": {
-              "type": "text",
-              "name": "t:names.text",
+              "type": "custom-liquid",
+              "name": "Heading",
               "settings": {
-                "text": "<h2>Follow us</h2>",
-                "width": "100%",
-                "max_width": "normal",
-                "alignment": "center",
-                "type_preset": "h2",
-                "font": "var(--font-heading--family)",
-                "font_size": "",
-                "line_height": "normal",
-                "letter_spacing": "normal",
-                "case": "none",
-                "wrap": "pretty",
-                "color": "var(--color-foreground-heading)",
-                "background": false,
-                "background_color": "#00000026",
-                "corner_radius": 0,
-                "padding-block-start": 0,
-                "padding-block-end": 0,
-                "padding-inline-start": 0,
-                "padding-inline-end": 0
+                "custom_liquid": "<h2 class=\"hero-lockup follow-lockup\"><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">Follow us</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span></h2>"
               },
               "blocks": {}
             },
@@ -898,8 +880,9 @@
                 "heading": "",
                 "variant": "handles",
                 "layout": "row",
-                "size": "28px",
-                "alignment": "center"
+                "size": "22px",
+                "alignment": "center",
+                "pill_links": true
               },
               "blocks": {}
             }

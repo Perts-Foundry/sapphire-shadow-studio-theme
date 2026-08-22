@@ -89,7 +89,13 @@
       endif
     endif
   endif
+  # The desktop social cluster rides along with search so it always lands just left of
+  # search, account and cart, whichever slot order applies. The mobile drawer carries its
+  # own row under the same toggle (`snippets/header-drawer.liquid`).
   capture search
+    if section.settings.show_social_icons
+      render 'social-links', variant: 'compact', size: '20px', class: 'header__social mobile:hidden'
+    endif
     render 'search', style: search_style, class: search_class
   endcapture
 
@@ -579,6 +585,21 @@
     header-menu:only-child .overflow-menu::part(list) {
       justify-content: center;
     }
+  }
+
+  /* Same pitch as the other header actions: one `--button-size` square per icon, no gap. */
+  .header__social {
+    --social-links-gap: 0;
+
+    align-self: center;
+    padding-inline-end: var(--gap-md);
+    border-inline-end: 1px solid rgb(var(--color-border-rgb) / 0.4);
+  }
+
+  .header__social .social-links__link {
+    min-inline-size: var(--button-size);
+    min-block-size: var(--button-size);
+    color: var(--color-foreground);
   }
 
   .header__column--right {

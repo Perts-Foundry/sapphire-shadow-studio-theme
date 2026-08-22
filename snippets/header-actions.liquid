@@ -26,20 +26,6 @@
 <header-actions
   {{- block.shopify_attributes -}}
 >
-  {%- comment -%}
-    Desktop only. The mobile drawer carries its own social row, so the mobile header stays
-    uncrowded. This sits in header-actions rather than the header-row slot machinery because
-    `sections/header.liquid` builds its slot order across eight branches; a new token would
-    mean touching all eight plus a `when` arm in `snippets/header-row.liquid`.
-  {%- endcomment -%}
-  {% if section.settings.show_social_icons %}
-    {% render 'social-links',
-      variant: 'compact',
-      size: '18px',
-      class: 'header-actions__social mobile:hidden'
-    %}
-  {% endif %}
-
   {% if shop.customer_accounts_enabled %}
     <script
       src="{{ 'dialog.js' | asset_url }}"
@@ -594,25 +580,6 @@
 
   .header__column--right header-actions {
     margin-inline-start: calc(var(--gap-md) * -1);
-  }
-
-  /*
-   * `header-actions` is a row flex, and `.social-links` is itself a column flex, so
-   * centring here is `align-self` on the item, not `justify-content` on its own main axis.
-   */
-  .header-actions__social {
-    --social-links-gap: 0;
-
-    align-self: center;
-    /* Read as one cluster: no gap between the icons, and a hairline before the account
-       and cart actions so the cluster does not merge into them. */
-    margin-inline-end: var(--gap-xs);
-    padding-inline-end: var(--gap-xs);
-    border-inline-end: 1px solid rgb(var(--color-border-rgb) / 0.4);
-  }
-
-  .header-actions__social .social-links__link {
-    color: var(--color-foreground);
   }
 
   .header-actions__action {
