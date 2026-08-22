@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "边框",
     "collapsible_row": "可折叠行",
@@ -201,6 +202,7 @@
     "layered_slideshow": "分层幻灯片"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "对齐方式",
     "autoplay": "自动播放",
     "background": "背景",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "悬浮“添加到购物车”"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "箭头",
     "auto": "自动",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>探索我们精心挑选的产品系列，这些热门商品兼具时尚风格与卓越品质。</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "立即购买",
     "collapsible_row": "可折叠行",
     "heading": "标题",

@@ -16,8 +16,12 @@
 
   `sameAs` must list real brand profile URLs only. A bare platform homepage
   (`https://www.facebook.com`) asserts that this Organization is that platform,
-  which is a false entity claim. Blank settings are skipped, and the array is
-  omitted entirely when every setting is blank.
+  which is a false entity claim. Blank settings are skipped, so is any URL with
+  no path segment past the host, and the array is omitted entirely when nothing
+  survives both tests. That second test is the same one
+  `snippets/social-links.liquid` applies before rendering a link, so this array
+  and the visible links stay the same set. `social_keys` below duplicates that
+  snippet's platform list; adding a platform means editing both.
 
   The `logo` ImageObject carries no `width` / `height`. Deriving them means
   dividing by `settings.logo.aspect_ratio`, and an SVG can report that as zero or
@@ -71,10 +75,17 @@
   for key in social_keys
     assign social_url = settings[key]
     if social_url != blank
-      if same_as_urls == blank
-        assign same_as_urls = social_url
-      else
-        assign same_as_urls = same_as_urls | append: '|' | append: social_url
+      # Same has-a-profile-path test `snippets/social-links.liquid` applies before it will
+      # render a link, so the emitted set matches what the storefront shows. Without it a
+      # bare platform homepage renders nowhere yet still asserts the entity claim this
+      # snippet's doc block prohibits.
+      assign social_path_parts = social_url | split: '//' | last | split: '/'
+      if social_path_parts.size > 1 and social_path_parts[1] != ''
+        if same_as_urls == blank
+          assign same_as_urls = social_url
+        else
+          assign same_as_urls = same_as_urls | append: '|' | append: social_url
+        endif
       endif
     endif
   endfor

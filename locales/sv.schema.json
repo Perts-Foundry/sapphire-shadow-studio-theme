@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Kantlinjer",
     "collapsible_row": "Hopfällbar rad",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Bildspel med lager"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Justering",
     "autoplay": "Autouppspelning",
     "background": "Bakgrund",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Fast ”Lägg till i varukorgen”"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Pil",
     "auto": "Auto",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Upptäck vår utvalda produktserie med handplockade favoriter som förenar stil och kvalitet.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Handla nu",
     "collapsible_row": "Komprimerbar rad",
     "heading": "Rubrik",

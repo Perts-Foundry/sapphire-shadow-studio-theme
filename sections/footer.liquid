@@ -86,6 +86,13 @@
       grid-template-columns: repeat(var(--grid-columns), 1fr);
     }
 
+    /* A trailing follow-us block only needs its icons' width; hand the rest to the
+       signup column so the email field spans the space instead of floating mid-row. */
+    .footer-content[style*='--grid-columns: 3']:has(> .follow-us:last-child) {
+      grid-template-columns: 1fr 1.6fr auto;
+      align-items: center;
+    }
+
     /* Single item centered */
     .footer-content[style*='--grid-columns: 1'] {
       justify-items: center;
@@ -116,6 +123,9 @@
       "type": "follow-on-shop"
     },
     {
+      "type": "follow-us"
+    },
+    {
       "type": "group"
     },
     {
@@ -138,9 +148,6 @@
     },
     {
       "type": "jumbo-text"
-    },
-    {
-      "type": "social-links"
     },
     {
       "type": "email-signup"

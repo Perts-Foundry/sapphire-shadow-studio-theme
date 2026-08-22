@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Bordas",
     "collapsible_row": "Linha recolhível",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Apresentação de slides em camadas"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Alinhamento",
     "autoplay": "Reprodução automática",
     "background": "Plano de fundo",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Adicionar ao carrinho fixo"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Seta",
     "auto": "Automático",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Descubra nossa coleção selecionada, com os favoritos escolhidos a dedo que unem estilo e qualidade.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Compre agora",
     "collapsible_row": "Linha expansível",
     "heading": "Título",

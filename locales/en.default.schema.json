@@ -239,6 +239,7 @@
     "media_type_info": "Features are populated from your menu links"
   },
   "names": {
+    "follow_us": "Follow us",
     "column": "Column",
     "product_title": "Product title",
     "custom_liquid": "Custom Liquid",
@@ -448,6 +449,7 @@
     "table_row": "Table row"
   },
   "options": {
+    "handles": "Icons with handles",
     "above_carousel": "Above carousel",
     "accent": "Accent",
     "all": "All",
@@ -764,6 +766,8 @@
     "col_6": "6 columns"
   },
   "settings": {
+    "pill_links": "Pill links",
+    "social_icons": "Social icons",
     "accordion": "Accordion",
     "account": "Account",
     "alignment": "Alignment",
@@ -1250,6 +1254,7 @@
     "cell6": "Cell 6"
   },
   "text_defaults": {
+    "follow_us": "Follow us",
     "accordion_heading": "Accordion heading",
     "are_purchases_final_sale": "Are any purchases final sale?",
     "be_bold": "Be bold.",

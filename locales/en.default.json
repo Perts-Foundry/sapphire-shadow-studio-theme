@@ -393,5 +393,9 @@
       "vacation_acknowledgment_value": "Yes",
       "vacation_acknowledgment_value_dated": "Yes - processing begins after {{ date }}"
     }
+  },
+  "social": {
+    "follow_us": "Follow us",
+    "follow_on": "{{ platform }}: {{ handle }}"
   }
 }

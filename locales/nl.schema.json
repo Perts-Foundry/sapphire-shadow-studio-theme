@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Randen",
     "collapsible_row": "Inklapbare rij",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Gelaagde diavoorstelling"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "Automatisch afspelen",
     "background": "Achtergrond",
     "border_radius": "Hoekradius",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Vaste 'Toevoegen aan winkelwagen'-balk"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Pijl",
     "banana": "Banaan",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Ontdek onze samengestelde collectie met zorgvuldig uitgekozen favorieten die stijl en kwaliteit combineren.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "Inklapbare rij",
     "button_label": "Shop nu",
     "heading": "Kop",

@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Kanter",
     "collapsible_row": "Række, der kan skjules",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Diasshow i lag"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Justering",
     "autoplay": "Automatisk afspilning",
     "background": "Baggrund",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Fastgjort 'Læg i kurv'"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "Pil",
     "auto": "Auto",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Opdag vores nøje udvalgte kollektion med håndplukkede favoritter, der forener stil og kvalitet.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Køb nu",
     "collapsible_row": "Række, der kan skjules",
     "heading": "Overskrift",

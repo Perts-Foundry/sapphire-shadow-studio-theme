@@ -369,5 +369,9 @@
       "vacation_acknowledgment_value": "TODO: Yes",
       "vacation_acknowledgment_value_dated": "TODO: Yes - processing begins after {{ date }}"
     }
+  },
+  "social": {
+    "follow_us": "TODO: Follow us",
+    "follow_on": "TODO: {{ platform }}: {{ handle }}"
   }
 }

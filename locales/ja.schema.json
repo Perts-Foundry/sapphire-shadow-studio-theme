@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "枠線",
     "collapsible_row": "折りたたみ可能な行",
@@ -201,6 +202,7 @@
     "layered_slideshow": "レイヤースライドショー"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "配置",
     "autoplay": "自動再生",
     "background": "背景",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "固定「カートに追加」"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "矢印",
     "auto": "自動",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>スタイルと品質を両立した、厳選されたお気に入りのアイテムが揃ったコレクションをご覧ください。</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "今すぐ購入",
     "collapsible_row": "折りたたみ可能な行",
     "heading": "見出し",

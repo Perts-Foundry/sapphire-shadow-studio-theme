@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Bordures",
     "collapsible_row": "Rangée réductible",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Diaporama superposé"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "autoplay": "Lecture automatique",
     "background": "Arrière-plan",
     "border_radius": "Rayon de la bordure",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Ajout au panier flottant"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Pomme",
     "arrow": "Flèche",
     "banana": "Banane",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Découvrez notre collection exclusive, qui comprend des articles triés sur le volet alliant style et qualité.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "collapsible_row": "Rangée réductible",
     "button_label": "Acheter maintenant",
     "heading": "Titre",

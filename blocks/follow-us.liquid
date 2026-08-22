@@ -1,0 +1,179 @@
+{% doc %}
+  Placeable wrapper around `snippets/social-links.liquid`.
+
+  Exposes display settings only. The URLs come from the five `settings.social_*_link` theme
+  settings, deliberately: a block cannot read another block's settings, so per-block URL
+  fields would reintroduce the second source of truth this block exists to remove. To change
+  a profile URL, edit Theme settings > Social media.
+
+  Shared `.social-links__*` CSS lives in the snippet, not here, so the header and drawer
+  instances stay styled when this block is absent. Only the wrapper's own alignment rules
+  belong in this file.
+{% enddoc %}
+
+{% liquid
+  case block.settings.alignment
+    when 'center'
+      assign alignment_value = 'center'
+    when 'right'
+      assign alignment_value = 'flex-end'
+    else
+      assign alignment_value = 'flex-start'
+  endcase
+%}
+
+<div
+  class="follow-us{% if block.settings.pill_links %} follow-us--pills{% endif %}"
+  style="--follow-us-alignment: {{ alignment_value }};"
+  {{ block.shopify_attributes }}
+>
+  {% render 'social-links',
+    variant: block.settings.variant,
+    layout: block.settings.layout,
+    size: block.settings.size,
+    heading: block.settings.heading
+  %}
+</div>
+
+{% stylesheet %}
+  .follow-us {
+    display: flex;
+    flex-direction: column;
+    align-items: var(--follow-us-alignment, flex-start);
+  }
+
+  .follow-us .social-links {
+    align-items: var(--follow-us-alignment, flex-start);
+  }
+
+  .follow-us .social-links__list {
+    justify-content: var(--follow-us-alignment, flex-start);
+  }
+
+  /* Pill treatment: each handle becomes a bordered pill that lifts on hover. */
+  .follow-us--pills .social-links__list {
+    gap: var(--gap-sm, 8px);
+  }
+
+  /* Pills take the scheme's primary button colours, so they pop the same way the CTAs do. */
+  .follow-us.follow-us--pills .social-links__link {
+    padding-inline-start: var(--padding-lg, 20px);
+    padding-inline-end: var(--padding-lg, 20px);
+    border: 1px solid var(--color-primary-button-border);
+    border-radius: var(--style-border-radius-pills, 999px);
+    background-color: var(--color-primary-button-background);
+    color: var(--color-primary-button-text);
+    gap: var(--gap-xs, 8px);
+    transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+
+  .follow-us--pills .social-links__link:hover,
+  .follow-us--pills .social-links__link:focus-visible {
+    background-color: var(--color-primary-button-hover-background);
+    color: var(--color-primary-button-hover-text);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgb(var(--color-shadow-rgb, 0 0 0) / 0.18);
+  }
+
+  /* The homepage lockup heading (a custom-liquid block beside this one) picks up the same
+     accent so the stars and pills read as one set. */
+  .follow-lockup .hero-lockup__star {
+    color: var(--color-primary-button-background);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .follow-us--pills .social-links__link {
+      transition: none;
+    }
+
+    .follow-us--pills .social-links__link:hover,
+    .follow-us--pills .social-links__link:focus-visible {
+      transform: none;
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "t:names.follow_us",
+  "tag": null,
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:settings.heading",
+      "default": "t:text_defaults.follow_us"
+    },
+    {
+      "type": "select",
+      "id": "variant",
+      "label": "t:settings.style",
+      "options": [
+        {
+          "value": "handles",
+          "label": "t:options.handles"
+        },
+        {
+          "value": "compact",
+          "label": "t:options.compact"
+        }
+      ],
+      "default": "handles"
+    },
+    {
+      "type": "select",
+      "id": "layout",
+      "label": "t:settings.layout",
+      "options": [
+        {
+          "value": "row",
+          "label": "t:options.horizontal"
+        },
+        {
+          "value": "stack",
+          "label": "t:options.vertical"
+        }
+      ],
+      "default": "row"
+    },
+    {
+      "type": "select",
+      "id": "size",
+      "label": "t:settings.size",
+      "options": [
+        {
+          "value": "16px",
+          "label": "t:options.small"
+        },
+        {
+          "value": "20px",
+          "label": "t:options.medium"
+        },
+        {
+          "value": "24px",
+          "label": "t:options.large"
+        }
+      ],
+      "default": "20px"
+    },
+    {
+      "type": "checkbox",
+      "id": "pill_links",
+      "label": "t:settings.pill_links",
+      "default": false
+    },
+    {
+      "type": "text_alignment",
+      "id": "alignment",
+      "label": "t:settings.alignment",
+      "default": "left"
+    }
+  ],
+  "presets": [
+    {
+      "name": "t:names.follow_us",
+      "category": "t:categories.footer"
+    }
+  ]
+}
+{% endschema %}

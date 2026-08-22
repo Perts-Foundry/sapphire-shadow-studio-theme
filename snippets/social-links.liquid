@@ -1,0 +1,299 @@
+{%- doc -%}
+  Renders the store's social profile links. This is the only renderer for social links
+  anywhere on the storefront.
+
+  It reads the five `settings.social_*_link` theme settings and nothing else, so the URL
+  *values* here and in the Organization `sameAs` array
+  (`snippets/structured-data-organization.liquid`) cannot drift apart. The platform list is
+  still duplicated in that snippet as `social_keys`, so adding a platform means editing both.
+  A theme block cannot read another block's settings, so block-level URL
+  settings would mean two sources of truth; one global set keeps them honest. This mirrors
+  `snippets/size-option-position.liquid`, the repo's other shared-settings snippet.
+
+  All shared `.social-links__*` CSS lives in this snippet's own `{% stylesheet %}`, not in
+  `blocks/follow-us.liquid`. That is load-bearing: `snippets/header-actions.liquid` and
+  `snippets/header-drawer.liquid` render this snippet without going through the block, and
+  Shopify subsets block CSS to pages where the block renders. Rules kept in the block would
+  leave the header and drawer styled only by accident, via the footer instance, and would
+  break silently the moment that footer block is removed or hidden.
+
+  Handle derivation: the query string and fragment are dropped first, then the last path
+  segment is taken and a leading `@` stripped. If the result is blank or still looks like a
+  profile-ID URL (`.php`, `?`, `=`), the platform name is shown instead of junk. Keep these
+  settings in vanity-slug form; a `profile.php?id=` URL renders the fallback.
+
+  Blank settings are skipped. A URL with no path segment past the host is a bare platform
+  homepage, which is both a broken customer link and a false `sameAs` entity claim: it is
+  skipped on the storefront and rendered disabled in the theme editor.
+
+  Liquid does not interpolate inside `{% stylesheet %}`, so per-instance values are passed as
+  inline custom properties.
+
+  @param {string} [variant] - `handles` (icon plus visible `@handle`) or `compact` (icon only). Defaults to `handles`.
+  @param {string} [layout] - `row` or `stack`. Defaults to `row`.
+  @param {string} [size] - CSS length for the icon size, applied as `--social-links-icon-size`.
+  @param {string} [heading] - Optional visible heading text. Omitted when blank.
+  @param {string} [heading_tag] - Tag for the heading element. Defaults to `h2`.
+  @param {string} [class] - Extra class names for the calling surface.
+
+  @example
+  {% render 'social-links', variant: 'handles', heading: 'Follow along' %}
+
+  @example
+  {% render 'social-links', variant: 'compact', size: '20px', class: 'header-actions__social' %}
+{%- enddoc -%}
+
+{%- liquid
+  assign social_variant = variant | default: 'handles'
+  assign social_layout = layout | default: 'row'
+  assign social_heading_tag = heading_tag | default: 'h2'
+  assign social_platforms = 'facebook,instagram,tiktok,youtube,pinterest' | split: ','
+
+  assign social_style = ''
+  if size != blank
+    assign social_style = '--social-links-icon-size: ' | append: size | append: ';'
+  endif
+
+  # This must apply exactly the per-item visibility test used below, not merely
+  # "some setting is non-blank". A store whose only configured URLs were bare platform
+  # homepages would otherwise get a wrapper and an ARIA-labelled but empty list.
+  assign social_rendered = false
+  for social_platform in social_platforms
+    assign social_setting_key = 'social_' | append: social_platform | append: '_link'
+    assign social_probe_url = settings[social_setting_key]
+    if social_probe_url != blank
+      if request.design_mode
+        assign social_rendered = true
+        break
+      endif
+      assign social_probe_parts = social_probe_url | split: '//' | last | split: '/'
+      if social_probe_parts.size > 1 and social_probe_parts[1] != ''
+        assign social_rendered = true
+        break
+      endif
+    endif
+  endfor
+-%}
+
+{%- if social_rendered -%}
+  <div
+    class="social-links social-links--{{ social_variant }} social-links--{{ social_layout }}{% if class != blank %} {{ class }}{% endif %}"
+    {% if social_style != blank %}
+      style="{{ social_style }}"
+    {% endif %}
+  >
+    {%- if heading != blank -%}
+      <{{ social_heading_tag }} class="social-links__heading">{{ heading }}</{{ social_heading_tag }}>
+    {%- endif -%}
+
+    <ul
+      class="social-links__list list-unstyled"
+      {% if heading == blank %}
+        aria-label="{{ 'social.follow_us' | t }}"
+      {% endif %}
+    >
+      {%- for social_platform in social_platforms -%}
+        {%- liquid
+          assign social_setting_key = 'social_' | append: social_platform | append: '_link'
+          assign social_url = settings[social_setting_key]
+
+          case social_platform
+            when 'facebook'
+              assign social_name = 'Facebook'
+            when 'instagram'
+              assign social_name = 'Instagram'
+            when 'tiktok'
+              assign social_name = 'TikTok'
+            when 'youtube'
+              assign social_name = 'YouTube'
+            when 'pinterest'
+              assign social_name = 'Pinterest'
+          endcase
+
+          # A path segment past the host is what separates a real profile from a bare
+          # platform homepage. Ruby's split drops trailing empty strings, so a trailing
+          # slash does not fake one.
+          assign social_path_parts = social_url | split: '//' | last | split: '/'
+          assign social_has_profile = false
+          if social_path_parts.size > 1 and social_path_parts[1] != ''
+            assign social_has_profile = true
+          endif
+
+          # Drop the query and fragment before splitting, so a tracking parameter cannot
+          # swallow the handle. The guard below then only ever sees the segment itself.
+          assign social_handle = social_url | split: '?' | first | split: '#' | first | split: '/' | last | remove_first: '@' | strip
+
+          assign social_handle_valid = true
+          if social_handle == blank
+            assign social_handle_valid = false
+          endif
+          if social_handle contains '.php'
+            assign social_handle_valid = false
+          endif
+          if social_handle contains '?'
+            assign social_handle_valid = false
+          endif
+          if social_handle contains '='
+            assign social_handle_valid = false
+          endif
+
+          if social_handle_valid
+            assign social_label = '@' | append: social_handle
+          else
+            assign social_label = social_name
+          endif
+
+          # The accessible name follows the handle, not the variant: WCAG 2.5.3 requires the
+          # visible handle text to be part of the name, and a URL that derives no handle would
+          # otherwise render as "Facebook: Facebook".
+          if social_handle_valid
+            assign social_accessible_name = 'social.follow_on' | t: platform: social_name, handle: social_label
+          else
+            assign social_accessible_name = social_name
+          endif
+
+          # Liquid has no operator precedence, so the visibility test is built up rather
+          # than written as one mixed and/or expression.
+          assign social_show = false
+          if social_url != blank
+            if social_has_profile or request.design_mode
+              assign social_show = true
+            endif
+          endif
+        -%}
+
+        {%- if social_show -%}
+          <li class="social-links__item{% unless social_has_profile %} social-links__item--disabled{% endunless %}">
+            <a
+              class="social-links__link"
+              href="{{ social_url | escape }}"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="{{ social_accessible_name | escape }}"
+              {%- unless social_has_profile %} aria-disabled="true"{% endunless -%}
+            >
+              <svg
+                class="social-links__icon"
+                aria-hidden="true"
+                focusable="false"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+              >
+                {%- render 'icon', icon: social_platform -%}
+              </svg>
+              <span class="social-links__label">{{ social_label | escape }}</span>
+            </a>
+          </li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
+  </div>
+{%- endif -%}
+
+{% stylesheet %}
+  .social-links {
+    --social-links-icon-size: var(--icon-size-lg, 20px);
+    --social-links-gap: var(--gap-sm, 8px);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs, 4px);
+  }
+
+  .social-links__heading {
+    margin: 0;
+  }
+
+  .social-links__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--social-links-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .social-links--stack .social-links__list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    /* The 44px `min-block-size` below already spaces the rows; a gap on top of it reads as
+       a gap between unrelated links. */
+    gap: 0;
+  }
+
+  /*
+   * Below the theme's mobile breakpoint the handles variant is too wide to sit in a row
+   * without wrapping mid-set and orphaning the last link. Scoped to `--handles` so the
+   * header's compact icon row keeps its single line.
+   */
+  @media screen and (max-width: 749px) {
+    .social-links--handles .social-links__list {
+      flex-direction: column;
+      flex-wrap: nowrap;
+    }
+  }
+
+  .social-links__item {
+    display: flex;
+  }
+
+  .social-links__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs, 4px);
+    /* Global accessibility rule: every social link is a 44x44 target. */
+    min-block-size: var(--minimum-touch-target, 44px);
+    min-inline-size: var(--minimum-touch-target, 44px);
+    justify-content: center;
+    text-decoration: none;
+    color: currentcolor;
+  }
+
+  .social-links--handles .social-links__link {
+    justify-content: flex-start;
+    padding-inline-end: var(--padding-2xs, 4px);
+  }
+
+  .social-links__icon {
+    display: block;
+    flex-shrink: 0;
+    inline-size: var(--social-links-icon-size);
+    block-size: var(--social-links-icon-size);
+    fill: currentcolor;
+  }
+
+  .social-links__label {
+    white-space: nowrap;
+  }
+
+  /*
+   * `compact` keeps the upstream behaviour: the platform name stays in the DOM and is only
+   * hidden once an icon path has actually rendered, so a missing glyph degrades to text
+   * rather than to an empty link.
+   */
+  .social-links--compact .social-links__item:has(.social-links__icon path) .social-links__label {
+    /* Matches the `.visually-hidden` technique in assets/base.css. It cannot reuse that
+       class, because the hiding is conditional on the `:has()` guard above. */
+    position: absolute;
+    overflow: hidden;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /*
+   * Blank-URL platforms never reach the storefront at all; this state only exists so the
+   * theme editor shows a URL that has no profile path as unusable rather than missing.
+   */
+  .shopify-design-mode .social-links__item--disabled {
+    opacity: var(--disabled-opacity, 0.5);
+  }
+
+  .shopify-design-mode .social-links__item--disabled .social-links__link {
+    pointer-events: none;
+  }
+{% endstylesheet %}

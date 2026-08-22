@@ -787,6 +787,24 @@
             </drawer-localization-component>
           {% endif %}
         {%- endif -%}
+
+        {%- comment -%}
+          `.menu-drawer__utility-links` is a flex column pinned to the bottom of the drawer,
+          so the social row needs its own horizontal wrapper rather than inheriting it.
+
+          Gated on the same `show_social_icons` header setting as the desktop row in
+          `sections/header.liquid`. One toggle governs both, which is what a merchant
+          switching off "Social icons" expects; the drawer is this feature's mobile half, not
+          a separate surface.
+        {%- endcomment -%}
+        {% if section.settings.show_social_icons %}
+          {% render 'social-links',
+            variant: 'handles',
+            layout: 'row',
+            size: '20px',
+            class: 'menu-drawer__social'
+          %}
+        {% endif %}
       </div>
 
       {% liquid
@@ -1311,6 +1329,20 @@
     margin-block: auto var(--padding-sm);
     margin-inline-start: var(--padding-xl);
     background-color: rgb(var(--color-foreground) 0.03);
+  }
+
+  .menu-drawer__social {
+    padding-block: var(--padding-sm);
+  }
+
+  .menu-drawer__social .social-links__list {
+    /* No direction override: the snippet's own mobile rule stacks the handles below 749px,
+       which is every width the drawer opens at. */
+    column-gap: var(--gap-lg);
+  }
+
+  .menu-drawer__social .social-links__link {
+    color: rgb(var(--color-foreground));
   }
 
   .menu-drawer__account {

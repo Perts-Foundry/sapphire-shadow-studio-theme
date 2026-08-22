@@ -137,11 +137,24 @@
             "padding-inline-end": 0
           },
           "blocks": {}
+        },
+        "follow_us_footer": {
+          "type": "follow-us",
+          "name": "Follow us",
+          "settings": {
+            "heading": "",
+            "variant": "compact",
+            "layout": "row",
+            "size": "24px",
+            "alignment": "right"
+          },
+          "blocks": {}
         }
       },
       "block_order": [
         "group_wErUQf",
-        "email-signup_HafH7P"
+        "email-signup_HafH7P",
+        "follow_us_footer"
       ],
       "name": "t:names.footer",
       "settings": {
@@ -291,30 +304,10 @@
             "case": "none"
           },
           "blocks": {}
-        },
-        "social_icons": {
-          "type": "social-links",
-          "settings": {
-            "facebook_url": "https://www.facebook.com/profile.php?id=61583934266282",
-            "instagram_url": "https://www.instagram.com/sapphire_shadow_studio",
-            "youtube_url": "",
-            "tiktok_url": "https://www.tiktok.com/@sapphire_shadow_studio",
-            "twitter_url": "",
-            "threads_url": "",
-            "linkedin_url": "",
-            "bluesky_url": "",
-            "snapchat_url": "",
-            "pinterest_url": "",
-            "tumblr_url": "",
-            "vimeo_url": "",
-            "custom_url": ""
-          },
-          "blocks": {}
         }
       },
       "block_order": [
-        "copyright",
-        "social_icons"
+        "copyright"
       ],
       "settings": {
         "section_width": "page-width",

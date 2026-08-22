@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "เส้นขอบ",
     "collapsible_row": "แถวที่พับเก็บได้",
@@ -201,6 +202,7 @@
     "layered_slideshow": "สไลด์โชว์แบบซ้อน"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "การจัดตำแหน่ง",
     "autoplay": "เล่นอัตโนมัติ",
     "background": "พื้นหลัง",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "เพิ่มลงในตะกร้าสินค้าแบบตรึง"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Apple",
     "arrow": "ลูกศร",
     "auto": "อัตโนมัติ",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>พบกับคอลเลกชันที่เราคัดสรรมาเป็นพิเศษซึ่งมีแต่สินค้ายอดนิยมที่ผสมผสานสไตล์และคุณภาพเข้าไว้ด้วยกัน</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "ช้อปเลย",
     "collapsible_row": "แถวที่พับเก็บได้",
     "heading": "หัวเรื่อง",

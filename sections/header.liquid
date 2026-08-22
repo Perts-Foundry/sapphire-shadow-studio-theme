@@ -89,7 +89,13 @@
       endif
     endif
   endif
+  # The desktop social cluster rides along with search so it always lands just left of
+  # search, account and cart, whichever slot order applies. The mobile drawer carries its
+  # own row under the same toggle (`snippets/header-drawer.liquid`).
   capture search
+    if section.settings.show_social_icons
+      render 'social-links', variant: 'compact', size: '20px', class: 'header__social mobile:hidden'
+    endif
     render 'search', style: search_style, class: search_class
   endcapture
 
@@ -581,6 +587,30 @@
     }
   }
 
+  /*
+   * Same pitch as the other header actions: one `--button-size` square per icon, no gap.
+   * Doubled selector so this beats the snippet's own `.social-links` defaults regardless of
+   * stylesheet order.
+   */
+  .header__social.social-links {
+    --social-links-gap: 0;
+
+    align-self: center;
+    padding-inline-end: var(--gap-2xs);
+    border-inline-end: 1px solid rgb(var(--color-border-rgb) / 0.4);
+  }
+
+  .header__social.social-links .social-links__list {
+    gap: 0;
+  }
+
+  .header__social.social-links .social-links__link {
+    inline-size: var(--button-size);
+    block-size: var(--button-size);
+    padding: 0;
+    color: var(--color-foreground);
+  }
+
   .header__column--right {
     gap: var(--gap-xl);
     justify-content: flex-end;
@@ -867,6 +897,16 @@
     {
       "type": "paragraph",
       "content": "t:content.manage_customer_accounts"
+    },
+    {
+      "type": "header",
+      "content": "t:content.social_media"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_social_icons",
+      "label": "t:settings.social_icons",
+      "default": false
     },
     {
       "type": "header",

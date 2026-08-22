@@ -9,6 +9,7 @@
  */
 {
   "names": {
+    "follow_us": "TODO: Follow us",
     "404": "404",
     "borders": "Bordi",
     "collapsible_row": "Riga comprimibile",
@@ -201,6 +202,7 @@
     "layered_slideshow": "Presentazione a livelli"
   },
   "settings": {
+    "social_icons": "TODO: Social icons",
     "alignment": "Allineamento",
     "autoplay": "Riproduzione automatica",
     "background": "Sfondo",
@@ -590,6 +592,7 @@
     "sticky_add_to_cart": "Aggiunta al carrello fissa"
   },
   "options": {
+    "handles": "TODO: Icons with handles",
     "apple": "Mela",
     "arrow": "Freccia",
     "auto": "Automatico",
@@ -1037,6 +1040,7 @@
     "shop_collection": "<p>Scopri la nostra collezione curata con i nostri articoli preferiti, scelti per unire stile e qualità.</p>"
   },
   "text_defaults": {
+    "follow_us": "TODO: Follow us",
     "button_label": "Acquista ora",
     "collapsible_row": "Riga comprimibile",
     "heading": "Intestazione",
