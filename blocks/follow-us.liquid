@@ -55,19 +55,29 @@
     gap: var(--gap-sm, 8px);
   }
 
+  /* Pills take the scheme's primary button colours, so they pop the same way the CTAs do. */
   .follow-us--pills .social-links__link {
     padding-inline: var(--padding-md, 16px) var(--padding-lg, 20px);
-    border: 1px solid rgb(var(--color-border-rgb) / 0.6);
+    border: 1px solid var(--color-primary-button-border);
     border-radius: var(--style-border-radius-pills, 999px);
-    background-color: rgb(var(--color-background-rgb));
+    background-color: var(--color-primary-button-background);
+    color: var(--color-primary-button-text);
     gap: var(--gap-xs, 8px);
-    transition: transform 150ms ease, box-shadow 150ms ease;
+    transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
   }
 
   .follow-us--pills .social-links__link:hover,
   .follow-us--pills .social-links__link:focus-visible {
+    background-color: var(--color-primary-button-hover-background);
+    color: var(--color-primary-button-hover-text);
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgb(var(--color-shadow-rgb, 0 0 0) / 0.12);
+    box-shadow: 0 8px 20px rgb(var(--color-shadow-rgb, 0 0 0) / 0.18);
+  }
+
+  /* The homepage lockup heading (a custom-liquid block beside this one) picks up the same
+     accent so the stars and pills read as one set. */
+  .follow-lockup .hero-lockup__star {
+    color: var(--color-primary-button-background);
   }
 
   @media (prefers-reduced-motion: reduce) {

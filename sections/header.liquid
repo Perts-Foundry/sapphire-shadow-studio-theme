@@ -587,18 +587,27 @@
     }
   }
 
-  /* Same pitch as the other header actions: one `--button-size` square per icon, no gap. */
-  .header__social {
+  /*
+   * Same pitch as the other header actions: one `--button-size` square per icon, no gap.
+   * Doubled selector so this beats the snippet's own `.social-links` defaults regardless of
+   * stylesheet order.
+   */
+  .header__social.social-links {
     --social-links-gap: 0;
 
     align-self: center;
-    padding-inline-end: var(--gap-md);
+    padding-inline-end: var(--gap-2xs);
     border-inline-end: 1px solid rgb(var(--color-border-rgb) / 0.4);
   }
 
-  .header__social .social-links__link {
-    min-inline-size: var(--button-size);
-    min-block-size: var(--button-size);
+  .header__social.social-links .social-links__list {
+    gap: 0;
+  }
+
+  .header__social.social-links .social-links__link {
+    inline-size: var(--button-size);
+    block-size: var(--button-size);
+    padding: 0;
     color: var(--color-foreground);
   }
 
