@@ -35,7 +35,7 @@
   {% if section.settings.show_social_icons %}
     {% render 'social-links',
       variant: 'compact',
-      size: '20px',
+      size: '18px',
       class: 'header-actions__social mobile:hidden'
     %}
   {% endif %}
@@ -601,7 +601,14 @@
    * centring here is `align-self` on the item, not `justify-content` on its own main axis.
    */
   .header-actions__social {
+    --social-links-gap: 0;
+
     align-self: center;
+    /* Read as one cluster: no gap between the icons, and a hairline before the account
+       and cart actions so the cluster does not merge into them. */
+    margin-inline-end: var(--gap-xs);
+    padding-inline-end: var(--gap-xs);
+    border-inline-end: 1px solid rgb(var(--color-border-rgb) / 0.4);
   }
 
   .header-actions__social .social-links__link {
