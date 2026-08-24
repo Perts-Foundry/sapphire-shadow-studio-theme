@@ -34,8 +34,10 @@ node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # afte
 node scripts/blank-inventory/blank-inventory.mjs bodies --stage show      # the approved map
 
 # Health report (no Shopify writes). Start here every time once bodies are approved.
+# It also archives expired seeding receipts (see below); that is a move inside the working
+# directory, not a store write.
 # --json emits the whole report (catalogue, coverage, groups with per-group histograms and member
-# labels, warnings, expired seeding receipts) as one object. --group narrows to one blank and
+# labels, warnings, what the archive step did) as one object. --group narrows to one blank and
 # --stale to the non-converged ones; they are different views, so passing both is an error.
 # The histogram is the reading that matters, and it is in the human output too: `quantities` is
 # deduped, so [0, 2] cannot tell one member at 0 from seven of them, and those are opposite
@@ -46,7 +48,8 @@ node scripts/blank-inventory/blank-inventory.mjs audit --group BLACK_CREWNECK_00
 node scripts/blank-inventory/blank-inventory.mjs audit --stale
 
 # Reorder review (no Shopify writes, and it never edits thresholds.json). On-hand stock per
-# body/colour/size against the committed minimums, plus a reorder list sorted by shortfall.
+# body/colour/size against the committed minimums, a reorder list sorted by shortfall, and
+# per-body totals of on-hand against minimum units.
 # --below prints only the list; --body narrows to one garment; --json emits the whole report.
 node scripts/blank-inventory/blank-inventory.mjs reorder
 node scripts/blank-inventory/blank-inventory.mjs reorder --body crewneck --below
@@ -245,7 +248,23 @@ is always in the reorder list, and the counts of `?` and `!` cells are printed i
 the `--below` view so a terse read cannot hide them.
 
 The reorder list is sorted by shortfall descending, ties breaking on body, colour, then garment size
-order. A negative on-hand (Shopify permits an oversell) yields an unclamped shortfall.
+order, and the shortfall is the leading column because it is the number the list is read for. A
+negative on-hand (Shopify permits an oversell) yields an unclamped shortfall.
+
+### Per-body totals
+
+After the list, `reorder` prints on-hand units against minimum units per garment body, with the
+shortfall and the surplus counted separately rather than netted, and the same figures go into
+`--json` under `totals`. A body that is short with no surplus needs more units; a body with both is
+holding roughly enough units in the wrong sizes or colours, and that is a different decision. The
+sums cover only cells whose group has settled: a cell mid-fan-out has a range and not a reading, and
+a cell with no blank group has no stock at all, so both are excluded and counted instead, with the
+counts printed alongside so an excluded cell cannot read as a zero.
+
+These sums are deliberately not the reorder list's total. The list also carries cells with no group
+(at their full minimum) and unsettled cells (measured from their highest member), which is right for
+"where do I look first" and wrong for "how does this body's settled stock compare with its settled
+minimums".
 
 ### The demand model, and what it is not
 
@@ -308,10 +327,16 @@ pre-push sensitivity scan.
   group is non-uniform; it never makes it plannable. Keying this on `drift` alone was a hole: a
   group stranded mid-fan-out is normally `awaiting-seed`, so it passed the check and then failed
   deeper in as a per-line parse error for a store-state problem.
-- **Seeding receipts age out.** A seed settles in 80 to 90 seconds, so a `--stage tag` receipt older
-  than 24 hours stops suppressing a drift report. `audit` and `plan` name the expired files rather
-  than silently ignoring them; without the bound, one abandoned tag stage masked every later Flow
-  fault on those groups as expected behaviour.
+- **Seeding receipts age out, and `audit` archives them.** A seed settles in 80 to 90 seconds, so a
+  `--stage tag` receipt older than 24 hours stops suppressing a drift report. Without the bound, one
+  abandoned tag stage masked every later Flow fault on those groups as expected behaviour. `audit`
+  moves the expired ones into `<workdir>/archive/` and reports a one-line summary (count, date
+  range, destination) instead of listing them: 78 filenames printed one per line buried the report
+  that named them. Archived receipts are inert, because the reader globs the working directory root
+  and does not recurse, and the move is one-way, so reverting the code does not put them back. Fresh
+  seeding receipts are never archived: they are the only thing distinguishing awaiting-seed from
+  drift. A file that cannot be moved is reported and skipped, never fatal, and a name already in the
+  archive keeps the archived copy (a receipt is immutable, so the same name is the same content).
 - **The approval-gate renderer refuses an incomplete artifact.** `show --plan` errors on a missing
   or renamed key instead of rendering a blank cell, so a schema change cannot silently produce an
   emptier gate that still looks like a review.
@@ -331,11 +356,17 @@ suggestion that must never be substituted, seeding-receipt expiry (including the
 timestamp, which expires rather than being believed forever), and the refusal to render a plan
 artifact missing a gate-critical key.
 
+The receipt archive step has a suite of its own against a real temporary working directory
+(`test/archive-receipts.test.mjs`), because mkdir, rename, a source file that vanished, a name
+collision, and the promise that an archived receipt is never read again are filesystem behaviours no
+injected seam can reach. Which receipts may be archived is a pure function, tested separately.
+
 The reorder review's own suite covers the thresholds schema (including the duplicate-key check that
 `JSON.parse` cannot make), the reconciliation and refusal contract, the pivot's refusal to average an
-unsettled group, every glyph state, the shortfall boundaries, the demand rollup's treatment of
-refunds and cancellations, the budget arithmetic (which always sums to the budget, with a
-deterministic tie vector), and canonical serialisation. It also reads the committed `thresholds.json`
+unsettled group, every glyph state, the shortfall boundaries, the per-body totals (what they exclude,
+that short and surplus are never netted, and that the grand total stays out of the bodies array), the
+demand rollup's treatment of refunds and cancellations, the budget arithmetic (which always sums to
+the budget, with a deterministic tie vector), and canonical serialisation. It also reads the committed `thresholds.json`
 through the tool's own parser, and asserts that neither new command is a write command.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any

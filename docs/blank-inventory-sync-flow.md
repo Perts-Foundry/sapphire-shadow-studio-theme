@@ -200,9 +200,10 @@ nothing about this flow: see `scripts/blank-inventory/README.md`.
   errored; check the run log per the first entry above. In both cases the group's state may read
   `awaiting-seed` rather than `drift`. That state explains why the group is non-uniform; it never
   means the group can be planned on top of.
-- **`audit` or `plan` reports an expired seeding receipt.** A `--stage tag` receipt records that a
+- **`audit` reports archiving expired seeding receipts.** A `--stage tag` receipt records that a
   seed is outstanding, which is what makes a non-uniform group report `awaiting-seed` instead of
-  `drift`. Those receipts now expire after 24 hours, far beyond the 80 to 90 second settle. Seeing
-  one named means a tag stage was abandoned without its seed, and any group it covered is now
-  reported as drift. Complete or discard that backfill; the file itself is only a record and
-  deleting it changes no stock.
+  `drift`. Those receipts expire after 24 hours, far beyond the 80 to 90 second settle. `audit`
+  moves the expired ones into `<workdir>/archive/` and summarises the move in one line; `plan` still
+  names them. Either way it means a tag stage was abandoned without its seed, and any group it
+  covered is now reported as drift. Complete or discard that backfill. The receipts themselves are
+  only a record: archiving one changes no stock, and nothing reads it afterwards.

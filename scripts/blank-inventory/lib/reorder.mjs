@@ -674,6 +674,71 @@ export function pivotCounts(pivot, resolved) {
   return { unsettled, noGroup };
 }
 
+/**
+ * Per-body stock against per-body minimums, plus a grand total.
+ *
+ * This is the question the matrix cannot answer at a glance: is this body short overall, or does it
+ * hold roughly the right number of units in the wrong sizes and colours? A body with a nonzero
+ * shortfall AND a nonzero surplus is the second case, and the two answers call for different
+ * actions, so both are reported rather than netted into one number.
+ *
+ * ONLY CONVERGED CELLS ARE SUMMED, on every field including minSum. A cell mid-fan-out has a range
+ * and not a reading, and averaging a range invents a number no variant holds (see buildPivot). A
+ * cell with no blank group has no stock at all. Both would drag the sums somewhere between two
+ * meanings, so both are excluded and COUNTED instead: the counts are printed alongside the sums so
+ * an excluded cell can never read as a settled zero.
+ *
+ * shortfallUnits here is deliberately NOT the sum of the reorder list's shortfalls. That list also
+ * carries cells with no group (at their full minimum) and unsettled cells (measured from their
+ * highest member), which is right for "where do I look first" and wrong for "how does this body's
+ * settled stock compare with its settled minimums". The two numbers answer different questions.
+ *
+ * Neither shortfall nor surplus is clamped against a negative on-hand, mirroring flagReorders:
+ * Shopify permits an oversell, and clamping would under-report the cell furthest behind.
+ *
+ * The grand total is returned OUTSIDE the bodies array so a consumer iterating bodies cannot sum
+ * the total back into itself.
+ *
+ * @param {{bodies: Array<object>}} pivot
+ * @param {Map<string, {min: number}>} resolved
+ * @returns {{bodies: Array<object>, total: object}}
+ */
+export function bodyTotals(pivot, resolved) {
+  const blank = () => ({ onHandSum: 0, minSum: 0, shortfallUnits: 0, surplusUnits: 0, converged: 0, unsettled: 0, noGroup: 0 });
+  const add = (into, from) => {
+    for (const k of Object.keys(from)) into[k] += from[k];
+    return into;
+  };
+
+  const bodies = [];
+  const total = blank();
+  for (const bodyRow of pivot.bodies ?? []) {
+    const sums = blank();
+    for (const colorRow of bodyRow.colors) {
+      for (const cell of colorRow.cells) {
+        const min = resolved.get(cell.key)?.min ?? 0;
+        if (cell.state === NO_GROUP) {
+          // Mirrors pivotCounts: a cell nothing carries and nobody set a minimum for is not a gap.
+          if (min > 0) sums.noGroup++;
+          continue;
+        }
+        if (cell.onHand === null) {
+          sums.unsettled++;
+          continue;
+        }
+        sums.converged++;
+        sums.onHandSum += cell.onHand;
+        sums.minSum += min;
+        sums.shortfallUnits += Math.max(0, min - cell.onHand);
+        sums.surplusUnits += Math.max(0, cell.onHand - min);
+      }
+    }
+    bodies.push({ body: bodyRow.body, bodyLabel: bodyRow.bodyLabel, ...sums });
+    add(total, sums);
+  }
+  return { bodies, total };
+}
+
 // ---------------------------------------------------------------------------
 // Demand
 // ---------------------------------------------------------------------------

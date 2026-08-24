@@ -150,6 +150,38 @@ On any reconciliation refusal: report the keys to the operator and stop. Never a
 an entry to make a command pass. A stale warning is a suggestion for the operator to consider, never
 a deletion you make.
 
+### Operator-directed threshold edits
+
+An edit the operator asked for directly (for example "floor every minimum at 2") takes the same gate
+as a demand-pass edit: an explicit per-run operator STOP naming the specific edit, a feature branch
+plus a PR, one appended `provenance.adjustments` entry, and an adjustments log that stays
+append-only.
+
+**A prior instruction is not an approval.** An instruction given in an earlier session, or earlier in
+this conversation, sets the *shape* of the edit and nothing else. Before any write, re-present the
+STOP with the concrete per-cell `from -> to` list for the edit as it will actually be made, and get
+an explicit confirmation of that list, for that run. The reason is that the shape and the numbers are
+two different things: "floor everything at 2" is a sentence, and which 35 cells move and where the
+sums land is what the operator is actually agreeing to.
+
+Surface these two invariants **before** asking the operator to settle the shape of the edit:
+
+- **`min: 0` is how "we do not make this combination" is recorded**, and a 0 never flags. So a
+  blanket floor puts a permanent flag on every cell that has no blank group on the store: it will
+  sit in the reorder list marked `no-group` until a blank exists or the operator zeroes it again.
+  "Floor only the cells that exist as groups" and "floor everywhere" are therefore different edits
+  with different consequences. If the operator's phrasing does not settle which one they mean, ask.
+  Never default to flooring everywhere.
+- **A body's cell sum is expected to equal its `provenance.budgets` entry.** An edit that changes a
+  body's sum needs an explicit decision: either raise that body's budget (see below) or accept that
+  every future demand pass reports budgetDrift until someone reconciles it.
+
+**Budget changes always get their own STOP.** Two absolutes, not one relaxed clause: `budgets` is
+never touched as a side effect of a demand pass, and a deliberate budget change is permitted only
+through its own explicit STOP that names `budgets` and the new per-body values. When a threshold
+edit changes a body's sum and the operator chooses to raise the budget in the same PR, that is two
+confirmations, cells and then budgets, never one bundled approval.
+
 ## Reorder review
 
 Read-only. No store writes. Does not edit thresholds.json.
@@ -166,6 +198,28 @@ against a physical count before ordering anything**.
 **Guardrail.** The report is never an input to any write command or count sheet, directly or by
 transcription. Restock quantities come only from a physical count. This report tells the operator
 where to look, not what to enter.
+
+The output ends with a **per-body totals** block: on-hand units against minimum units, with the
+shortfall and the surplus counted separately rather than netted. That is the distinction the matrix
+cannot show at a glance. A body that is short and holds no surplus needs more units; a body with
+both is holding roughly enough units in the wrong sizes or colours, which is a different decision.
+The sums cover only cells whose group has settled, and the block prints how many were excluded, so
+an unsettled cell is never read as a zero.
+
+**Every derived number comes from `reorder --json`.** Totals, surplus versus shortfall, comparisons
+against budgets: run the command with `--json` and read the number out of it. Never re-type a
+quantity off the terminal matrix into a calculation, and never derive a number from a rendering
+built earlier in the conversation, even one that was correctly sourced from `--json` at the time.
+Re-typing a stock number is a transcription step, and one wrong digit becomes a wrong conclusion
+with nothing to catch it. Every derived figure traces to `--json` directly, never to a presentation
+layer.
+
+**Presentation.** The verbatim command output is always included. On top of it, an organised
+rendering is permitted (for example an artifact with a colour-coded matrix), on two conditions:
+every number in it comes from `--json`, and the raw output is preserved unabridged, in an appendix.
+Such a rendering carries live stock quantities, so it stays inside the conversation: it never goes
+into a PR, an issue, a comment, a commit message, or any other artifact reachable outside it, and
+it is never shared publicly.
 
 If `reorder` exits 1, the file is missing, unparseable, or does not cover every body+colour+size.
 That is the signal that the catalogue gained a body, colour or size. Take the named keys to the
@@ -193,9 +247,10 @@ approval.
 
 The approved edit touches **only** the approved cells at the approved values, plus one appended
 `provenance.adjustments` entry. Never `budgets`, `colorCurve`, `sizeCurve`, `research`, `method`,
-`version`, or any other cell. The budget is one number per garment body and the two curves are what
-derived the split; changing either is a separate decision with its own STOP, not a side effect of a
-demand pass.
+`version`, or any other cell. Within a demand pass that is absolute, with no exception: the budget is
+one number per garment body and the two curves are what derived the split, so changing either is a
+separate decision carrying its own STOP (see "Operator-directed threshold edits" above), never a
+side effect of a demand pass.
 The adjustments log is append-only: an existing entry is never rewritten, reordered or edited, even
 to correct it.
 

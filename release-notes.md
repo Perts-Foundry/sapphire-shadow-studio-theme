@@ -1,5 +1,66 @@
 # Release Notes
 
+## Reorder review: readable output, per-body totals, a receipt archive (unreleased)
+
+Follow-up to the reorder review below, all of it in the read-only half. Nothing here writes to the
+store or changes a gate.
+
+**The report now answers the question it is read for, without arithmetic by hand.** `reorder` prints
+a per-body totals block: on-hand units against minimum units, with the shortfall and the surplus
+counted separately rather than netted, and the same figures go into `--json` under `totals`. That
+distinction is the one the matrix cannot show at a glance: a body that is short with no surplus needs
+more units, and a body with both is holding roughly enough units in the wrong sizes or colours. The
+computation is `bodyTotals` in `lib/reorder.mjs`, deliberately in that file rather than a new one so
+the existing test asserting the module imports no mutation path covers it too, and the command layer
+only prints it.
+
+**Those sums are not the reorder list's total, on purpose.** The list counts a cell with no group at
+its full minimum and an unsettled cell from its highest member, which is right for "where do I look
+first" and wrong for "how does this body's settled stock compare with its settled minimums". The
+totals block therefore sums settled cells only, and prints how many cells it excluded, so an excluded
+cell can never be read as a settled zero. Averaging a mid-fan-out range would invent a number no
+variant holds, which the pivot already refuses to do.
+
+**The shortfall column leads the reorder list**, which was already sorted by it, and the heading
+carries the total units short. It stays named "short" rather than becoming an order quantity: this
+report tells the operator where to look, never what to buy, and a column that reads as a purchase
+figure would quietly undo that.
+
+**`audit` archives expired seeding receipts instead of listing them.** A seeding receipt older than
+24 hours has stopped explaining anything, and 78 of them printed one per line buried the report that
+named them; the run had to be repeated with a redirect just to be readable. They now move to
+`<workdir>/archive/`, summarised in one line (count, date range, destination). The decision of which
+files may move is a pure function in `lib/receipt.mjs` (`receiptsToArchive`), handed the full
+population so no caller can widen the selection; only the command layer touches the filesystem. A
+fresh seeding receipt is never archived, because it is the only thing distinguishing awaiting-seed
+from drift. Failures are skip-and-report: a vanished source or a name already in the archive costs
+that one file, never the audit. **The move is one-way and local**: reverting this change does not put
+an archived receipt back in the working directory root, and nothing reads it there anyway, since the
+reader globs the root and does not recurse.
+
+That step is why `audit`'s `--json` `staleSeedReceipts` is now an object (`archived`, `skipped`,
+`dir`) rather than a list of filenames: the files it used to name have moved, so the old shape would
+hand a consumer paths that no longer resolve.
+
+**thresholds.json: every minimum floored at 2, operator-directed.** Thirty-five cells moved (sixteen
+from 0, nineteen from 1), nineteen were already at 2 or above, and the per-body totals went from
+36/28/8 to 47/40/36. Budgets were recomputed in the same edit because a body's cell sum is expected
+to equal its budget, and leaving them stale would make every future demand pass report budgetDrift.
+The consequence to know: `min: 0` was also how "we do not make this combination" was recorded, so
+cells with a minimum and no blank group on the store now sit permanently in the reorder list flagged
+`no-group` until a blank exists or the operator zeroes them again. That is the directive's intent
+(every colour and size), not an oversight. No regression test asserts `min >= 2`: the operator may
+legitimately re-zero a cell later, and a test would fossilise today's policy rather than protect it.
+
+The skill gained the rule that follows from all of this: every derived number comes from `--json`,
+never re-typed off the terminal and never lifted from a rendering built earlier, because a
+transcription step is exactly where one wrong digit becomes a wrong conclusion. An organised
+rendering on top of the verbatim output is sanctioned, provided the raw output survives unabridged in
+an appendix and the rendering stays inside the conversation, since it carries live stock quantities.
+It also gained a procedure for operator-directed threshold edits, whose two load-bearing points are
+that a prior instruction sets the shape of an edit and never approves its numbers, and that a budget
+change is always its own STOP rather than a rider on a cell edit.
+
 ## Reorder review: on-hand against a committed threshold table (unreleased)
 
 The blank-inventory tooling could report what stock exists and keep it in sync, but it could not

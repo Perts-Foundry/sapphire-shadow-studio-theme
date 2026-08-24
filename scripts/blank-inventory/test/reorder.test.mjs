@@ -16,6 +16,7 @@ import {
   flagReorders,
   selectReorders,
   pivotCounts,
+  bodyTotals,
   aggregateDemand,
   netUnits,
   proposeAdjustments,
@@ -391,6 +392,112 @@ test('pivotCounts keeps unsettled and absent cells visible to the terse view', (
   const pivot = pivotOf({ M: [4, 9], L: [7], XL: 'none' });
   const counts = pivotCounts(pivot, resolvedOf({ M: 6, L: 6, XL: 6, XS: 0, S: 0, '2XL': 0 }));
   assert.deepEqual(counts, { unsettled: 1, noGroup: 1 });
+});
+
+// --- bodyTotals -------------------------------------------------------------
+//
+// The block that answers "is this body short overall, or holding the right number of units in the
+// wrong sizes". Every assertion here is about what is EXCLUDED as much as what is summed: a cell
+// mid-fan-out and a cell with no group must never be read as settled zeroes.
+
+test('bodyTotals sums only settled cells and reports the rest as excluded', () => {
+  const pivot = pivotOf({ S: [2], M: [4, 9], L: [7], XL: 'none' });
+  const totals = bodyTotals(pivot, resolvedOf({ XS: 0, S: 4, M: 6, L: 6, XL: 6, '2XL': 0 }));
+
+  assert.equal(totals.bodies.length, 1);
+  const crew = totals.bodies[0];
+  assert.equal(crew.body, 'crewneck');
+  // S and L are settled (2 and 7 on hand, minimums 4 and 6). M is a range and XL has no group.
+  assert.equal(crew.onHandSum, 9);
+  assert.equal(crew.minSum, 10);
+  assert.equal(crew.shortfallUnits, 2);
+  assert.equal(crew.surplusUnits, 1);
+  assert.equal(crew.converged, 2);
+  assert.equal(crew.unsettled, 1);
+  assert.equal(crew.noGroup, 1);
+});
+
+test('a cell with no group and no minimum is not counted as a gap', () => {
+  // Mirrors pivotCounts: "we do not make this combination" is recorded as min 0, and a 0 never flags.
+  const totals = bodyTotals(pivotOf({ M: [6] }), resolvedOf({ XS: 0, S: 0, M: 6, L: 0, XL: 0, '2XL': 0 }));
+  assert.equal(totals.bodies[0].noGroup, 0);
+  assert.equal(totals.bodies[0].converged, 1);
+});
+
+test('a negative on-hand is not clamped, in either direction', () => {
+  // Shopify permits an oversell. flagReorders reports the full gap; so does this, or the body
+  // furthest behind would be the one under-reported.
+  const totals = bodyTotals(pivotOf({ M: [-3] }), resolvedOf({ XS: 0, S: 0, M: 6, L: 0, XL: 0, '2XL': 0 }));
+  assert.equal(totals.bodies[0].onHandSum, -3);
+  assert.equal(totals.bodies[0].shortfallUnits, 9);
+  assert.equal(totals.bodies[0].surplusUnits, 0);
+});
+
+test('short and surplus are counted separately, never netted', () => {
+  // The whole point of the block: 2 short in one size and 4 spare in another is not "2 in hand".
+  const totals = bodyTotals(pivotOf({ S: [0], M: [10] }), resolvedOf({ XS: 0, S: 2, M: 6, L: 0, XL: 0, '2XL': 0 }));
+  const crew = totals.bodies[0];
+  assert.equal(crew.shortfallUnits, 2);
+  assert.equal(crew.surplusUnits, 4);
+  assert.equal(crew.onHandSum, 10);
+  assert.equal(crew.minSum, 8);
+});
+
+test('a body with no settled cell sums to zero rather than to NaN', () => {
+  const totals = bodyTotals(pivotOf({ M: [4, 9] }), resolvedOf({ XS: 0, S: 0, M: 6, L: 0, XL: 0, '2XL': 0 }));
+  assert.deepEqual(totals.bodies[0], {
+    body: 'crewneck',
+    bodyLabel: 'crewneck',
+    onHandSum: 0,
+    minSum: 0,
+    shortfallUnits: 0,
+    surplusUnits: 0,
+    converged: 0,
+    unsettled: 1,
+    noGroup: 0,
+  });
+});
+
+test('an empty pivot yields no body rows and an all-zero total', () => {
+  const totals = bodyTotals(buildPivot({ variants: [], axes: buildAxes({ bodies: [], colors: [], sizes: [] }) }), new Map());
+  assert.deepEqual(totals.bodies, []);
+  assert.deepEqual(totals.total, {
+    onHandSum: 0,
+    minSum: 0,
+    shortfallUnits: 0,
+    surplusUnits: 0,
+    converged: 0,
+    unsettled: 0,
+    noGroup: 0,
+  });
+});
+
+test('the grand total is the sum of the bodies, and is kept out of the bodies array', () => {
+  // Returned separately so a consumer that iterates bodies cannot sum the total into itself.
+  resetSeq();
+  const variants = [
+    variant({ body: 'crewneck', color: 'Black', size: 'M', quantity: 3 }),
+    variant({ body: 'quarter-zip', color: 'Black', size: 'M', quantity: 8 }),
+  ];
+  const axes = buildAxes({ bodies: ['crewneck', 'quarter-zip'], colors: ['Black'], sizes: ['M'] });
+  const resolved = new Map([
+    [key('crewneck', 'Black', 'M'), { min: 6 }],
+    [key('quarter-zip', 'Black', 'M'), { min: 6 }],
+  ]);
+  const totals = bodyTotals(buildPivot({ variants, axes }), resolved);
+
+  assert.deepEqual(totals.bodies.map((b) => b.body), ['crewneck', 'quarter-zip'], 'body order follows the axes, so two runs print the same table');
+  assert.equal(totals.bodies.some((b) => b.body === undefined), false);
+  for (const field of ['onHandSum', 'minSum', 'shortfallUnits', 'surplusUnits', 'converged', 'unsettled', 'noGroup']) {
+    assert.equal(
+      totals.total[field],
+      totals.bodies.reduce((n, b) => n + b[field], 0),
+      `total.${field} must equal the sum of the bodies`
+    );
+  }
+  assert.equal(totals.total.onHandSum, 11);
+  assert.equal(totals.total.shortfallUnits, 3);
+  assert.equal(totals.total.surplusUnits, 2);
 });
 
 // --- aggregateDemand --------------------------------------------------------

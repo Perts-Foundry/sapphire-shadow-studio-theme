@@ -48,15 +48,163 @@
       }
     },
     "budgets": {
-      "crewneck": 36,
-      "quarter-zip": 28,
-      "vest-womens": 8
+      "crewneck": 47,
+      "quarter-zip": 40,
+      "vest-womens": 36
     },
-    "adjustments": []
+    "adjustments": [
+      {
+        "date": "2026-08-24",
+        "source": "operator-directed floor",
+        "note": "Every colour+size minimum raised to at least 2, per operator direction. Cells already at 2 or above are untouched. Budgets recomputed to the new per-body cell sums so the demand pass does not report budgetDrift. Cells with a minimum but no blank group on the store now appear permanently in the reorder list flagged no-group until a blank exists or the operator zeroes them again.",
+        "cells": {
+          "crewneck|black|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "crewneck|black|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "crewneck|grey heather|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "crewneck|grey heather|s": {
+            "from": 1,
+            "to": 2
+          },
+          "crewneck|grey heather|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "crewneck|classic navy|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "crewneck|classic navy|s": {
+            "from": 1,
+            "to": 2
+          },
+          "crewneck|classic navy|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|black|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "quarter-zip|black|s": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|black|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|grey heather|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "quarter-zip|grey heather|s": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|grey heather|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|classic navy|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "quarter-zip|classic navy|s": {
+            "from": 1,
+            "to": 2
+          },
+          "quarter-zip|classic navy|2xl": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|black|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|black|s": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|black|m": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|black|l": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|black|xl": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|black|2xl": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|grey heather|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|grey heather|s": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|grey heather|m": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|grey heather|l": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|grey heather|xl": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|grey heather|2xl": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|classic navy|xs": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|classic navy|s": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|classic navy|m": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|classic navy|l": {
+            "from": 1,
+            "to": 2
+          },
+          "vest-womens|classic navy|xl": {
+            "from": 0,
+            "to": 2
+          },
+          "vest-womens|classic navy|2xl": {
+            "from": 0,
+            "to": 2
+          }
+        }
+      }
+    ]
   },
   "cells": {
     "crewneck|black|xs": {
-      "min": 0
+      "min": 2
     },
     "crewneck|black|s": {
       "min": 2
@@ -71,13 +219,13 @@
       "min": 3
     },
     "crewneck|black|2xl": {
-      "min": 1
+      "min": 2
     },
     "crewneck|grey heather|xs": {
-      "min": 0
+      "min": 2
     },
     "crewneck|grey heather|s": {
-      "min": 1
+      "min": 2
     },
     "crewneck|grey heather|m": {
       "min": 3
@@ -89,13 +237,13 @@
       "min": 3
     },
     "crewneck|grey heather|2xl": {
-      "min": 1
+      "min": 2
     },
     "crewneck|classic navy|xs": {
-      "min": 0
+      "min": 2
     },
     "crewneck|classic navy|s": {
-      "min": 1
+      "min": 2
     },
     "crewneck|classic navy|m": {
       "min": 3
@@ -107,13 +255,13 @@
       "min": 3
     },
     "crewneck|classic navy|2xl": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|black|xs": {
-      "min": 0
+      "min": 2
     },
     "quarter-zip|black|s": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|black|m": {
       "min": 3
@@ -125,13 +273,13 @@
       "min": 3
     },
     "quarter-zip|black|2xl": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|grey heather|xs": {
-      "min": 0
+      "min": 2
     },
     "quarter-zip|grey heather|s": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|grey heather|m": {
       "min": 2
@@ -143,13 +291,13 @@
       "min": 2
     },
     "quarter-zip|grey heather|2xl": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|classic navy|xs": {
-      "min": 0
+      "min": 2
     },
     "quarter-zip|classic navy|s": {
-      "min": 1
+      "min": 2
     },
     "quarter-zip|classic navy|m": {
       "min": 2
@@ -161,61 +309,61 @@
       "min": 2
     },
     "quarter-zip|classic navy|2xl": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|black|xs": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|black|s": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|black|m": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|black|l": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|black|xl": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|black|2xl": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|grey heather|xs": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|grey heather|s": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|grey heather|m": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|grey heather|l": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|grey heather|xl": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|grey heather|2xl": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|classic navy|xs": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|classic navy|s": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|classic navy|m": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|classic navy|l": {
-      "min": 1
+      "min": 2
     },
     "vest-womens|classic navy|xl": {
-      "min": 0
+      "min": 2
     },
     "vest-womens|classic navy|2xl": {
-      "min": 0
+      "min": 2
     }
   }
 }

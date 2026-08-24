@@ -21,7 +21,7 @@
 //
 // Read scripts/blank-inventory/README.md before using any write path.
 
-import { readFile, writeFile, unlink, readdir } from 'node:fs/promises';
+import { readFile, writeFile, unlink, readdir, mkdir, rename } from 'node:fs/promises';
 import { existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -32,20 +32,24 @@ import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.
 import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, normaliseAxis, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
-import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
+import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, receiptsToArchive, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
 import { applyPlan } from './lib/apply.mjs';
 import { planBackfill, planBlankBootstrap, planSeed, untagVariants } from './lib/backfill.mjs';
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
-import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
+import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
 const WORK_DIR = resolveWorkDir();
 const LOCK_FILE = path.join(WORK_DIR, '.lock');
 const BODIES_FILE = path.join(WORK_DIR, 'bodies.json');
 const BODIES_PROPOSAL_FILE = path.join(WORK_DIR, 'bodies-proposal.json');
+// Where `audit` parks expired seeding receipts. A subdirectory rather than a delete: a receipt is
+// the record of a real write against the live store, so it is moved out of the way, never removed.
+const ARCHIVE_DIR_NAME = 'archive';
+const ARCHIVE_DIR = path.join(WORK_DIR, ARCHIVE_DIR_NAME);
 
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -251,6 +255,85 @@ async function loadReceipts() {
   return { receipts: fresh, staleSeeds: stale };
 }
 
+/**
+ * Move expired seeding receipts out of the working directory root.
+ *
+ * Why this is not a store write, and why `audit` may do it: `audit` is read-only AGAINST THE STORE,
+ * which is the property that matters. Moving a file inside the operator's own working directory is
+ * not a Shopify write, and `bodies --stage propose` and `backfill --stage propose` already write
+ * files there, so this does not change the command's trust class.
+ *
+ * Why it happens at all: an expired seeding receipt explains nothing (a seed settles in 80 to 90
+ * seconds) but it is still read on every run, and 78 of them listed one per line drowned the report
+ * that names them. Never archive a FRESH seeding receipt: those are the entire basis for reporting a
+ * non-uniform group as awaiting-seed rather than as drift.
+ *
+ * Failure policy is skip-and-report, never abort. A rename can fail because the file is already gone
+ * from a partial earlier run, because of permissions, or because a file of that name is already in
+ * the archive. None of those is a reason to abandon the audit or the other moves. A destination
+ * collision keeps the archived copy: receipts are immutable once written, so the same name is the
+ * same content.
+ *
+ * @param {object[]} receipts - the FULL population, fresh and expired alike; the pure decision
+ *   function picks the expired ones, so no caller can widen the selection.
+ * @returns {Promise<{archived: object[], skipped: Array<{file: string, reason: string}>}>}
+ */
+async function archiveStaleSeedReceipts(receipts) {
+  const names = new Set(receiptsToArchive(receipts));
+  const targets = receipts.filter((r) => names.has(r.sourceFile));
+  const archived = [];
+  const skipped = [];
+  if (!targets.length) return { archived, skipped };
+
+  await mkdir(ARCHIVE_DIR, { recursive: true });
+  for (const receipt of targets) {
+    const from = path.join(WORK_DIR, receipt.sourceFile);
+    const to = path.join(ARCHIVE_DIR, receipt.sourceFile);
+    // Checked rather than left to rename, which overwrites the destination silently on POSIX.
+    if (existsSync(to)) {
+      skipped.push({ file: receipt.sourceFile, reason: 'already in the archive; kept the archived copy' });
+      continue;
+    }
+    try {
+      await rename(from, to);
+      archived.push(receipt);
+    } catch (err) {
+      skipped.push({ file: receipt.sourceFile, reason: err.code ?? err.message });
+    }
+  }
+  return { archived, skipped };
+}
+
+/** The oldest and newest `startedAt` in a set of receipts, as dates, for the one-line summary. */
+function receiptDateRange(receipts) {
+  const times = receipts.map((r) => Date.parse(r.startedAt ?? '')).filter((t) => Number.isFinite(t));
+  if (!times.length) return null;
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  return { oldest: iso(Math.min(...times)), newest: iso(Math.max(...times)) };
+}
+
+/**
+ * The one-line report of what the archive step did. Silent when it did nothing: a line saying zero
+ * files moved, on every run forever, is the noise this change exists to remove.
+ *
+ * @param {{archived: object[], skipped: Array<{file: string, reason: string}>}} result
+ */
+function printArchiveSummary({ archived, skipped }) {
+  if (!archived.length && !skipped.length) return;
+  heading('Expired seeding receipts');
+  if (archived.length) {
+    const range = receiptDateRange(archived);
+    const when = range ? `, started ${range.oldest} to ${range.newest}` : '';
+    console.log(`  archived ${archived.length} file(s)${when} to ${ARCHIVE_DIR}`);
+  }
+  for (const s of skipped) console.log(`  NOT archived: ${s.file} (${s.reason})`);
+  console.log(
+    `  A seed settles in 80-90s, so these stopped explaining anything long ago. Any group they\n` +
+      `  covered is now reported as drift rather than awaiting-seed. Archived receipts are inert:\n` +
+      `  nothing reads them again.`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The body axis. See lib/bodies.mjs for why body is proposed rather than declared.
 // ---------------------------------------------------------------------------
@@ -397,6 +480,9 @@ async function cmdAudit(opts) {
 
   const store = await loadStore({ requireWrite: false });
   const { receipts, staleSeeds } = await loadReceipts();
+  // Before any view branches, so every path leaves the working directory in the same state and a
+  // --json or --group run cannot quietly skip the tidy-up the human view performs.
+  const archiveResult = await archiveStaleSeedReceipts([...receipts, ...staleSeeds]);
   const pendingSeeds = pendingSeedBlankIds(receipts);
   const allRows = classifyGroups(store.groups, pendingSeeds);
   const warnings = conventionWarnings(store.variants);
@@ -430,7 +516,13 @@ async function cmdAudit(opts) {
           coverage,
           groups: rows.map(groupJson),
           warnings,
-          staleSeedReceipts: staleSeeds.map((r) => r.sourceFile),
+          // The files themselves are no longer listed: they have been moved, so a consumer that
+          // held the old array would be holding paths that no longer resolve.
+          staleSeedReceipts: {
+            archived: archiveResult.archived.length,
+            skipped: archiveResult.skipped,
+            dir: ARCHIVE_DIR_NAME,
+          },
         },
         null,
         2
@@ -438,6 +530,8 @@ async function cmdAudit(opts) {
     );
     return;
   }
+
+  printArchiveSummary(archiveResult);
 
   if (opts.group) {
     const row = rows[0];
@@ -499,15 +593,6 @@ async function cmdAudit(opts) {
   for (const r of rows.filter((x) => x.state !== CONVERGED)) {
     console.log(
       `  ${r.state.toUpperCase().padEnd(14)} ${r.blankId}  ${JSON.stringify(groupHistogram(r.members))}  members=${r.members.length}`
-    );
-  }
-
-  if (staleSeeds.length) {
-    heading('Expired seeding receipts (no longer suppressing a drift report)');
-    for (const r of staleSeeds) console.log(`  ${r.sourceFile}`);
-    console.log(
-      `  A seed settles in 80-90s, so these stopped explaining anything long ago. Any group they\n` +
-        `  covered is now reported as drift rather than awaiting-seed.`
     );
   }
 
@@ -826,6 +911,7 @@ async function cmdReorder(opts) {
   const flags = flagReorders(pivot, reconciled.resolved);
   const table = selectReorders({ flags, body: bodyFlag, belowOnly });
   const counts = pivotCounts(pivot, reconciled.resolved);
+  const totals = bodyTotals(pivot, reconciled.resolved);
 
   if (asJson) {
     // One blob, the full report. --below is a terser HUMAN view, never a smaller JSON shape: a
@@ -839,6 +925,9 @@ async function cmdReorder(opts) {
           cells: [...pivot.cells.values()].map((c) => ({ ...c, min: reconciled.resolved.get(c.key)?.min ?? null })),
           reorder: table,
           counts: { ...counts, flagged: table.length },
+          // Every derived number an operator report needs, computed here so nothing downstream has
+          // to re-add the matrix by hand. See bodyTotals for what the sums do and do not include.
+          totals,
         },
         null,
         2
@@ -862,20 +951,46 @@ async function cmdReorder(opts) {
     }
   }
 
-  heading(`Reorder list: ${table.length} cell(s) below their minimum`);
+  // The shortfall column leads, because it is the number the operator is reading the table for, and
+  // the rows are already sorted by it. It is a gap against a recommended minimum and never an order
+  // quantity: nothing here tells anyone what to buy, which is why the column keeps the name "short".
+  const shortTotal = table.reduce((n, f) => n + f.shortfall, 0);
+  heading(`Reorder list: ${table.length} cell(s) below their minimum, ${shortTotal} unit(s) short`);
   if (!table.length) {
     console.log('  nothing is below its recommended minimum.');
   } else {
+    console.log('  biggest gaps first.\n');
     const w = Math.max(12, ...table.map((f) => f.body.length));
-    console.log(`  ${'body'.padEnd(w)}  ${'color'.padEnd(16)}  ${'size'.padEnd(5)}  ${'on hand'.padStart(8)}  ${'min'.padStart(4)}  ${'short'.padStart(6)}  state`);
+    console.log(`  ${'short'.padStart(6)}  ${'body'.padEnd(w)}  ${'color'.padEnd(16)}  ${'size'.padEnd(5)}  ${'on hand'.padStart(8)}  ${'min'.padStart(4)}  state`);
     for (const f of table) {
       const onHand = f.state === NO_GROUP ? '--' : f.onHand !== null ? String(f.onHand) : `${f.low}-${f.high}`;
       console.log(
-        `  ${f.body.padEnd(w)}  ${axisLabel(axes, 'color', f.color).padEnd(16)}  ${String(f.sizeLabel ?? f.size).padEnd(5)}  ` +
-          `${onHand.padStart(8)}  ${String(f.min).padStart(4)}  ${String(f.shortfall).padStart(6)}  ${f.state}`
+        `  ${String(f.shortfall).padStart(6)}  ${f.body.padEnd(w)}  ${axisLabel(axes, 'color', f.color).padEnd(16)}  ` +
+          `${String(f.sizeLabel ?? f.size).padEnd(5)}  ${onHand.padStart(8)}  ${String(f.min).padStart(4)}  ${f.state}`
       );
     }
   }
+
+  // Per-body totals: the one thing the matrix cannot show at a glance, and the thing that was
+  // previously re-added by hand off the terminal. Under --body only that body is shown, and the
+  // all-bodies row is dropped with it rather than printed as a total of one narrowed view.
+  const totalRows = bodyFlag ? totals.bodies.filter((b) => b.body === bodyFlag) : totals.bodies;
+  heading('Per-body totals (settled cells only)');
+  const bw = Math.max(12, ...totalRows.map((b) => (b.bodyLabel ?? b.body).length), 3);
+  const totalLine = (label, t) =>
+    `  ${label.padEnd(bw)}  ${String(t.onHandSum).padStart(8)}  ${String(t.minSum).padStart(4)}  ` +
+    `${String(t.shortfallUnits).padStart(6)}  ${String(t.surplusUnits).padStart(7)}  ` +
+    `${String(t.converged).padStart(7)}  ${t.unsettled} unsettled, ${t.noGroup} no group`;
+  console.log(`  ${'body'.padEnd(bw)}  ${'on hand'.padStart(8)}  ${'min'.padStart(4)}  ${'short'.padStart(6)}  ${'surplus'.padStart(7)}  ${'cells'.padStart(7)}  excluded`);
+  for (const b of totalRows) console.log(totalLine(b.bodyLabel ?? b.body, b));
+  if (!bodyFlag) console.log(totalLine('ALL', totals.total));
+  console.log(
+    `\n  Sums cover only cells whose group has settled; the excluded column counts the rest, and an\n` +
+      `  excluded cell is not a zero. Short and surplus are counted separately rather than netted:\n` +
+      `  a body with both is holding roughly enough units in the wrong sizes or colours, which is a\n` +
+      `  different problem from being short overall. These sums are not the reorder list's total\n` +
+      `  above, which also counts cells with no group and cells still settling.`
+  );
 
   // Always printed, in both views. These two are exactly the cells a terse list would otherwise hide,
   // and "not listed" would read as "fine".
@@ -1564,7 +1679,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   main().catch((err) => fail(err.message));
 }
 
-// Exported for unit tests. These three assemble a live write from parsed flags, so they are the
+// Exported for unit tests. The first three assemble a live write from parsed flags, so they are the
 // paths where an untested branch would corrupt real stock: parseArgs (flag parsing), numericOpt
 // (the "bare --quantity becomes 1" guard), and makeWriter (the plan-row -> mutation translator).
-export { parseArgs, numericOpt, makeWriter };
+//
+// The last two are the receipt archive step. It is exported because it is the one part of this file
+// that touches the filesystem on a READ command, and the failure modes that matter (a rename that
+// fails, a collision, a receipt that must stay unread once archived) cannot be reached through an
+// injected reader: they need real files in a real directory. Its test drives them against a temp
+// working directory, never the operator's.
+export { parseArgs, numericOpt, makeWriter, loadReceipts, archiveStaleSeedReceipts };
