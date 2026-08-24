@@ -8,6 +8,8 @@
 //
 //   bodies    propose and approve the garment body map; a precondition of every other command
 //   audit     read-only health report: coverage, groups, drift vs awaiting-seed
+//   reorder   read-only: on-hand stock against the committed per-cell minimums (thresholds.json)
+//   demand    read-only: net units sold per body/colour/size, and proposed threshold adjustments
 //   vocab     read-only: the resolvable key space, or check a transcription before planning it
 //   show      render an approved plan artifact for the approval gate (read-only)
 //   plan      emit an immutable, hashed plan artifact from an adjustments CSV (refuses on any
@@ -23,11 +25,11 @@ import { readFile, writeFile, unlink, readdir } from 'node:fs/promises';
 import { existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
 import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
-import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
+import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, normaliseAxis, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
 import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
@@ -37,6 +39,7 @@ import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields 
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
+import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
 const WORK_DIR = resolveWorkDir();
@@ -702,6 +705,390 @@ async function cmdVocab(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// The reorder review, and the demand pass behind it.
+//
+// BOTH ARE READ-ONLY. Neither is in `writeCommands`, neither touches a mutation, and neither edits
+// thresholds.json: that file is generated once, reviewed in a PR, and afterwards hand-edited behind
+// an operator STOP. A command that quietly "fixed" a threshold to make its own report pass would
+// destroy the only review surface this feature has.
+//
+// Everything decided here is decided in lib/reorder.mjs. These two functions read flags, print, and
+// exit; they do not compute.
+// ---------------------------------------------------------------------------
+
+const THRESHOLDS_FILE = fileURLToPath(new URL('./thresholds.json', import.meta.url));
+
+/**
+ * A flag that takes no value.
+ *
+ * parseArgs swallows the next bare token as a value, so `--below crewneck` silently becomes
+ * `below: "crewneck"` and the intended argument vanishes. Refuse it rather than coercing.
+ *
+ * @param {string} flag
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+function boolOpt(flag, raw) {
+  if (raw === undefined) return false;
+  if (raw === true) return true;
+  fail(`${flag} takes no value, got ${JSON.stringify(raw)}.`);
+}
+
+/**
+ * The axis space the thresholds table must cover.
+ *
+ * Bodies come from the APPROVED map rather than from what is tagged: a body whose variants are not
+ * yet in a group still needs a minimum, and reading the axis off the tagged population would let the
+ * table shrink exactly when coverage does. Colours and sizes come from the learned vocabulary, which
+ * is the only place the store's own spellings exist.
+ *
+ * @param {object} artifact - the approved bodies artifact
+ * @param {object} store
+ * @returns {object}
+ */
+function axesFromStore(artifact, store) {
+  return buildAxes({
+    bodies: artifact.bodies.map((b) => b.bodyId).filter(Boolean),
+    colors: [...store.display.color.keys()],
+    sizes: [...store.display.size.keys()],
+    display: store.display,
+  });
+}
+
+/**
+ * Read the committed thresholds table, or refuse.
+ *
+ * Every refusal is global and is computed BEFORE anything is rendered, so `--body` and `--below`
+ * cannot narrow a report past the gap that made it untrustworthy.
+ *
+ * @param {object} params
+ * @param {boolean} params.json
+ * @returns {Promise<object>}
+ */
+async function readThresholdsOrRefuse({ json }) {
+  try {
+    return await loadThresholds({ read: (p) => readFile(p, 'utf8'), path: THRESHOLDS_FILE });
+  } catch (err) {
+    if (err.fileMissing) {
+      refuseThresholds({ assessment: assessThresholds({ fileMissing: true }), json });
+    }
+    if (json) {
+      console.log(JSON.stringify({ error: 'thresholds-invalid', message: err.message, keys: [] }, null, 2));
+      process.exit(1);
+    }
+    fail(err.message);
+  }
+}
+
+/** Print a refusal in whichever shape the caller asked for, then exit 1. */
+function refuseThresholds({ assessment, json }) {
+  if (json) {
+    console.log(
+      JSON.stringify(
+        {
+          error: assessment.refusals[0]?.code ?? 'thresholds-refused',
+          keys: assessment.refusals.flatMap((r) => r.keys),
+          refusals: assessment.refusals,
+          warnings: assessment.warnings,
+        },
+        null,
+        2
+      )
+    );
+    process.exit(1);
+  }
+  console.error(`\nERROR: ${assessment.refusals.map((r) => r.message).join('\n\n')}\n`);
+  for (const w of assessment.warnings) console.error(`WARNING: ${w.message}\n`);
+  process.exit(1);
+}
+
+async function cmdReorder(opts) {
+  // Flags before the catalogue read, as audit and untag do: a bad flag should cost nothing, and a
+  // full catalogue load is slow enough that discovering it afterwards reads as a hang.
+  const belowOnly = boolOpt('--below', opts.below);
+  const asJson = boolOpt('--json', opts.json);
+  const bodyFlag = opts.body === undefined ? null : normaliseAxis(stringOpt('--body', opts.body), 'Body');
+
+  const loaded = await loadBodies({ requireApproved: true });
+  const store = await loadStore({ requireWrite: false });
+  const axes = axesFromStore(loaded.artifact, store);
+  if (bodyFlag && !axes.bodies.includes(bodyFlag)) {
+    fail(`Unknown --body "${bodyFlag}". The approved body map has: ${axes.bodies.join(', ')}.`);
+  }
+
+  const thresholds = await readThresholdsOrRefuse({ json: asJson });
+  const reconciled = reconcileThresholds(thresholds.cells, thresholds.budgets, axes);
+  const assessment = assessThresholds({ ...reconciled, mode: 'reorder' });
+  if (assessment.exitCode !== 0) refuseThresholds({ assessment, json: asJson });
+
+  const { receipts } = await loadReceipts();
+  const pivot = buildPivot({ variants: store.variants, axes, pendingSeedBlankIds: pendingSeedBlankIds(receipts) });
+  const flags = flagReorders(pivot, reconciled.resolved);
+  const table = selectReorders({ flags, body: bodyFlag, belowOnly });
+  const counts = pivotCounts(pivot, reconciled.resolved);
+
+  if (asJson) {
+    // One blob, the full report. --below is a terser HUMAN view, never a smaller JSON shape: a
+    // consumer that got fewer fields depending on a display flag would be reading a different report
+    // than the one the operator saw.
+    console.log(
+      JSON.stringify(
+        {
+          thresholds: { version: thresholds.version, derivedAt: thresholds.provenance?.derivedAt ?? null },
+          warnings: assessment.warnings,
+          cells: [...pivot.cells.values()].map((c) => ({ ...c, min: reconciled.resolved.get(c.key)?.min ?? null })),
+          reorder: table,
+          counts: { ...counts, flagged: table.length },
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  for (const w of assessment.warnings) console.warn(`\nWARNING: ${w.message}\n`);
+
+  if (!belowOnly) {
+    heading('On hand vs recommended minimum');
+    console.log('  on-hand/minimum per size.  * below minimum   ? group not settled (range shown)   ! no group at all\n');
+    for (const bodyRow of pivot.bodies) {
+      if (bodyFlag && bodyRow.body !== bodyFlag) continue;
+      console.log(`  ${bodyRow.bodyLabel}`);
+      for (const colorRow of bodyRow.colors) {
+        const cells = colorRow.cells.map((c) => formatCell(c, reconciled.resolved.get(c.key)));
+        console.log(`    ${colorRow.colorLabel.padEnd(16)} ${cells.join('  ')}`);
+      }
+    }
+  }
+
+  heading(`Reorder list: ${table.length} cell(s) below their minimum`);
+  if (!table.length) {
+    console.log('  nothing is below its recommended minimum.');
+  } else {
+    const w = Math.max(12, ...table.map((f) => f.body.length));
+    console.log(`  ${'body'.padEnd(w)}  ${'color'.padEnd(16)}  ${'size'.padEnd(5)}  ${'on hand'.padStart(8)}  ${'min'.padStart(4)}  ${'short'.padStart(6)}  state`);
+    for (const f of table) {
+      const onHand = f.state === NO_GROUP ? '--' : f.onHand !== null ? String(f.onHand) : `${f.low}-${f.high}`;
+      console.log(
+        `  ${f.body.padEnd(w)}  ${axisLabel(axes, 'color', f.color).padEnd(16)}  ${String(f.sizeLabel ?? f.size).padEnd(5)}  ` +
+          `${onHand.padStart(8)}  ${String(f.min).padStart(4)}  ${String(f.shortfall).padStart(6)}  ${f.state}`
+      );
+    }
+  }
+
+  // Always printed, in both views. These two are exactly the cells a terse list would otherwise hide,
+  // and "not listed" would read as "fine".
+  console.log(
+    `\n  ${counts.unsettled} cell(s) not settled (the Flow takes 80 to 90 seconds; re-run to resolve a "?").`
+  );
+  console.log(`  ${counts.noGroup} cell(s) have a minimum but no blank group at all (see "audit").`);
+  console.log(
+    `\n  Advisory, and a snapshot. Verify against a physical count before ordering anything; this\n` +
+      `  report is never an input to a write command or a count sheet.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Orders, for the demand pass.
+//
+// Both connections are paginated. `lineItems` is its own connection, so an order with more than one
+// page of lines would otherwise be silently truncated, and a truncated read looks exactly like an
+// order that sold less.
+// ---------------------------------------------------------------------------
+const ORDERS_QUERY = `
+query BlankInventoryOrders($cursor: String, $query: String) {
+  orders(first: 25, after: $cursor, query: $query, sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id createdAt cancelledAt test
+      lineItems(first: 50) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id quantity currentQuantity refundableQuantity variant { id } }
+      }
+    }
+  }
+}`;
+
+const ORDER_LINE_ITEMS_QUERY = `
+query BlankInventoryOrderLineItems($id: ID!, $cursor: String) {
+  order(id: $id) {
+    id
+    lineItems(first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id quantity currentQuantity refundableQuantity variant { id } }
+    }
+  }
+}`;
+
+/**
+ * Every line item in the window, with test and cancelled orders excluded.
+ *
+ * @param {object} client
+ * @param {string} since - ISO instant
+ * @returns {Promise<{lineItems: object[], orders: number, excluded: number, earliest: string|null}>}
+ */
+async function fetchDemandLineItems(client, since) {
+  const lineItems = [];
+  let orders = 0;
+  let excluded = 0;
+  let earliest = null;
+  let cursor = null;
+  let pages = 0;
+
+  for (;;) {
+    const conn = (await client.gql(ORDERS_QUERY, { cursor, query: `created_at:>=${since}` })).orders;
+    for (const order of conn.nodes) {
+      if (order.test || order.cancelledAt) {
+        excluded++;
+        continue;
+      }
+      orders++;
+      if (!earliest || order.createdAt < earliest) earliest = order.createdAt;
+
+      const collect = (nodes) => {
+        for (const li of nodes) {
+          lineItems.push({
+            id: li.id,
+            orderId: order.id,
+            variantId: li.variant?.id ?? null,
+            quantity: li.quantity,
+            currentQuantity: li.currentQuantity,
+            refundableQuantity: li.refundableQuantity,
+          });
+        }
+      };
+      collect(order.lineItems.nodes);
+
+      let { hasNextPage, endCursor } = order.lineItems.pageInfo;
+      let linePages = 0;
+      while (hasNextPage) {
+        const page = (await client.gql(ORDER_LINE_ITEMS_QUERY, { id: order.id, cursor: endCursor })).order?.lineItems;
+        if (!page) throw new Error(`Order ${order.id} returned no line items mid-pagination; refusing a partial read.`);
+        collect(page.nodes);
+        ({ hasNextPage, endCursor } = page.pageInfo);
+        if (++linePages >= 40) throw new Error(`Order ${order.id} exceeded 40 line-item pages; refusing to continue.`);
+      }
+    }
+    pages++;
+    if (!conn.pageInfo.hasNextPage) break;
+    cursor = conn.pageInfo.endCursor;
+    if (pages >= 200) throw new Error('Order pagination exceeded 200 pages; refusing to continue.');
+  }
+
+  return { lineItems, orders, excluded, earliest };
+}
+
+async function cmdDemand(opts) {
+  const asJson = boolOpt('--json', opts.json);
+  const days = numericOpt('--days', opts.days, 60);
+  let since;
+  try {
+    since = sinceDate(days, new Date());
+  } catch (err) {
+    fail(err.message);
+  }
+
+  const loaded = await loadBodies({ requireApproved: true });
+  const store = await loadStore({ requireWrite: false });
+  const axes = axesFromStore(loaded.artifact, store);
+
+  const thresholds = await readThresholdsOrRefuse({ json: asJson });
+  const reconciled = reconcileThresholds(thresholds.cells, thresholds.budgets, axes);
+  const assessment = assessThresholds({ ...reconciled, mode: 'demand' });
+  if (assessment.exitCode !== 0) refuseThresholds({ assessment, json: asJson });
+
+  // Capability, verified rather than assumed. read_orders reaches about 60 days; anything older
+  // needs read_all_orders, which this app deliberately does not request. A window the granted
+  // scopes cannot serve is REFUSED, never quietly shortened: a proposal built on a window the
+  // operator did not get is worse than no proposal.
+  let granted;
+  try {
+    granted = await assertScopes(store.client, ['read_orders']);
+  } catch (err) {
+    fail(
+      `${err.message}\n\nAdd read_orders to the app's configured scopes and reauthorise, then re-run. ` +
+        `Do not work around this: there is no substitute read path here, and a shorter window, a ` +
+        `partial read, a CSV export or the admin UI is not one.`
+    );
+  }
+  if (days > 60 && !granted.includes('read_all_orders')) {
+    fail(
+      `--days ${days} needs read_all_orders; only read_orders is granted, which reaches about 60 days. ` +
+        `Widening that grant is an operator decision, not a workaround this command may take.`
+    );
+  }
+
+  const { lineItems, orders, excluded, earliest } = await fetchDemandLineItems(store.client, since);
+  const variantIndex = new Map(store.variants.map((v) => [v.id, { body: v.body, color: v.color, size: v.size }]));
+  const demand = aggregateDemand(lineItems, variantIndex);
+  const { receipts } = await loadReceipts();
+  const pivot = buildPivot({ variants: store.variants, axes, pendingSeedBlankIds: pendingSeedBlankIds(receipts) });
+  const { rows, bodies: bodyTotals } = proposeAdjustments({
+    byCell: demand.byCell,
+    budgets: thresholds.budgets,
+    resolved: reconciled.resolved,
+    pivot,
+  });
+
+  const model =
+    'Model: the garment body budget is redistributed across its colour x size cells by recent net ' +
+    'units sold, colour and size alike. No lead time, no safety stock, no seasonality. Sales are ' +
+    'attributed through the CURRENT variant-to-blank mapping, so a re-tagged variant rewrites its ' +
+    'own history.';
+
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        { window: { days, since, earliestOrder: earliest, orders, excluded }, model, warnings: assessment.warnings, bodies: bodyTotals, rows, unattributed: demand.unattributed },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  for (const w of assessment.warnings) console.warn(`\nWARNING: ${w.message}\n`);
+
+  heading(`Demand: ${orders} order(s) since ${since}`);
+  console.log(`  earliest order actually returned: ${earliest ?? '(none)'}`);
+  console.log(`  ${excluded} test or cancelled order(s) excluded; ${lineItems.length} line item(s) read.`);
+  console.log(`  ${model}`);
+
+  for (const bodyRow of pivot.bodies) {
+    const bodyRows = rows.filter((r) => r.body === bodyRow.body);
+    if (!bodyRows.length) continue;
+    heading(bodyRow.bodyLabel);
+    console.log(`  ${'color'.padEnd(16)} ${'size'.padEnd(5)} ${'units'.padStart(6)} ${'obs%'.padStart(6)} ${'thr%'.padStart(6)} ${'now'.padStart(5)} ${'->'} ${'prop'.padStart(5)} ${'delta'.padStart(6)}  status`);
+    for (const r of bodyRows) {
+      const pct = (n) => `${Math.round(n * 100)}%`;
+      console.log(
+        `  ${axisLabel(axes, 'color', r.color).padEnd(16)} ${String(r.size).toUpperCase().padEnd(5)} ${String(r.units).padStart(6)} ` +
+          `${pct(r.observedShare).padStart(6)} ${pct(r.thresholdShare).padStart(6)} ${String(r.currentMin).padStart(5)} -> ` +
+          `${String(r.proposedMin).padStart(5)} ${`${r.delta >= 0 ? '+' : ''}${r.delta}`.padStart(6)}  ${r.status}`
+      );
+    }
+    for (const t of bodyTotals.filter((x) => x.body === bodyRow.body && x.budgetDrift)) {
+      console.log(
+        `  NOTE ${t.body}: the current minimums sum to ${t.budgetDrift.currentSum}, the stated budget ` +
+          `is ${t.budgetDrift.budget}. The proposal sums to the budget.`
+      );
+    }
+  }
+
+  if (demand.unattributed.length) {
+    heading(`Unattributed line items: ${demand.unattributed.length}`);
+    console.log('  These sold but could not be keyed to a body+colour+size (deleted or untagged variant).');
+    for (const u of demand.unattributed) console.log(`  ${u.units} x ${u.variantId ?? '(no variant)'}  order ${u.orderId ?? '?'}`);
+  }
+
+  console.log(
+    `\n  Nothing has been written, and this command never edits ${THRESHOLDS_PATH}. Take the ` +
+      `from -> to list to the operator; only they may approve an edit, and it lands in a PR.`
+  );
+}
+
+// ---------------------------------------------------------------------------
 /**
  * Render an approved plan artifact. The refusal rule lives in receipt.mjs (assertRenderablePlan),
  * where it is pure and unit-tested; this is only the presentation.
@@ -1096,6 +1483,8 @@ blank-inventory: shared-blank stock and metafield tooling.
 
   bodies   --stage propose|approve|show    the garment body map (run this before anything else)
   audit    [--json] [--group <blankId>] [--stale]     read-only health report
+  reorder  [--json] [--body <slug>] [--below]         on-hand vs thresholds.json, flag shortfalls
+  demand   [--days <n>] [--json]                      net units sold, and proposed threshold changes
   vocab    [--check <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]]   the resolvable key space, or check a transcription
   show     --plan <artifact.json>          render a plan artifact for the approval gate
   plan     --input <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]
@@ -1146,6 +1535,8 @@ async function main() {
   const run = {
     bodies: cmdBodies,
     audit: cmdAudit,
+    reorder: cmdReorder,
+    demand: cmdDemand,
     vocab: cmdVocab,
     show: cmdShow,
     plan: cmdPlan,

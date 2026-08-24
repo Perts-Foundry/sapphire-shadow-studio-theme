@@ -5,8 +5,11 @@ description: >-
   custom.inventory_blank_sku variant metafield on existing or recently added variants. Writes to the live
   Shopify store through gated, reviewed plans and lets the inventory-sync Flow fan each change out
   to sibling variants. Use when the operator is adjusting stock for shared blanks or tagging
-  variants into a blank group. Operator-invoked; it performs irreversible live inventory writes, so
-  it is not for general inventory questions, stock reporting, or anything outside shared blanks.
+  variants into a blank group. Also runs the read-only reorder review (shared-blank on-hand vs
+  committed thresholds) and the orders-history demand pass for shared blanks; live inventory writes
+  remain operator-gated while reorder and demand are read-only and advisory. Applies only to shared
+  blank bodies: not for general inventory questions, stock reporting, or demand analysis on any SKU
+  outside shared blanks.
 ---
 
 # Blank inventory
@@ -136,6 +139,75 @@ zero; it does nothing about a wrong variant id, which is what the STOP above is 
 by hand in the other order:** zeroing a still-tagged variant propagates 0 across its entire blank
 group and wipes real stock everywhere.
 
+## thresholds.json is edited only by the operator, in a PR
+
+`scripts/blank-inventory/thresholds.json` holds the recommended minimum on-hand quantity for every
+body+colour+size. **Never create, edit or delete it without an explicit per-run operator STOP
+approval and a feature branch plus PR**, whatever prompted the change: a demand pass, a `reorder`
+exit-1 refusal, a stale warning, a new body, colour or size, or the file being absent altogether.
+
+On any reconciliation refusal: report the keys to the operator and stop. Never add, remove or adjust
+an entry to make a command pass. A stale warning is a suggestion for the operator to consider, never
+a deletion you make.
+
+## Reorder review
+
+Read-only. No store writes. Does not edit thresholds.json.
+
+Run `node --env-file=.env scripts/blank-inventory/blank-inventory.mjs reorder` and present the
+matrices and the flagged table **verbatim**. Pass `--json` through as JSON; never paraphrase either
+into prose numbers. A `?` range cell is reported exactly as printed: never averaged, never resolved
+by waiting or re-syncing to make it a single number.
+
+Every presentation states three things: the report is **advisory**, it is a **snapshot** (the Flow
+settles in 80 to 90 seconds, so a `?` cell may be mid-fan-out), and the operator should **verify
+against a physical count before ordering anything**.
+
+**Guardrail.** The report is never an input to any write command or count sheet, directly or by
+transcription. Restock quantities come only from a physical count. This report tells the operator
+where to look, not what to enter.
+
+If `reorder` exits 1, the file is missing, unparseable, or does not cover every body+colour+size.
+That is the signal that the catalogue gained a body, colour or size. Take the named keys to the
+operator; do not write the file.
+
+## Demand pass
+
+Read-only against the store. The only write is a gated, PR-reviewed edit of thresholds.json.
+
+**Precondition: `read_orders`.** If it is not granted, `demand` stops with the scope instruction.
+Deliver that instruction to the operator and stop, that turn. Do not work around it in any form:
+no alternate Admin query or field that returns order data, no CSV export, no reading the admin UI
+with a browser tool, no substituting a shorter window or a partial read for the one that was
+refused.
+
+Run `demand` (default window 60 days, which is what `read_orders` reaches; a longer window is
+refused unless `read_all_orders` is granted, and widening that grant is the operator's decision).
+
+**STOP: approve the threshold edit.** Present the full per-cell `from -> to` list **verbatim from
+the command output**, unsummarised and unre-sorted, state the cell count, and note explicitly that
+the numbers are the command's and were not recomputed or "sanity adjusted". Approval means an
+explicit operator confirmation, in the current turn, naming this specific edit. Approval of the
+report is not approval of the edit, and a reviewer's or a subagent's recommendation is never
+approval.
+
+The approved edit touches **only** the approved cells at the approved values, plus one appended
+`provenance.adjustments` entry. Never `budgets`, `colorCurve`, `sizeCurve`, `research`, `method`,
+`version`, or any other cell. The budget is one number per garment body and the two curves are what
+derived the split; changing either is a separate decision with its own STOP, not a side effect of a
+demand pass.
+The adjustments log is append-only: an existing entry is never rewritten, reordered or edited, even
+to correct it.
+
+Git bounds for that edit: feature branch only, no force-push, never merge the thresholds PR and
+never enable auto-merge on it, no PR comments unless the operator asks. The PR body follows the
+pre-push sensitivity checklist and never contains demand output, live quantities, or anything
+order-derived.
+
+**State the model's limits whenever you present its output.** It redistributes a garment body's
+fixed budget across its colour x size cells by recent share, colour and size alike. There is no lead-time or safety-stock component, and historical sales are attributed
+through the CURRENT variant-to-blank mapping, so a re-tagged variant rewrites its own history.
+
 ## Transcribing a photo
 
 The vision step is the least reliable link in the chain and the only place a wrong digit silently
@@ -199,7 +271,15 @@ actions are the operator's); or write to any variant outside the approved plan a
 - **The token is never printed and never written to disk.** It is minted at runtime from
   `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` (the gitignored repo-root `.env`, read via
   `node --env-file=.env ...`; see `scripts/README.md` > Credentials) and redacted from every error.
-- **Scopes are verified, not assumed** (`write_products` + `write_inventory`). If either is missing,
-  stop and have the operator apply the change in Admin; do not work around it.
+- **Scopes are verified, not assumed** (`write_products` + `write_inventory`, plus `read_orders` for
+  the demand pass alone). If one is missing, stop and have the operator apply the change; do not
+  work around it.
+- **thresholds.json carries business quantities into a public repo.** Its keys are garment
+  vocabulary and its values are unit counts, which is why it is safe to commit. These never go into
+  it, into an `adjustments` note, or into a PR body that touches it: supplier or wholesaler names,
+  vendor SKUs, case-pack sizes, unit or wholesale costs, contract minimums, lead times, supplier
+  URLs, and dollar amounts of any kind (budgets are unit counts only). Nor does any order-derived
+  customer data: no order ids, no customer identifiers, no per-order quantities. Demand data enters
+  the file only in aggregate.
 - **No em dashes (U+2014)** anywhere, including report text.
 - A passing preflight is capability, not authorization. It never substitutes for a STOP.

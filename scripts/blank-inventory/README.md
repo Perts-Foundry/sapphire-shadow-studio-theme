@@ -45,6 +45,18 @@ node scripts/blank-inventory/blank-inventory.mjs audit --json
 node scripts/blank-inventory/blank-inventory.mjs audit --group BLACK_CREWNECK_0001_M
 node scripts/blank-inventory/blank-inventory.mjs audit --stale
 
+# Reorder review (no Shopify writes, and it never edits thresholds.json). On-hand stock per
+# body/colour/size against the committed minimums, plus a reorder list sorted by shortfall.
+# --below prints only the list; --body narrows to one garment; --json emits the whole report.
+node scripts/blank-inventory/blank-inventory.mjs reorder
+node scripts/blank-inventory/blank-inventory.mjs reorder --body crewneck --below
+node scripts/blank-inventory/blank-inventory.mjs reorder --json
+
+# Net units sold per body/colour/size over a window, and the threshold adjustments that implies.
+# Read-only: it prints a from -> to list for the operator, and edits nothing. Needs read_orders.
+node scripts/blank-inventory/blank-inventory.mjs demand
+node scripts/blank-inventory/blank-inventory.mjs demand --days 30 --json
+
 # The resolvable key space: which body+colour+size combinations have a blank id, in the store's own
 # spellings. No Shopify writes.
 node scripts/blank-inventory/blank-inventory.mjs vocab
@@ -161,6 +173,124 @@ Reversing that order is destructive: zeroing a variant that is still tagged fire
 propagates 0 across the entire blank group, wiping real stock on every sibling. The re-read is not
 belt-and-braces; a silently failed delete followed by a zeroing write is exactly that scenario.
 
+## The reorder review
+
+`reorder` answers "where are we thin, and what should I order". It pivots the tagged catalogue into
+one colour x size matrix per garment body and compares each cell against
+[`thresholds.json`](thresholds.json), a committed table of recommended minimum on-hand quantities.
+`demand` is the recalibration pass: it reads recent orders and proposes new minimums.
+
+**Both are read-only, and neither edits `thresholds.json`.** That file is generated once, reviewed in
+a PR, and afterwards hand-edited only behind an operator approval. A command that quietly adjusted a
+threshold to make its own report pass would destroy the only review surface this feature has.
+
+### thresholds.json
+
+One entry per body+colour+size, holding the resolved minimum. The curves and the budgets it was
+derived from are kept as provenance, but the **cells are the source of truth**, because the cells are
+what a PR diff shows: a reviewer can judge "crewneck black M: 6" where two curves plus a budget plus
+a rounding rule is four things to re-derive by hand.
+
+**The budget is one number per garment body**, and both splits below it are derived. A colour
+popularity curve splits the body's budget across colours, then a size curve splits each colour's
+share across sizes; both stages use largest-remainder rounding, so a body's cells sum to its budget
+exactly with nothing leaking between the stages. Colour is derived rather than stated for the same
+reason size is: a hand-entered per-colour budget would be a second source of truth for a number the
+curve already determines, and the two would drift with nothing reconciling them.
+
+Keys are the normalised vocabulary form (lowercase `body|color|size`), the same key `vocabKey`
+produces, and budgets are keyed by the normalised body. A key that is not already in normalised form
+is **rejected, not normalised**: two spellings of one cell would silently become two minimums for one
+physical blank.
+
+`provenance.adjustments` is append-only. An entry records the date, the window it came from, a note,
+and the per-cell `from`/`to` moves. Entries are never rewritten, reordered or edited, even to correct
+one; a correction is a new entry.
+
+### The loud-failure contract
+
+| Condition | `reorder` | `demand` |
+|---|---|---|
+| a body+colour+size with no entry | **exit 1**, naming every missing key | **exit 1** |
+| file missing, unparseable, or wrong version | **exit 1** | **exit 1** |
+| a duplicate cell or budget key in the raw text | **exit 1**, naming the key | **exit 1** |
+| an entry for a body/colour/size the store no longer has | warning, exit 0 | warning |
+| a garment body with no budget | warning, exit 0 | **exit 1** |
+| a cell below its minimum | listed, exit 0 | n/a |
+| a cell with a minimum but no blank group | listed with `!`, exit 0 | held |
+
+A missing entry is a refusal because that is how a new body, colour or size surfaces at all: nothing
+else in the pipeline notices one. A combination that is not made gets an explicit `min: 0` with a
+note; it never gets left out. Refusals are global and are computed **before** anything renders, so
+`--body` and `--below` cannot narrow a report past the gap that made it untrustworthy. Under `--json`
+a refusal emits `{error, keys, refusals}` and still exits 1.
+
+Duplicate keys are detected in the raw text rather than after `JSON.parse`, which is last-wins and
+silent: a bad merge leaving two entries for one cell parses cleanly and applies the minimum nobody
+reviewed.
+
+### Reading the matrix
+
+```
+  crewneck
+    Black            XS:2/1  S:9/6  M:4-11/15?  L:14/17*  XL:12/12  2XL:--/6!
+```
+
+`on-hand/minimum` per size. `*` is below the minimum. `?` is a group the Flow has not settled yet, so
+the member **range** is shown and never an average: averaging invents a number no variant holds. An
+unsettled cell is flagged only when even its highest member is below the minimum, because otherwise
+every group mid-fan-out reports a shortfall and the report cries wolf during normal operation. `!` is
+a cell with a minimum and no blank group at all; it stays exit 0 (`audit` owns group health) but it
+is always in the reorder list, and the counts of `?` and `!` cells are printed in both the full and
+the `--below` view so a terse read cannot hide them.
+
+The reorder list is sorted by shortfall descending, ties breaking on body, colour, then garment size
+order. A negative on-hand (Shopify permits an oversell) yields an unclamped shortfall.
+
+### The demand model, and what it is not
+
+`demand` redistributes a garment body's **current** budget across its colour x size cells in
+proportion to recent net units sold, using largest-remainder rounding so the proposals sum to the
+budget exactly. It recalibrates the colour mix as well as the size mix, because both were derived
+from a curve: a pass that only reshuffled sizes would leave the colour split on its original guess
+forever. There is no lead-time term, no safety stock, no seasonality and no growth assumption. It is
+one input to an operator decision, not a reorder quantity.
+
+Net units means refunded and removed units are subtracted, cancelled and test orders are excluded,
+and a line item whose variant is gone or untagged is reported in an `unattributed` bucket rather than
+dropped. Both connections are paginated, orders and each order's line items, because a truncated read
+looks exactly like an order that sold less.
+
+Two holds keep the model from ratcheting a blank out of existence. A body with almost no observed
+sales holds every one of its minimums, and a cell whose on-hand sat at or below its own
+minimum (or has no settled reading at all) is held and excluded from the redistribution: it could not
+have sold what it might have, so its zero is not evidence of zero demand.
+
+**Limitations, stated because none of them are visible in the output:**
+
+- `read_orders` reaches about 60 days, which is why the default window is 60 days. A longer window
+  needs `read_all_orders`; `demand` **refuses** a window its granted scopes cannot serve rather than
+  quietly shortening it, and it always prints the earliest order date actually returned. Both scopes
+  are granted on this app today, so a longer `--days` is available, but the refusal stays in place
+  because a grant can be narrowed later and a silently shortened window is not a visible failure.
+- Sales are attributed through the **current** variant-to-blank mapping, so re-tagging a variant
+  rewrites its own history.
+- **The non-empty path is still unexercised.** `demand` has been run against the live store: it
+  authenticated, paginated, and reported zero orders in the window, because the storefront is still
+  password-gated. So the query, the scope gate and the insufficient-data holds are confirmed live,
+  but no run has yet aggregated a real line item. The arithmetic is unit-tested and the queries are
+  validated against the Admin schema; treat the first run with real orders as the check that has not
+  happened.
+
+### Sensitive data in thresholds.json
+
+The committed values are unit counts the operator chose, and the keys are garment vocabulary, so the
+file is safe in a public repo. What must never go into it, or into a PR body that touches it: supplier
+or wholesaler names, vendor SKUs, case-pack sizes, unit or wholesale costs, contract minimums, lead
+times, supplier URLs, dollar amounts of any kind, and anything order-derived that identifies a
+customer or a single order. Demand data enters the file only as an aggregate. The file joins the
+pre-push sensitivity scan.
+
 ## Safety properties
 
 - **`apply` takes only a plan artifact.** It refuses `--input`/`--mode`, and it verifies the
@@ -200,6 +330,13 @@ false-stop), convergence polling against a racing cascade, the untag interlock, 
 suggestion that must never be substituted, seeding-receipt expiry (including the unparseable
 timestamp, which expires rather than being believed forever), and the refusal to render a plan
 artifact missing a gate-critical key.
+
+The reorder review's own suite covers the thresholds schema (including the duplicate-key check that
+`JSON.parse` cannot make), the reconciliation and refusal contract, the pivot's refusal to average an
+unsettled group, every glyph state, the shortfall boundaries, the demand rollup's treatment of
+refunds and cancellations, the budget arithmetic (which always sums to the budget, with a
+deterministic tie vector), and canonical serialisation. It also reads the committed `thresholds.json`
+through the tool's own parser, and asserts that neither new command is a write command.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that

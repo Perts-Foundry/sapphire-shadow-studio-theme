@@ -1,5 +1,84 @@
 # Release Notes
 
+## Reorder review: on-hand against a committed threshold table (unreleased)
+
+The blank-inventory tooling could report what stock exists and keep it in sync, but it could not
+answer the question that actually precedes a purchase order: where are we thin, per size and colour,
+and what should I reorder. Two read-only commands now do. `reorder` pivots the tagged catalogue into
+a colour x size matrix per garment body and compares each cell against
+`scripts/blank-inventory/thresholds.json`, a committed table of recommended minimum on-hand
+quantities. `demand` reads recent orders and proposes adjustments to that table. Neither writes to
+the store, neither is in `writeCommands`, and `lib/reorder.mjs` imports nothing but `lib/groups.mjs`
+(a test asserts the import list, because the module header names `mutations.mjs` in order to forbid
+it and a substring grep could not tell the prohibition from the violation).
+
+**The resolved cells are the source of truth, not the curves and budgets they came from.** The
+minimums were derived from published size-distribution and colour-popularity figures scaled by one
+operator-stated budget per garment body, and all three are kept in the file as provenance. But the
+file stores the resolved per-cell number, because the file's whole review surface is a PR diff: a
+reviewer can read "crewneck black M: 6" and judge it, where two curves plus a budget plus a rounding
+rule is four things to re-derive by hand before the diff means anything. Storing the inputs and
+computing the cells at read time would have been smaller and strictly worse to review.
+
+**Colour is derived, not stated, exactly as size is.** The first cut asked the operator for a budget
+per body+colour and derived only the size split. That is a second source of truth for a number a
+popularity curve already determines, and this repo has been bitten by that shape before (the social
+links entry below is the same lesson). So the budget is one number per body, a colour curve splits it
+across colours, and the size curve splits each colour's share; both stages are largest remainder, so
+a body's cells sum to its budget exactly with no rounding leak between them. The demand pass then
+redistributes across colour and size together, because a recalibration that only reshuffled sizes
+would leave the colour mix on its original guess with nothing ever testing it.
+
+**An unsettled group is flagged only when its highest member is below the minimum.** A blank group
+holds several different quantities for the 80 to 90 seconds the sync Flow takes to fan a change out.
+Averaging them would invent a number no variant holds, so the cell prints the range and its `onHand`
+is null. The flagging rule then has to pick an end of that range, and picking the low end means every
+group mid-fan-out reports a shortfall: right after an apply that is most of them, and a report that
+cries wolf during normal operation is one nobody reads. The high end under-reports briefly and
+corrects itself on the next run, which is the survivable direction. The counts of unsettled and
+no-group cells are printed in both the full and the `--below` view for the same reason: those are
+exactly the cells a terse list would otherwise hide, and "not listed" reads as "fine".
+
+**thresholds.json is never touched by a command, including the commands that read it.** Every
+refusal path was an opportunity to "fix" the file so the report would run: a missing cell, a stale
+key, an absent file. All of them stop and report instead. The file is generated once, reviewed in a
+PR, and afterwards hand-edited only behind a per-run operator approval, because the PR diff is the
+only review this feature's numbers ever get, and a tool that edits its own thresholds to make its
+own output pass has removed it. `provenance.adjustments` is append-only for the same reason: a
+rewritten history cannot be audited.
+
+**Why business quantities are safe in a public repo, and where the line is.** The keys are the
+normalised vocabulary form (lowercase `body|color|size`), which by construction cannot match the
+blank-id guard's uppercase-underscore shape, so no supplier-encoded id can hide in one. The values
+are unit counts the operator chose. What must never enter the file, an `adjustments` note, or a PR
+body touching it: supplier or wholesaler names, vendor SKUs, case-pack sizes, unit or wholesale
+costs, contract minimums, lead times, supplier URLs, dollar amounts of any kind, and anything
+order-derived that identifies a customer or a single order. The demand pass enters the file only in
+aggregate.
+
+**Duplicate keys are detected in the raw text, not after parsing.** `JSON.parse` is last-wins and
+silent, so a bad merge leaving two entries for one cell parses cleanly and applies the minimum
+nobody reviewed. The check walks the document's tokens before the parsed object is trusted, and a
+test asserts that `JSON.parse` on the same text really does take the wrong number.
+
+**The demand window is bounded by the scope, and the command refuses rather than shortening it.**
+`read_orders` reaches about 60 days; older history needs `read_all_orders`, which this app
+deliberately does not request. Asking for a longer window than the granted scopes can serve is a
+refusal, and every run prints the earliest order date actually returned, because a proposal built on
+a window the operator did not get is worse than no proposal. Two holds keep the model from ratcheting
+a blank out of existence: a body+colour with almost no observed sales holds its minimums, and a cell
+whose on-hand sat at or below its own minimum is held out of the redistribution, since a stocked-out
+cell's zero sales are not evidence of zero demand. The model itself is deliberately thin: proportional
+redistribution of a fixed budget by recent share, with no lead-time or safety-stock term, and sales
+attributed through the current variant-to-blank mapping, so re-tagging a variant rewrites its own
+history.
+
+`demand` has been run against the live store, and returned zero orders: `read_orders` and
+`read_all_orders` are both granted, but the storefront is still password-gated, so the window is
+genuinely empty and every cell held at `insufficient-data`. That exercises the scope gate, the
+pagination and the holds, and leaves exactly one thing unexercised: aggregating a real line item.
+The README says so rather than calling the command verified.
+
 ## Social links on every surface, from one source of truth (unreleased)
 
 Social links used to render in exactly one place, as three muted icons in the footer utilities
