@@ -316,3 +316,28 @@ export async function writeJsonAtomic(filePath, data) {
 export async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
+
+/**
+ * The source filenames of every receipt that has stopped explaining anything and may be moved out
+ * of the working directory root.
+ *
+ * Pure, and deliberately named for the decision rather than the action: it chooses files, it never
+ * touches the filesystem. The move itself lives in the command layer, because a rename can fail in
+ * ways only the caller can report on, and because a lib function that quietly renamed files would
+ * be reachable from every command rather than from the one that opted into it.
+ *
+ * Pass the FULL population (fresh and expired alike), not a pre-filtered list: the whole point is
+ * that this function, and not its caller, decides what is expired, so a fresh seeding receipt can
+ * never be archived by a caller that split the list a different way. A receipt with no
+ * `sourceFile` is skipped: it was not read from a file, so there is nothing to move.
+ *
+ * @param {object[]} receipts
+ * @param {object} [opts]
+ * @param {number} [opts.now]
+ * @param {number} [opts.maxAgeMs]
+ * @returns {string[]} filenames, relative to the working directory root
+ */
+export function receiptsToArchive(receipts, { now = Date.now(), maxAgeMs = SEED_RECEIPT_MAX_AGE_MS } = {}) {
+  const { stale } = splitStaleSeedReceipts(receipts, { now, maxAgeMs });
+  return stale.map((r) => r.sourceFile).filter((f) => typeof f === 'string' && f !== '');
+}

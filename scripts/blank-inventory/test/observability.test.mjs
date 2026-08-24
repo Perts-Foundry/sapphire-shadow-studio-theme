@@ -24,6 +24,7 @@ import {
 } from '../lib/groups.mjs';
 import {
   splitStaleSeedReceipts,
+  receiptsToArchive,
   assertRenderablePlan,
   createArtifact,
   SEED_RECEIPT_MAX_AGE_MS,
@@ -139,6 +140,42 @@ test('a seeding receipt with an unparseable timestamp expires rather than being 
   const { fresh, stale } = splitStaleSeedReceipts([{ seeding: true, startedAt: 'not a date' }]);
   assert.equal(fresh.length, 0);
   assert.equal(stale.length, 1);
+});
+
+// --- which receipts may be moved out of the way -----------------------------
+//
+// receiptsToArchive is the whole decision behind a filesystem move, which is why it is a pure
+// function and tested here rather than through the command that performs the move. What must never
+// happen is a FRESH seeding receipt being archived: it is the only thing distinguishing
+// awaiting-seed from drift, and it would be gone.
+
+test('receiptsToArchive names only the expired seeding receipts in a mixed population', () => {
+  const now = Date.parse('2026-07-27T12:00:00.000Z');
+  const population = [
+    { seeding: true, startedAt: new Date(now - 60_000).toISOString(), sourceFile: 'receipt-seed-fresh.json' },
+    { seeding: true, startedAt: new Date(now - SEED_RECEIPT_MAX_AGE_MS - 1).toISOString(), sourceFile: 'receipt-seed-old.json' },
+    { seeding: false, startedAt: '2020-01-01T00:00:00.000Z', sourceFile: 'receipt-apply-ancient.json' },
+    { seeding: true, startedAt: 'not a date', sourceFile: 'receipt-seed-broken.json' },
+  ];
+  assert.deepEqual(receiptsToArchive(population, { now }), ['receipt-seed-old.json', 'receipt-seed-broken.json']);
+});
+
+test('receiptsToArchive holds a seeding receipt exactly at the age bound', () => {
+  // The comparison is `>`, so the bound itself is still fresh. Pinned because a later refactor to
+  // `>=` would expire a receipt one millisecond early, and nothing else would notice.
+  const now = Date.parse('2026-07-27T12:00:00.000Z');
+  const atBound = { seeding: true, startedAt: new Date(now - SEED_RECEIPT_MAX_AGE_MS).toISOString(), sourceFile: 'receipt-seed-edge.json' };
+  const pastBound = { seeding: true, startedAt: new Date(now - SEED_RECEIPT_MAX_AGE_MS - 1).toISOString(), sourceFile: 'receipt-seed-past.json' };
+  assert.deepEqual(receiptsToArchive([atBound], { now }), []);
+  assert.deepEqual(receiptsToArchive([pastBound], { now }), ['receipt-seed-past.json']);
+});
+
+test('receiptsToArchive skips a receipt that came from no file, and an empty population', () => {
+  // Nothing to move is not an error, and a receipt with no sourceFile was never read off disk.
+  const now = Date.parse('2026-07-27T12:00:00.000Z');
+  const noFile = { seeding: true, startedAt: new Date(now - SEED_RECEIPT_MAX_AGE_MS - 1).toISOString() };
+  assert.deepEqual(receiptsToArchive([noFile], { now }), []);
+  assert.deepEqual(receiptsToArchive([], { now }), []);
 });
 
 // --- near matches are offered, never applied --------------------------------
