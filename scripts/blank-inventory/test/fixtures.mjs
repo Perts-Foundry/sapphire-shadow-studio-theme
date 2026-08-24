@@ -8,6 +8,8 @@
 //
 // No real blank id, supplier name, or style number may appear in this file. See CLAUDE.md.
 
+import { vocabKey, normaliseAxis } from '../lib/groups.mjs';
+
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 export const COLORS = ['Black', 'Grey Heather', 'Classic Navy'];
 
@@ -118,4 +120,47 @@ export function crossBodySlice({ color = 'Black', size = 'M', sharedBlankId = 'B
 /** Reset the id counter so tests that assert on ordering are deterministic. */
 export function resetSeq(to = 0) {
   seq = to;
+}
+
+/**
+ * A complete thresholds cell map over the fixture axes.
+ *
+ * Cross-product by construction, because the loud-failure contract keys on "every combination has an
+ * entry": a hand-listed subset would make a test pass for the wrong reason, by looking exactly like
+ * the gap the refusal exists to report. Keys go through `vocabKey` for the same reason the tool does,
+ * so the separator and the normalisation rules live in one place.
+ *
+ * @param {Record<string, number|{min: number, note?: string}>} [overrides] - keyed by `body|color|size`
+ * @param {number} [defaultMin]
+ * @returns {Map<string, {min: number, note?: string}>}
+ */
+export function thresholdsFor(overrides = {}, defaultMin = 5) {
+  const cells = new Map();
+  for (const body of BODIES) {
+    for (const color of COLORS) {
+      for (const size of SIZES) {
+        cells.set(vocabKey({ body, color, size }), { min: defaultMin });
+      }
+    }
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    cells.set(key, typeof value === 'number' ? { min: value } : value);
+  }
+  return cells;
+}
+
+/**
+ * A complete budget map over the fixture bodies.
+ *
+ * Keyed by BODY, not by body+colour: the colour split is derived from a popularity curve exactly as
+ * the size split is, so a per-colour budget would be a second source of truth for the same number.
+ *
+ * @param {number} [defaultBudget]
+ * @param {Record<string, number>} [overrides] - keyed by body
+ * @returns {Map<string, number>}
+ */
+export function budgetsFor(defaultBudget = 90, overrides = {}) {
+  const budgets = new Map(BODIES.map((body) => [normaliseAxis(body, 'Body'), defaultBudget]));
+  for (const [key, value] of Object.entries(overrides)) budgets.set(key, value);
+  return budgets;
 }

@@ -153,6 +153,10 @@ not, so use the tool.
 Claude skill drives it with the operator approval gates. Use it in preference to hand-editing
 quantities or metafields in Admin, which has none of these guards.
 
+The same tooling also carries a read-only reorder review (`reorder` and `demand`), which compares
+on-hand stock against committed per-cell minimums and proposes adjustments to them. It changes
+nothing about this flow: see `scripts/blank-inventory/README.md`.
+
 ## Assumptions and limitations
 
 - **Single location only.** The `locationId` loop concatenates every inventory level's location id

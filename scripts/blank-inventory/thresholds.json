@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "provenance": {
+    "derivedAt": "2026-08-24",
+    "method": "research colour curve x research size curve x operator budget per body",
+    "research": "Size curve, unisex bodies: blend of two published size-distribution breakdowns, an all-product aggregate (L 32, M 29, XL 20, S 12, 2XL 5, XS 1 percent) and a sales-derived ratio (XS 1, S 10, M 23, L 31, XL 23, 2XL 9, 3XL 3 percent, renormalised without 3XL). Both keep M/L/XL near 75 percent of units, which those guides give as the rule of thumb. Women's vest: the same guides' S 1 : M 2 : L 3 : XL 2 : 2XL 1 fleece bell curve, shifted one step smaller for a women's cut. Sources: https://www.threelayer.com/guides/size-ratio-guide-clothing-brands/ , https://manateeshirt.com/blog/average-tshirt-size-distribution , https://www.clothes2order.com/blog/how-to-order-the-right-amount-of-each-t-shirt-size/ . Colour curve: published sources agree on the ORDERING for basics (black leads, navy and dark heather grey follow close behind and are roughly interchangeable) but publish no percentage split, so 40/30/30 is a ranked assumption, not a measured distribution. It is corroborated by this store's own on-hand mix at derivation time (crewneck black 39, navy 33, grey 28 percent; quarter-zip black 43, navy 32, grey 25 percent) and is the weakest input in this file; the demand pass exists to replace it with observed sales. Sources: https://www.printful.com/blog/most-popular-t-shirt-colors , https://printify.com/blog/most-popular-shirt-colors/ , https://www.bonfire.com/blog/best-t-shirt-colors-styles/ . Budgets: one per garment body, set at the units on hand when this file was derived, so the table starts by holding the current level rather than proposing a change nobody decided.",
+    "colorCurve": {
+      "crewneck": {
+        "black": 0.4,
+        "grey heather": 0.3,
+        "classic navy": 0.3
+      },
+      "quarter-zip": {
+        "black": 0.4,
+        "grey heather": 0.3,
+        "classic navy": 0.3
+      },
+      "vest-womens": {
+        "black": 0.4,
+        "grey heather": 0.3,
+        "classic navy": 0.3
+      }
+    },
+    "sizeCurve": {
+      "crewneck": {
+        "xs": 0.02,
+        "s": 0.11,
+        "m": 0.26,
+        "l": 0.3,
+        "xl": 0.21,
+        "2xl": 0.1
+      },
+      "quarter-zip": {
+        "xs": 0.02,
+        "s": 0.11,
+        "m": 0.26,
+        "l": 0.3,
+        "xl": 0.21,
+        "2xl": 0.1
+      },
+      "vest-womens": {
+        "xs": 0.04,
+        "s": 0.18,
+        "m": 0.28,
+        "l": 0.26,
+        "xl": 0.16,
+        "2xl": 0.08
+      }
+    },
+    "budgets": {
+      "crewneck": 36,
+      "quarter-zip": 28,
+      "vest-womens": 8
+    },
+    "adjustments": []
+  },
+  "cells": {
+    "crewneck|black|xs": {
+      "min": 0
+    },
+    "crewneck|black|s": {
+      "min": 2
+    },
+    "crewneck|black|m": {
+      "min": 4
+    },
+    "crewneck|black|l": {
+      "min": 4
+    },
+    "crewneck|black|xl": {
+      "min": 3
+    },
+    "crewneck|black|2xl": {
+      "min": 1
+    },
+    "crewneck|grey heather|xs": {
+      "min": 0
+    },
+    "crewneck|grey heather|s": {
+      "min": 1
+    },
+    "crewneck|grey heather|m": {
+      "min": 3
+    },
+    "crewneck|grey heather|l": {
+      "min": 3
+    },
+    "crewneck|grey heather|xl": {
+      "min": 3
+    },
+    "crewneck|grey heather|2xl": {
+      "min": 1
+    },
+    "crewneck|classic navy|xs": {
+      "min": 0
+    },
+    "crewneck|classic navy|s": {
+      "min": 1
+    },
+    "crewneck|classic navy|m": {
+      "min": 3
+    },
+    "crewneck|classic navy|l": {
+      "min": 3
+    },
+    "crewneck|classic navy|xl": {
+      "min": 3
+    },
+    "crewneck|classic navy|2xl": {
+      "min": 1
+    },
+    "quarter-zip|black|xs": {
+      "min": 0
+    },
+    "quarter-zip|black|s": {
+      "min": 1
+    },
+    "quarter-zip|black|m": {
+      "min": 3
+    },
+    "quarter-zip|black|l": {
+      "min": 3
+    },
+    "quarter-zip|black|xl": {
+      "min": 3
+    },
+    "quarter-zip|black|2xl": {
+      "min": 1
+    },
+    "quarter-zip|grey heather|xs": {
+      "min": 0
+    },
+    "quarter-zip|grey heather|s": {
+      "min": 1
+    },
+    "quarter-zip|grey heather|m": {
+      "min": 2
+    },
+    "quarter-zip|grey heather|l": {
+      "min": 2
+    },
+    "quarter-zip|grey heather|xl": {
+      "min": 2
+    },
+    "quarter-zip|grey heather|2xl": {
+      "min": 1
+    },
+    "quarter-zip|classic navy|xs": {
+      "min": 0
+    },
+    "quarter-zip|classic navy|s": {
+      "min": 1
+    },
+    "quarter-zip|classic navy|m": {
+      "min": 2
+    },
+    "quarter-zip|classic navy|l": {
+      "min": 3
+    },
+    "quarter-zip|classic navy|xl": {
+      "min": 2
+    },
+    "quarter-zip|classic navy|2xl": {
+      "min": 1
+    },
+    "vest-womens|black|xs": {
+      "min": 0
+    },
+    "vest-womens|black|s": {
+      "min": 1
+    },
+    "vest-womens|black|m": {
+      "min": 1
+    },
+    "vest-womens|black|l": {
+      "min": 1
+    },
+    "vest-womens|black|xl": {
+      "min": 0
+    },
+    "vest-womens|black|2xl": {
+      "min": 0
+    },
+    "vest-womens|grey heather|xs": {
+      "min": 0
+    },
+    "vest-womens|grey heather|s": {
+      "min": 0
+    },
+    "vest-womens|grey heather|m": {
+      "min": 1
+    },
+    "vest-womens|grey heather|l": {
+      "min": 1
+    },
+    "vest-womens|grey heather|xl": {
+      "min": 0
+    },
+    "vest-womens|grey heather|2xl": {
+      "min": 0
+    },
+    "vest-womens|classic navy|xs": {
+      "min": 0
+    },
+    "vest-womens|classic navy|s": {
+      "min": 1
+    },
+    "vest-womens|classic navy|m": {
+      "min": 1
+    },
+    "vest-womens|classic navy|l": {
+      "min": 1
+    },
+    "vest-womens|classic navy|xl": {
+      "min": 0
+    },
+    "vest-womens|classic navy|2xl": {
+      "min": 0
+    }
+  }
+}
