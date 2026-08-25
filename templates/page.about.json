@@ -23,7 +23,7 @@
         "hero_sub": {
           "type": "text",
           "settings": {
-            "text": "<p>Behind every cozy custom sweater is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for.</p>",
+            "text": "<p>It's about creating something that actually matters. Behind every cozy custom sweater is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for.</p>",
             "width": "100%",
             "max_width": "narrow",
             "alignment": "center",
