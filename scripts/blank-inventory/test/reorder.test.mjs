@@ -31,7 +31,7 @@ import {
 } from '../lib/reorder.mjs';
 import { vocabKey, DRIFT, AWAITING_SEED, CONVERGED } from '../lib/groups.mjs';
 import { loadCatalogue } from '../lib/catalogue-manifest.mjs';
-import { variant, thresholdsFor, budgetsFor, manifestFor, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
+import { variant, thresholdsFor, budgetsFor, manifestFor, VEST_BLACK_ONLY, MID_SIZES_ONLY, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
 const AXES = buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES });
 const key = (body, color, size) => vocabKey({ body, color, size });
@@ -858,8 +858,6 @@ test('cartesianCells covers the whole axis space in canonical order', () => {
 // The cell space used to be a global cross product, which invented cells for combinations a body is
 // not made in. It is now per body, taken from the committed catalogue manifest.
 
-/** The real catalogue's shape: the women's vest is made in Black only. */
-const VEST_BLACK_ONLY = { colors: ['black'], sizes: SIZES.map((s) => s.toLowerCase()) };
 const narrowManifest = manifestFor({ 'vest-womens': VEST_BLACK_ONLY });
 const narrowAxes = buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES, ranges: narrowManifest.bodies });
 
@@ -905,6 +903,79 @@ test('a thresholds entry outside the declared shape is stale, and the declared c
   assert.deepEqual(assessed.warnings.map((w) => w.code), ['stale-cells']);
 });
 
+test('a body narrowed on the SIZE axis contributes only its declared columns', () => {
+  // Colour narrowing and size narrowing run through different loops. A fixture set that only ever
+  // narrows colours leaves half the per-body path unexercised in both the pivot and the derivation.
+  const axes = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': MID_SIZES_ONLY }).bodies });
+  const pivot = buildPivot({ variants: [variant({ body: 'vest-womens', color: 'Black', size: 'M', quantity: 1 })], axes });
+  const vest = pivot.bodies.find((b) => b.body === 'vest-womens');
+  assert.deepEqual(vest.colors[0].cells.map((c) => c.size), ['m', 'l']);
+  assert.equal(pivot.cells.has(key('vest-womens', 'Black', 'XS')), false);
+  // The other bodies keep all six columns, so the narrowing is per body and not global.
+  assert.equal(pivot.bodies.find((b) => b.body === 'crewneck').colors[0].cells.length, SIZES.length);
+});
+
+test('deriveThresholds spends a narrowed body\'s whole budget on the colours it is actually made in', () => {
+  // largestRemainder normalises by the sum of the weights it is GIVEN, so dropping a colour from the
+  // range redistributes rather than discards. Without this the vest's budget would leak into cells
+  // that no longer exist, or vanish entirely when the curve weights only undeclared colours.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const built = deriveThresholds({
+    // The curve still names all three colours, exactly as the committed file did before the split.
+    colorCurve: { 'vest-womens': { black: 0.4, 'grey heather': 0.3, 'classic navy': 0.3 } },
+    sizeCurve: { 'vest-womens': { xs: 0.04, s: 0.18, m: 0.28, l: 0.26, xl: 0.16, '2xl': 0.08 } },
+    budgets: { 'vest-womens': 12 },
+    axes,
+  });
+  const keys = Object.keys(built.cells);
+  assert.ok(!keys.some((k) => k.includes('grey heather') || k.includes('classic navy')));
+  assert.equal(keys.length, SIZES.length);
+  assert.equal(
+    Object.values(built.cells).reduce((a, c) => a + c.min, 0),
+    12,
+    "the whole budget lands on the declared colour rather than leaking into cells that do not exist"
+  );
+});
+
+test('deriveThresholds gives a body zero rather than a wrong number when the curve weights only undeclared colours', () => {
+  // The degenerate case: every weight the curve supplies belongs to a colour outside the range, so
+  // largestRemainder sees a zero sum. Zero cells is the honest answer, and the demand pass's
+  // budgetDrift is what surfaces it; inventing a split across colours the curve never rated would be
+  // a number nobody chose.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const built = deriveThresholds({
+    colorCurve: { 'vest-womens': { 'classic navy': 1 } },
+    sizeCurve: { 'vest-womens': { m: 1 } },
+    budgets: { 'vest-womens': 12 },
+    axes,
+  });
+  assert.equal(Object.values(built.cells).reduce((a, c) => a + c.min, 0), 0);
+});
+
+test('buildAxes exposes the flat union of the declared ranges, deduped and in garment size order', () => {
+  const axes = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': MID_SIZES_ONLY }).bodies });
+  // Colours in first-declaring-body order, each once even though two bodies declare all three.
+  assert.deepEqual(axes.colors, ['black', 'grey heather', 'classic navy']);
+  assert.deepEqual(axes.sizes, SIZES.map((s) => s.toLowerCase()));
+});
+
+test('buildAxes accepts the plain-object form of ranges as well as a Map', () => {
+  // The documented alternative, and the shape a caller gets from JSON straight off disk.
+  const asObject = Object.fromEntries([...manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies.entries()]);
+  const fromObject = buildAxes({ bodies: BODIES, ranges: asObject });
+  const fromMap = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  assert.deepEqual(cartesianCells(fromObject).map((c) => c.key), cartesianCells(fromMap).map((c) => c.key));
+});
+
+test('buildAxes reads only own properties of an object range, never an inherited one', () => {
+  // `ranges?.[body]` would otherwise find Object.prototype.constructor for a body called
+  // "constructor" and treat a function as a declared range.
+  assert.throws(
+    () => buildAxes({ bodies: ['constructor'], ranges: { crewneck: { colors: ['black'], sizes: ['m'] } } }),
+    /No declared colour and size range for garment body "constructor"/
+  );
+});
+
 test('serializeThresholds orders bodies by code point, colours in manifest order, sizes in garment order', () => {
   // Body order deliberately does NOT follow the manifest: reordering bodies there must never churn
   // the committed thresholds file. Colour order does, because it is the matrix row order.
@@ -917,7 +988,10 @@ test('serializeThresholds orders bodies by code point, colours in manifest order
   const doc = {
     version: 1,
     provenance: { budgets: { crewneck: 1, 'vest-womens': 1 } },
-    cells: Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }])),
+    // REVERSED before serializing. Built in canonical order the assertion would pass on an
+    // implementation that only spread doc.cells through, since JS objects keep insertion order; it
+    // would be re-asserting cartesianCells rather than serialize's own ordering loop.
+    cells: Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }]).reverse()),
   };
   assert.deepEqual(Object.keys(JSON.parse(serializeThresholds(doc, axes)).cells), [
     key('crewneck', 'Classic Navy', 'XS'),
@@ -928,6 +1002,21 @@ test('serializeThresholds orders bodies by code point, colours in manifest order
     key('crewneck', 'Black', '2XL'),
     ...SIZES.map((s) => key('vest-womens', 'Black', s)),
   ]);
+});
+
+test('serializeThresholds keeps rows the manifest no longer declares instead of deleting them', () => {
+  // Newly load-bearing under narrowing: regenerating after a colour is removed from a body's range
+  // must not silently drop the rows that narrowing stranded. Only the operator removes a row.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const stranded = key('vest-womens', 'Classic Navy', 'M');
+  const doc = {
+    version: 1,
+    provenance: { budgets: { 'vest-womens': 1 } },
+    cells: { [stranded]: { min: 2 }, ...Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }])) },
+  };
+  const out = Object.keys(JSON.parse(serializeThresholds(doc, axes)).cells);
+  assert.ok(out.includes(stranded), 'the stranded row survives regeneration');
+  assert.equal(out.at(-1), stranded, 'and sorts after the declared cells rather than among them');
 });
 
 test('the committed thresholds.json reconciles cleanly against the committed catalogue.json', async () => {

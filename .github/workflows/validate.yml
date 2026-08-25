@@ -483,8 +483,16 @@ jobs:
           CATALOGUE_TESTS=$(npm run catalogue:test 2>&1); CATALOGUE_TESTS_RC=$?
           CATALOGUE_LINT=$(npm run catalogue:lint 2>&1);  CATALOGUE_LINT_RC=$?
 
-          OUTPUT=$(printf '%s\n\n%s\n' "$CATALOGUE_TESTS" "$CATALOGUE_LINT")
-          echo "$OUTPUT"
+          # Full output to the step log; the PR comment gets a tail of EACH
+          # capture rather than a tail of the pair. Tailing the concatenation
+          # lets the lint's short success banner occupy the whole window, so a
+          # verbose test failure is truncated out of the comment and the red
+          # check renders with "catalogue OK" as its only detail.
+          STRIP=$'s/\x1b\\[[0-9;]*m//g'
+          OUTPUT=$(printf '%s\n\n%s\n' \
+            "$(printf '%s\n' "$CATALOGUE_TESTS" | sed -E "$STRIP" | tail -40)" \
+            "$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" | tail -15)")
+          printf '%s\n\n%s\n' "$CATALOGUE_TESTS" "$CATALOGUE_LINT"
 
           [ "$CATALOGUE_TESTS_RC" -ne 0 ] && EXIT_CODE=1
           [ "$CATALOGUE_LINT_RC" -ne 0 ] && EXIT_CODE=1
@@ -493,7 +501,7 @@ jobs:
           # renamed directory would report a green suite that ran no tests.
           # Same guard the other suites in this workflow carry.
           TESTS_RUN=$(printf '%s\n' "$CATALOGUE_TESTS" \
-            | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+            | sed -E "$STRIP" \
             | awk '$2 == "tests" && $3 ~ /^[0-9]+$/ { n = $3 } END { print n + 0 }')
           if [ "${TESTS_RUN:-0}" -lt 1 ]; then
             echo "::error::catalogue suite reported ${TESTS_RUN:-0} tests. The glob in the catalogue:test script has probably stopped matching."
@@ -505,20 +513,36 @@ jobs:
           # would otherwise pass on having checked nothing, which is the exact
           # fail-open shape the manifest exists to prevent. Only meaningful on a
           # clean exit; a real failure already exits non-zero.
+          # ANSI-stripped before matching, like the two checks above: an anchored
+          # ^ match against a colourised line finds nothing and would misreport a
+          # purely cosmetic change as "checked nothing". All three counts are
+          # asserted, matching what the lint itself treats as the vacuity triple.
           if [ "$CATALOGUE_LINT_RC" -eq 0 ]; then
-            BODIES=$(printf '%s\n' "$CATALOGUE_LINT" | sed -nE 's/^catalogue OK: ([0-9]+) bodies.*/\1/p' | tail -1)
-            VALUES=$(printf '%s\n' "$CATALOGUE_LINT" | sed -nE 's/^catalogue OK: [0-9]+ bodies, ([0-9]+) colour values.*/\1/p' | tail -1)
-            if [ "${BODIES:-0}" -lt 1 ] || [ "${VALUES:-0}" -lt 1 ]; then
-              echo "::error::catalogue lint reported ${BODIES:-0} body/bodies and ${VALUES:-0} colour value(s). It cannot be trusted to have checked the manifest."
+            COUNTS=$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" \
+              | sed -nE 's/^catalogue OK: ([0-9]+) bodies, ([0-9]+) colour values, ([0-9]+) size values\.$/\1 \2 \3/p' | tail -1)
+            BODIES=$(echo "$COUNTS" | cut -d' ' -f1)
+            COLOURS=$(echo "$COUNTS" | cut -d' ' -f2)
+            SIZES=$(echo "$COUNTS" | cut -d' ' -f3)
+            if [ "${BODIES:-0}" -lt 1 ] || [ "${COLOURS:-0}" -lt 1 ] || [ "${SIZES:-0}" -lt 1 ]; then
+              echo "::error::catalogue lint reported ${BODIES:-0} body/bodies, ${COLOURS:-0} colour value(s) and ${SIZES:-0} size value(s). It cannot be trusted to have checked the manifest."
               EXIT_CODE=1
             fi
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Random heredoc delimiter, not the fixed GHEOF used by most steps
+          # above, for the same reason the contrast step uses one: this capture
+          # includes error text quoting keys from catalogue.json, which is
+          # PR-controlled. With a fixed delimiter a key carrying a newline plus
+          # a GHEOF line could close the block early and append its own
+          # `exit_code=0`, overwriting the honest exit code so a refused lint
+          # merged green. The lint now JSON-quotes every key it names, so this
+          # is the second of two independent guards, not the only one.
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
           {
-            echo "output<<GHEOF"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "GHEOF"
+            echo "output<<${DELIM}"
+            echo "$OUTPUT"
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       # ── seo-review tooling tests ───────────────────────────────

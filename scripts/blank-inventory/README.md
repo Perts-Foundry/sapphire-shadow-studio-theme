@@ -270,7 +270,9 @@ A missing entry is a refusal because that is how a new body, colour or size surf
 else in the pipeline notices one. A combination that is not made gets an explicit `min: 0` with a
 note; it never gets left out. Refusals are global and are computed **before** anything renders, so
 `--body` and `--below` cannot narrow a report past the gap that made it untrustworthy. Under `--json`
-a refusal emits `{error, keys, refusals}` and still exits 1.
+a refusal emits `{error, keys, refusals, warnings}` and still exits 1, whichever gate stopped the run:
+a malformed manifest produces the same four fields as a missing threshold, so a consumer never has to
+know which one it hit in order to parse the answer.
 
 Duplicate keys are detected in the raw text rather than after `JSON.parse`, which is last-wins and
 silent: a bad merge leaving two entries for one cell parses cleanly and applies the minimum nobody
@@ -390,9 +392,11 @@ pre-push sensitivity scan.
 ```bash
 npm run blank-inventory:test    # unit only, no network, no store
 npm run blank-inventory:guard   # no real blank id may be committed
+npm run catalogue:test          # the manifest lint's own suite
+npm run catalogue:lint          # the committed catalogue.json, offline
 ```
 
-Both run in CI on every PR. The unit suite covers the decision boundaries that are easy to get
+All four run in CI on every PR. The unit suite covers the decision boundaries that are easy to get
 silently wrong: write-target selection, the all-match skip, drift refusal, partial-run receipts,
 idempotency key stability *and* distinctness, the mode cross-check (including cases that must NOT
 false-stop), convergence polling against a racing cascade, the untag interlock, the near-match
@@ -415,11 +419,13 @@ through the tool's own parser, and asserts that neither new command is a write c
 
 `test/catalogue-manifest.test.mjs` covers the manifest's own schema (both duplicate mechanisms, the
 normalised-value rejection, the empty-list and unknown-key refusals), the WARN and REFUSE boundary of
-its reconciliation, and the committed `catalogue.json`. One case pairs the two committed artifacts:
-the thresholds file must reconcile against the manifest with nothing unthresholded, nothing stale,
-and every body's cells summing to its stated budget. That is the cross-artifact cohesion check the
-split newly makes possible, and it runs offline, so a bad data migration fails CI rather than the
-next live run.
+its reconciliation, and the committed `catalogue.json`.
+
+The case that pairs the two committed artifacts lives in `test/reorder.test.mjs`, not there, because
+it is the reconciliation that owns it: the thresholds file must reconcile against the manifest with
+nothing unthresholded, nothing stale, and every body's cells summing to its stated budget. That is
+the cross-artifact cohesion check the split newly makes possible, and it runs offline, so a bad data
+migration fails CI rather than the next live run.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that

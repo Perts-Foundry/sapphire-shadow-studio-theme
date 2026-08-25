@@ -241,16 +241,72 @@ test('a warnings-only reconcile does not refuse; it returns the manifest and its
   assert.deepEqual(out.warnings.map((w) => w.code), ['catalogue-unseen-colors', 'catalogue-unseen-sizes']);
 });
 
+test('a malformed manifest refuses in the same object shape as every other gate failure', async () => {
+  // It used to print its own narrower {error, message, keys} instead, so a --json consumer that
+  // read `refusals` crashed on exactly the case the shape exists to describe.
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      artifact: ARTIFACT,
+      store: fakeStore(),
+      json: true,
+      read: async () => '{ not json',
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  const payload = refusalPayload(seen[0].assessment);
+  assert.deepEqual(Object.keys(payload), ['error', 'keys', 'refusals', 'warnings']);
+  assert.equal(payload.error, 'catalogue-invalid');
+  assert.match(payload.refusals[0].message, /is not valid JSON/);
+});
+
+test('catalogueGate returns nothing at all when it refuses, rather than a half-built result', async () => {
+  // `refuse` exits in production, so this is about the seam: a non-exiting refuse (a future
+  // --dry-run, a collecting reporter) must not let the gate fall through and hand a caller a
+  // result built on the manifest it just rejected.
+  const seen = [];
+  const collect = (params) => seen.push(params);
+  const missing = await catalogueGate({
+    artifact: ARTIFACT,
+    store: fakeStore(),
+    json: false,
+    read: async () => {
+      throw Object.assign(new Error('nope'), { code: 'ENOENT' });
+    },
+    refuse: collect,
+  });
+  const mismatched = await catalogueGate({
+    artifact: { bodies: [{ bodyId: 'quarter-zip' }] },
+    store: fakeStore(),
+    json: false,
+    read: async () => ONE_BODY_MANIFEST,
+    refuse: collect,
+  });
+  assert.equal(missing, undefined);
+  assert.equal(mismatched, undefined, 'the reconcile refusal returns before building a result');
+  assert.equal(seen.length, 2);
+});
+
 test('both reorder and demand run the manifest gate, and both run it before reading thresholds', async () => {
   // The short-circuit is an ORDERING property, and ordering is what the source shows. A manifest
   // refusal must not arrive alongside a list of unthresholded or stale cells computed from a cell
   // space the same refusal says is wrong.
+  //
+  // The slice is bounded to the function's own body and comments are stripped first. Slicing to end
+  // of file let one command's indices come from a LATER function, so a command that stopped gating
+  // could still pass on its neighbour's call; and an unstripped `await catalogueGate(` inside a
+  // comment satisfied the search on its own. Both commands carry such a comment today.
   const cli = await readFile(path.join(dirname(fileURLToPath(import.meta.url)), '../blank-inventory.mjs'), 'utf8');
+  const stripped = cli.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
   for (const command of ['cmdReorder', 'cmdDemand']) {
-    const body = cli.slice(cli.indexOf(`async function ${command}(`));
+    const start = stripped.indexOf(`async function ${command}(`);
+    assert.ok(start > -1, `${command} is defined`);
+    const next = stripped.indexOf('\nasync function ', start + 1);
+    const body = stripped.slice(start, next === -1 ? undefined : next);
     const gate = body.indexOf('await catalogueGate(');
     const thresholds = body.indexOf('await readThresholdsOrRefuse(');
-    assert.ok(gate > -1, `${command} calls the shared catalogueGate helper`);
+    assert.ok(gate > -1, `${command} calls the shared catalogueGate helper in its own body`);
     assert.ok(thresholds > -1, `${command} still reads the thresholds file`);
     assert.ok(gate < thresholds, `${command} gates on the manifest before reading thresholds`);
   }

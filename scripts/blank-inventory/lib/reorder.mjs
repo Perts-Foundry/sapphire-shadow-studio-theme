@@ -98,7 +98,14 @@ export function buildAxes({ bodies, colors, sizes, ranges = null, display = {} }
   /** @type {Map<string, {colors: string[], sizes: string[]}>} */
   const perBody = new Map();
   for (const body of bodyList) {
-    const declared = ranges instanceof Map ? ranges.get(body) : ranges?.[body];
+    // Own properties only on the object form: `ranges[body]` would find Object.prototype.constructor
+    // for a body called "constructor" and treat a function as a declared range.
+    const declared =
+      ranges instanceof Map
+        ? ranges.get(body)
+        : ranges && Object.prototype.hasOwnProperty.call(ranges, body)
+          ? ranges[body]
+          : undefined;
     if (ranges && !declared) {
       throw new Error(
         `No declared colour and size range for garment body "${body}". The catalogue manifest and ` +

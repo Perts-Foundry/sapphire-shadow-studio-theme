@@ -144,23 +144,41 @@ group and wipes real stock everywhere.
 `catalogue.json` at the repo root states which garment bodies exist and which colours and sizes each
 body is made in. `reorder` and `demand` compute their whole cell space from it, one body at a time,
 so a body made in one colour gets one colour row. It carries facts only: never a minimum, a budget, a
-supplier name or a blank id.
+supplier name or a blank id (see Repo rules below for the full list).
 
-Like `thresholds.json`, it is **hand-edited only by the operator, in a PR**, under the same per-run
-STOP. Both files change together whenever a body's range changes, because narrowing a range in the
-manifest strands the thresholds rows it removes (they become a `stale-cells` warning) and widening
-one leaves the new cells unthresholded (which refuses).
+**Never create, edit or delete `catalogue.json` without an explicit per-run operator STOP approval
+and a feature branch plus PR**, whatever prompted the change: an undeclared-variant refusal, a
+body-map disagreement, a new colour or size, or the file being absent altogether. The gate is the
+same one the next section spells out for `thresholds.json`; read it there before proposing any edit
+to either file.
 
-Both commands run the manifest gate **before** they read `thresholds.json`. Its refusals:
+**On any manifest refusal: report the keys to the operator and stop.** Never add a body, colour or
+size to make a command pass. Both files are data the operator owns, not state a command reconciles.
 
+Both commands run the manifest gate **before** they read `thresholds.json`. It refuses on four
+things:
+
+- `catalogue.json` is missing;
+- it does not parse, or fails its schema, or declares an unknown version;
 - the manifest and the approved body map disagree about which bodies exist, in either direction;
 - a live tagged variant's body+colour+size is not declared in the manifest.
 
-That second one is the loud check that replaces what the old cross product provided by accident. On
-it, report the keys to the operator and stop. The fix is to declare the missing colour or size in a
-reviewed PR. **Never relax or bypass the check, and never untag a variant to make it pass.** A
-declared colour with no tagged variant yet is only a warning; declaring ahead of the first blank is
-the point of declaring at all.
+The last one is the loud check that replaces what the old cross product provided by accident. Its
+remedy is the operator declaring the missing colour or size in a reviewed PR. **Never edit the
+manifest yourself to clear it, never relax or bypass the check, and never untag a variant to make it
+pass.** A body-map disagreement is the same shape: the remedy for a missing body is a body-map
+re-propose under its own STOP, never deleting the body from either artifact to quieten the run.
+
+A declared colour with no tagged variant yet is only a warning. Mention it and move on; nothing is
+wrong, and declaring a colour ahead of its first blank is the point of declaring at all.
+
+**Changing a body's range is a change to both files, in one PR.** Narrowing the manifest strands the
+thresholds rows it removes, and widening it leaves the new cells unthresholded, which refuses on the
+next run. New cells also carry minimums, so a widening changes the body's cell sum, and a budget
+change takes its own separate STOP (see below). CI checks the pair offline: the cohesion case in
+`npm run blank-inventory:test` fails on any stranded or unthresholded cell and on any body whose
+cells no longer sum to its budget, so a one-sided edit is a red check rather than silent drift.
+(`npm run catalogue:lint` is schema-only and does not check the pair.)
 
 ## thresholds.json is edited only by the operator, in a PR
 
@@ -244,9 +262,16 @@ Such a rendering carries live stock quantities, so it stays inside the conversat
 into a PR, an issue, a comment, a commit message, or any other artifact reachable outside it, and
 it is never shared publicly.
 
-If `reorder` exits 1, the file is missing, unparseable, or does not cover every body+colour+size.
-That is the signal that the catalogue gained a body, colour or size. Take the named keys to the
-operator; do not write the file.
+If `reorder` exits 1, read the refusal `code` to learn WHICH file it is about, because the remedies
+live in different places:
+
+- a `catalogue-*` code is about `catalogue.json`: it is missing, unparseable, disagrees with the
+  approved body map, or a tagged variant falls outside the declared shape.
+- anything else is about `thresholds.json`: missing, unparseable, a duplicate key, or a declared
+  body+colour+size with no entry.
+
+Either way, take the named keys to the operator and **write neither file**. The manifest gate runs
+first, so a `catalogue-*` refusal is the one an agent is most likely to meet.
 
 ## Demand pass
 
@@ -331,7 +356,8 @@ Present it that way; do not describe the cross-check as sufficient on its own.
 
 This skill does NOT: touch prices (ever, for any reason); create or delete products or variants;
 edit any variant field other than the inventory quantity and the blank metafield; delete media; edit
-theme code; run `shopify theme push` or `pull`; commit, push, open a PR, or comment `deploy` (all git
+theme code; edit `catalogue.json` or `scripts/blank-inventory/thresholds.json` (both are the
+operator's, behind a STOP); run `shopify theme push` or `pull`; commit, push, open a PR, or comment `deploy` (all git
 actions are the operator's); or write to any variant outside the approved plan artifact.
 
 ## Repo rules that must hold
@@ -353,9 +379,9 @@ actions are the operator's); or write to any variant outside the approved plan a
   the demand pass alone). If one is missing, stop and have the operator apply the change; do not
   work around it.
 - **catalogue.json is public by construction.** Its values are storefront option values (the colour
-  and size names any visitor sees on a product page) and generic body ids. Never put a blank id, a
-  supplier name, a style number, a case pack, a cost or any policy number in it: those belong to
-  thresholds.json or nowhere.
+  and size names any visitor sees on a product page) and generic body ids. What must never go into
+  it is the same list as for thresholds.json below, plus every policy number (minimums, budgets):
+  this file holds facts, and the numbers belong to thresholds.json or nowhere.
 - **thresholds.json carries business quantities into a public repo.** Its keys are garment
   vocabulary and its values are unit counts, which is why it is safe to commit. These never go into
   it, into an `adjustments` note, or into a PR body that touches it: supplier or wholesaler names,

@@ -12,7 +12,7 @@ import {
   CATALOGUE_PATH,
   CATALOGUE_VERSION,
 } from '../lib/catalogue-manifest.mjs';
-import { variant, manifestDoc, manifestFor, BODIES, COLORS, SIZES } from './fixtures.mjs';
+import { variant, manifestDoc, manifestFor, VEST_BLACK_ONLY, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -68,12 +68,12 @@ test('parseCatalogue refuses a document with no bodies object at all', () => {
 
 test('parseCatalogue refuses an unknown key inside a body, so a typo cannot look like a setting', () => {
   const text = manifestDoc({ bodies: { crewneck: { colors: ['black'], sizes: ['m'], typo: ['x'] } } });
-  assert.throws(() => parseCatalogue(text), /unknown key\(s\): typo/);
+  assert.throws(() => parseCatalogue(text), /unknown key\(s\): "typo"/);
 });
 
 test('parseCatalogue refuses an unknown top-level key, so policy cannot leak into the shape file', () => {
   const text = JSON.stringify({ version: 1, bodies: { crewneck: { colors: ['black'], sizes: ['m'] } }, budgets: { crewneck: 40 } });
-  assert.throws(() => parseCatalogue(text), /unknown top-level key\(s\): budgets/);
+  assert.throws(() => parseCatalogue(text), /unknown top-level key\(s\): "budgets"/);
 });
 
 test('parseCatalogue surfaces a JSON syntax error as a refusal, not a raw SyntaxError', () => {
@@ -100,9 +100,52 @@ test('parseCatalogue preserves colour and size declaration order, which becomes 
 });
 
 test('parseCatalogue accepts the optional comment and returns the bodies in declaration order', () => {
-  const parsed = parseCatalogue(manifestDoc());
+  const parsed = parseCatalogue(manifestDoc({ comment: 'what this file is for' }));
   assert.deepEqual([...parsed.bodies.keys()], ['crewneck', 'quarter-zip', 'vest-womens']);
   assert.equal(parsed.version, 1);
+  assert.equal(parsed.raw.comment, 'what this file is for');
+});
+
+test('parseCatalogue refuses a non-string comment', () => {
+  assert.throws(() => parseCatalogue(manifestDoc({ comment: 42 })), /"comment" must be a string/);
+});
+
+test('parseCatalogue refuses a top level that is not a JSON object', () => {
+  for (const text of ['[]', 'null', '"x"', '7']) {
+    assert.throws(() => parseCatalogue(text), /must contain a JSON object/);
+  }
+});
+
+test('parseCatalogue refuses a non-string or empty value inside a colour or size list', () => {
+  assert.throws(() => parseCatalogue(manifestDoc({ bodies: { crewneck: { colors: [1], sizes: ['m'] } } })), /must be a non-empty string/);
+  assert.throws(() => parseCatalogue(manifestDoc({ bodies: { crewneck: { colors: [''], sizes: ['m'] } } })), /must be a non-empty string/);
+  assert.throws(() => parseCatalogue(manifestDoc({ bodies: { crewneck: { colors: [null], sizes: ['m'] } } })), /must be a non-empty string/);
+});
+
+test('parseCatalogue reports a duplicate key nested inside a body, with its path', () => {
+  const text = `{
+  "version": 1,
+  "bodies": {
+    "crewneck": { "colors": ["black"], "colors": ["classic navy"], "sizes": ["m"] }
+  }
+}`;
+  assert.throws(() => parseCatalogue(text), /duplicate key\(s\): "bodies\.crewneck\.colors"/);
+});
+
+test('a refused key name is JSON-quoted, so it cannot span lines into a CI output stream', () => {
+  // The CI step captures this text into $GITHUB_OUTPUT under a heredoc. An unescaped newline in a
+  // PR-authored key could close that heredoc early and append a forged `exit_code=0`, turning a
+  // refused lint into a green check. The escaping is the source-side half of that fix.
+  const hostile = 'evil\nGHEOF\nexit_code=0\nzz';
+  const text = JSON.stringify({ version: 1, bodies: { crewneck: { colors: ['black'], sizes: ['m'], [hostile]: 1 } } });
+  assert.throws(
+    () => parseCatalogue(text),
+    (err) => {
+      assert.ok(!err.message.includes('\n'), 'the message stays on one line');
+      assert.match(err.message, /"evil\\nGHEOF\\nexit_code=0\\nzz"/);
+      return true;
+    }
+  );
 });
 
 // --- loadCatalogue -----------------------------------------------------------
@@ -147,8 +190,6 @@ test("the committed catalogue.json parses under the tool's own schema rules", as
 
 // --- reconcileCatalogue ------------------------------------------------------
 
-// The real catalogue's shape: the women's vest is made in Black only.
-const VEST_BLACK_ONLY = { colors: ['black'], sizes: SIZES.map((s) => s.toLowerCase()) };
 const manifest = manifestFor({ 'vest-womens': VEST_BLACK_ONLY });
 
 test('reconcileCatalogue is clean when the manifest, the body map and the store agree', () => {
@@ -230,17 +271,91 @@ test('assessCatalogue refuses a missing manifest file rather than defaulting to 
   assert.deepEqual(assessed.refusals.map((r) => r.code), ['catalogue-missing']);
 });
 
+test('assessCatalogue carries a parse or schema failure as a refusal, not as its own output shape', () => {
+  const assessed = assessCatalogue({ invalid: 'catalogue.json is not valid JSON: boom.' });
+  assert.equal(assessed.exitCode, 1);
+  assert.deepEqual(assessed.refusals.map((r) => r.code), ['catalogue-invalid']);
+  assert.match(assessed.refusals[0].message, /not valid JSON/);
+});
+
+test('the undeclared-variant refusal forbids editing the manifest as well as the other two evasions', () => {
+  // Naming two of three evasions and describing the third as "the fix" is what invites the third.
+  const assessed = assessCatalogue({ undeclaredVariants: [{ key: 'vest-womens|classic navy|m', count: 1 }] });
+  const { message } = assessed.refusals[0];
+  assert.match(message, /never edit catalogue\.json yourself/);
+  assert.match(message, /never relax or bypass the check/);
+  assert.match(message, /never untag a variant/);
+});
+
+test('a tagged variant with no body is left to the body-map gate, not silently declared', () => {
+  // attachBodies leaves `body` null for a product the approved map does not cover. That is the
+  // unmapped-handle refusal's job (loadStore), so this function skips it rather than reporting a
+  // key it cannot even build; vocabKey throws without a body.
+  const out = reconcileCatalogue({
+    manifest,
+    bodyMapBodies: BODIES,
+    vocab: { colors: COLORS, sizes: SIZES },
+    variants: [{ id: 'v1', body: null, color: 'Classic Navy', size: 'M', blankId: 'X_1_M' }],
+  });
+  assert.deepEqual(out.undeclaredVariants, []);
+});
+
+test('reconcileCatalogue sorts every list it returns, so two runs print the same refusal', () => {
+  const out = reconcileCatalogue({
+    manifest: manifestFor({ hoodie: { colors: ['black'], sizes: ['m'] }, 'vest-womens': VEST_BLACK_ONLY }),
+    bodyMapBodies: ['quarter-zip', 'crewneck'],
+    vocab: { colors: COLORS, sizes: SIZES },
+    variants: [
+      variant({ body: 'vest-womens', color: 'Grey Heather', size: 'M' }),
+      variant({ body: 'vest-womens', color: 'Classic Navy', size: 'M' }),
+    ],
+  });
+  assert.deepEqual(out.unknownBodies, ['hoodie', 'vest-womens']);
+  assert.deepEqual(out.undeclaredVariants.map((u) => u.key), [
+    'vest-womens|classic navy|m',
+    'vest-womens|grey heather|m',
+  ]);
+});
+
+test('an unnormalised body id in the approved body map still matches its manifest entry', () => {
+  // The body map is a separate artifact and its ids are not guaranteed pre-normalised, so the
+  // comparison normalises rather than refusing a spelling difference as a missing body.
+  const out = reconcileCatalogue({ manifest, bodyMapBodies: ['Crewneck', 'Quarter-Zip', 'vest-womens'], vocab: { colors: COLORS, sizes: SIZES } });
+  assert.deepEqual(out.unknownBodies, []);
+  assert.deepEqual(out.unmappedBodies, []);
+});
+
 // --- the read-only guard -----------------------------------------------------
+
+/**
+ * Every module specifier a file imports.
+ *
+ * `[\s\S]*?` and not `.*`: a single-line-only matcher is invisible to a MULTI-LINE import, which is
+ * the shape these very test files use, so a `import {\n  setQuantity,\n} from './mutations.mjs';`
+ * would leave the import list looking clean and the guard would report success for exactly the
+ * violation it exists to catch. Both quote styles, and the semicolon optional.
+ *
+ * @param {string} source
+ * @returns {string[]}
+ */
+function importsOf(source) {
+  return [...source.matchAll(/^import[\s\S]*?from\s*['"]([^'"]+)['"];?\s*$/gm)].map((m) => m[1]);
+}
+
+test('the import-list matcher sees a multi-line import, which a single-line one would miss', () => {
+  // Positive control for the guard below. Without this, that guard can pass while being blind.
+  const multiline = `import {\n  setQuantity,\n} from './mutations.mjs';\n`;
+  assert.deepEqual(importsOf(multiline), ['./mutations.mjs']);
+  assert.deepEqual(importsOf(`import x from "./a.mjs"\n`), ['./a.mjs']);
+});
 
 test('the manifest module cannot reach a mutation, and neither can the lint that shares its schema', async () => {
   // The import list itself, not a substring search: the module header names mutations.mjs precisely
   // to say it must never import it, and a naive grep cannot tell the prohibition from the violation.
   const lib = await readFile(path.join(here, '../lib/catalogue-manifest.mjs'), 'utf8');
-  const libImports = [...lib.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
-  assert.deepEqual(libImports, ['./groups.mjs', './reorder.mjs']);
+  assert.deepEqual(importsOf(lib), ['./groups.mjs', './reorder.mjs']);
   assert.doesNotMatch(lib, /setQuantity\(|adjustQuantity\(|metafieldsSet/);
 
   const lint = await readFile(path.join(repoRoot, 'scripts/catalogue/check-catalogue.mjs'), 'utf8');
-  const lintImports = [...lint.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
-  assert.deepEqual(lintImports, ['node:fs/promises', 'node:path', 'node:url', '../blank-inventory/lib/catalogue-manifest.mjs']);
+  assert.deepEqual(importsOf(lint), ['node:fs/promises', 'node:path', 'node:url', '../blank-inventory/lib/catalogue-manifest.mjs']);
 });

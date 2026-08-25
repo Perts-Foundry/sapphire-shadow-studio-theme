@@ -160,6 +160,26 @@ export function thresholdsFor(overrides = {}, defaultMin = 5) {
  * @param {Record<string, {colors: string[], sizes: string[]}|null>} [overrides] - keyed by body id
  * @returns {{version: number, bodies: Map<string, {colors: string[], sizes: string[]}>}}
  */
+/**
+ * The real catalogue's narrowing: the women's vest is made in Black only.
+ *
+ * Shared rather than redeclared per suite, because it is the one divergence the whole split exists
+ * to represent, and two copies would let one drift into describing a catalogue that is not this one.
+ */
+export const VEST_BLACK_ONLY = {
+  colors: ['black'],
+  sizes: SIZES.map((s) => s.toLowerCase()),
+};
+
+/**
+ * A body narrowed on the SIZE axis, which no real body is today.
+ *
+ * Colour narrowing and size narrowing run through different loops in buildPivot and
+ * deriveThresholds, so a fixture set that only ever narrows colours leaves half the per-body path
+ * unexercised.
+ */
+export const MID_SIZES_ONLY = { colors: ['black'], sizes: ['m', 'l'] };
+
 export function manifestFor(overrides = {}) {
   const bodies = new Map();
   for (const body of BODIES) {
@@ -185,11 +205,11 @@ export function manifestFor(overrides = {}) {
 export function manifestDoc({ version = 1, comment, bodies } = {}) {
   const doc = { version };
   if (comment !== undefined) doc.comment = comment;
-  doc.bodies = bodies ?? {
-    crewneck: { colors: ['black', 'grey heather', 'classic navy'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
-    'quarter-zip': { colors: ['black', 'grey heather', 'classic navy'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
-    'vest-womens': { colors: ['black'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
-  };
+  // Derived from manifestFor rather than hand-listed, so this cannot become a third copy of the
+  // committed manifest that goes stale the moment a body or a colour is added.
+  doc.bodies =
+    bodies ??
+    Object.fromEntries([...manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies.entries()]);
   return JSON.stringify(doc, null, 2);
 }
 

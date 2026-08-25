@@ -40,6 +40,22 @@ const BODY_KEYS = ['colors', 'sizes'];
 const cmpString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
+ * Render a list of PR-authored key names for an error message, each JSON-quoted.
+ *
+ * The quoting is not cosmetic. These messages carry key names straight out of the manifest, and CI
+ * captures them into `$GITHUB_OUTPUT` under a heredoc. A key containing a real newline could
+ * otherwise close that heredoc early and forge a later `exit_code=0` line, turning a refused lint
+ * into a green check. JSON.stringify escapes the newline, so the name cannot span lines at all.
+ * The workflow uses a random delimiter as well; this is the half that closes the class.
+ *
+ * @param {string[]} names
+ * @returns {string}
+ */
+function nameList(names) {
+  return names.map((n) => JSON.stringify(n)).join(', ');
+}
+
+/**
  * A value is valid only if it is ALREADY in normalised vocab form. Rejected, never normalised: two
  * spellings of one colour would silently become two cells for one physical blank, which is the same
  * failure `parseThresholds` refuses on its keys.
@@ -129,7 +145,7 @@ export function parseCatalogue(text) {
   const dups = findDuplicateKeys(text);
   if (dups.length) {
     throw new Error(
-      `${CATALOGUE_PATH} has duplicate key(s): ${dups.map((d) => d.path).join(', ')}. JSON.parse ` +
+      `${CATALOGUE_PATH} has duplicate key(s): ${nameList(dups.map((d) => d.path))}. JSON.parse ` +
         `takes the last one silently, so a bad merge would declare a range nobody reviewed.`
     );
   }
@@ -137,7 +153,7 @@ export function parseCatalogue(text) {
   const unknownTop = Object.keys(doc).filter((k) => !TOP_LEVEL_KEYS.includes(k));
   if (unknownTop.length) {
     throw new Error(
-      `${CATALOGUE_PATH} has unknown top-level key(s): ${unknownTop.join(', ')}. This file declares ` +
+      `${CATALOGUE_PATH} has unknown top-level key(s): ${nameList(unknownTop)}. This file declares ` +
         `the catalogue's shape and nothing else; policy numbers live in thresholds.json.`
     );
   }
@@ -170,7 +186,7 @@ export function parseCatalogue(text) {
     const unknown = Object.keys(entry).filter((k) => !BODY_KEYS.includes(k));
     if (unknown.length) {
       throw new Error(
-        `Body ${JSON.stringify(bodyId)} has unknown key(s): ${unknown.join(', ')}. A body declares ` +
+        `Body ${JSON.stringify(bodyId)} has unknown key(s): ${nameList(unknown)}. A body declares ` +
           `its colours and its sizes and nothing else; an unrecognised key is refused rather than ` +
           `ignored, so a typo cannot look like a setting that took effect.`
       );
@@ -289,6 +305,7 @@ export function reconcileCatalogue({ manifest, bodyMapBodies = [], vocab = {}, v
  * @param {string[]} [params.unknownSizes]
  * @param {Array<{key: string, count: number}>} [params.undeclaredVariants]
  * @param {boolean} [params.fileMissing]
+ * @param {string} [params.invalid] - a parse or schema failure message from parseCatalogue
  * @returns {{exitCode: number, refusals: Array<{code: string, message: string, keys: string[]}>, warnings: Array<{code: string, message: string, keys: string[]}>}}
  */
 export function assessCatalogue({
@@ -298,9 +315,16 @@ export function assessCatalogue({
   unknownSizes = [],
   undeclaredVariants = [],
   fileMissing = false,
+  invalid = null,
 } = {}) {
   const refusals = [];
   const warnings = [];
+
+  if (invalid) {
+    // Carried here rather than printed by the command layer so a malformed manifest produces the
+    // same refusal object shape as every other gate failure.
+    refusals.push({ code: 'catalogue-invalid', keys: [], message: invalid });
+  }
 
   if (fileMissing) {
     refusals.push({
@@ -346,8 +370,9 @@ export function assessCatalogue({
         `declared in ${CATALOGUE_PATH}: ` +
         `${undeclaredVariants.map((u) => `${u.key} (${u.count} variant(s))`).join(', ')}. Stock ` +
         `exists that the declared shape has no cell for, so the report would omit it silently. ` +
-        `Declare the missing colour or size in a reviewed PR; never relax or bypass this check, and ` +
-        `never untag a variant to make it pass.`,
+        `Report these keys to the operator and stop. Only the operator declares the missing colour ` +
+        `or size, in a reviewed PR: never edit ${CATALOGUE_PATH} yourself to clear this, never ` +
+        `relax or bypass the check, and never untag a variant to make it pass.`,
     });
   }
 

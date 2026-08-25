@@ -32,6 +32,11 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   [`sku/README.md`](sku/README.md) and [`../docs/sku-scheme.md`](../docs/sku-scheme.md). Orthogonal
   to `blank-inventory/`: a SKU identifies the finished piece, `custom.inventory_blank_sku` the
   shared blank garment.
+- `catalogue/`: the offline lint for the root `catalogue.json`, the committed manifest declaring
+  which garment bodies exist and which colours and sizes each one is made in. Read-only, no
+  credentials; it reuses `blank-inventory/lib/catalogue-manifest.mjs` so one schema serves both the
+  lint and the reorder review. The manifest is hand-edited by the operator in a reviewed PR; no
+  command creates or edits it. `npm run catalogue:lint` and `npm run catalogue:test`.
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).

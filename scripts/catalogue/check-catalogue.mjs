@@ -14,17 +14,34 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-import { parseCatalogue, CATALOGUE_PATH } from '../blank-inventory/lib/catalogue-manifest.mjs';
+import { loadCatalogue, CATALOGUE_PATH } from '../blank-inventory/lib/catalogue-manifest.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
+ * The success line, in one place.
+ *
+ * The workflow greps this line for its own fail-closed floor, so the wording is a contract between
+ * this file and .github/workflows/validate.yml. Exported so a test pins it here rather than leaving
+ * CI as the only thing that notices a reword.
+ *
+ * @param {{bodies: number, colors: number, sizes: number}} counts
+ * @returns {string}
+ */
+export function formatCounts({ bodies, colors, sizes }) {
+  return `catalogue OK: ${bodies} bodies, ${colors} colour values, ${sizes} size values.`;
+}
+
+/**
  * @param {string} [filePath]
  * @returns {Promise<{bodies: number, colors: number, sizes: number}>}
- * @throws when the manifest is invalid or vacuous
+ * @throws when the manifest is missing, invalid or vacuous
  */
 export async function checkCatalogue(filePath = path.join(REPO_ROOT, CATALOGUE_PATH)) {
-  const manifest = parseCatalogue(await readFile(filePath, 'utf8'));
+  // loadCatalogue, not readFile plus parseCatalogue: a missing file is the likeliest real CI
+  // failure (a rename, or a bad merge deleting it), and it deserves the module's curated refusal
+  // rather than a bare ENOENT that says nothing about who owns the file.
+  const manifest = await loadCatalogue({ read: (p) => readFile(p, 'utf8'), path: filePath });
   let colors = 0;
   let sizes = 0;
   for (const range of manifest.bodies.values()) {
@@ -42,8 +59,7 @@ export async function checkCatalogue(filePath = path.join(REPO_ROOT, CATALOGUE_P
 }
 
 async function main() {
-  const { bodies, colors, sizes } = await checkCatalogue();
-  console.log(`catalogue OK: ${bodies} bodies, ${colors} colour values, ${sizes} size values.`);
+  console.log(formatCounts(await checkCatalogue()));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

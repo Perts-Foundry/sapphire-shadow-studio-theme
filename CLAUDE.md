@@ -143,7 +143,7 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
 
-Root-level `catalogue.json` declares the offering's shape (bodies, and the colours and sizes each body is made in). It holds facts only, never policy numbers, and is hand-edited in a reviewed PR. Today only blank-inventory's `reorder`/`demand` cell space reads it; the other tools still carry private copies of the same vocabulary (`TODO.md` > Catalogue manifest adoption tracks migrating them).
+Root-level `catalogue.json` is the single source of truth for the offering's shape; its own `comment` field says what it holds. Hand-edited in a reviewed PR only, never by a command or an agent. Other tools still carry their own copies of the same vocabulary; migrating them is tracked in `TODO.md` and the rationale is in `release-notes.md`.
 
 ### Structured data
 

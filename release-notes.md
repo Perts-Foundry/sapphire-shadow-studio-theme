@@ -73,6 +73,21 @@ are sorted by code point, not by manifest declaration order, so reordering bodie
 never move a line in `thresholds.json`. Colours follow manifest order, because that is the matrix row
 order a reader sees. Sizes stay in garment order.
 
+**A refused key name is JSON-quoted, and the CI step uses a random heredoc delimiter.** Two guards
+for one hole found in review. The lint's refusal messages quote key names out of `catalogue.json`,
+and CI captures that text into `$GITHUB_OUTPUT` under a heredoc. With the fixed `GHEOF` delimiter the
+repo used everywhere, a key containing a real newline plus a `GHEOF` line closed the block early and
+let a following `exit_code=0` overwrite the honest exit code, so a refused lint merged green. This
+was reproduced, not theorised. The delimiter fix matches the precedent the contrast step already set
+for the same reason; the escaping is the half that closes the class rather than the instance, since
+a key can no longer span lines in any message at all.
+
+**One refusal shape, including for a malformed manifest.** A parse or schema failure used to print
+its own narrower `{error, message, keys}` while every other gate failure went through
+`refusalPayload`'s four fields. A `--json` consumer reading `refusals` therefore crashed on exactly
+the case the shape exists to describe. `assessCatalogue` now carries the parse failure as a
+`catalogue-invalid` refusal, so the command layer has one path and one shape.
+
 **Rollback posture.** The whole change is one revertable commit plus one data file. If the new
 undeclared-variant refusal ever blocks routine use after merge, the fix is to declare the missing
 colour or size in `catalogue.json` in a reviewed PR. Never relax the check, and never untag a variant

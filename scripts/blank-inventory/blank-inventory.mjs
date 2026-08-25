@@ -880,15 +880,15 @@ export async function catalogueGate({
   try {
     manifest = await loadCatalogue({ read, path: manifestPath });
   } catch (err) {
-    if (err.fileMissing) {
-      refuse({ assessment: assessCatalogue({ fileMissing: true }), json });
-      return;
-    }
-    if (json) {
-      console.log(JSON.stringify({ error: 'catalogue-invalid', message: err.message, keys: [] }, null, 2));
-      process.exit(1);
-    }
-    fail(err.message);
+    // Both load failures go through the SAME refusal path as a reconcile failure. A parse or schema
+    // error used to print its own narrower `{error, message, keys}` object instead, so a --json
+    // consumer that read `refusals` crashed on exactly the malformed-manifest case the shape exists
+    // to describe.
+    refuse({
+      assessment: err.fileMissing ? assessCatalogue({ fileMissing: true }) : assessCatalogue({ invalid: err.message }),
+      json,
+    });
+    return;
   }
 
   const assessment = assessCatalogue(
@@ -899,7 +899,13 @@ export async function catalogueGate({
       variants: store.variants,
     })
   );
-  if (assessment.exitCode !== 0) refuse({ assessment, json });
+  // The bare return matters even though `refuse` exits in production: without it a non-exiting
+  // `refuse` would fall through and hand both call sites a result built on a manifest the gate just
+  // rejected, which is worse than the TypeError a caller would get from destructuring undefined.
+  if (assessment.exitCode !== 0) {
+    refuse({ assessment, json });
+    return;
+  }
   return { manifest, warnings: assessment.warnings };
 }
 
