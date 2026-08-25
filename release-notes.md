@@ -1,5 +1,52 @@
 # Release Notes
 
+## Reorder review: a purchase list the tool renders, not the operator (unreleased)
+
+Another follow-up in the read-only half. Nothing here writes to the store, edits `thresholds.json` or
+`catalogue.json`, or changes a gate, and the existing `reorder` and `reorder --json` output is
+byte-identical to before.
+
+**The reorder list and a purchase list are different questions, and one shape cannot serve both.**
+The list is sorted by shortfall because it answers "where do I look first", so it mixes bodies,
+colours and states together. At a supplier's size run the operator needs the opposite: one garment
+body at a time, then one colour, only the short sizes, with a count per colour and per body.
+`reorder --purchase-list` renders exactly that, from `buildPurchaseList` and `renderPurchaseList` in
+`lib/reorder.mjs`; the command reads the flag and prints, as the rest of that file's commands do, and
+the two functions add no import, so the existing test asserting the module cannot reach a mutation
+still covers them.
+
+**This existed before as a hand-rendered view, and that is the mistake being corrected.** The format
+took four rounds of throwaway scratchpad scripts to reach, and every one of those rounds re-derived
+buy quantities off the printed matrix. Three kinds of cell must never become a buy line, and a
+hand-built list silently includes all three: a `min: 0` cell, which is how "we do not make this
+combination" is recorded; an unsettled cell, whose group has a member range and not a reading, so
+both ends are wrong (the low end over-orders by the whole fan-out, the high end under-orders); and a
+cell with a minimum but no blank group at all, whose full minimum looks like a quantity while
+actually meaning "this blank does not exist yet", which is a tagging problem for `audit`. None of the
+three is a rounding decision. The filter now lives in the tool, and the skill says to produce an
+order sheet only through the flag for exactly that reason.
+
+**An unsettled cell is named only when the unknown reading could change the order.** A range whose
+lowest member already meets the minimum buys nothing whichever reading turns out to be true, so
+listing it would send the operator to recount a group that can never need a purchase. That mirrors
+`flagReorders`, which flags an unsettled cell only when even its highest member is short: both refuse
+to cry wolf over a group that is merely mid-fan-out.
+
+**The excluded cells print before the total and say "none" when there are none.** A block that
+appeared only when it had something to say would make its absence ambiguous: an operator cannot tell
+"nothing was excluded" from "the tool did not check" by looking at a gap. When nothing is short at
+all the output says so in a sentence rather than printing a bare zero total, which reads as a failed
+run. A negative on-hand stays unclamped, mirroring the reorder list, so an oversold cell buys the
+oversell back as well as refilling the minimum.
+
+**There is deliberately no `--purchase-list --json`, and the combination is refused.** `--json` exists
+to be consumed by a program, and a program consuming buy quantities is precisely the write-adjacent
+path this output must not open: these numbers are a supplier-ordering aid, never a restock quantity,
+never a count-sheet entry, never an input to an inventory write. Receiving a shipment still needs an
+independent physical count. Do not add a JSON form without revisiting that guardrail, which is stated
+in the skill and echoed as a footer on the output itself; the footer is a reminder, and the skill
+clause is the enforcement.
+
 ## The catalogue's shape moves into catalogue.json (unreleased)
 
 Read-only throughout. Nothing here writes to the store or changes a deploy gate.

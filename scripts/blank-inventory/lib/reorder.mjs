@@ -811,6 +811,173 @@ export function bodyTotals(pivot, resolved) {
 }
 
 // ---------------------------------------------------------------------------
+// The purchase list
+// ---------------------------------------------------------------------------
+
+/**
+ * The supplier-ordering view: what to buy, grouped by garment body and then colour.
+ *
+ * DIFFERENT QUESTION FROM THE REORDER LIST. That list is sorted by shortfall and answers "where do I
+ * look first", so it mixes bodies, colours and states together and carries cells whose number is a
+ * gap rather than a quantity. Standing at a supplier's size run, the operator needs the opposite
+ * shape: one body at a time, one colour at a time, only the short sizes, and a count per colour and
+ * per body. This builds exactly that, and nothing else.
+ *
+ * WHAT IS NEVER A BUY LINE, and why each exclusion is not a rounding decision:
+ *
+ * - `min <= 0` is how "we do not make this combination" is recorded (see flagReorders). Buying into
+ *   it would order a garment the catalogue says does not exist.
+ * - An UNSETTLED cell has a member range and not a reading. `buy` would have to come from one end of
+ *   that range, and both ends are wrong: the low end over-orders by the whole fan-out, the high end
+ *   under-orders. A purchase quantity is never derived from a range, so the cell is excluded and
+ *   named instead. It is named only when the answer could change the order, though: a range whose
+ *   LOWEST member already meets the minimum buys nothing whichever reading turns out to be true.
+ * - A NO-GROUP cell has a minimum but nothing on the store carries it, so there is no stock reading
+ *   to subtract at all. Its full minimum would look like a buy quantity while actually meaning "this
+ *   blank does not exist yet", which is a tagging problem (`audit`), not an order.
+ *
+ * Both exclusions are gated on `min > 0` for the same reason a `min: 0` cell never becomes a buy
+ * line: a combination the catalogue does not make is not something to resolve before ordering, so
+ * listing it would fill the excluded section with cells nobody will ever buy. This is narrower than
+ * `pivotCounts`, which counts every unsettled cell because its job is to stop a terse matrix from
+ * hiding one.
+ *
+ * `body` narrows the buy lines AND the excluded lists together. An operator who asked about one
+ * garment must not be handed warnings about the others, and an excluded list that ignored the filter
+ * would be exactly that.
+ *
+ * Ordering is the same everywhere so two runs over the same store render identically: bodies by code
+ * point (as buildAxes sorts them), colours by display label, sizes in garment order.
+ *
+ * @param {{bodies: Array<object>}} pivot
+ * @param {Map<string, {min: number}>} resolved
+ * @param {{body?: string|null}} [options]
+ * @returns {{bodies: Array<object>, excluded: {unsettled: Array<object>, noGroup: Array<object>}, totalUnits: number}}
+ */
+export function buildPurchaseList(pivot, resolved, { body = null } = {}) {
+  const bodies = [];
+  const unsettled = [];
+  const noGroup = [];
+  let totalUnits = 0;
+
+  for (const bodyRow of pivot.bodies ?? []) {
+    if (body && bodyRow.body !== body) continue;
+    const colors = [];
+    let bodyUnits = 0;
+
+    for (const colorRow of [...bodyRow.colors].sort((a, b) => cmpString(a.colorLabel ?? a.color, b.colorLabel ?? b.color))) {
+      const rows = [];
+      let colorUnits = 0;
+
+      for (const cell of [...colorRow.cells].sort((a, b) => compareSizes(a.size, b.size))) {
+        const min = resolved.get(cell.key)?.min ?? 0;
+        if (min <= 0) continue;
+        const facts = {
+          key: cell.key,
+          body: cell.body,
+          bodyLabel: bodyRow.bodyLabel ?? bodyRow.body,
+          color: cell.color,
+          colorLabel: colorRow.colorLabel ?? colorRow.color,
+          size: cell.size,
+          sizeLabel: cell.sizeLabel ?? cell.size,
+          state: cell.state,
+          min,
+        };
+        if (cell.state === NO_GROUP) {
+          noGroup.push(facts);
+          continue;
+        }
+        if (cell.onHand === null) {
+          // Only ambiguous when a buy line actually turns on the answer. If even the LOWEST member
+          // already meets the minimum, every reading in the range yields the same result (buy
+          // nothing), so there is nothing to resolve before ordering and naming the cell would send
+          // the operator to recount a group that can never need a purchase. This mirrors
+          // flagReorders, which flags an unsettled cell only when even its highest member is short:
+          // both refuse to cry wolf over a group that is merely mid-fan-out.
+          if (cell.low < min) unsettled.push({ ...facts, low: cell.low, high: cell.high });
+          continue;
+        }
+        if (cell.onHand >= min) continue;
+        // Unclamped on the on-hand side, as flagReorders is: Shopify permits a negative quantity, and
+        // a cell that has oversold needs the oversell bought back as well as the minimum refilled.
+        const buy = min - cell.onHand;
+        colorUnits += buy;
+        rows.push({ size: cell.size, sizeLabel: facts.sizeLabel, buy, onHand: cell.onHand, min });
+      }
+
+      if (!rows.length) continue;
+      bodyUnits += colorUnits;
+      colors.push({ color: colorRow.color, colorLabel: colorRow.colorLabel ?? colorRow.color, units: colorUnits, rows });
+    }
+
+    if (!colors.length) continue;
+    totalUnits += bodyUnits;
+    bodies.push({ body: bodyRow.body, bodyLabel: bodyRow.bodyLabel ?? bodyRow.body, units: bodyUnits, colors });
+  }
+
+  const byCell = (a, b) => cmpString(a.body, b.body) || cmpString(a.colorLabel, b.colorLabel) || compareSizes(a.size, b.size);
+  return { bodies, excluded: { unsettled: unsettled.sort(byCell), noGroup: noGroup.sort(byCell) }, totalUnits };
+}
+
+/**
+ * The purchase list as text. Returns a string; the command prints it and decides nothing.
+ *
+ * THE EXCLUDED SECTION IS ALWAYS PRINTED, before the total, and says "none" when it is empty. A
+ * section that appeared only when there was something to say would make its absence ambiguous: an
+ * operator cannot tell "nothing was excluded" from "the tool did not check" by looking at a gap.
+ * Putting it before the total keeps it above the number the eye stops on.
+ *
+ * The empty case prints a sentence and not a table. A bare `TOTAL: 0 units` under an empty list
+ * reads as a failed run rather than as a store that is fully stocked.
+ *
+ * The closing footer is a REMINDER, not the enforcement. The rule that this output never becomes a
+ * count-sheet entry or a write quantity lives in the skill; a line of text in a terminal cannot
+ * enforce anything, and treating it as though it could is how a guardrail quietly becomes decorative.
+ *
+ * @param {{bodies: Array<object>, excluded: {unsettled: Array<object>, noGroup: Array<object>}, totalUnits: number}} list
+ * @returns {string}
+ */
+export function renderPurchaseList(list) {
+  const units = (n) => `${n} unit${n === 1 ? '' : 's'}`;
+  const title = 'PURCHASE LIST  (units to reach minimum)';
+  const out = [title, '='.repeat(title.length), ''];
+
+  if (!list.bodies.length) {
+    out.push('No sizes below minimum.', '');
+  } else {
+    for (const body of list.bodies) {
+      out.push(body.bodyLabel, '='.repeat(body.bodyLabel.length));
+      for (const color of body.colors) {
+        out.push(`  ${color.colorLabel}   (${units(color.units)})`);
+        out.push(`      ${'size'.padEnd(6)}${'buy'.padStart(5)}${'have'.padStart(7)}${'min'.padStart(6)}`);
+        for (const row of color.rows) {
+          out.push(`      ${String(row.sizeLabel).padEnd(6)}${String(row.buy).padStart(5)}${String(row.onHand).padStart(7)}${String(row.min).padStart(6)}`);
+        }
+      }
+      out.push(`  ${body.bodyLabel} total: ${units(body.units)}`, '');
+    }
+  }
+
+  const excluded = [...list.excluded.unsettled, ...list.excluded.noGroup];
+  if (!excluded.length) {
+    out.push('Excluded: none');
+  } else {
+    out.push(`Excluded: ${excluded.length} cell(s) (not settled / no group); resolve before ordering those`);
+    for (const cell of list.excluded.unsettled) {
+      out.push(`  ${cell.bodyLabel} / ${cell.colorLabel} / ${cell.sizeLabel}: not settled (${cell.low}-${cell.high} on hand, min ${cell.min})`);
+    }
+    for (const cell of list.excluded.noGroup) {
+      out.push(`  ${cell.bodyLabel} / ${cell.colorLabel} / ${cell.sizeLabel}: no blank group (min ${cell.min}); see "audit"`);
+    }
+  }
+
+  out.push(`TOTAL: ${units(list.totalUnits)}`);
+  out.push('  Each body is a different physical garment; totals never combine across bodies.');
+  out.push('  Purchasing aid only. Never enter these numbers into a count sheet or inventory write.');
+  return out.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Demand
 // ---------------------------------------------------------------------------
 

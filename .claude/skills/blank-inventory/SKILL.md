@@ -240,6 +240,11 @@ against a physical count before ordering anything**.
 transcription. Restock quantities come only from a physical count. This report tells the operator
 where to look, not what to enter.
 
+This prohibition also covers `reorder --purchase-list` output: it is a supplier-ordering aid only and
+must never be entered into a count sheet, used as a restock quantity, or passed to any
+inventory-write command, in this or any later session, regardless of intermediate transformation.
+Receiving a supplier shipment still requires an independent physical count.
+
 The output ends with a **per-body totals** block: on-hand units against minimum units, with the
 shortfall and the surplus counted separately rather than netted. That is the distinction the matrix
 cannot show at a glance. A body that is short and holds no surplus needs more units; a body with
@@ -247,13 +252,27 @@ both is holding roughly enough units in the wrong sizes or colours, which is a d
 The sums cover only cells whose group has settled, and the block prints how many were excluded, so
 an unsettled cell is never read as a zero.
 
+**When a purchase or order sheet is wanted, always produce it with `reorder --purchase-list`.** Never
+hand-render one from raw reorder output: the unsettled and no-group exclusion filter exists only
+inside that flag, so a hand-built list silently turns a member range or a missing blank group into a
+buy quantity. The
+flag groups by garment body then colour, lists only the short sizes as `size / buy / have / min`,
+counts units per colour and per body, and names every excluded cell above the total. `--body` narrows
+the buy lines and the excluded list together; `--below` is implied and passing it is a no-op.
+
+`--purchase-list --json` is refused, deliberately. `--json` exists to be consumed by a program, and a
+program consuming buy quantities is exactly the write-adjacent path the guardrail above closes. Do
+not work around the refusal by transcribing the list into JSON or any other structured form.
+
 **Every derived number comes from `reorder --json`.** Totals, surplus versus shortfall, comparisons
 against budgets: run the command with `--json` and read the number out of it. Never re-type a
 quantity off the terminal matrix into a calculation, and never derive a number from a rendering
 built earlier in the conversation, even one that was correctly sourced from `--json` at the time.
 Re-typing a stock number is a transcription step, and one wrong digit becomes a wrong conclusion
 with nothing to catch it. Every derived figure traces to `--json` directly, never to a presentation
-layer.
+layer. The purchase list is not an exception to that: its buy quantities and unit counts are
+computed inside the tool, so they are presented verbatim as the command printed them and are never
+re-derived, re-added, or reshaped by hand.
 
 **Presentation.** The verbatim command output is always included. On top of it, an organised
 rendering is permitted (for example an artifact with a colour-coded matrix), on two conditions:

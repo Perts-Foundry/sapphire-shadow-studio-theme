@@ -51,9 +51,13 @@ node scripts/blank-inventory/blank-inventory.mjs audit --stale
 # body/colour/size against the committed minimums, a reorder list sorted by shortfall, and
 # per-body totals of on-hand against minimum units.
 # --below prints only the list; --body narrows to one garment; --json emits the whole report.
+# --purchase-list is the supplier-checkout view: garment, then colour, only the short sizes, with
+# per-colour and per-body unit counts. It has no --json form (see "The purchase list" below).
 node scripts/blank-inventory/blank-inventory.mjs reorder
 node scripts/blank-inventory/blank-inventory.mjs reorder --body crewneck --below
 node scripts/blank-inventory/blank-inventory.mjs reorder --json
+node scripts/blank-inventory/blank-inventory.mjs reorder --purchase-list
+node scripts/blank-inventory/blank-inventory.mjs reorder --body crewneck --purchase-list
 
 # Net units sold per body/colour/size over a window, and the threshold adjustments that implies.
 # Read-only: it prints a from -> to list for the operator, and edits nothing. Needs read_orders.
@@ -311,6 +315,44 @@ These sums are deliberately not the reorder list's total. The list also carries 
 (at their full minimum) and unsettled cells (measured from their highest member), which is right for
 "where do I look first" and wrong for "how does this body's settled stock compare with its settled
 minimums".
+
+### The purchase list
+
+`reorder --purchase-list` answers the other question: standing at a supplier's size run, what goes in
+the basket. It replaces the matrix and the shortfall table with one list grouped by garment body,
+then by colour, showing only the short sizes as `size / buy / have / min`, with a unit count per
+colour, per body, and one grand total. `--below` is implied by that view, so passing it as well is an
+accepted no-op. `--body` narrows the buy lines and the excluded list together: an operator asking
+about one garment is not handed warnings about the others.
+
+`buy` is `min - onHand`, and only for a settled cell that is genuinely short. Three kinds of cell
+never become a buy line, and none of the three is a rounding decision:
+
+- `min: 0`, which is how "we do not make this combination" is recorded. Buying into it would order a
+  garment the catalogue says does not exist.
+- A cell whose group has not settled. It has a member range and not a reading, and both ends of the
+  range are wrong: the low end over-orders by the whole fan-out, the high end under-orders. A
+  purchase quantity is never derived from a range. Such a cell is named in the excluded block only
+  when the unknown reading could change the order: a range whose lowest member already meets the
+  minimum buys nothing whichever reading is true, so it is left out rather than sending the operator
+  to recount a group that can never need a purchase.
+- A cell with a minimum but no blank group at all. There is no stock reading to subtract, so its full
+  minimum would look like a buy quantity while actually meaning "this blank does not exist yet",
+  which is a tagging problem for `audit` rather than an order.
+
+The last two are listed by name in an excluded block that prints **before** the total and says
+`Excluded: none` when it is empty; a block that appeared only when it had something to say would make
+its absence ambiguous. A negative on-hand (Shopify permits an oversell) is unclamped, mirroring the
+reorder list, so an oversold cell buys the oversell back as well as refilling the minimum. When
+nothing is short the output says `No sizes below minimum.` rather than printing a bare zero total,
+which would read as a failed run.
+
+**There is no `--purchase-list --json`, and the combination is refused.** `--json` exists to be read
+by a program, and a program consuming buy quantities is exactly the write-adjacent path this output
+must not open. These numbers are a supplier-ordering aid: never a restock quantity, never a
+count-sheet entry, and never an input to an inventory write. For the same reason no script in this
+repo may consume this output; it is human-facing only, and anything that needs the underlying
+figures reads `reorder --json` instead.
 
 ### The demand model, and what it is not
 
