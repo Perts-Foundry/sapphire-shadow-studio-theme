@@ -1,5 +1,43 @@
 # Release Notes
 
+## About page rebuilt on native theme sections (unreleased)
+
+`templates/page.about.json` was a single AI-generated app block (`ai_gen_block_23c928c`) carrying its
+own hardcoded hex palette, fixed pixel type sizes, stock icon cards and a rotating team carousel. It
+ignored the theme's color schemes, heading fonts, star lockup and eyebrow idiom, so it read as a
+different site next to the homepage. The page is now composed from native sections following the
+Custom Orders pattern (`main` disabled, `hero` plus generic `section` sections), and the block file is
+deleted. Every piece of body copy is preserved verbatim; only the hero sub-line was split, its first
+sentence becoming the lockup's pre-line.
+
+**Settings objects were copied from named analogues, not hand-authored.** A section or group in this
+theme carries 30 to 40 settings, and a template that omits one silently falls back to the schema
+default rather than failing, so a hand-typed object drifts from its neighbours in ways no check
+catches. Each new piece here started as a verbatim copy of the closest existing one (custom-orders
+`hero`, `what_we_can_do`, `hiw_row_1` / `hiw_step_1`, `closing_cta`; index `editorial_Qw7Rt2`,
+`follow_along`) with only the called-out keys changed. That is the method to repeat for the next
+page, not a one-off.
+
+**A card must not inherit the scheme of the section it sits on.** The values cards are scheme-4 on a
+scheme-3 section and the team cards are scheme-3 on scheme-1; a scheme-3 card on the scheme-3 values
+section would have been invisible, which is why those groups set `inherit_color_scheme: false`.
+
+**The team cards are deliberately text only.** `blocks/image.liquid` renders a generic apparel
+placeholder SVG when its `image` setting is blank, which looks broken rather than empty, and the cat
+photo the old block referenced (`shopify://shop_images/Kitkat-Rory.jpg`) does not exist in Files and
+never did. Three text cards read as intentional; the remaining photo work is in `TODO.md`.
+
+**The follow-us card now appears on a second page, and that is not a breach of the one-placement
+rule.** That rule is per page region: the homepage carries the card once, the footer's follow column
+once. This is a second page carrying the card, not a second placement on one page. Its star lockup
+renders styled only because `.hero-lockup` and the Dancing Script face ship with `sections/hero.liquid`
+and this page has a `hero` section; a page without one would render the lockup unstyled.
+
+**The story section's studio.jpg is a section background, not an inline image.** It reuses the
+homepage editorial treatment (navy `#071e3f` gradient overlay, full-width) but with `section_height`
+set to `""` rather than the homepage's fixed `custom` height, because the About copy is three
+paragraphs and would be clipped at a fixed height.
+
 ## Policy pages: restyled in place, with a jump nav (unreleased)
 
 `/policies/*` read off-brand next to the FAQ and About pages: full-width, default type, no

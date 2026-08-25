@@ -45,12 +45,14 @@ several of the pass's other findings.
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
-- [ ] **The About page references a file that does not exist.** `templates/page.about.json` sets
-  `team_member_3_image` to `shopify://shop_images/Kitkat-Rory.jpg`, and no file by that name is in
-  Files (all 77 enumerated). The block falls back to `placeholder_svg_tag`. Team members 1 and 2 have
-  no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
-  under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
-  plus possibly the template.
+- [ ] **The About page's team cards carry no photos.** The rebuilt `templates/page.about.json` ships
+  all three team cards as text only, because `blocks/image.liquid` renders a generic apparel
+  placeholder when its `image` is blank and no team photo exists in Files: the old block pointed at
+  `shopify://shop_images/Kitkat-Rory.jpg`, which was never uploaded (re-verified against every file
+  in Files on 2026-08-25). To add photos later, upload them in Admin, then add an `image` block as the
+  first child of the relevant `team_*` card group. Alt text comes from the file's Admin metadata;
+  `blocks/image.liquid` exposes no alt setting, so set it on the file. Admin (file upload) plus the
+  template.
 
 ## Catalogue manifest adoption
 
