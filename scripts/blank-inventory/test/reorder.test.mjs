@@ -1265,3 +1265,118 @@ test('renderPurchaseList says so when nothing is short, and when nothing was exc
   assert.match(text, /^Excluded: none$/m, 'always printed: an absent section cannot be told from an unchecked one');
   assert.match(text, /^TOTAL: 0 units$/m);
 });
+
+test('a min-0 cell whose group has NOT settled is dropped by the min gate, not by its state', () => {
+  // The one case the shared fixture structurally cannot distinguish: its min-0 cell has no variants,
+  // so it is NO_GROUP regardless of the gate. Give the cell a real member range and the gate is the
+  // only thing standing between it and excluded.unsettled, which is what the docblock claims.
+  resetSeq();
+  const variants = [2, 9].map((q) => variant({ body: 'crewneck', color: 'Black', size: 'M', quantity: q }));
+  const list = buildPurchaseList(buildPivot({ variants, axes: plAxes }), plResolved({ [key('crewneck', 'Black', 'M')]: 0 }));
+  assert.deepEqual(list.bodies, [], 'a combination the catalogue does not make is never bought');
+  assert.deepEqual(list.excluded.unsettled, [], 'nor is it something to resolve before ordering');
+  assert.deepEqual(list.excluded.noGroup, []);
+});
+
+test('the min gate makes this view narrower than pivotCounts, on purpose', () => {
+  // pivotCounts counts every unsettled cell because its job is to stop a terse matrix from hiding
+  // one. The purchase list counts only cells that could ever be bought. The two numbers differ, and
+  // that difference is a design decision rather than a drift between two counters.
+  resetSeq();
+  const variants = [2, 9].map((q) => variant({ body: 'crewneck', color: 'Black', size: 'M', quantity: q }));
+  const pivot = buildPivot({ variants, axes: plAxes });
+  const resolved = plResolved({ [key('crewneck', 'Black', 'M')]: 0 });
+  assert.equal(pivotCounts(pivot, resolved).unsettled, 1);
+  assert.equal(buildPurchaseList(pivot, resolved).excluded.unsettled.length, 0);
+});
+
+test('the no-group excluded list is sorted by the same comparators as the unsettled one', () => {
+  // Shared code, but a copy-paste that sorted one array on `color` and the other on `colorLabel`
+  // would only show up with more than one entry in each.
+  const cells = [
+    ['quarter-zip', 'Grey Heather', 'XL'],
+    ['crewneck', 'Grey Heather', 'S'],
+    ['crewneck', 'Black', '2XL'],
+    ['crewneck', 'Black', 'S'],
+  ];
+  const resolved = plResolved(Object.fromEntries(cells.map((c) => [key(...c), 4])));
+  const list = buildPurchaseList(buildPivot({ variants: [], axes: plAxes }), resolved);
+  assert.deepEqual(
+    list.excluded.noGroup.map((c) => c.key),
+    [
+      key('crewneck', 'Black', 'S'),
+      key('crewneck', 'Black', '2XL'),
+      key('crewneck', 'Grey Heather', 'S'),
+      key('quarter-zip', 'Grey Heather', 'XL'),
+    ]
+  );
+  assert.deepEqual(list.excluded.unsettled, [], 'nothing carries these cells at all');
+});
+
+test('--body narrowed to a garment with nothing short yields an empty list, not a leak', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved, { body: 'vest-womens' });
+  assert.deepEqual(list.bodies.map((b) => b.body), ['vest-womens']);
+  assert.deepEqual(list.excluded, { unsettled: [], noGroup: [] }, 'the crewneck exclusions belong to another body');
+
+  const none = buildPurchaseList(buildPivot({ variants: [], axes: plAxes }), plResolved(), { body: 'quarter-zip' });
+  assert.deepEqual(none.bodies, []);
+  assert.equal(none.totalUnits, 0);
+});
+
+test('renderPurchaseList renders every body and every colour, not just the first of each', () => {
+  // A dropped separator, a mis-indented second colour block, or a missing per-body total after the
+  // first body would all pass a render test that only ever looked at the top section.
+  resetSeq();
+  const variants = [
+    variant({ body: 'crewneck', color: 'Black', size: 'M', quantity: 1 }),
+    variant({ body: 'crewneck', color: 'Classic Navy', size: 'L', quantity: 0 }),
+    variant({ body: 'quarter-zip', color: 'Black', size: 'S', quantity: 1 }),
+  ];
+  const resolved = plResolved({
+    [key('crewneck', 'Black', 'M')]: 4,
+    [key('crewneck', 'Classic Navy', 'L')]: 2,
+    [key('quarter-zip', 'Black', 'S')]: 3,
+  });
+  const text = renderPurchaseList(buildPurchaseList(buildPivot({ variants, axes: plAxes }), resolved));
+
+  assert.deepEqual(
+    text.split('\n').filter((l) => l.endsWith(' units)') || / total: /.test(l)),
+    [
+      '  Black   (3 units)',
+      '  Classic Navy   (2 units)',
+      '  crewneck total: 5 units',
+      '  Black   (2 units)',
+      '  quarter-zip total: 2 units',
+    ],
+    'two colours under one body, and a total under each body'
+  );
+  assert.match(text, /^crewneck\n={8}$/m);
+  assert.match(text, /^quarter-zip\n={11}$/m);
+  assert.match(text, /  crewneck total: 5 units\n\nquarter-zip/, 'bodies stay separated by a blank line');
+});
+
+test('an unsettled cell is named only when the unknown reading could change the order', () => {
+  // A range that straddles or falls under the minimum is genuinely ambiguous. A range whose LOWEST
+  // member already meets the minimum buys nothing whichever reading is true, so sending the operator
+  // to recount it is the same crying-wolf that flagReorders refuses.
+  resetSeq();
+  const at = (size, quantities) => quantities.map((q) => variant({ body: 'crewneck', color: 'Black', size, quantity: q }));
+  const variants = [...at('M', [8, 9]), ...at('L', [3, 9]), ...at('XL', [1, 2])];
+  const resolved = plResolved({
+    [key('crewneck', 'Black', 'M')]: 4,
+    [key('crewneck', 'Black', 'L')]: 4,
+    [key('crewneck', 'Black', 'XL')]: 4,
+  });
+  const list = buildPurchaseList(buildPivot({ variants, axes: plAxes }), resolved);
+
+  assert.deepEqual(
+    list.excluded.unsettled.map((c) => [c.size, c.low, c.high]),
+    [
+      ['l', 3, 9],
+      ['xl', 1, 2],
+    ],
+    'M is 8-9 against a minimum of 4: no reading in that range is short, so there is nothing to resolve'
+  );
+  assert.deepEqual(list.bodies, [], 'and none of the three becomes a buy line either');
+});

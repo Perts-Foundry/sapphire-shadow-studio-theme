@@ -830,7 +830,8 @@ export function bodyTotals(pivot, resolved) {
  * - An UNSETTLED cell has a member range and not a reading. `buy` would have to come from one end of
  *   that range, and both ends are wrong: the low end over-orders by the whole fan-out, the high end
  *   under-orders. A purchase quantity is never derived from a range, so the cell is excluded and
- *   named instead.
+ *   named instead. It is named only when the answer could change the order, though: a range whose
+ *   LOWEST member already meets the minimum buys nothing whichever reading turns out to be true.
  * - A NO-GROUP cell has a minimum but nothing on the store carries it, so there is no stock reading
  *   to subtract at all. Its full minimum would look like a buy quantity while actually meaning "this
  *   blank does not exist yet", which is a tagging problem (`audit`), not an order.
@@ -887,7 +888,13 @@ export function buildPurchaseList(pivot, resolved, { body = null } = {}) {
           continue;
         }
         if (cell.onHand === null) {
-          unsettled.push({ ...facts, low: cell.low, high: cell.high });
+          // Only ambiguous when a buy line actually turns on the answer. If even the LOWEST member
+          // already meets the minimum, every reading in the range yields the same result (buy
+          // nothing), so there is nothing to resolve before ordering and naming the cell would send
+          // the operator to recount a group that can never need a purchase. This mirrors
+          // flagReorders, which flags an unsettled cell only when even its highest member is short:
+          // both refuse to cry wolf over a group that is merely mid-fan-out.
+          if (cell.low < min) unsettled.push({ ...facts, low: cell.low, high: cell.high });
           continue;
         }
         if (cell.onHand >= min) continue;

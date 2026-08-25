@@ -252,9 +252,10 @@ both is holding roughly enough units in the wrong sizes or colours, which is a d
 The sums cover only cells whose group has settled, and the block prints how many were excluded, so
 an unsettled cell is never read as a zero.
 
-**Always produce a purchase or order sheet with `reorder --purchase-list`.** Never hand-render one
-from raw reorder output: the unsettled and no-group exclusion filter exists only inside that flag, so
-a hand-built list silently turns a member range or a missing blank group into a buy quantity. The
+**When a purchase or order sheet is wanted, always produce it with `reorder --purchase-list`.** Never
+hand-render one from raw reorder output: the unsettled and no-group exclusion filter exists only
+inside that flag, so a hand-built list silently turns a member range or a missing blank group into a
+buy quantity. The
 flag groups by garment body then colour, lists only the short sizes as `size / buy / have / min`,
 counts units per colour and per body, and names every excluded cell above the total. `--body` narrows
 the buy lines and the excluded list together; `--below` is implied and passing it is a no-op.

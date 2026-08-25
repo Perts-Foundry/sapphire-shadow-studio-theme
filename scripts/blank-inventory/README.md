@@ -332,7 +332,10 @@ never become a buy line, and none of the three is a rounding decision:
   garment the catalogue says does not exist.
 - A cell whose group has not settled. It has a member range and not a reading, and both ends of the
   range are wrong: the low end over-orders by the whole fan-out, the high end under-orders. A
-  purchase quantity is never derived from a range.
+  purchase quantity is never derived from a range. Such a cell is named in the excluded block only
+  when the unknown reading could change the order: a range whose lowest member already meets the
+  minimum buys nothing whichever reading is true, so it is left out rather than sending the operator
+  to recount a group that can never need a purchase.
 - A cell with a minimum but no blank group at all. There is no stock reading to subtract, so its full
   minimum would look like a buy quantity while actually meaning "this blank does not exist yet",
   which is a tagging problem for `audit` rather than an order.

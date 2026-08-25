@@ -1697,6 +1697,7 @@ blank-inventory: shared-blank stock and metafield tooling.
   bodies   --stage propose|approve|show    the garment body map (run this before anything else)
   audit    [--json] [--group <blankId>] [--stale]     read-only health report
   reorder  [--json] [--body <slug>] [--below] [--purchase-list]   on-hand vs thresholds.json, flag shortfalls
+           (--purchase-list is the human-facing ordering view; it has no --json form, and the two are refused together)
   demand   [--days <n>] [--json]                      net units sold, and proposed threshold changes
   vocab    [--check <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]]   the resolvable key space, or check a transcription
   show     --plan <artifact.json>          render a plan artifact for the approval gate
