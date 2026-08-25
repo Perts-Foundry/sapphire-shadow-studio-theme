@@ -39,7 +39,7 @@ import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields 
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
-import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
+import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, buildPurchaseList, renderPurchaseList, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
 import { loadCatalogue, reconcileCatalogue, assessCatalogue } from './lib/catalogue-manifest.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
@@ -968,7 +968,15 @@ async function cmdReorder(opts) {
   // full catalogue load is slow enough that discovering it afterwards reads as a hang.
   const belowOnly = boolOpt('--below', opts.below);
   const asJson = boolOpt('--json', opts.json);
+  const purchaseList = boolOpt('--purchase-list', opts.purchaseList);
   const bodyFlag = opts.body === undefined ? null : normaliseAxis(stringOpt('--body', opts.body), 'Body');
+  // NO JSON FORM OF THE PURCHASE LIST, deliberately. --json exists to be consumed by a program, and a
+  // program consuming buy quantities is precisely the write-adjacent path this output must not open:
+  // the numbers here are a supplier-ordering aid, never a restock quantity and never a count-sheet
+  // entry. Do not add JSON support to this flag without revisiting that guardrail (see the skill).
+  if (purchaseList && asJson) {
+    fail('--purchase-list has no --json form: it is a human-facing ordering aid, and its numbers are never a machine input. Use --json for the full report.');
+  }
 
   const loaded = await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
@@ -1017,6 +1025,13 @@ async function cmdReorder(opts) {
   }
 
   for (const w of assessment.warnings) console.warn(`\nWARNING: ${w.message}\n`);
+
+  if (purchaseList) {
+    // A different question from the matrix, so it replaces it rather than following it. `--below` is
+    // implied by this view (it lists only short sizes), so passing it as well is an accepted no-op.
+    console.log(renderPurchaseList(buildPurchaseList(pivot, reconciled.resolved, { body: bodyFlag })));
+    return;
+  }
 
   if (!belowOnly) {
     heading('On hand vs recommended minimum');
@@ -1681,7 +1696,7 @@ blank-inventory: shared-blank stock and metafield tooling.
 
   bodies   --stage propose|approve|show    the garment body map (run this before anything else)
   audit    [--json] [--group <blankId>] [--stale]     read-only health report
-  reorder  [--json] [--body <slug>] [--below]         on-hand vs thresholds.json, flag shortfalls
+  reorder  [--json] [--body <slug>] [--below] [--purchase-list]   on-hand vs thresholds.json, flag shortfalls
   demand   [--days <n>] [--json]                      net units sold, and proposed threshold changes
   vocab    [--check <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]]   the resolvable key space, or check a transcription
   show     --plan <artifact.json>          render a plan artifact for the approval gate

@@ -17,6 +17,8 @@ import {
   selectReorders,
   pivotCounts,
   bodyTotals,
+  buildPurchaseList,
+  renderPurchaseList,
   aggregateDemand,
   netUnits,
   proposeAdjustments,
@@ -29,7 +31,7 @@ import {
   NO_GROUP,
   THRESHOLDS_PATH,
 } from '../lib/reorder.mjs';
-import { vocabKey, DRIFT, AWAITING_SEED, CONVERGED } from '../lib/groups.mjs';
+import { vocabKey, normaliseAxis, DRIFT, AWAITING_SEED, CONVERGED } from '../lib/groups.mjs';
 import { loadCatalogue } from '../lib/catalogue-manifest.mjs';
 import { variant, thresholdsFor, budgetsFor, manifestFor, VEST_BLACK_ONLY, MID_SIZES_ONLY, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
@@ -1035,4 +1037,231 @@ test('the committed thresholds.json reconciles cleanly against the committed cat
     const sum = [...out.resolved.values()].filter((c) => c.body === body).reduce((a, c) => a + c.min, 0);
     assert.equal(sum, thresholds.budgets.get(body), `${body}: cells sum to its stated budget`);
   }
+});
+
+// --- buildPurchaseList / renderPurchaseList ----------------------------------
+// The supplier-ordering view. Its whole reason to exist is the exclusion filter: a hand-built list
+// off the matrix silently turns a range or a missing blank group into a buy quantity, and these
+// tests are what keeps that filter from quietly loosening.
+
+const plAxes = buildAxes({
+  bodies: BODIES,
+  colors: COLORS,
+  sizes: SIZES,
+  ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies,
+  display: {
+    body: new Map(BODIES.map((b) => [b, b])),
+    color: new Map(COLORS.map((c) => [normaliseAxis(c, 'Color'), c])),
+    size: new Map(SIZES.map((s) => [normaliseAxis(s, 'Size'), s])),
+  },
+});
+
+/** Every declared cell at `defaultMin`, with the named cells overridden. */
+function plResolved(overrides = {}, defaultMin = 0) {
+  const cells = new Map();
+  for (const c of cartesianCells(plAxes)) cells.set(c.key, { min: overrides[c.key] ?? defaultMin });
+  return cells;
+}
+
+/**
+ * One pivot carrying every case at once: short, exact, surplus, unsettled, no-group, min-0, and a
+ * second and third body. Separate per-case fixtures would each be individually green while the
+ * combination they are meant to model never runs.
+ */
+function plFixture() {
+  resetSeq();
+  const at = (body, color, size, quantities) =>
+    quantities.map((q) => variant({ body, color, size, quantity: q }));
+  const variants = [
+    ...at('crewneck', 'Black', 'M', [1, 1]),
+    ...at('crewneck', 'Black', 'XS', [1]),
+    ...at('crewneck', 'Black', 'S', [4]),
+    ...at('crewneck', 'Black', 'L', [9]),
+    ...at('crewneck', 'Classic Navy', 'M', [2, 9]),
+    ...at('quarter-zip', 'Black', 'XL', [0]),
+    ...at('vest-womens', 'Black', 'M', [1]),
+  ];
+  const resolved = plResolved({
+    [key('crewneck', 'Black', 'M')]: 4,
+    [key('crewneck', 'Black', 'XS')]: 2,
+    [key('crewneck', 'Black', 'S')]: 4,
+    [key('crewneck', 'Black', 'L')]: 4,
+    [key('crewneck', 'Classic Navy', 'M')]: 6,
+    [key('crewneck', 'Grey Heather', 'M')]: 5,
+    [key('crewneck', 'Grey Heather', 'S')]: 0,
+    [key('quarter-zip', 'Black', 'XL')]: 3,
+    [key('vest-womens', 'Black', 'M')]: 2,
+  });
+  return { pivot: buildPivot({ variants, axes: plAxes }), resolved };
+}
+
+test('a buy line is min minus on hand, and only for a settled cell that is actually short', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved);
+  const crew = list.bodies.find((b) => b.body === 'crewneck');
+  const black = crew.colors.find((c) => c.color === 'black');
+  assert.deepEqual(
+    black.rows.map((r) => [r.sizeLabel, r.buy, r.onHand, r.min]),
+    [
+      ['XS', 1, 1, 2],
+      ['M', 3, 1, 4],
+    ],
+    'S sits exactly at its minimum and L is in surplus; neither is a buy line'
+  );
+});
+
+test('a cell the catalogue does not make is never a buy line, whether by min 0 or by range', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved);
+  const cells = list.bodies.flatMap((b) => b.colors.flatMap((c) => c.rows.map((r) => `${b.body}|${c.color}|${r.size}`)));
+  assert.equal(cells.includes('crewneck|grey heather|s'), false, 'min 0 is how "we do not make this" is recorded');
+  assert.equal(
+    [...list.excluded.unsettled, ...list.excluded.noGroup].some((c) => c.size === 's' && c.color === 'grey heather'),
+    false,
+    'a min-0 cell is not something to resolve before ordering either'
+  );
+  assert.equal(cells.some((c) => c.startsWith('vest-womens|classic navy')), false);
+  assert.equal(
+    [...list.excluded.unsettled, ...list.excluded.noGroup].some((c) => c.body === 'vest-womens' && c.color !== 'black'),
+    false,
+    'the vest is made in Black only, so its other colours are not cells at all'
+  );
+});
+
+test('an unsettled cell and a cell with no blank group are excluded, never bought from', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved);
+  const bought = list.bodies.flatMap((b) => b.colors.flatMap((c) => c.rows.map((r) => `${b.body}|${c.color}|${r.size}`)));
+  assert.equal(bought.includes('crewneck|classic navy|m'), false, 'a purchase quantity is never derived from a range');
+  assert.equal(bought.includes('crewneck|grey heather|m'), false);
+
+  assert.deepEqual(
+    list.excluded.unsettled.map((c) => [c.key, c.low, c.high, c.min]),
+    [[key('crewneck', 'Classic Navy', 'M'), 2, 9, 6]]
+  );
+  assert.deepEqual(
+    list.excluded.noGroup.map((c) => [c.key, c.min]),
+    [[key('crewneck', 'Grey Heather', 'M'), 5]]
+  );
+});
+
+test('the excluded lists are ordered by the same comparators as the list itself', () => {
+  // Deterministic rendering: two runs over the same store must print the same excluded block.
+  resetSeq();
+  const variants = [
+    ...[2, 9].map((q) => variant({ body: 'quarter-zip', color: 'Grey Heather', size: 'XL', quantity: q })),
+    ...[2, 9].map((q) => variant({ body: 'crewneck', color: 'Grey Heather', size: 'S', quantity: q })),
+    ...[2, 9].map((q) => variant({ body: 'crewneck', color: 'Black', size: '2XL', quantity: q })),
+    ...[2, 9].map((q) => variant({ body: 'crewneck', color: 'Black', size: 'S', quantity: q })),
+  ];
+  const resolved = plResolved(
+    Object.fromEntries(
+      [
+        ['quarter-zip', 'Grey Heather', 'XL'],
+        ['crewneck', 'Grey Heather', 'S'],
+        ['crewneck', 'Black', '2XL'],
+        ['crewneck', 'Black', 'S'],
+      ].map((k) => [key(...k), 20])
+    )
+  );
+  const list = buildPurchaseList(buildPivot({ variants, axes: plAxes }), resolved);
+  assert.deepEqual(
+    list.excluded.unsettled.map((c) => c.key),
+    [
+      key('crewneck', 'Black', 'S'),
+      key('crewneck', 'Black', '2XL'),
+      key('crewneck', 'Grey Heather', 'S'),
+      key('quarter-zip', 'Grey Heather', 'XL'),
+    ],
+    'body, then colour label, then garment size order'
+  );
+});
+
+test('bodies, colours and sizes come out in one deterministic order', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved);
+  assert.deepEqual(list.bodies.map((b) => b.body), ['crewneck', 'quarter-zip', 'vest-womens']);
+
+  resetSeq();
+  const everyColor = COLORS.map((color) => variant({ body: 'crewneck', color, size: 'M', quantity: 1 }));
+  const mins = plResolved(Object.fromEntries(COLORS.map((c) => [key('crewneck', c, 'M'), 4])));
+  const colored = buildPurchaseList(buildPivot({ variants: everyColor, axes: plAxes }), mins);
+  assert.deepEqual(
+    colored.bodies[0].colors.map((c) => c.colorLabel),
+    ['Black', 'Classic Navy', 'Grey Heather'],
+    'sorted by display label, not by the manifest declaration order (Black, Grey Heather, Classic Navy)'
+  );
+
+  resetSeq();
+  const everySize = SIZES.map((size) => variant({ body: 'crewneck', color: 'Black', size, quantity: 1 }));
+  const sizeMins = plResolved(Object.fromEntries(SIZES.map((s) => [key('crewneck', 'Black', s), 4])));
+  const sized = buildPurchaseList(buildPivot({ variants: everySize, axes: plAxes }), sizeMins);
+  assert.deepEqual(sized.bodies[0].colors[0].rows.map((r) => r.sizeLabel), SIZES, 'garment order, not lexicographic');
+});
+
+test('per-colour, per-body and grand totals are the sums of the lines under them', () => {
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved);
+  for (const body of list.bodies) {
+    for (const color of body.colors) {
+      assert.equal(color.units, color.rows.reduce((n, r) => n + r.buy, 0), `${body.body}/${color.color}`);
+    }
+    assert.equal(body.units, body.colors.reduce((n, c) => n + c.units, 0), body.body);
+  }
+  assert.equal(list.totalUnits, list.bodies.reduce((n, b) => n + b.units, 0));
+  assert.equal(list.totalUnits, 4 + 3 + 1, 'crewneck 4, quarter-zip 3, vest 1');
+});
+
+test('an oversold cell buys back the oversell as well as the minimum', () => {
+  // Unclamped, mirroring flagReorders: Shopify permits a negative quantity, and clamping would
+  // under-order exactly the cell that is furthest behind.
+  resetSeq();
+  const pivot = buildPivot({ variants: [variant({ body: 'crewneck', color: 'Black', size: 'M', quantity: -2 })], axes: plAxes });
+  const list = buildPurchaseList(pivot, plResolved({ [key('crewneck', 'Black', 'M')]: 4 }));
+  assert.deepEqual(list.bodies[0].colors[0].rows, [{ size: 'm', sizeLabel: 'M', buy: 6, onHand: -2, min: 4 }]);
+});
+
+test('--body narrows the buy lines AND the excluded cells together', () => {
+  // An operator who asked about one garment must not be handed warnings about the others.
+  const { pivot, resolved } = plFixture();
+  const list = buildPurchaseList(pivot, resolved, { body: 'quarter-zip' });
+  assert.deepEqual(list.bodies.map((b) => b.body), ['quarter-zip']);
+  assert.equal(list.totalUnits, 3);
+  assert.deepEqual(list.excluded.unsettled, []);
+  assert.deepEqual(list.excluded.noGroup, [], 'the crewneck cells with no group belong to a body the operator did not ask about');
+});
+
+test('nothing short yields an empty list rather than a zeroed one', () => {
+  const list = buildPurchaseList(buildPivot({ variants: [], axes: plAxes }), plResolved());
+  assert.deepEqual(list.bodies, []);
+  assert.equal(list.totalUnits, 0);
+  assert.deepEqual(list.excluded, { unsettled: [], noGroup: [] });
+});
+
+test('renderPurchaseList prints the header, the excluded block before the total, and the guardrail', () => {
+  const { pivot, resolved } = plFixture();
+  const text = renderPurchaseList(buildPurchaseList(pivot, resolved));
+  const lines = text.split('\n');
+  assert.equal(lines[0], 'PURCHASE LIST  (units to reach minimum)');
+  assert.equal(lines[1], '='.repeat(lines[0].length));
+  assert.match(text, /^ {6}size {4}buy {3}have {3}min$/m);
+  assert.match(text, /^ {6}M {9}3 {6}1 {5}4$/m);
+  assert.match(text, /^ {2}crewneck total: 4 units$/m);
+
+  const excludedAt = lines.findIndex((l) => l.startsWith('Excluded: '));
+  const totalAt = lines.findIndex((l) => l.startsWith('TOTAL: '));
+  assert.ok(excludedAt !== -1 && totalAt !== -1 && excludedAt < totalAt, 'the excluded block sits above the number the eye stops on');
+  assert.match(lines[excludedAt], /^Excluded: 2 cell\(s\) \(not settled \/ no group\); resolve before ordering those$/);
+  assert.match(text, /crewneck \/ Classic Navy \/ M: not settled \(2-9 on hand, min 6\)/);
+  assert.match(text, /crewneck \/ Grey Heather \/ M: no blank group \(min 5\); see "audit"/);
+  assert.equal(lines[totalAt], 'TOTAL: 8 units');
+  assert.match(text, /Each body is a different physical garment; totals never combine across bodies\./);
+  assert.match(text, /Purchasing aid only\. Never enter these numbers into a count sheet or inventory write\./);
+});
+
+test('renderPurchaseList says so when nothing is short, and when nothing was excluded', () => {
+  const text = renderPurchaseList(buildPurchaseList(buildPivot({ variants: [], axes: plAxes }), plResolved()));
+  assert.match(text, /^No sizes below minimum\.$/m, 'a bare zero total would read as a failed run');
+  assert.match(text, /^Excluded: none$/m, 'always printed: an absent section cannot be told from an unchecked one');
+  assert.match(text, /^TOTAL: 0 units$/m);
 });
