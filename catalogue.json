@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "comment": "Single source of truth for the catalogue's shape: which garment bodies exist and which colours and sizes each body is made in. Values are normalised storefront option values (lowercase). Policy numbers live in scripts/blank-inventory/thresholds.json; this file holds facts, never minimums, budgets, supplier names or blank ids.",
+  "bodies": {
+    "crewneck": {
+      "colors": ["black", "grey heather", "classic navy"],
+      "sizes": ["xs", "s", "m", "l", "xl", "2xl"]
+    },
+    "quarter-zip": {
+      "colors": ["black", "grey heather", "classic navy"],
+      "sizes": ["xs", "s", "m", "l", "xl", "2xl"]
+    },
+    "vest-womens": {
+      "colors": ["black"],
+      "sizes": ["xs", "s", "m", "l", "xl", "2xl"]
+    }
+  }
+}

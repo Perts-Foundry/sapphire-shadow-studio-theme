@@ -30,7 +30,8 @@ import {
   THRESHOLDS_PATH,
 } from '../lib/reorder.mjs';
 import { vocabKey, DRIFT, AWAITING_SEED, CONVERGED } from '../lib/groups.mjs';
-import { variant, thresholdsFor, budgetsFor, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
+import { loadCatalogue } from '../lib/catalogue-manifest.mjs';
+import { variant, thresholdsFor, budgetsFor, manifestFor, VEST_BLACK_ONLY, MID_SIZES_ONLY, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
 const AXES = buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES });
 const key = (body, color, size) => vocabKey({ body, color, size });
@@ -851,4 +852,187 @@ test('cartesianCells covers the whole axis space in canonical order', () => {
   assert.equal(cells.length, BODIES.length * COLORS.length * SIZES.length);
   assert.equal(cells[0].key, key('crewneck', 'Black', 'XS'));
   assert.equal(cells.at(-1).key, key('vest-womens', 'Classic Navy', '2XL'));
+});
+
+// --- the declared coverage space --------------------------------------------
+// The cell space used to be a global cross product, which invented cells for combinations a body is
+// not made in. It is now per body, taken from the committed catalogue manifest.
+
+const narrowManifest = manifestFor({ 'vest-womens': VEST_BLACK_ONLY });
+const narrowAxes = buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES, ranges: narrowManifest.bodies });
+
+test('cartesianCells is a per-body sum, not a global cross product, once ranges are declared', () => {
+  const cells = cartesianCells(narrowAxes);
+  const expected = (COLORS.length * SIZES.length) * 2 + SIZES.length; // two full bodies plus a Black-only vest
+  assert.equal(cells.length, expected);
+  assert.equal(cells.length, BODIES.length * COLORS.length * SIZES.length - 12, 'twelve unfillable vest cells are gone');
+  assert.equal(cells[0].key, key('crewneck', 'Black', 'XS'));
+  assert.equal(cells.at(-1).key, key('vest-womens', 'Black', '2XL'));
+  assert.ok(!cells.some((c) => c.key.startsWith('vest-womens|classic navy')));
+});
+
+test('buildAxes refuses a body with no declared range rather than falling back to the global axes', () => {
+  // A silent fallback here is exactly the cross product this split removed, reintroduced for one body.
+  assert.throws(
+    () => buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES, ranges: manifestFor({ 'vest-womens': null }).bodies }),
+    /No declared colour and size range for garment body "vest-womens"/
+  );
+});
+
+test('the vest matrix prints one colour row, and its undeclared cells do not exist at all', () => {
+  const variants = [
+    variant({ body: 'vest-womens', color: 'Black', size: 'M', quantity: 3 }),
+    variant({ body: 'crewneck', color: 'Classic Navy', size: 'M', quantity: 3 }),
+  ];
+  const pivot = buildPivot({ variants, axes: narrowAxes });
+  const vest = pivot.bodies.find((b) => b.body === 'vest-womens');
+  assert.deepEqual(vest.colors.map((c) => c.color), ['black']);
+  assert.equal(pivot.cells.has(key('vest-womens', 'Classic Navy', 'M')), false);
+  // The other bodies are untouched by the narrowing.
+  assert.equal(pivot.bodies.find((b) => b.body === 'crewneck').colors.length, COLORS.length);
+});
+
+test('a thresholds entry outside the declared shape is stale, and the declared cells still refuse when missing', () => {
+  const cells = thresholdsFor(); // the full cross product, including the twelve undeclared vest cells
+  const out = reconcileThresholds(cells, budgetsFor(), narrowAxes);
+  assert.equal(out.unthresholded.length, 0, 'every declared cell has an entry');
+  assert.equal(out.stale.length, 12);
+  assert.ok(out.stale.every((k) => k.startsWith('vest-womens|classic navy') || k.startsWith('vest-womens|grey heather')));
+  const assessed = assessThresholds({ ...out, mode: 'reorder' });
+  assert.equal(assessed.exitCode, 0, 'a stale row is a warning, never a refusal');
+  assert.deepEqual(assessed.warnings.map((w) => w.code), ['stale-cells']);
+});
+
+test('a body narrowed on the SIZE axis contributes only its declared columns', () => {
+  // Colour narrowing and size narrowing run through different loops. A fixture set that only ever
+  // narrows colours leaves half the per-body path unexercised in both the pivot and the derivation.
+  const axes = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': MID_SIZES_ONLY }).bodies });
+  const pivot = buildPivot({ variants: [variant({ body: 'vest-womens', color: 'Black', size: 'M', quantity: 1 })], axes });
+  const vest = pivot.bodies.find((b) => b.body === 'vest-womens');
+  assert.deepEqual(vest.colors[0].cells.map((c) => c.size), ['m', 'l']);
+  assert.equal(pivot.cells.has(key('vest-womens', 'Black', 'XS')), false);
+  // The other bodies keep all six columns, so the narrowing is per body and not global.
+  assert.equal(pivot.bodies.find((b) => b.body === 'crewneck').colors[0].cells.length, SIZES.length);
+});
+
+test('deriveThresholds spends a narrowed body\'s whole budget on the colours it is actually made in', () => {
+  // largestRemainder normalises by the sum of the weights it is GIVEN, so dropping a colour from the
+  // range redistributes rather than discards. Without this the vest's budget would leak into cells
+  // that no longer exist, or vanish entirely when the curve weights only undeclared colours.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const built = deriveThresholds({
+    // The curve still names all three colours, exactly as the committed file did before the split.
+    colorCurve: { 'vest-womens': { black: 0.4, 'grey heather': 0.3, 'classic navy': 0.3 } },
+    sizeCurve: { 'vest-womens': { xs: 0.04, s: 0.18, m: 0.28, l: 0.26, xl: 0.16, '2xl': 0.08 } },
+    budgets: { 'vest-womens': 12 },
+    axes,
+  });
+  const keys = Object.keys(built.cells);
+  assert.ok(!keys.some((k) => k.includes('grey heather') || k.includes('classic navy')));
+  assert.equal(keys.length, SIZES.length);
+  assert.equal(
+    Object.values(built.cells).reduce((a, c) => a + c.min, 0),
+    12,
+    "the whole budget lands on the declared colour rather than leaking into cells that do not exist"
+  );
+});
+
+test('deriveThresholds gives a body zero rather than a wrong number when the curve weights only undeclared colours', () => {
+  // The degenerate case: every weight the curve supplies belongs to a colour outside the range, so
+  // largestRemainder sees a zero sum. Zero cells is the honest answer, and the demand pass's
+  // budgetDrift is what surfaces it; inventing a split across colours the curve never rated would be
+  // a number nobody chose.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const built = deriveThresholds({
+    colorCurve: { 'vest-womens': { 'classic navy': 1 } },
+    sizeCurve: { 'vest-womens': { m: 1 } },
+    budgets: { 'vest-womens': 12 },
+    axes,
+  });
+  assert.equal(Object.values(built.cells).reduce((a, c) => a + c.min, 0), 0);
+});
+
+test('buildAxes exposes the flat union of the declared ranges, deduped and in garment size order', () => {
+  const axes = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': MID_SIZES_ONLY }).bodies });
+  // Colours in first-declaring-body order, each once even though two bodies declare all three.
+  assert.deepEqual(axes.colors, ['black', 'grey heather', 'classic navy']);
+  assert.deepEqual(axes.sizes, SIZES.map((s) => s.toLowerCase()));
+});
+
+test('buildAxes accepts the plain-object form of ranges as well as a Map', () => {
+  // The documented alternative, and the shape a caller gets from JSON straight off disk.
+  const asObject = Object.fromEntries([...manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies.entries()]);
+  const fromObject = buildAxes({ bodies: BODIES, ranges: asObject });
+  const fromMap = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  assert.deepEqual(cartesianCells(fromObject).map((c) => c.key), cartesianCells(fromMap).map((c) => c.key));
+});
+
+test('buildAxes reads only own properties of an object range, never an inherited one', () => {
+  // `ranges?.[body]` would otherwise find Object.prototype.constructor for a body called
+  // "constructor" and treat a function as a declared range.
+  assert.throws(
+    () => buildAxes({ bodies: ['constructor'], ranges: { crewneck: { colors: ['black'], sizes: ['m'] } } }),
+    /No declared colour and size range for garment body "constructor"/
+  );
+});
+
+test('serializeThresholds orders bodies by code point, colours in manifest order, sizes in garment order', () => {
+  // Body order deliberately does NOT follow the manifest: reordering bodies there must never churn
+  // the committed thresholds file. Colour order does, because it is the matrix row order.
+  const shuffled = manifestFor({
+    crewneck: { colors: ['classic navy', 'black'], sizes: ['2xl', 'm', 'xs'] },
+    'quarter-zip': null,
+    'vest-womens': VEST_BLACK_ONLY,
+  });
+  const axes = buildAxes({ bodies: ['vest-womens', 'crewneck'], ranges: shuffled.bodies });
+  const doc = {
+    version: 1,
+    provenance: { budgets: { crewneck: 1, 'vest-womens': 1 } },
+    // REVERSED before serializing. Built in canonical order the assertion would pass on an
+    // implementation that only spread doc.cells through, since JS objects keep insertion order; it
+    // would be re-asserting cartesianCells rather than serialize's own ordering loop.
+    cells: Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }]).reverse()),
+  };
+  assert.deepEqual(Object.keys(JSON.parse(serializeThresholds(doc, axes)).cells), [
+    key('crewneck', 'Classic Navy', 'XS'),
+    key('crewneck', 'Classic Navy', 'M'),
+    key('crewneck', 'Classic Navy', '2XL'),
+    key('crewneck', 'Black', 'XS'),
+    key('crewneck', 'Black', 'M'),
+    key('crewneck', 'Black', '2XL'),
+    ...SIZES.map((s) => key('vest-womens', 'Black', s)),
+  ]);
+});
+
+test('serializeThresholds keeps rows the manifest no longer declares instead of deleting them', () => {
+  // Newly load-bearing under narrowing: regenerating after a colour is removed from a body's range
+  // must not silently drop the rows that narrowing stranded. Only the operator removes a row.
+  const axes = buildAxes({ bodies: ['vest-womens'], ranges: manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies });
+  const stranded = key('vest-womens', 'Classic Navy', 'M');
+  const doc = {
+    version: 1,
+    provenance: { budgets: { 'vest-womens': 1 } },
+    cells: { [stranded]: { min: 2 }, ...Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }])) },
+  };
+  const out = Object.keys(JSON.parse(serializeThresholds(doc, axes)).cells);
+  assert.ok(out.includes(stranded), 'the stranded row survives regeneration');
+  assert.equal(out.at(-1), stranded, 'and sorts after the declared cells rather than among them');
+});
+
+test('the committed thresholds.json reconciles cleanly against the committed catalogue.json', async () => {
+  // The cross-artifact cohesion check the split newly makes possible: the policy file and the shape
+  // file are two committed artifacts that must agree, and CI can check that without a store.
+  const thresholds = await loadThresholds({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const manifest = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const axes = buildAxes({ bodies: [...manifest.bodies.keys()], ranges: manifest.bodies });
+  const out = reconcileThresholds(thresholds.cells, thresholds.budgets, axes);
+  assert.deepEqual(out.unthresholded, [], 'every declared cell has a committed minimum');
+  assert.deepEqual(out.stale, [], 'no committed minimum falls outside the declared shape');
+  assert.deepEqual(out.missingBudgets, [], 'every declared body has a budget');
+  assert.deepEqual(out.staleBudgets, []);
+  // The demand pass reports budgetDrift unless a body's cells sum to its budget.
+  for (const body of axes.bodies) {
+    const sum = [...out.resolved.values()].filter((c) => c.body === body).reduce((a, c) => a + c.min, 0);
+    assert.equal(sum, thresholds.budgets.get(body), `${body}: cells sum to its stated budget`);
+  }
 });

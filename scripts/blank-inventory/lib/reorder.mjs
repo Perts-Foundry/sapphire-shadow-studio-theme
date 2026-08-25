@@ -57,19 +57,31 @@ const cmpString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 /**
  * The axis space the thresholds file must cover.
  *
- * Bodies come from the APPROVED body map, not from what happens to be tagged: a body with nothing
- * tagged yet still needs a minimum, and reading the axis off the tagged population would make the
- * file shrink whenever coverage does. Colours and sizes come from the learned vocabulary, in the
- * store's own first-seen order for colours (catalogue order) and garment order for sizes.
+ * Bodies come from the APPROVED body map (by way of the catalogue manifest, which reconciles against
+ * it exactly), not from what happens to be tagged: a body with nothing tagged yet still needs a
+ * minimum, and reading the axis off the tagged population would make the file shrink whenever
+ * coverage does.
+ *
+ * `ranges` IS THE COVERAGE SPACE, AND IT IS PER BODY. It comes from the committed catalogue manifest
+ * (lib/catalogue-manifest.mjs), which is passed in as plain data rather than imported here: this
+ * module must keep its import list down to './groups.mjs' so the "cannot reach a mutation" test still
+ * proves what it says. Without `ranges` the axes fall back to one global cross product, which is what
+ * this file used to do unconditionally and which invents cells for combinations a body is not made
+ * in. Those cells can never be filled, and once one carries a nonzero minimum it flags as `no-group`
+ * in every report forever.
+ *
+ * `colors` and `sizes` remain the flat union across bodies, for display and for the fallback; nothing
+ * builds a cell from them when `ranges` is present.
  *
  * @param {object} params
  * @param {string[]} params.bodies
- * @param {string[]} params.colors
- * @param {string[]} params.sizes
+ * @param {string[]} [params.colors] - the learned store vocabulary; used only when `ranges` is absent
+ * @param {string[]} [params.sizes] - as above
+ * @param {Map<string, {colors: string[], sizes: string[]}>|Record<string, {colors: string[], sizes: string[]}>} [params.ranges]
  * @param {{body?: Map<string,string>, color?: Map<string,string>, size?: Map<string,string>}} [params.display]
- * @returns {{bodies: string[], colors: string[], sizes: string[], display: object}}
+ * @returns {{bodies: string[], colors: string[], sizes: string[], ranges: Map<string, {colors: string[], sizes: string[]}>, display: object}}
  */
-export function buildAxes({ bodies, colors, sizes, display = {} }) {
+export function buildAxes({ bodies, colors, sizes, ranges = null, display = {} }) {
   const norm = (values, axis) => {
     const out = [];
     for (const v of values ?? []) {
@@ -78,12 +90,56 @@ export function buildAxes({ bodies, colors, sizes, display = {} }) {
     }
     return out;
   };
-  return {
-    bodies: norm(bodies, 'Body').sort(cmpString),
-    colors: norm(colors, 'Color'), // catalogue order: first spelling seen wins, as learnVocab does
-    sizes: norm(sizes, 'Size').sort(compareSizes),
-    display,
-  };
+  const bodyList = norm(bodies, 'Body').sort(cmpString);
+  // catalogue order for colours: first spelling seen wins, as learnVocab does.
+  const globalColors = norm(colors, 'Color');
+  const globalSizes = norm(sizes, 'Size').sort(compareSizes);
+
+  /** @type {Map<string, {colors: string[], sizes: string[]}>} */
+  const perBody = new Map();
+  for (const body of bodyList) {
+    // Own properties only on the object form: `ranges[body]` would find Object.prototype.constructor
+    // for a body called "constructor" and treat a function as a declared range.
+    const declared =
+      ranges instanceof Map
+        ? ranges.get(body)
+        : ranges && Object.prototype.hasOwnProperty.call(ranges, body)
+          ? ranges[body]
+          : undefined;
+    if (ranges && !declared) {
+      throw new Error(
+        `No declared colour and size range for garment body "${body}". The catalogue manifest and ` +
+          `the approved body map must agree exactly, and reconcileCatalogue refuses before this ` +
+          `point, so reaching here means the two were read from different places.`
+      );
+    }
+    perBody.set(body, {
+      colors: declared ? norm(declared.colors, 'Color') : globalColors,
+      sizes: declared ? norm(declared.sizes, 'Size').sort(compareSizes) : globalSizes,
+    });
+  }
+
+  const unionColors = ranges ? [] : globalColors;
+  const unionSizes = ranges ? [] : globalSizes;
+  if (ranges) {
+    for (const range of perBody.values()) {
+      for (const c of range.colors) if (!unionColors.includes(c)) unionColors.push(c);
+      for (const s of range.sizes) if (!unionSizes.includes(s)) unionSizes.push(s);
+    }
+    unionSizes.sort(compareSizes);
+  }
+
+  return { bodies: bodyList, colors: unionColors, sizes: unionSizes, ranges: perBody, display };
+}
+
+/**
+ * One body's declared colour and size range, or the flat axes when nothing was declared.
+ * @param {{colors: string[], sizes: string[], ranges?: Map<string, {colors: string[], sizes: string[]}>}} axes
+ * @param {string} body
+ * @returns {{colors: string[], sizes: string[]}}
+ */
+function rangeFor(axes, body) {
+  return axes.ranges?.get(body) ?? { colors: axes.colors ?? [], sizes: axes.sizes ?? [] };
 }
 
 /** The label to print for a normalised axis value. Falls back to the normalised token itself. */
@@ -93,14 +149,22 @@ export function axisLabel(axes, axis, value) {
 
 /**
  * Every body+colour+size the thresholds file must carry, in canonical order.
- * @param {{bodies: string[], colors: string[], sizes: string[]}} axes
+ *
+ * NOT a global cross product any more. Each body contributes only the colours and sizes declared for
+ * it, so a body made in one colour contributes one colour row and not one per colour on the store.
+ * Canonical order is bodies by code point (as buildAxes sorts them), then that body's colours in
+ * MANIFEST DECLARATION ORDER, then sizes in garment order. Body order deliberately does not follow
+ * the manifest, so reordering bodies in the manifest can never churn the committed thresholds file.
+ *
+ * @param {{bodies: string[], colors: string[], sizes: string[], ranges?: Map<string, object>}} axes
  * @returns {Array<{key: string, body: string, color: string, size: string}>}
  */
 export function cartesianCells(axes) {
   const out = [];
   for (const body of axes.bodies) {
-    for (const color of axes.colors) {
-      for (const size of axes.sizes) {
+    const { colors, sizes } = rangeFor(axes, body);
+    for (const color of colors) {
+      for (const size of sizes) {
         out.push({ key: vocabKey({ body, color, size }), body, color, size });
       }
     }
@@ -359,7 +423,7 @@ export async function loadThresholds({ read, path = THRESHOLDS_PATH }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Compare the committed table against the axis space the store actually has.
+ * Compare the committed table against the declared axis space.
  *
  * Nothing here mutates the table or invents a value. It reports four kinds of divergence and lets
  * assessThresholds decide which are refusals.
@@ -454,9 +518,10 @@ export function assessThresholds({
       code: 'stale-cells',
       keys: stale,
       message:
-        `${stale.length} entry/entries in ${THRESHOLDS_PATH} name a body, colour or size the store no ` +
-        `longer has: ${stale.join(', ')}. Suggest removing them to the operator; never delete a row ` +
-        `to quieten this.`,
+        `${stale.length} entry/entries in ${THRESHOLDS_PATH} fall outside the declared catalogue ` +
+        `shape: ${stale.join(', ')}. Either the manifest no longer declares that body, colour or ` +
+        `size, or the store no longer has it. Suggest removing them to the operator; never delete a ` +
+        `row to quieten this.`,
     });
   }
 
@@ -499,6 +564,11 @@ export function assessThresholds({
  * that no variant holds; the range is what is true. `onHand` is therefore null unless the group is
  * converged, and every consumer downstream has to handle that rather than quietly reading a 0.
  *
+ * The matrix carries only DECLARED rows: each body gets the colours and sizes the catalogue manifest
+ * declares for it, so a body made in one colour prints one colour row. Nothing is hidden by that,
+ * because a tagged variant outside the declared shape is a refusal (reconcileCatalogue's
+ * `undeclaredVariants`) that fires before this function is ever reached.
+ *
  * @param {object} params
  * @param {object[]} params.variants - post-attachBodies variants
  * @param {{bodies: string[], colors: string[], sizes: string[], display?: object}} params.axes
@@ -518,10 +588,11 @@ export function buildPivot({ variants, axes, pendingSeedBlankIds = new Set() }) 
   const cells = new Map();
   const bodies = [];
   for (const body of axes.bodies) {
+    const range = rangeFor(axes, body);
     const colorRows = [];
-    for (const color of axes.colors) {
+    for (const color of range.colors) {
       const row = [];
-      for (const size of axes.sizes) {
+      for (const size of range.sizes) {
         const key = vocabKey({ body, color, size });
         const members = membersByKey.get(key) ?? [];
         const base = {
@@ -968,6 +1039,9 @@ export function proposeAdjustments({ byCell, budgets, resolved, pivot, minObserv
  * nothing reconciling them. Because both stages are largest remainder, every body's cells sum to its
  * budget exactly, with no rounding leak between the stages.
  *
+ * Both stages walk the body's DECLARED range, so a colour curve entry for a colour the body is not
+ * made in simply never gets a cell, and the body's whole budget lands on the colours it does have.
+ *
  * The curves and the budgets are recorded as PROVENANCE only. The cells are the source of truth,
  * because the cells are what the PR diff shows: a reviewer can read "crewneck black M: 6" and judge
  * it, where two curves plus a budget plus a rounding rule is four things to re-derive by hand.
@@ -987,12 +1061,13 @@ export function deriveThresholds({ sizeCurve, colorCurve, budgets, axes, provena
 
   for (const body of axes.bodies) {
     const budget = budgetMap.get(body) ?? 0;
+    const range = rangeFor(axes, body);
     const colorBudgets = largestRemainder(
-      axes.colors.map((color) => ({ key: color, weight: Number(colorCurve?.[body]?.[color] ?? 0) })),
+      range.colors.map((color) => ({ key: color, weight: Number(colorCurve?.[body]?.[color] ?? 0) })),
       budget
     );
-    for (const color of axes.colors) {
-      const sizes = axes.sizes.map((size) => ({
+    for (const color of range.colors) {
+      const sizes = range.sizes.map((size) => ({
         key: vocabKey({ body, color, size }),
         weight: Number(sizeCurve?.[body]?.[size] ?? 0),
       }));

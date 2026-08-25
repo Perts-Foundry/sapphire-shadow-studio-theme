@@ -113,7 +113,7 @@ GitHub Actions auto-redacts `secrets.*` in logs (`***`); `vars.*` is plaintext. 
 Standard agent set (`code-reviewer`, `doc-sync-checker`, `architecture-reviewer`, `security-auditor`) applies. Project-specific triggers:
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs` suites do have `node --test` suites; run test-engineer when any changes. `blank-inventory/` writes to live inventory and `upload-product-media.mjs` writes live product media, so those two are the higher-risk.
+- **test-engineer**: theme Liquid has no test framework, so skip for theme changes. `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/catalogue/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs` suites do have `node --test` suites; run test-engineer when any changes. `blank-inventory/` writes to live inventory and `upload-product-media.mjs` writes live product media, so those two are the higher-risk.
 - **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
@@ -142,6 +142,8 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 ### Directory structure
 
 README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of three page-alternate patterns: keep `main` enabled and append sections (Contact pattern), disable `main` for a single monolithic block (About pattern), or disable `main` and compose from generic primitives like `hero` / `section` / `faq` (Custom Orders pattern). Pick the simplest fit. Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons.
+
+Root-level `catalogue.json` is the single source of truth for the offering's shape; its own `comment` field says what it holds. Hand-edited in a reviewed PR only, never by a command or an agent. Other tools still carry their own copies of the same vocabulary; migrating them is tracked in `TODO.md` and the rationale is in `release-notes.md`.
 
 ### Structured data
 
