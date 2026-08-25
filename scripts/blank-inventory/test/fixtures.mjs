@@ -150,6 +150,50 @@ export function thresholdsFor(overrides = {}, defaultMin = 5) {
 }
 
 /**
+ * A parsed catalogue manifest over the fixture axes.
+ *
+ * Cross-product by default, matching what `thresholdsFor` builds, so the two fixtures describe one
+ * consistent world and a test that pairs them is not asserting against a shape mismatch it created
+ * itself. Pass an override to narrow one body (the women's vest is Black only on the real
+ * catalogue), or `null` to remove a body entirely.
+ *
+ * @param {Record<string, {colors: string[], sizes: string[]}|null>} [overrides] - keyed by body id
+ * @returns {{version: number, bodies: Map<string, {colors: string[], sizes: string[]}>}}
+ */
+export function manifestFor(overrides = {}) {
+  const bodies = new Map();
+  for (const body of BODIES) {
+    bodies.set(body, {
+      colors: COLORS.map((c) => normaliseAxis(c, 'Color')),
+      sizes: SIZES.map((s) => normaliseAxis(s, 'Size')),
+    });
+  }
+  for (const [body, range] of Object.entries(overrides)) {
+    if (range === null) bodies.delete(body);
+    else bodies.set(body, { colors: [...range.colors], sizes: [...range.sizes] });
+  }
+  return { version: 1, bodies };
+}
+
+/**
+ * A catalogue manifest as TEXT, so the raw-text checks (duplicate keys, JSON syntax) are exercised
+ * the way the tool runs. The default mirrors the real catalogue's shape, vest narrowing included.
+ *
+ * @param {object} [over]
+ * @returns {string}
+ */
+export function manifestDoc({ version = 1, comment, bodies } = {}) {
+  const doc = { version };
+  if (comment !== undefined) doc.comment = comment;
+  doc.bodies = bodies ?? {
+    crewneck: { colors: ['black', 'grey heather', 'classic navy'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
+    'quarter-zip': { colors: ['black', 'grey heather', 'classic navy'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
+    'vest-womens': { colors: ['black'], sizes: ['xs', 's', 'm', 'l', 'xl', '2xl'] },
+  };
+  return JSON.stringify(doc, null, 2);
+}
+
+/**
  * A complete budget map over the fixture bodies.
  *
  * Keyed by BODY, not by body+colour: the colour split is derived from a popularity curve exactly as

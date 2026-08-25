@@ -1,5 +1,83 @@
 # Release Notes
 
+## The catalogue's shape moves into catalogue.json (unreleased)
+
+Read-only throughout. Nothing here writes to the store or changes a deploy gate.
+
+**The problem: one file was doing two jobs, and only one of them was written down.**
+`scripts/blank-inventory/thresholds.json` held inventory policy (minimums, budgets, provenance), and
+it was also, silently, the only record of the catalogue's body by colour by size shape. That shape
+was never stated; it was inferred as a full cross product of the approved bodies against the global
+colour vocabulary and the global size vocabulary learned from the store. The women's vest is made in
+Black only, so the product invented twelve vest cells in Grey Heather and Classic Navy that no
+variant can ever fill. The 2026-08-24 blanket floor then raised all twelve to `min: 2`, and they
+became permanent `no-group` flags in every reorder report. The floor was not the bug; the invented
+cells were, and the floor made them visible.
+
+**The split: facts in one file, policy in the other.** `catalogue.json` at the repo root declares
+which bodies exist and which colours and sizes each one is made in. `thresholds.json` keeps its path,
+its name and its schema, and becomes policy only: its required keyspace is now computed from the
+manifest rather than stored anywhere. The reorder review builds its cells per body, so the vest
+matrix is one colour row.
+
+**Why the repo root, and not beside the tool.** The same vocabulary is restated in at least five
+other places (`scripts/sku/tables.json`, `scripts/lib/photo-naming.mjs`, the `scripts/size-chart/`
+profiles, `scripts/applique-grid/patterns.json`, and blank-inventory's own `SIZE_ORDER` and test
+fixtures), and nothing reconciles any of them. A shape file living inside one tool would have become
+that tool's private copy, which is the problem it exists to end. Nothing else was rewired here; each
+migration is its own item under `TODO.md` > Catalogue manifest adoption, so this change stays one
+revertable commit.
+
+**Why not derive the axes from what is tagged.** Because coverage would then shrink silently: a body
+whose variants are not yet in a blank group would drop out of the table exactly when it most needs a
+minimum. The header comment on `buildAxes` in `lib/reorder.mjs` has said so since the review was
+written, and that reasoning survives the split unchanged.
+
+**Why not put the colour ranges in the body map.** The approved body-map artifact is machine-local
+state in `~/.local/state/blank-inventory/`, hash-sealed, never hand-edited, and regenerated on every
+re-propose. A hand-authored range would not survive a re-propose, and it would not appear in a PR
+diff, which is the only review surface this feature has. The two artifacts stay separate with a
+declared contract instead: the body map is the authority on which product is which physical garment,
+the manifest is the authority on each body's range, and they must agree exactly on the set of bodies.
+Both directions of that disagreement refuse. That is safe to make a refusal rather than a warning
+because the body map is loaded fresh on every command invocation, so a mismatch at reconcile time is
+always real drift and never a stale read.
+
+**One new refusal, and the change adds no others: a live tagged variant whose body plus colour plus
+size the manifest does not declare.** The old cross product provided this check by accident, since an
+undeclared colour showed up as unthresholded cells. Declaring the shape would have removed that
+accident, so the check is now explicit and stronger: a new colour is loud the moment a variant is
+tagged into it, whether or not the thresholds file has caught up. Untagged variants are out of scope
+for the same reason they are out of scope for `learnVocab`: nothing untagged is in a blank group. The
+gate runs before `thresholds.json` is even read, in one helper both `reorder` and `demand` call, so a
+wrong cell space cannot be reported as a list of its own downstream consequences.
+
+**The data migration, in the same change.** The twelve undeclared vest rows are deleted from
+`thresholds.json`, `provenance.budgets["vest-womens"]` is recomputed from 36 to 12 to match the
+remaining cell sum (the same precedent the 2026-08-24 floor set, so `demand` reports no
+`budgetDrift`), and `provenance.colorCurve["vest-womens"]` is trimmed to Black alone. One appended
+`provenance.adjustments` entry records the twelve moves as 2 to 0 with a note saying the rows were
+then removed; the log stays append-only and its entries are still validated by shape alone, never
+cross-referenced against current cells. The arithmetic is CI-verified rather than eyeballed: a new
+test reconciles the two committed artifacts against each other offline and asserts every body's cells
+sum to its stated budget.
+
+**`lib/reorder.mjs` deliberately does not import the new module.** A test asserts its import list is
+exactly `['./groups.mjs']`, which is what makes "this module cannot reach a mutation" a proof rather
+than a claim. `buildAxes` therefore takes the per-body ranges as plain data, and only the CLI and the
+new lint import `lib/catalogue-manifest.mjs`. The same test now pins the new module's import list and
+the lint's.
+
+**Ordering rules, pinned in tests because a silent change to either churns a committed file.** Bodies
+are sorted by code point, not by manifest declaration order, so reordering bodies in the manifest can
+never move a line in `thresholds.json`. Colours follow manifest order, because that is the matrix row
+order a reader sees. Sizes stay in garment order.
+
+**Rollback posture.** The whole change is one revertable commit plus one data file. If the new
+undeclared-variant refusal ever blocks routine use after merge, the fix is to declare the missing
+colour or size in `catalogue.json` in a reviewed PR. Never relax the check, and never untag a variant
+to make it pass.
+
 ## Reorder review: readable output, per-body totals, a receipt archive (unreleased)
 
 Follow-up to the reorder review below, all of it in the read-only half. Nothing here writes to the

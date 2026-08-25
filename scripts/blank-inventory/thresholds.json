@@ -16,9 +16,7 @@
         "classic navy": 0.3
       },
       "vest-womens": {
-        "black": 0.4,
-        "grey heather": 0.3,
-        "classic navy": 0.3
+        "black": 1
       }
     },
     "sizeCurve": {
@@ -50,7 +48,7 @@
     "budgets": {
       "crewneck": 47,
       "quarter-zip": 40,
-      "vest-womens": 36
+      "vest-womens": 12
     },
     "adjustments": [
       {
@@ -199,6 +197,61 @@
             "to": 2
           }
         }
+      },
+      {
+        "date": "2026-08-24",
+        "source": "coverage split to catalogue.json",
+        "note": "The women's vest is made in Black only, but the required cell space used to be a cross product of every body against the whole store colour vocabulary, so twelve vest cells existed for Grey Heather and Classic Navy that no variant could ever fill. The 2026-08-24 floor raised all twelve to 2, which put them permanently in the reorder list flagged no-group. The catalogue's shape is now declared in catalogue.json at the repo root, the required keyspace is computed from it, and those twelve rows were deleted from this file because the manifest no longer covers them. Recorded here as 2 to 0 because this log records integer moves; the rows were then removed. provenance.budgets.vest-womens is recomputed from 36 to 12 to match the remaining cell sum so the demand pass reports no budgetDrift, and provenance.colorCurve.vest-womens is trimmed to Black alone so the provenance matches the declared range. No minimum on any surviving cell changed.",
+        "cells": {
+          "vest-womens|grey heather|xs": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|grey heather|s": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|grey heather|m": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|grey heather|l": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|grey heather|xl": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|grey heather|2xl": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|xs": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|s": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|m": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|l": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|xl": {
+            "from": 2,
+            "to": 0
+          },
+          "vest-womens|classic navy|2xl": {
+            "from": 2,
+            "to": 0
+          }
+        }
       }
     ]
   },
@@ -327,42 +380,6 @@
       "min": 2
     },
     "vest-womens|black|2xl": {
-      "min": 2
-    },
-    "vest-womens|grey heather|xs": {
-      "min": 2
-    },
-    "vest-womens|grey heather|s": {
-      "min": 2
-    },
-    "vest-womens|grey heather|m": {
-      "min": 2
-    },
-    "vest-womens|grey heather|l": {
-      "min": 2
-    },
-    "vest-womens|grey heather|xl": {
-      "min": 2
-    },
-    "vest-womens|grey heather|2xl": {
-      "min": 2
-    },
-    "vest-womens|classic navy|xs": {
-      "min": 2
-    },
-    "vest-womens|classic navy|s": {
-      "min": 2
-    },
-    "vest-womens|classic navy|m": {
-      "min": 2
-    },
-    "vest-womens|classic navy|l": {
-      "min": 2
-    },
-    "vest-womens|classic navy|xl": {
-      "min": 2
-    },
-    "vest-womens|classic navy|2xl": {
       "min": 2
     }
   }

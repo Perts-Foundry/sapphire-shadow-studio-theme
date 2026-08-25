@@ -40,6 +40,7 @@ import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/c
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
 import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
+import { loadCatalogue, reconcileCatalogue, assessCatalogue } from './lib/catalogue-manifest.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
 const WORK_DIR = resolveWorkDir();
@@ -802,6 +803,9 @@ async function cmdVocab(opts) {
 // ---------------------------------------------------------------------------
 
 const THRESHOLDS_FILE = fileURLToPath(new URL('./thresholds.json', import.meta.url));
+// The catalogue manifest lives at the repo root, not beside the policy file: it declares the shape
+// of the whole offering, and other tooling is expected to migrate onto it (see TODO.md).
+const CATALOGUE_FILE = fileURLToPath(new URL('../../catalogue.json', import.meta.url));
 
 /**
  * A flag that takes no value.
@@ -822,22 +826,81 @@ function boolOpt(flag, raw) {
 /**
  * The axis space the thresholds table must cover.
  *
- * Bodies come from the APPROVED map rather than from what is tagged: a body whose variants are not
- * yet in a group still needs a minimum, and reading the axis off the tagged population would let the
- * table shrink exactly when coverage does. Colours and sizes come from the learned vocabulary, which
- * is the only place the store's own spellings exist.
+ * Bodies and their colour and size ranges come from the committed catalogue manifest, which
+ * `catalogueGate` has already proven to agree exactly with the approved body map. Reading the axis
+ * off the tagged population instead would let the table shrink exactly when coverage does, and
+ * reading it off a global cross product (what this did before) invents cells for combinations a body
+ * is not made in. The learned vocabulary still supplies `display`, which is the only place the
+ * store's own spellings exist.
  *
- * @param {object} artifact - the approved bodies artifact
+ * @param {{bodies: Map<string, {colors: string[], sizes: string[]}>}} manifest
  * @param {object} store
  * @returns {object}
  */
-function axesFromStore(artifact, store) {
+function axesFromStore(manifest, store) {
   return buildAxes({
-    bodies: artifact.bodies.map((b) => b.bodyId).filter(Boolean),
+    bodies: [...manifest.bodies.keys()],
     colors: [...store.display.color.keys()],
     sizes: [...store.display.size.keys()],
+    ranges: manifest.bodies,
     display: store.display,
   });
+}
+
+/**
+ * Read the committed catalogue manifest and reconcile it against the body map and the live store, or
+ * refuse.
+ *
+ * ONE helper, called by both `reorder` and `demand`, so the two cannot drift into different gates
+ * for the same file. It runs BEFORE thresholds are loaded: an undeclared combination means the cell
+ * space itself is wrong, and reporting unthresholded or stale cells computed from a wrong cell space
+ * would bury the one refusal that matters under a list of consequences.
+ *
+ * `read` and `refuse` are injected so the whole path is testable without a filesystem and without
+ * exiting the test runner.
+ *
+ * @param {object} params
+ * @param {object} params.artifact - the approved bodies artifact
+ * @param {object} params.store
+ * @param {boolean} params.json
+ * @param {(path: string) => Promise<string>} [params.read]
+ * @param {string} [params.path]
+ * @param {(params: {assessment: object, json: boolean}) => void} [params.refuse]
+ * @returns {Promise<{manifest: object, warnings: Array<object>}>}
+ */
+export async function catalogueGate({
+  artifact,
+  store,
+  json,
+  read = (p) => readFile(p, 'utf8'),
+  path: manifestPath = CATALOGUE_FILE,
+  refuse = refuseThresholds,
+}) {
+  let manifest;
+  try {
+    manifest = await loadCatalogue({ read, path: manifestPath });
+  } catch (err) {
+    if (err.fileMissing) {
+      refuse({ assessment: assessCatalogue({ fileMissing: true }), json });
+      return;
+    }
+    if (json) {
+      console.log(JSON.stringify({ error: 'catalogue-invalid', message: err.message, keys: [] }, null, 2));
+      process.exit(1);
+    }
+    fail(err.message);
+  }
+
+  const assessment = assessCatalogue(
+    reconcileCatalogue({
+      manifest,
+      bodyMapBodies: artifact.bodies.map((b) => b.bodyId).filter(Boolean),
+      vocab: { colors: [...store.display.color.keys()], sizes: [...store.display.size.keys()] },
+      variants: store.variants,
+    })
+  );
+  if (assessment.exitCode !== 0) refuse({ assessment, json });
+  return { manifest, warnings: assessment.warnings };
 }
 
 /**
@@ -865,21 +928,28 @@ async function readThresholdsOrRefuse({ json }) {
   }
 }
 
+/**
+ * The `--json` body of a refusal.
+ *
+ * Exactly four fields, whichever gate produced the assessment: a consumer must not have to know
+ * whether the manifest or the thresholds table stopped the run in order to parse the answer.
+ *
+ * @param {{refusals: Array<{code: string, keys: string[]}>, warnings: Array<object>}} assessment
+ * @returns {{error: string, keys: string[], refusals: Array<object>, warnings: Array<object>}}
+ */
+export function refusalPayload(assessment) {
+  return {
+    error: assessment.refusals[0]?.code ?? 'thresholds-refused',
+    keys: assessment.refusals.flatMap((r) => r.keys),
+    refusals: assessment.refusals,
+    warnings: assessment.warnings,
+  };
+}
+
 /** Print a refusal in whichever shape the caller asked for, then exit 1. */
 function refuseThresholds({ assessment, json }) {
   if (json) {
-    console.log(
-      JSON.stringify(
-        {
-          error: assessment.refusals[0]?.code ?? 'thresholds-refused',
-          keys: assessment.refusals.flatMap((r) => r.keys),
-          refusals: assessment.refusals,
-          warnings: assessment.warnings,
-        },
-        null,
-        2
-      )
-    );
+    console.log(JSON.stringify(refusalPayload(assessment), null, 2));
     process.exit(1);
   }
   console.error(`\nERROR: ${assessment.refusals.map((r) => r.message).join('\n\n')}\n`);
@@ -896,14 +966,18 @@ async function cmdReorder(opts) {
 
   const loaded = await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
-  const axes = axesFromStore(loaded.artifact, store);
+  // The manifest gate comes first, and before the thresholds file is even read: it decides what the
+  // cell space IS, and every threshold divergence is measured against that space.
+  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ artifact: loaded.artifact, store, json: asJson });
+  const axes = axesFromStore(manifest, store);
   if (bodyFlag && !axes.bodies.includes(bodyFlag)) {
-    fail(`Unknown --body "${bodyFlag}". The approved body map has: ${axes.bodies.join(', ')}.`);
+    fail(`Unknown --body "${bodyFlag}". The catalogue manifest declares: ${axes.bodies.join(', ')}.`);
   }
 
   const thresholds = await readThresholdsOrRefuse({ json: asJson });
   const reconciled = reconcileThresholds(thresholds.cells, thresholds.budgets, axes);
   const assessment = assessThresholds({ ...reconciled, mode: 'reorder' });
+  assessment.warnings = [...catalogueWarnings, ...assessment.warnings];
   if (assessment.exitCode !== 0) refuseThresholds({ assessment, json: asJson });
 
   const { receipts } = await loadReceipts();
@@ -1106,11 +1180,14 @@ async function cmdDemand(opts) {
 
   const loaded = await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
-  const axes = axesFromStore(loaded.artifact, store);
+  // Same shared gate, same order, for the same reason as `reorder`.
+  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ artifact: loaded.artifact, store, json: asJson });
+  const axes = axesFromStore(manifest, store);
 
   const thresholds = await readThresholdsOrRefuse({ json: asJson });
   const reconciled = reconcileThresholds(thresholds.cells, thresholds.budgets, axes);
   const assessment = assessThresholds({ ...reconciled, mode: 'demand' });
+  assessment.warnings = [...catalogueWarnings, ...assessment.warnings];
   if (assessment.exitCode !== 0) refuseThresholds({ assessment, json: asJson });
 
   // Capability, verified rather than assumed. read_orders reaches about 60 days; anything older

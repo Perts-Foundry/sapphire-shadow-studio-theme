@@ -139,6 +139,29 @@ zero; it does nothing about a wrong variant id, which is what the STOP above is 
 by hand in the other order:** zeroing a still-tagged variant propagates 0 across its entire blank
 group and wipes real stock everywhere.
 
+## catalogue.json declares the shape; thresholds.json holds the policy
+
+`catalogue.json` at the repo root states which garment bodies exist and which colours and sizes each
+body is made in. `reorder` and `demand` compute their whole cell space from it, one body at a time,
+so a body made in one colour gets one colour row. It carries facts only: never a minimum, a budget, a
+supplier name or a blank id.
+
+Like `thresholds.json`, it is **hand-edited only by the operator, in a PR**, under the same per-run
+STOP. Both files change together whenever a body's range changes, because narrowing a range in the
+manifest strands the thresholds rows it removes (they become a `stale-cells` warning) and widening
+one leaves the new cells unthresholded (which refuses).
+
+Both commands run the manifest gate **before** they read `thresholds.json`. Its refusals:
+
+- the manifest and the approved body map disagree about which bodies exist, in either direction;
+- a live tagged variant's body+colour+size is not declared in the manifest.
+
+That second one is the loud check that replaces what the old cross product provided by accident. On
+it, report the keys to the operator and stop. The fix is to declare the missing colour or size in a
+reviewed PR. **Never relax or bypass the check, and never untag a variant to make it pass.** A
+declared colour with no tagged variant yet is only a warning; declaring ahead of the first blank is
+the point of declaring at all.
+
 ## thresholds.json is edited only by the operator, in a PR
 
 `scripts/blank-inventory/thresholds.json` holds the recommended minimum on-hand quantity for every
@@ -184,7 +207,7 @@ confirmations, cells and then budgets, never one bundled approval.
 
 ## Reorder review
 
-Read-only. No store writes. Does not edit thresholds.json.
+Read-only. No store writes. Does not edit thresholds.json or catalogue.json.
 
 Run `node --env-file=.env scripts/blank-inventory/blank-inventory.mjs reorder` and present the
 matrices and the flagged table **verbatim**. Pass `--json` through as JSON; never paraphrase either
@@ -329,6 +352,10 @@ actions are the operator's); or write to any variant outside the approved plan a
 - **Scopes are verified, not assumed** (`write_products` + `write_inventory`, plus `read_orders` for
   the demand pass alone). If one is missing, stop and have the operator apply the change; do not
   work around it.
+- **catalogue.json is public by construction.** Its values are storefront option values (the colour
+  and size names any visitor sees on a product page) and generic body ids. Never put a blank id, a
+  supplier name, a style number, a case pack, a cost or any policy number in it: those belong to
+  thresholds.json or nowhere.
 - **thresholds.json carries business quantities into a public repo.** Its keys are garment
   vocabulary and its values are unit counts, which is why it is safe to commit. These never go into
   it, into an `adjustments` note, or into a PR body that touches it: supplier or wholesaler names,

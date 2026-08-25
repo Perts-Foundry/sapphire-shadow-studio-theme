@@ -22,6 +22,8 @@
     "blank-inventory:guard": "node scripts/blank-inventory/check-no-real-blank-ids.mjs",
     "sku:test": "node --test scripts/sku/test/*.test.mjs",
     "sku:tables": "node scripts/sku/check-tables.mjs",
+    "catalogue:test": "node --test scripts/catalogue/test/*.test.mjs",
+    "catalogue:lint": "node scripts/catalogue/check-catalogue.mjs",
     "size-chart:golden:update": "node scripts/size-chart/test/regen-golden.mjs",
     "applique-grid:test": "node --test scripts/applique-grid/test/*.test.mjs",
     "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs",

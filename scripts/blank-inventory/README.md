@@ -187,6 +187,34 @@ one colour x size matrix per garment body and compares each cell against
 a PR, and afterwards hand-edited only behind an operator approval. A command that quietly adjusted a
 threshold to make its own report pass would destroy the only review surface this feature has.
 
+### The coverage space comes from catalogue.json
+
+`catalogue.json` at the **repo root** declares the shape of the offering: which garment bodies exist,
+and which colours and sizes each body is made in. The reorder review computes its required cell space
+from that declaration, one body at a time, so a body made in one colour contributes one colour row.
+
+It used to be a cross product instead: the approved bodies against the whole colour vocabulary and
+the whole size vocabulary learned from the store. That product invents cells for combinations a body
+is not made in, and once such a cell carries a nonzero minimum it sits in the reorder list flagged
+`no-group` forever. Twelve women's-vest cells were in exactly that state.
+
+The two files answer different questions and are deliberately separate. The manifest holds **facts**
+(what is made) and the thresholds file holds **policy** (how many to keep). Never put a minimum, a
+budget, a supplier name or a blank id in the manifest; never state a colour range in the thresholds
+file. The manifest is safe in a public repo because its values are storefront option values that any
+visitor sees on a product page.
+
+The manifest and the approved body map must agree **exactly** on the set of bodies, in both
+directions, and both directions refuse. The body map stays the authority on which product is which
+physical garment; the manifest is the authority on each body's range. Values are rejected rather than
+normalised, exactly as the thresholds file's keys are, and duplicate detection runs twice: on raw
+object keys (a repeated body) and on array values (a colour listed twice, which no JSON key check can
+see).
+
+The manifest is hand-edited in a reviewed PR. No command creates or edits it. `npm run catalogue:lint`
+validates it offline in CI through the same parser the tool uses, so a manifest that passes CI is
+exactly a manifest the reorder review accepts.
+
 ### thresholds.json
 
 One entry per body+colour+size, holding the resolved minimum. The curves and the budgets it was
@@ -214,13 +242,29 @@ one; a correction is a new entry.
 
 | Condition | `reorder` | `demand` |
 |---|---|---|
+| `catalogue.json` missing, unparseable, or wrong version | **exit 1** | **exit 1** |
+| a body declared in the manifest but not in the approved body map | **exit 1** | **exit 1** |
+| an approved body missing from the manifest | **exit 1** | **exit 1** |
+| a tagged variant whose body+colour+size the manifest does not declare | **exit 1**, naming each key | **exit 1** |
+| a declared colour or size no tagged variant has yet | warning, exit 0 | warning |
 | a body+colour+size with no entry | **exit 1**, naming every missing key | **exit 1** |
 | file missing, unparseable, or wrong version | **exit 1** | **exit 1** |
 | a duplicate cell or budget key in the raw text | **exit 1**, naming the key | **exit 1** |
-| an entry for a body/colour/size the store no longer has | warning, exit 0 | warning |
+| an entry outside the declared shape | warning, exit 0 | warning |
 | a garment body with no budget | warning, exit 0 | **exit 1** |
 | a cell below its minimum | listed, exit 0 | n/a |
 | a cell with a minimum but no blank group | listed with `!`, exit 0 | held |
+
+The manifest rows run first, in one shared gate both commands call, and they run **before** the
+thresholds file is even read: an undeclared combination means the cell space itself is wrong, so
+reporting unthresholded or stale cells computed from that space would bury the one refusal that
+matters under a list of its own consequences.
+
+An undeclared tagged variant is a refusal because that is the check the cross product used to provide
+by accident. With the shape declared, an undeclared combination is loud **by declaration**, which is
+stronger: a new colour surfaces the moment a variant is tagged into it, whether or not the thresholds
+file has caught up. The fix is always to declare the colour or size in a reviewed PR; never relax the
+check, and never untag a variant to make it pass.
 
 A missing entry is a refusal because that is how a new body, colour or size surfaces at all: nothing
 else in the pipeline notices one. A combination that is not made gets an explicit `min: 0` with a
@@ -368,6 +412,14 @@ that short and surplus are never netted, and that the grand total stays out of t
 demand rollup's treatment of refunds and cancellations, the budget arithmetic (which always sums to
 the budget, with a deterministic tie vector), and canonical serialisation. It also reads the committed `thresholds.json`
 through the tool's own parser, and asserts that neither new command is a write command.
+
+`test/catalogue-manifest.test.mjs` covers the manifest's own schema (both duplicate mechanisms, the
+normalised-value rejection, the empty-list and unknown-key refusals), the WARN and REFUSE boundary of
+its reconciliation, and the committed `catalogue.json`. One case pairs the two committed artifacts:
+the thresholds file must reconcile against the manifest with nothing unthresholded, nothing stale,
+and every body's cells summing to its stated budget. That is the cross-artifact cohesion check the
+split newly makes possible, and it runs offline, so a bad data migration fails CI rather than the
+next live run.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that

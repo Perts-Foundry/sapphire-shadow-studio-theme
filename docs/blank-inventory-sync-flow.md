@@ -154,8 +154,9 @@ Claude skill drives it with the operator approval gates. Use it in preference to
 quantities or metafields in Admin, which has none of these guards.
 
 The same tooling also carries a read-only reorder review (`reorder` and `demand`), which compares
-on-hand stock against committed per-cell minimums and proposes adjustments to them. It changes
-nothing about this flow: see `scripts/blank-inventory/README.md`.
+on-hand stock against committed per-cell minimums and proposes adjustments to them. Its cell space
+comes from `catalogue.json` at the repo root, which declares which colours and sizes each garment
+body is made in. It changes nothing about this flow: see `scripts/blank-inventory/README.md`.
 
 ## Assumptions and limitations
 

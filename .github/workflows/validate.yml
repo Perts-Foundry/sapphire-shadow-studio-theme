@@ -461,6 +461,66 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── catalogue manifest lint + tests ────────────────────────
+      # `catalogue.json` at the repo root declares the shape of the offering:
+      # which garment bodies exist and which colours and sizes each is made in.
+      # The blank-inventory reorder review computes its whole cell space from
+      # it, so a malformed or vacuous manifest is a broken report rather than a
+      # broken file. Offline, no credentials.
+      #
+      # The lint and its own suite share one step deliberately: the suite is
+      # four cases over the lint CLI, and giving it a second wiring pass through
+      # Collect results / Post PR comment / Check for failures buys nothing.
+      - name: Catalogue manifest
+        id: catalogue
+        run: |
+          set +e
+          EXIT_CODE=0
+
+          # Each command is captured with its OWN status. Chaining them inside a
+          # single command substitution would report only the last one's, which
+          # is how a green lint can hide a red suite.
+          CATALOGUE_TESTS=$(npm run catalogue:test 2>&1); CATALOGUE_TESTS_RC=$?
+          CATALOGUE_LINT=$(npm run catalogue:lint 2>&1);  CATALOGUE_LINT_RC=$?
+
+          OUTPUT=$(printf '%s\n\n%s\n' "$CATALOGUE_TESTS" "$CATALOGUE_LINT")
+          echo "$OUTPUT"
+
+          [ "$CATALOGUE_TESTS_RC" -ne 0 ] && EXIT_CODE=1
+          [ "$CATALOGUE_LINT_RC" -ne 0 ] && EXIT_CODE=1
+
+          # `node --test <glob>` exits 0 when the glob matches nothing, so a
+          # renamed directory would report a green suite that ran no tests.
+          # Same guard the other suites in this workflow carry.
+          TESTS_RUN=$(printf '%s\n' "$CATALOGUE_TESTS" \
+            | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+            | awk '$2 == "tests" && $3 ~ /^[0-9]+$/ { n = $3 } END { print n + 0 }')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::catalogue suite reported ${TESTS_RUN:-0} tests. The glob in the catalogue:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          # check-catalogue.mjs already refuses a vacuous manifest, but assert
+          # the count line here too: a lint whose output shape changed silently
+          # would otherwise pass on having checked nothing, which is the exact
+          # fail-open shape the manifest exists to prevent. Only meaningful on a
+          # clean exit; a real failure already exits non-zero.
+          if [ "$CATALOGUE_LINT_RC" -eq 0 ]; then
+            BODIES=$(printf '%s\n' "$CATALOGUE_LINT" | sed -nE 's/^catalogue OK: ([0-9]+) bodies.*/\1/p' | tail -1)
+            VALUES=$(printf '%s\n' "$CATALOGUE_LINT" | sed -nE 's/^catalogue OK: [0-9]+ bodies, ([0-9]+) colour values.*/\1/p' | tail -1)
+            if [ "${BODIES:-0}" -lt 1 ] || [ "${VALUES:-0}" -lt 1 ]; then
+              echo "::error::catalogue lint reported ${BODIES:-0} body/bodies and ${VALUES:-0} colour value(s). It cannot be trusted to have checked the manifest."
+              EXIT_CODE=1
+            fi
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── seo-review tooling tests ───────────────────────────────
       # `scripts/seo-review/` is read-only audit tooling and never touches the
       # store, but its rule logic (which finding fires, how baselines diff, how
@@ -949,6 +1009,7 @@ jobs:
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
+          CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
@@ -970,7 +1031,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft
@@ -1022,6 +1083,7 @@ jobs:
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
+          CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
@@ -1041,6 +1103,7 @@ jobs:
           SEO_REVIEW_OUTPUT: ${{ steps.seo-review.outputs.output }}
           SKU_OUTPUT: ${{ steps.sku.outputs.output }}
           SKU_TABLES_OUTPUT: ${{ steps.sku-tables.outputs.output }}
+          CATALOGUE_OUTPUT: ${{ steps.catalogue.outputs.output }}
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
           EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
@@ -1087,6 +1150,7 @@ jobs:
             const blankInventory = process.env.BLANK_INVENTORY_EXIT;
             const sku = process.env.SKU_EXIT;
             const skuTables = process.env.SKU_TABLES_EXIT;
+            const catalogue = process.env.CATALOGUE_EXIT;
             const seoReview = process.env.SEO_REVIEW_EXIT;
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const emailIcons = process.env.EMAIL_ICONS_EXIT;
@@ -1106,6 +1170,7 @@ jobs:
             const blankInventoryOut = sanitize(process.env.BLANK_INVENTORY_OUTPUT) || 'No output';
             const skuOut = sanitize(process.env.SKU_OUTPUT) || 'No output';
             const skuTablesOut = sanitize(process.env.SKU_TABLES_OUTPUT) || 'No output';
+            const catalogueOut = sanitize(process.env.CATALOGUE_OUTPUT) || 'No output';
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
@@ -1186,6 +1251,7 @@ jobs:
               `| **Blank inventory** | \`npm run blank-inventory:test\` | ${status(blankInventory)} |`,
               `| **SKU** | \`npm run sku:test\` | ${status(sku)} |`,
               `| **SKU tables** | \`npm run sku:tables\` | ${status(skuTables)} |`,
+              `| **Catalogue manifest** | \`npm run catalogue:lint\` + tests | ${status(catalogue)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
@@ -1225,6 +1291,7 @@ jobs:
               { title: 'Blank inventory', tool: 'npm run blank-inventory:test', out: blankInventoryOut, exit: blankInventory },
               { title: 'SKU', tool: 'npm run sku:test', out: skuOut, exit: sku },
               { title: 'SKU tables', tool: 'npm run sku:tables', out: skuTablesOut, exit: skuTables },
+              { title: 'Catalogue manifest', tool: 'npm run catalogue:lint + tests', out: catalogueOut, exit: catalogue },
               { title: 'SEO review', tool: 'npm run seo-review:test', out: seoReviewOut, exit: seoReview },
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
@@ -1338,6 +1405,7 @@ jobs:
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
+          CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
@@ -1372,6 +1440,7 @@ jobs:
           check_exit "blank-inventory" "$BLANK_INVENTORY_EXIT"
           check_exit "sku" "$SKU_EXIT"
           check_exit "sku-tables" "$SKU_TABLES_EXIT"
+          check_exit "catalogue" "$CATALOGUE_EXIT"
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "email-icons" "$EMAIL_ICONS_EXIT"
