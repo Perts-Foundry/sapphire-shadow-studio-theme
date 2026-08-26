@@ -18,10 +18,9 @@ diagnosing a deploy failure it reported.
   list is the `smoke-paths` input default in `action.yml`, which is the single source of truth
   and carries the reasoning for each entry. `smoke.mjs` keeps a copy for standalone `--dry-run`
   and `smoke.test.mjs` fails if the two drift. One of them is `/policies/refund-policy`, standing
-  in for all five shop policies: they render through one theme template, the sitemap does not
-  list them, and a `404` there usually means an emptied Admin policy rather than broken Liquid.
-  Remove that path in the same change that removes `templates/policy.liquid`, or a rollback to
-  Shopify-rendered policies HARD-FAILs its own smoke.
+  in for all five shop policies: Shopify renders them itself, but inside `layout/theme.liquid`
+  (whose policy guard hosts the restyle and jump nav), the sitemap does not list them, and a
+  `404` there usually means an emptied Admin policy rather than broken Liquid.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->

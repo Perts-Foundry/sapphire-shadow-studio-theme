@@ -40,9 +40,6 @@
   </head>
 
   <body class="page-width-{{ settings.page_width }} card-hover-effect-{{ settings.card_hover_effect }}">
-    {% comment %} TEMPORARY probe, remove before merge: proves the layout runs on /policies/* and what page_type it reports {% endcomment %}
-    <div id="PolicyProbe" data-page-type="{{ request.page_type }}" hidden></div>
-    {%- if request.page_type == 'policy' -%}<div id="PolicyProbeGuarded" hidden></div>{%- endif -%}
     {% render 'skip-to-content-link', href: '#MainContent', text: 'accessibility.skip_to_text' %}
     <div id="header-group">
       {% sections 'header-group' %}
@@ -115,6 +112,15 @@
     >
       {%- render 'breadcrumbs' -%}
       {{ content_for_layout }}
+      {%- comment -%}
+        Policy pages have no template type: Shopify renders /policies/* itself
+        into content_for_layout above, and this layout is the only theme
+        Liquid that runs there. The snippet restyles that markup and hosts
+        the jump-nav shell; see its doc block.
+      {%- endcomment -%}
+      {%- if request.page_type == 'policy' -%}
+        {%- render 'policy-page' -%}
+      {%- endif -%}
     </main>
 
     {% sections 'footer-group' %}

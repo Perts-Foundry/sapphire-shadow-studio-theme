@@ -2,28 +2,32 @@ import { Component } from '@theme/component';
 
 /**
  * @typedef {object} PolicyNavRefs
- * @property {HTMLElement} nav - The nav shell, rendered hidden by the section.
+ * @property {HTMLElement} nav - The nav shell, rendered hidden by snippets/policy-page.liquid.
  * @property {HTMLUListElement} list - The empty list this component fills.
- * @property {HTMLElement} content - The policy body to scan for headings.
  */
 
 /**
  * Builds the "On this page" jump nav for a shop policy page.
  *
- * The shell (nav element and its heading) is rendered server-side, because a
- * locale key cannot be read from JS. This component scans the policy body for
- * `h2`s, gives each one a slugified id, fills the list, and unhides the shell
- * only when there are enough sections for a jump nav to earn its space.
+ * Policy pages are Shopify-rendered (no policy template type exists), so the
+ * shell cannot be server-rendered where it belongs, between the page title
+ * and the body. The snippet renders it (hidden) at the end of `<main>`,
+ * because the layout is the only theme Liquid that runs on these pages, and
+ * this component relocates it under `.shopify-policy__title`, fills the list
+ * from the body's `h2`s, and unhides it only when there are enough sections
+ * for a jump nav to earn its space. The shell is server-rendered at all
+ * because its heading comes from a locale key JS cannot read.
  *
  * The ids are assigned at runtime, so they are in-page jump targets only and
  * are not durable link targets: a reworded heading changes its id. A heading
  * that already carries an id keeps it, which is the one way to author a
- * durable anchor here.
+ * durable anchor here (in the Admin policy body; not available on the
+ * auto-managed privacy policy, whose body Shopify rewrites).
  *
  * @extends {Component<PolicyNavRefs>}
  */
 class PolicyNavComponent extends Component {
-  requiredRefs = ['nav', 'list', 'content'];
+  requiredRefs = ['nav', 'list'];
 
   /** Below this, the nav is more chrome than help. */
   static MIN_HEADINGS = 3;
@@ -34,9 +38,13 @@ class PolicyNavComponent extends Component {
   }
 
   #build() {
-    const { nav, list, content } = this.refs;
+    const { nav, list } = this.refs;
 
-    if (!(nav instanceof HTMLElement) || !(list instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+    if (!(nav instanceof HTMLElement) || !(list instanceof HTMLElement)) return;
+
+    const title = document.querySelector('.shopify-policy__container .shopify-policy__title');
+    const content = document.querySelector('.shopify-policy__body');
+    if (!title || !content) return;
 
     const headings = /** @type {HTMLHeadingElement[]} */ ([...content.querySelectorAll('h2')]).filter(
       (heading) => heading.textContent?.trim()
@@ -57,17 +65,20 @@ class PolicyNavComponent extends Component {
       heading.tabIndex = -1;
 
       const link = document.createElement('a');
-      link.className = 'policy__nav-link';
+      link.className = 'policy-nav__link';
       link.href = `#${encodeURIComponent(heading.id)}`;
       link.textContent = text;
 
       const item = document.createElement('li');
-      item.className = 'policy__nav-item';
+      item.className = 'policy-nav__item';
       item.append(link);
       fragment.append(item);
     }
 
     list.replaceChildren(fragment);
+    // Move only the nav node, not this custom element: re-inserting the
+    // element would re-fire connectedCallback and rebuild mid-build.
+    title.after(nav);
     nav.hidden = false;
   }
 }

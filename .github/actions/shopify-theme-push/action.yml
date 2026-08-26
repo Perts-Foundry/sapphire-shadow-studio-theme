@@ -47,15 +47,14 @@ inputs:
       sitemap and probes each, so the catalog is covered automatically without a
       maintained handle list.
 
-      /policies/refund-policy stands in for all five shop policies, which render
-      through one theme template (templates/policy.liquid). They used to fall back
-      to Shopify's own layout, where no theme Liquid could break them and no
-      probe was needed; now a Liquid error in sections/main-policy.liquid takes
-      all five down at once, including the page the Organization JSON-LD's
-      hasMerchantReturnPolicy points at. The sitemap does not list policy pages,
-      so nothing else here would notice. Remove this path in the same change that
-      removes templates/policy.liquid: reverting to Shopify-rendered policies is
-      the one rollback that could otherwise HARD-FAIL on its own smoke.
+      /policies/refund-policy stands in for all five shop policies. Shopify
+      renders them itself (no policy template type exists), but they render
+      inside layout/theme.liquid, whose policy guard hosts the restyle and jump
+      nav, so a Liquid error there takes all five down at once, including the
+      page the Organization JSON-LD's hasMerchantReturnPolicy points at. The
+      sitemap does not list policy pages, so nothing else here would notice. A
+      404 on this path usually means an emptied Admin policy body rather than
+      broken Liquid.
     required: false
     default: "/ /cart /collections/all /search /policies/refund-policy"
   smoke-base-url:
