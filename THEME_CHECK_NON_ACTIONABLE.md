@@ -197,7 +197,7 @@ Theme Check analyzes files in isolation and cannot determine:
 ##### Why These Are Valid
 
 **`policy` object:**
-- Available in policy templates (`templates/policy.json`)
+- Available in policy templates (`templates/policy.liquid`; Shopify refuses a JSON policy template)
 - Documentation: [Shopify Liquid: policy object](https://shopify.dev/docs/api/liquid/objects/policy)
 - Properties: `title`, `body`, `id`, `url`
 

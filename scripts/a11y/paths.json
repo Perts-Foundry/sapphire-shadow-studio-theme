@@ -8,7 +8,7 @@
     "Every product template has exactly one live product, so the handles below are",
     "the whole product surface, not a sample.",
     "",
-    "templates/policy.json is the one deliberate exception, with three paths. It",
+    "templates/policy.liquid is the one deliberate exception, with three paths. It",
     "renders all five shop policies, whose bodies are Admin content this repo does",
     "not author, and assets/policy-nav.js branches on that content: it builds the",
     "jump nav only at 3 or more h2s. Refund (9 h2s) and privacy (13) take the nav",
@@ -92,9 +92,9 @@
     { "path": "/pages/custom-orders", "label": "page (custom orders)", "template": "templates/page.custom-orders.json" },
     { "path": "/pages/data-sharing-opt-out", "label": "page (generic template)", "template": "templates/page.json" },
     { "path": "/blogs/news", "label": "blog listing", "template": "templates/blog.json" },
-    { "path": "/policies/refund-policy", "label": "shop policy (refund, jump nav)", "template": "templates/policy.json" },
-    { "path": "/policies/terms-of-service", "label": "shop policy (terms, no jump nav)", "template": "templates/policy.json" },
-    { "path": "/policies/privacy-policy", "label": "shop policy (privacy, Shopify auto-managed)", "template": "templates/policy.json" },
+    { "path": "/policies/refund-policy", "label": "shop policy (refund, jump nav)", "template": "templates/policy.liquid" },
+    { "path": "/policies/terms-of-service", "label": "shop policy (terms, no jump nav)", "template": "templates/policy.liquid" },
+    { "path": "/policies/privacy-policy", "label": "shop policy (privacy, Shopify auto-managed)", "template": "templates/policy.liquid" },
     { "path": "/404-intentionally-missing", "label": "404", "template": "templates/404.json" }
   ]
 }

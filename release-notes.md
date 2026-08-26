@@ -6,14 +6,32 @@
 layout, not through this theme, and read off-brand next to the FAQ and About pages. Two separate
 causes, both fixed here.
 
-**`templates/policy.json` went missing through a live-theme sync, not through a decision.** With no
+**The policy template went missing through a live-theme sync, not through a decision.** With no
 policy template Shopify falls back to its own `.shopify-policy__container` markup, which is why
 `sections/main-policy.liquid` had not rendered on a single policy page: the section was in the repo
 the whole time with nothing routing to it. A `sync` commit deleted the template on 2026-01-28,
 before this repo's history was reset, so that commit is not reachable from `main` and there is
 nothing here to point at; the deletion is only visible as an absence. The version it removed also
-appended a whole contact form to every policy page, so the one restored here declares the `main`
+appended a whole contact form to every policy page, so the one restored here renders the `main`
 section only. Re-adding it is therefore not a revert of whatever prompted the delete.
+
+**And it cannot come back as the JSON template it used to be.** The first attempt at this restored
+`templates/policy.json`, matching the file that had been deleted. Shopify refused it on push, with
+`theme push` exiting 0 and the asset silently rejected: `Template type 'policy' does not support
+JSON templates`. So the platform tightened this rule at some point after that file was written, and
+`policy` now sits with `gift_card` and `robots.txt` in the must-be-Liquid set. `templates/policy.liquid`
+is a one-line `{% section 'main-policy' %}` and carries a comment saying why it is not JSON, because
+the file looks exactly like something a future cleanup would "modernise" into a JSON template.
+
+Two things are worth taking from that beyond the fix. The first is that Shopify's own Horizon baseline
+ships `sections/main-policy.liquid` with **no** policy template at all, so the section has been dead
+code upstream too; the absence was not a signal that the section was unusable. The second is a
+process one: `THEME_CHECK_NON_ACTIONABLE.md` already said the `policy` object is available in
+`templates/policy.liquid`, and that line was rewritten to `.json` during this change on a
+documentation-drift report, because the new template was JSON and the note looked stale. It was not
+stale, it was the one place in the repo that recorded the constraint, and correcting it to match a
+mistake is how the last written record of a rule gets erased. A drift report is a claim to verify,
+not a diff to apply.
 
 **The general rule that came out of it:** a reconcile PR that deletes a file passes every auto-deploy
 gate. The out-of-scope-diff check watches `.github/`, `layout/theme.liquid` and a LOC threshold, and
@@ -56,9 +74,9 @@ across two mechanisms, and a header height change has to visit both hardcoded si
 
 **`scripts/a11y/paths.json` had to change with the template.** Its `/policies/refund-policy` entry
 declared `"template": null` because the page was Shopify-rendered; the entry now points at
-`templates/policy.json`. That is not cosmetic: `scripts/a11y/test/paths.test.mjs` asserts every JSON
-template in `templates/` has an audited path, so adding the file without editing that entry fails the
-build.
+`templates/policy.liquid`. That is not cosmetic: `scripts/a11y/test/paths.test.mjs` asserts every JSON
+template in `templates/` has an audited path, and the entry is what ties the audited URL to the file
+that renders it.
 
 **That file's one-path-per-template rule gets its first deliberate exception here, and the heading
 counts are why.** The first pass kept a single policy path, on the rule as written. But this is the
@@ -84,7 +102,7 @@ default in `.github/actions/shopify-theme-push/action.yml`.
 asserted each named a real file. Adding a template could not be done silently, but deleting one
 could, leaving a stale claim behind with the suite green. `every declared template exists on disk`
 closes that direction, which matters here more than it reads: reverting to Shopify's default policy
-rendering means deleting `templates/policy.json`, and that is the exact shape of rollback the gap
+rendering means deleting `templates/policy.liquid`, and that is the exact shape of rollback the gap
 would have hidden.
 
 

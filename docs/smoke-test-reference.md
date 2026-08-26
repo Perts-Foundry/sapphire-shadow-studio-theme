@@ -20,7 +20,7 @@ diagnosing a deploy failure it reported.
   and `smoke.test.mjs` fails if the two drift. One of them is `/policies/refund-policy`, standing
   in for all five shop policies: they render through one theme template, the sitemap does not
   list them, and a `404` there usually means an emptied Admin policy rather than broken Liquid.
-  Remove that path in the same change that removes `templates/policy.json`, or a rollback to
+  Remove that path in the same change that removes `templates/policy.liquid`, or a rollback to
   Shopify-rendered policies HARD-FAILs its own smoke.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke

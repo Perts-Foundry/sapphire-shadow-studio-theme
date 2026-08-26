@@ -1,0 +1,12 @@
+{%- comment -%}
+  Shop policy pages. This MUST be a Liquid template, not JSON: Shopify refuses a
+  `templates/policy.json` outright with "Template type 'policy' does not support
+  JSON templates", the same rule that applies to gift_card and robots.txt. An
+  older `templates/policy.json` did exist on this theme once, so the platform
+  tightened this; do not "modernise" it back to JSON.
+
+  Without any policy template Shopify falls back to its own bare
+  `.shopify-policy__container` markup and `sections/main-policy.liquid` never
+  renders, which is the state this file exists to end.
+{%- endcomment -%}
+{% section 'main-policy' %}
