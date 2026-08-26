@@ -103,7 +103,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I cancel or modify my order after placing it?",
-            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/pages/contact\">Reach out to us</a> immediately and we'll see what options we can figure out together.</p>",
+            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/pages/contact\">Reach out to us</a> immediately and we'll see what options we can figure out together. Our <a href=\"/policies/terms-of-service\">Terms of Service</a> cover how order acceptance and cancellation work.</p>",
             "custom_anchor": ""
           }
         },
@@ -111,7 +111,7 @@
           "type": "faq_item",
           "settings": {
             "question": "I need an order as fast as possible, can you help?",
-            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after our standard production of 2 business days.<br/><br/><strong>Rush production</strong> speeds up the whole process but you need to <a href=\"/pages/contact\">contact us</a><em> before</em> ordering to arrange it; however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>See our <a href=\"/policies/shipping-policy\">Shipping Policy</a> for more information.</p>",
+            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after your piece is made.<br/><br/><strong>Rush production</strong> speeds up the making itself, but you need to <a href=\"/pages/contact\">contact us</a><em> before</em> ordering to arrange it; however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>Current production and transit times are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -119,7 +119,7 @@
           "type": "faq_item",
           "settings": {
             "question": "What payment methods do you accept, and do you sell gift cards?",
-            "answer": "<p>Major credit and debit cards, plus Shop Pay, Apple Pay and Google Pay. Payment runs through Shopify's checkout, so your card details never touch us.</p><p>We sell gift cards too. They arrive by email and, like most of what we make, they aren't refundable.</p>",
+            "answer": "<p>Major credit and debit cards, plus Shop Pay, Apple Pay and Google Pay. Payment runs through Shopify's checkout, so your card details never touch us; how we handle your information is in our <a href=\"/policies/privacy-policy\">Privacy Policy</a>.</p><p>We sell gift cards too. They arrive by email and, like most of what we make, they aren't refundable (see our <a href=\"/policies/refund-policy\">Refund Policy</a>).</p>",
             "custom_anchor": ""
           }
         },
@@ -135,7 +135,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Do you charge sales tax?",
-            "answer": "<p>Prices don't include it. Where sales tax applies, it's added at checkout based on your shipping address, and you'll see the amount before you pay. The $75 free-shipping threshold is measured before tax.</p>",
+            "answer": "<p>Prices don't include it. Where sales tax applies, it's added at checkout based on your shipping address, and you'll see the amount before you pay. The free-shipping threshold in our <a href=\"/policies/shipping-policy\">Shipping Policy</a> is measured before tax.</p>",
             "custom_anchor": ""
           }
         },
@@ -143,7 +143,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Do I need an account to place an order?",
-            "answer": "<p>No. Guest checkout needs an email address and somewhere to ship to, and that's it. An account just saves you typing it all again next time and keeps your order history in one place.</p>",
+            "answer": "<p>No. Guest checkout needs an email address and somewhere to ship to, and that's it. An account just saves you typing it all again next time and keeps your order history in one place. Either way, how we handle your details is covered in our <a href=\"/policies/privacy-policy\">Privacy Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -165,7 +165,7 @@
           "type": "faq_item",
           "settings": {
             "question": "How long will my order take to arrive?",
-            "answer": "<p>Most orders arrive within 7-10 business days total: we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.<br/><br/>Check out our <a href=\"/policies/shipping-policy\">Shipping Policy</a> for all the details!</p>",
+            "answer": "<p>Everything is made to order, so your total time is production plus shipping. Our <a href=\"/policies/shipping-policy\">Shipping Policy</a> has the current production time and the transit estimates for each shipping method, so it's always the up-to-date source.<br/><br/>Need it faster? Expedited shipping at checkout shortens the transit half.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.</p>",
             "custom_anchor": ""
           }
         },
@@ -181,7 +181,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Is there free shipping?",
-            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders $75 and up ship free via economy shipping. Below that, it's an $8 flat rate within the US.<br/><br/>Want it faster? Expedited shipping is available at checkout. Full details in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>.</p>",
+            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders over our free-shipping threshold ship free via economy shipping; below that, a flat rate applies. The current threshold and rate are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, and you'll see them at checkout.<br/><br/>Want it faster? Expedited shipping is available at checkout.</p>",
             "custom_anchor": ""
           }
         },
@@ -205,7 +205,7 @@
           "type": "faq_item",
           "settings": {
             "question": "How do I track my order?",
-            "answer": "<p>Every order ships with tracking. The number and a link come by email the moment your package leaves us.</p><p>Give it 24 to 48 hours before you worry about a tracking page that hasn't moved: that lag is the carrier's, not ours. If nothing has changed after 7 business days, <a href=\"/pages/contact\">tell us</a> and we'll open a trace.</p>",
+            "answer": "<p>Every order ships with tracking. The number and a link come by email the moment your package leaves us.</p><p>Give the tracking page a little time to update before you worry: that first lag is the carrier's, not ours. If it sits still much longer than the windows in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, <a href=\"/pages/contact\">tell us</a> and we'll open a trace.</p>",
             "custom_anchor": ""
           }
         },
@@ -213,7 +213,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Will a multi-item order arrive in more than one box?",
-            "answer": "<p>No. Everything ships together once the last piece is finished, in one box. We don't do partial shipments.</p><p>If one item is urgent and the rest aren't, place them as separate orders, or <a href=\"/pages/contact\">talk to us first</a> and we'll work out the timing.</p>",
+            "answer": "<p>No. Everything ships together once the last piece is finished, in one box. We don't do partial shipments.</p><p>If one item is urgent and the rest aren't, place them as separate orders, or <a href=\"/pages/contact\">talk to us first</a> and we'll work out the timing. The rest is in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -243,7 +243,7 @@
           "type": "faq_item",
           "settings": {
             "question": "What is the return/refund policy?",
-            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. The Shift Fuel crewneck is the exception, you've got 14 days to return that one if it's unworn and in original condition. Gift cards aren't returnable.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>Check out our full <a href=\"/policies/refund-policy\">Refund Policy</a> for all the details.</p>",
+            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. The Shift Fuel crewneck is the exception, that one can come back if it meets the return conditions. Gift cards aren't returnable.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>The return window, eligibility rules, and how to start a return are all in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -251,7 +251,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I return or exchange a personalized/custom item?",
-            "answer": "<p>Nope, custom pieces are final sale, and so is nearly everything else we make. Check the product page to see what applies to the piece you're looking at.</p><p>We're a tiny 2-person operation (plus cats), and we can't resell a piece made to your spec.</p><p><strong>Super important:</strong> You're responsible for choosing your size, and for spelling, names, dates, and all customization details. Check the size chart before you order, and double-check your text. We create exactly what you submit!</p><p>Review our <a href=\"/policies/refund-policy\">Refund Policy</a> for full details.</p>",
+            "answer": "<p>Nope, custom pieces are final sale, and so is nearly everything else we make. Check the product page to see what applies to the piece you're looking at.</p><p>We're a tiny 2-person operation (plus cats), and we can't resell a piece made to your spec.</p><p><strong>Super important:</strong> you're responsible for your size choice and every customization detail you submit, so double-check before you order. The full rules are in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -259,7 +259,7 @@
           "type": "faq_item",
           "settings": {
             "question": "My order arrived damaged or incorrect, what now?",
-            "answer": "<p>Tell us right away and we'll fix it. Open the package and look it over when it lands.</p><p>If something's damaged, defective, or just not what you ordered, <a href=\"/pages/contact\">send us your order number and a photo</a>. Final sale doesn't apply when the mistake is ours: we cover the return shipping and either remake the piece or refund you.</p><p>The <a href=\"/policies/refund-policy\">Refund Policy</a> has the fine print.</p>",
+            "answer": "<p>Tell us right away and we'll fix it. Open the package and look it over when it lands.</p><p>If something's damaged, defective, or just not what you ordered, <a href=\"/pages/contact\">send us your order number and a photo</a>. Final sale doesn't apply when the mistake is ours.</p><p>What we cover and how it gets resolved is in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
