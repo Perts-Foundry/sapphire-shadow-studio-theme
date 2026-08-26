@@ -73,6 +73,36 @@
     border-block-start: 1px solid var(--color-border);
   }
 
+  /*
+   * Deliberately not just a bigger question. A category label that differs
+   * only in weight reads as one more row at a glance, which is the failure the
+   * grouping exists to fix. So it goes the other way: smaller than a question,
+   * uppercase, widely tracked, and carrying a rule across the column.
+   */
+  .faq-section-{{ section_id }} .faq-heading {
+    font-family: var(--font-heading--family);
+    font-size: calc({{ section.settings.question_size }}px * 0.8);
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-foreground-heading);
+    opacity: 0.75;
+    margin-block: 56px 0;
+    padding-block-end: 10px;
+    border-block-end: 2px solid var(--color-foreground-heading);
+  }
+
+  /*
+   * The heading's own rule IS the top border of the group's first row. The
+   * `.faq-row:first-child` rule above stops matching once a heading opens the
+   * list, and nothing replaces it, which is the point: a hairline 10px under a
+   * 2px rule reads as a mistake.
+   */
+  .faq-section-{{ section_id }} .faq-heading:first-child {
+    margin-block-start: 0;
+  }
+
   .faq-section-{{ section_id }} .faq-question {
     width: 100%;
     display: flex;
@@ -238,6 +268,11 @@
     .faq-section-{{ section_id }} .faq-answer {
       padding: 0 0 16px;
     }
+
+    .faq-section-{{ section_id }} .faq-heading {
+      margin-block-start: 44px;
+      letter-spacing: 0.1em;
+    }
   }
 {% endstyle %}
 
@@ -261,6 +296,18 @@
 
   <div class="faq-list-{{ section_id }}">
     {% for block in section.blocks %}
+      {%- if block.type == 'faq_heading' -%}
+        {%- comment -%}
+          Category label, not a question. It is a sibling of the .faq-row divs
+          (the list is divs, not a list element, so an h2 between rows is
+          valid), the page h1 is the section title, and the JSON-LD loop below
+          skips it because it carries no question or answer setting.
+        {%- endcomment -%}
+        {%- if block.settings.heading != blank -%}
+          <h2 class="faq-heading" {{ block.shopify_attributes }}>{{ block.settings.heading }}</h2>
+        {%- endif -%}
+        {%- continue -%}
+      {%- endif -%}
       {% liquid
         if block.settings.custom_anchor != blank
           assign anchor_id = block.settings.custom_anchor | handleize
@@ -326,8 +373,21 @@
 
   `strip_html` on the answer is required, not cosmetic: the setting is `richtext`,
   and `acceptedAnswer.text` must be plain text.
+
+  The guard counts questions rather than blocks. A section holding only
+  `faq_heading` blocks (a category added before its questions, or one left
+  behind while reorganising) has a non-zero block count and nothing to say, and
+  would otherwise emit a FAQPage node with an empty `mainEntity`.
 {%- endcomment -%}
-{%- if section.blocks.size > 0 -%}
+{%- liquid
+  assign faq_question_count = 0
+  for block in section.blocks
+    if block.settings.question != blank and block.settings.answer != blank
+      assign faq_question_count = faq_question_count | plus: 1
+    endif
+  endfor
+-%}
+{%- if faq_question_count > 0 -%}
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -437,7 +497,21 @@
   "name": "FAQ",
   "class": "section-wrapper",
   "tag": "section",
+  "max_blocks": 50,
   "blocks": [
+    {
+      "type": "faq_heading",
+      "name": "Category Heading",
+      "settings": [
+        {
+          "type": "text",
+          "id": "heading",
+          "label": "Heading",
+          "info": "Groups the questions that follow. Renders as an H2, and is left out of the FAQ structured data.",
+          "default": "Category name"
+        }
+      ]
+    },
     {
       "type": "faq_item",
       "name": "FAQ Item",

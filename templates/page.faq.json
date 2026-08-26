@@ -23,11 +23,17 @@
     "faq_section": {
       "type": "faq",
       "blocks": {
+        "faq_heading_studio": {
+          "type": "faq_heading",
+          "settings": {
+            "heading": "About the Studio"
+          }
+        },
         "faq_item_hWDtXx": {
           "type": "faq_item",
           "settings": {
             "question": "What is Sapphire Shadow Studio and who runs it?",
-            "answer": "<p>Sapphire Shadow Studio is a small custom craft studio where we make apparel that actually stands out plus some other interests. No mass production, no cutting corners, just quality pieces we'd want to own ourselves.<br/><br/>We're Maddie and Seth, a husband-and-wife team running this whole operation. Maddie designs every piece, Seth handles the tech side, and our cats supervise while demanding lots of pets.<br/><br/>Learn more about our story and why we do what we do on our <a href=\"/pages/about\" target=\"_blank\" rel=\"noopener noreferrer\">About page</a>.<br/></p>",
+            "answer": "<p>Sapphire Shadow Studio is a small custom craft studio where we make apparel that actually stands out, plus a few other things besides. No mass production, no cutting corners, just quality pieces we'd want to own ourselves.<br/><br/>We're Maddie and Seth, a husband-and-wife team running this whole operation. Maddie designs every piece, Seth handles the tech side, and our cats supervise while demanding lots of pets.<br/><br/>Learn more about our story and why we do what we do on our <a href=\"/pages/about\">About page</a>.<br/></p>",
             "custom_anchor": ""
           }
         },
@@ -35,47 +41,61 @@
           "type": "faq_item",
           "settings": {
             "question": "What is the quality of your studio items?",
-            "answer": "<p>Nobody likes getting cheap garbage online, especially us.<br/><br/>Every piece at Sapphire Shadow Studio passes our simple test: would we want to own it ourselves? If the answer's no, it doesn't make it into the shop. We use quality materials, obsess over the details, and inspect everything before it ships.<br/><br/>Learn more about our principles on our <a href=\"/pages/about\" target=\"_blank\" rel=\"noopener noreferrer\">About page</a>.</p>",
+            "answer": "<p>Nobody likes getting cheap garbage online, especially us.<br/><br/>Every piece at Sapphire Shadow Studio passes our simple test: would we want to own it ourselves? If the answer's no, it doesn't make it into the shop. We use quality materials, obsess over the details, and inspect everything before it ships.<br/><br/>Learn more about our principles on our <a href=\"/pages/about\">About page</a>.</p>",
             "custom_anchor": ""
           }
         },
-        "faq_item_bAkNEw": {
+        "faq_item_mTdQ4c": {
           "type": "faq_item",
           "settings": {
-            "question": "How long will my order take to arrive?",
-            "answer": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for all the details!</p>",
+            "question": "What materials do you use, and how is everything made?",
+            "answer": "<p>We start with quality blanks and put every design through its paces first: we wear and wash our own test pieces, and only what holds up gets listed in the shop. All the design and embroidery happens here. Nothing is drop-shipped, and your piece is made fresh for your order.</p><p>Fabric, weight and fit vary by garment, so those details and the care instructions live on each product page.</p>",
             "custom_anchor": ""
           }
         },
-        "faq_item_vacation": {
+        "faq_item_pWn7Ke": {
           "type": "faq_item",
           "settings": {
-            "question": "What happens when we are away from the studio?",
-            "answer": "<p>When we are away from the studio we do not process orders, as we are only a two-person team. Any orders placed while we are away will begin processing on the date mentioned on our site.</p><p>Once processing resumes, our existing <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> applies from that point.</p>",
-            "custom_anchor": "away-from-studio"
-          }
-        },
-        "faq_item_eFjiBw": {
-          "type": "faq_item",
-          "settings": {
-            "question": "Is there free shipping?",
-            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders $75 and up ship free via economy shipping. Below that, it's a $8 flat rate within the US.<br/><br/>Want it faster? Expedited shipping is available at checkout. Full details in our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a>.</p>",
+            "question": "Are your pieces made in a home with cats?",
+            "answer": "<p>Yes. This is a home studio and we have pets, cats included. They don't get anywhere near finished pieces, and every order is inspected and lint-rolled before it goes in the bag and gets sealed.</p><p>That's honest housekeeping, not a hypoallergenic claim. If your allergy is a serious one, <a href=\"/pages/contact\">tell us before you order</a>.</p>",
             "custom_anchor": ""
           }
         },
-        "faq_item_VPTVLm": {
+        "faq_heading_ordering": {
+          "type": "faq_heading",
+          "settings": {
+            "heading": "Ordering & Customization"
+          }
+        },
+        "faq_item_DmMHGa": {
           "type": "faq_item",
           "settings": {
-            "question": "Where do you ship to?",
-            "answer": "<p>Currently we only ship within the United States and U.S. territories.<br/><br/>Stay tuned with our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for updates.</p>",
+            "question": "Can I do a completely custom order/design?",
+            "answer": "<p>Absolutely! We love working on custom projects.</p><p>See our <a href=\"/pages/custom-orders\">Custom Orders page</a> for what we can customize, how the process works, and lead-time expectations. Ready to start? <a href=\"/pages/contact\">Get in touch</a>.</p>",
             "custom_anchor": ""
           }
         },
-        "faq_item_qQdxkM": {
+        "faq_item_xR2vHq": {
           "type": "faq_item",
           "settings": {
-            "question": "I need an order as fast as possible, can you help?",
-            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after our standard production of 2 business days.<br/><br/><strong>Rush production</strong> speeds up the whole process but you need to <a href=\"/pages/contact\" target=\"_blank\" rel=\"noopener noreferrer\">contact us</a><em> before</em> ordering to arrange it however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>See our <a href=\"/policies/shipping-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Shipping Policy</a> for more information.</p>",
+            "question": "What parts of a piece can be customized?",
+            "answer": "<p>Most of what people ask for is one of four things: a design from scratch, personalized text such as a name or a set of credentials, a color or material swap on something already in the shop, or a size outside our standard range.</p><p>If your idea isn't on that list, ask anyway. The worst we'll say is no. Timelines and how quotes work are on our <a href=\"/pages/custom-orders\">Custom Orders page</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_bK8sWd": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can you embroider a logo or a design I do not own?",
+            "answer": "<p>Not unless you own it or have permission to use it. We won't reproduce a trademarked logo or somebody else's artwork, and we'll pass on anything that conflicts with our values.</p><p>Your own logo, your team's, your department's: <a href=\"/pages/contact\">send it over</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_yLc6Nt": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do you take bulk or team orders?",
+            "answer": "<p>Yes, and small batches are where we do our best work. Departments, shifts, teams, family events: all normal for us.</p><p>Tell us the quantity, the date you need them by, and the design, and you'll get a firm quote and a timeline back. The <a href=\"/pages/custom-orders\">Custom Orders page</a> has the rest.</p>",
             "custom_anchor": ""
           }
         },
@@ -83,15 +103,139 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I cancel or modify my order after placing it?",
-            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/policies/contact-information\" target=\"_blank\" rel=\"noopener noreferrer\">Reach out to us</a> immediately and we'll see what options we can figure out together.</p>",
+            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/pages/contact\">Reach out to us</a> immediately and we'll see what options we can figure out together.</p>",
             "custom_anchor": ""
           }
         },
-        "faq_item_DmMHGa": {
+        "faq_item_qQdxkM": {
           "type": "faq_item",
           "settings": {
-            "question": "Can I do a completely custom order/design?",
-            "answer": "<p>Absolutely! We love working on custom projects.</p><p>See our <a href=\"/pages/custom-orders\" target=\"_blank\" rel=\"noopener noreferrer\">Custom Orders page</a> for what we can customize, how the process works, and lead-time expectations. Ready to start? <a href=\"/pages/contact\" target=\"_blank\" rel=\"noopener noreferrer\">Get in touch</a>.</p>",
+            "question": "I need an order as fast as possible, can you help?",
+            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after your piece is made.<br/><br/><strong>Rush production</strong> speeds up the making itself, but you need to <a href=\"/pages/contact\">contact us</a><em> before</em> ordering to arrange it; however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>Our <a href=\"/policies/shipping-policy\">Shipping Policy</a> has all the details on both options and is the final say on timing.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_zF5rJm": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What payment methods do you accept, and do you sell gift cards?",
+            "answer": "<p>Major credit and debit cards, plus Shop Pay, Apple Pay and Google Pay. Payment runs through Shopify's checkout, so your card details never touch us; how we handle your information is in our <a href=\"/policies/privacy-policy\">Privacy Policy</a>.</p><p>We sell gift cards too. They arrive by email and, like most of what we make, they aren't refundable (see our <a href=\"/policies/refund-policy\">Refund Policy</a>).</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_hQ3wLv": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do you have promo codes or an email list?",
+            "answer": "<p>We don't run codes often, so if you're hunting for one before checkout, you're probably not missing much.</p><p>New designs, restocks, and anything we do run go to the email list first. The sign-up form is in the footer of every page, including this one, and we don't send much.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_nD9tYb": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do you charge sales tax?",
+            "answer": "<p>Prices don't include it. Where sales tax applies, it's added at checkout based on your shipping address, and you'll see the amount before you pay. The free-shipping threshold in our <a href=\"/policies/shipping-policy\">Shipping Policy</a> is measured before tax.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_gV4kSp": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do I need an account to place an order?",
+            "answer": "<p>No. Guest checkout needs an email address and somewhere to ship to, and that's it. An account just saves you typing it all again next time and keeps your order history in one place. Either way, how we handle your details is covered in our <a href=\"/policies/privacy-policy\">Privacy Policy</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_uJ7mXe": {
+          "type": "faq_item",
+          "settings": {
+            "question": "I did not get an order confirmation email, what should I do?",
+            "answer": "<p>It should land within a few minutes of checkout. If it hasn't, check spam and promotions, then check the address you typed at checkout. That's usually the culprit.</p><p>If it's still missing, <a href=\"/pages/contact\">message us</a>. We'll confirm the order is in the queue and re-send the email wherever it needs to go.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_heading_shipping": {
+          "type": "faq_heading",
+          "settings": {
+            "heading": "Shipping & Delivery"
+          }
+        },
+        "faq_item_bAkNEw": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How long will my order take to arrive?",
+            "answer": "<p>Everything is made to order, so your total time is production plus shipping. Our <a href=\"/policies/shipping-policy\">Shipping Policy</a> has the current production time and the transit estimates for each shipping method, so it's always the up-to-date source.<br/><br/>Need it faster? Expedited shipping at checkout shortens the transit half.<br/><br/>Heads up: these timelines pause when we're away from the studio, <a href=\"#away-from-studio\">see the next question</a> for how that works.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_vacation": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What happens when we are away from the studio?",
+            "answer": "<p>When we are away from the studio we do not process orders, as we are only a two-person team. Any orders placed while we are away begin processing on the resume date posted in the announcement bar at the top of every page; the same date appears on the product page before you add anything to your cart.</p><p>Once processing resumes, our existing <a href=\"/policies/shipping-policy\">Shipping Policy</a> applies from that point.</p>",
+            "custom_anchor": "away-from-studio"
+          }
+        },
+        "faq_item_eFjiBw": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Is there free shipping?",
+            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders over our free-shipping threshold ship free via economy shipping; below that, a flat rate applies. The current threshold and rate are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, and you'll see them at checkout.<br/><br/>Want it faster? Expedited shipping is available at checkout.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_VPTVLm": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Where do you ship to?",
+            "answer": "<p>Currently we only ship within the United States and U.S. territories. International shipping isn't available yet.</p><p>PO boxes and APO/FPO addresses work on economy shipping. Expedited may not be offered to those addresses, so build in the extra time.</p><p>Stay tuned with our <a href=\"/policies/shipping-policy\">Shipping Policy</a> for updates.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_kS6pRw": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I pick up my order in person?",
+            "answer": "<p>No, we're online only. Everything ships.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_tN2vQz": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How do I track my order?",
+            "answer": "<p>Every order ships with tracking. The number and a link come by email the moment your package leaves us.</p><p>Give the tracking page a little time to update before you worry: that first lag is the carrier's, not ours. If it sits still much longer than the windows in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, <a href=\"/pages/contact\">tell us</a> and we'll chase it down with the carrier.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_wC8jTh": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Will a multi-item order arrive in more than one box?",
+            "answer": "<p>No. Everything ships together once the last piece is finished, in one box. We don't do partial shipments.</p><p>If one item is urgent and the rest aren't, place them as separate orders, or <a href=\"/pages/contact\">talk to us first</a> and we'll work out the timing. The rest is in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_dP5xGn": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I send an order as a gift?",
+            "answer": "<p>Please do. Put the recipient's address in at checkout and it goes straight to them.</p><p>No gift wrap, sorry. We can leave the packing slip out or tuck in a short handwritten note if you <a href=\"/pages/contact\">message us</a> right after you order. If you don't know their size, a gift card saves everyone the guesswork.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_heading_sizing": {
+          "type": "faq_heading",
+          "settings": {
+            "heading": "Sizing, Returns & Care"
+          }
+        },
+        "faq_item_fH4nZk": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How do I choose my size?",
+            "answer": "<p>Every product page has a Size Chart with that garment's actual measurements. They aren't the same from piece to piece, so use the chart on the page you're ordering from.</p><p>Best method: pull out something you already own and love the fit of, lay it flat, measure it, and compare. Two minutes now beats a final-sale piece that doesn't fit.</p><p>If you're between two sizes, <a href=\"/pages/contact\">ask us</a>. We'd much rather answer that question than watch it go wrong.</p>",
             "custom_anchor": ""
           }
         },
@@ -99,7 +243,7 @@
           "type": "faq_item",
           "settings": {
             "question": "What is the return/refund policy?",
-            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. The Shift Fuel crewneck is the exception, you've got 14 days to return that one if it's unworn and in original condition. Gift cards aren't returnable.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>Check out our full <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for all the details.</p>",
+            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. A few pieces are returnable if they meet the return conditions, and gift cards never are.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>The return window, eligibility rules, and how to start a return are all in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -107,7 +251,23 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I return or exchange a personalized/custom item?",
-            "answer": "<p>Nope, custom pieces are final sale, and so is nearly everything else we make. Check the product page to see what applies to the piece you're looking at.</p><p>We're a tiny 2-person operation (plus cats), and we can't resell a piece made to your spec.</p><p><strong>Super important:</strong> You're responsible for choosing your size, and for spelling, names, dates, and all customization details. Check the size chart before you order, and double-check your text. We create exactly what you submit!</p><p>Review our <a href=\"/policies/refund-policy\" target=\"_blank\" rel=\"noopener noreferrer\">Refund Policy</a> for full details.</p>",
+            "answer": "<p>Nope, custom pieces are final sale, and so is nearly everything else we make. Check the product page to see what applies to the piece you're looking at.</p><p>We're a tiny 2-person operation (plus cats), and we can't resell a piece made to your spec.</p><p><strong>Super important:</strong> you're responsible for your size choice and every customization detail you submit, so double-check before you order. The full rules are in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_jB6yFr": {
+          "type": "faq_item",
+          "settings": {
+            "question": "My order arrived damaged or incorrect, what now?",
+            "answer": "<p>Tell us right away and we'll fix it. Open the package and look it over when it lands, and if something's damaged, defective, or just not what you ordered, <a href=\"/pages/contact\">send us your order number and a photo</a>.</p><p>Our <a href=\"/policies/refund-policy\">Refund Policy</a> covers what we do from there.</p>",
+            "custom_anchor": ""
+          }
+        },
+        "faq_item_qZ9dCu": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Will the color match what I see on my screen?",
+            "answer": "<p>Close, usually, but screens vary. The same navy reads warmer on a phone than on a laptop, and neither one is quite the thread in daylight.</p><p>We shoot everything as honestly as we can. If an exact shade matters, <a href=\"/pages/contact\">ask</a> and we'll send a closer photo. Screen-to-fabric variation isn't a defect, though, so it doesn't make a final-sale piece returnable.</p>",
             "custom_anchor": ""
           }
         },
@@ -118,21 +278,58 @@
             "answer": "<p>Each product page has specific care instructions tailored to that item, so always check there! Treat your embroidery nicely and it'll last as long as the garment itself.</p>",
             "custom_anchor": ""
           }
+        },
+        "faq_heading_contact": {
+          "type": "faq_heading",
+          "settings": {
+            "heading": "Contact"
+          }
+        },
+        "faq_item_sX3gMd": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How quickly do you respond to messages?",
+            "answer": "<p>The form on our <a href=\"/pages/contact\">contact page</a> is the fastest route. It goes straight to our inbox and we usually answer within 24 to 48 hours.</p><p>If you call, you'll probably get voicemail; we're usually elbow-deep in something. Calls come back within 2 to 3 business days. Email is quicker.</p>",
+            "custom_anchor": ""
+          }
         }
       },
       "block_order": [
+        "faq_heading_studio",
         "faq_item_hWDtXx",
         "faq_item_cKhCmD",
+        "faq_item_mTdQ4c",
+        "faq_item_pWn7Ke",
+        "faq_heading_ordering",
+        "faq_item_DmMHGa",
+        "faq_item_xR2vHq",
+        "faq_item_bK8sWd",
+        "faq_item_yLc6Nt",
+        "faq_item_r9pH89",
+        "faq_item_qQdxkM",
+        "faq_item_zF5rJm",
+        "faq_item_hQ3wLv",
+        "faq_item_nD9tYb",
+        "faq_item_gV4kSp",
+        "faq_item_uJ7mXe",
+        "faq_heading_shipping",
         "faq_item_bAkNEw",
         "faq_item_vacation",
         "faq_item_eFjiBw",
         "faq_item_VPTVLm",
-        "faq_item_qQdxkM",
-        "faq_item_r9pH89",
-        "faq_item_DmMHGa",
+        "faq_item_kS6pRw",
+        "faq_item_tN2vQz",
+        "faq_item_wC8jTh",
+        "faq_item_dP5xGn",
+        "faq_heading_sizing",
+        "faq_item_fH4nZk",
         "faq_item_kkRPRy",
         "faq_item_JRKEp6",
-        "faq_item_EF9tVJ"
+        "faq_item_jB6yFr",
+        "faq_item_qZ9dCu",
+        "faq_item_EF9tVJ",
+        "faq_heading_contact",
+        "faq_item_sX3gMd"
       ],
       "settings": {
         "title": "Frequently Asked Questions",
