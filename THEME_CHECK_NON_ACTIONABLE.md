@@ -197,7 +197,7 @@ Theme Check analyzes files in isolation and cannot determine:
 ##### Why These Are Valid
 
 **`policy` object:**
-- Available in policy templates (`templates/policy.liquid`)
+- Would be valid in a policy template, but no `policy` template type exists: Shopify renders `/policies/*` itself, so this upstream Horizon section never renders anywhere and the warnings are doubly inert (`release-notes.md`, policy pages)
 - Documentation: [Shopify Liquid: policy object](https://shopify.dev/docs/api/liquid/objects/policy)
 - Properties: `title`, `body`, `id`, `url`
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +38,17 @@ test('every JSON template in the theme is represented', () => {
   const covered = new Set(entries.map((e) => e.template));
   const uncovered = templates.filter((t) => !covered.has(t));
   assert.deepEqual(uncovered, [], 'templates with no audited path');
+});
+
+test('every declared template exists on disk', () => {
+  // The other direction of the same contract. The two tests above walk
+  // templates/ and assert each file is claimed; this one walks the claims and
+  // asserts each names a real file, so deleting a template cannot leave an
+  // entry pointing at nothing while every test stays green.
+  for (const entry of entries) {
+    if (entry.template === null) continue;
+    assert.ok(existsSync(join(REPO_ROOT, entry.template)), `${entry.path} claims a missing ${entry.template}`);
+  }
 });
 
 test('entries are well formed', () => {

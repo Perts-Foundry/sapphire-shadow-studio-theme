@@ -112,6 +112,15 @@
     >
       {%- render 'breadcrumbs' -%}
       {{ content_for_layout }}
+      {%- comment -%}
+        Policy pages have no template type: Shopify renders /policies/* itself
+        into content_for_layout above, and this layout is the only theme
+        Liquid that runs there. The snippet restyles that markup and hosts
+        the jump-nav shell; see its doc block.
+      {%- endcomment -%}
+      {%- if request.page_type == 'policy' -%}
+        {%- render 'policy-page' -%}
+      {%- endif -%}
     </main>
 
     {% sections 'footer-group' %}

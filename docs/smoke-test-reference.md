@@ -14,8 +14,13 @@ diagnosing a deploy failure it reported.
   `scripts/diagnostics/storefront-probe-node.mjs` (operator diagnostic; `.log` gitignored).
   Full root cause in `release-notes.md`.
 - **What it asserts.** Per path: HTTP `200` + final host == expected host +
-  `server-timing: theme;desc="<LIVE_THEME_ID>"`. Structural routes (`smoke-paths` default
-  `/ /cart /collections/all /search`) verify the deploy landed.
+  `server-timing: theme;desc="<LIVE_THEME_ID>"`. Structural routes verify the deploy landed; the
+  list is the `smoke-paths` input default in `action.yml`, which is the single source of truth
+  and carries the reasoning for each entry. `smoke.mjs` keeps a copy for standalone `--dry-run`
+  and `smoke.test.mjs` fails if the two drift. One of them is `/policies/refund-policy`, standing
+  in for all five shop policies: Shopify renders them itself, but inside `layout/theme.liquid`
+  (whose policy guard hosts the restyle and jump nav), the sitemap does not list them, and a
+  `404` there usually means an emptied Admin policy rather than broken Liquid.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->
@@ -53,3 +58,6 @@ diagnosing a deploy failure it reported.
   behaviour hold). Whether the gated sitemap is reachable is confirmed here too; if it is
   not, enumerate products via the Admin API by hand (there is no automatic Admin-API fallback
   in `smoke.mjs`; on an unreachable sitemap it soft-warns and probes structural routes only).
+  The run uses `smoke.mjs`'s own copy of the structural list unless `SMOKE_PATHS` is set, and the
+  drift test above is what keeps that copy honest; pass `SMOKE_PATHS` explicitly to pre-flight a
+  single new route before it becomes a deploy gate.

@@ -1,0 +1,204 @@
+{% doc %}
+  Restyles Shopify's self-rendered shop-policy pages and hosts the "On this
+  page" jump nav.
+
+  Policy pages are not themeable: there is no `policy` template type, so
+  Shopify renders `/policies/*` itself (`.shopify-policy__container` inside
+  this layout's `<main>`) and a `templates/policy.liquid` uploads cleanly but
+  never runs. The layout is the only theme Liquid that executes on these
+  pages, which is why this snippet is rendered from `layout/theme.liquid`
+  behind `request.page_type == 'policy'` and why it targets Shopify's own
+  `.shopify-policy__*` classes instead of markup of its own.
+
+  The nav shell is server-rendered here because its heading comes from a
+  locale key JS cannot read, and it starts `hidden`: `assets/policy-nav.js`
+  moves it under the page title, fills the list from the body's `h2`s, and
+  unhides it only at three or more. Without JS the page is simply Shopify's
+  markup with this snippet's styling.
+
+  The bare `PolicyNavHeading` ID follows the layout-singleton exception in
+  CLAUDE.md (rendered exactly once per page, no section or block ID to
+  suffix with).
+
+  @example
+  {% render 'policy-page' %}
+{% enddoc %}
+
+<script src="{{ 'policy-nav.js' | asset_url }}" type="module" fetchpriority="low"></script>
+
+<policy-nav-component>
+  <nav
+    class="policy-nav"
+    aria-labelledby="PolicyNavHeading"
+    ref="nav"
+    hidden
+  >
+    <h2 class="policy-nav__heading" id="PolicyNavHeading">
+      {{- 'policy.on_this_page' | t -}}
+    </h2>
+    <ul class="policy-nav__list" ref="list"></ul>
+  </nav>
+</policy-nav-component>
+
+{% stylesheet %}
+  /* Shopify's own wrapper; base.css supplies padding-block and the `rte`
+     typography inside the body. This narrows the measure to match the FAQ
+     page (720px, 16px mobile step-down) and spaces title / nav / body. */
+  .shopify-policy__container {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+    padding-inline: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .shopify-policy__title {
+    text-align: center;
+  }
+
+  .shopify-policy__title h1 {
+    margin-block: 0;
+  }
+
+  .policy-nav[hidden] {
+    display: none;
+  }
+
+  .policy-nav {
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 24px 28px;
+    background: rgb(var(--color-foreground-rgb) / var(--opacity-5));
+  }
+
+  /* Echoes the FAQ category-heading treatment (uppercase, tracked, 2px rule)
+     so the two pages read as siblings; see sections/faq.liquid. */
+  .policy-nav__heading {
+    font-family: var(--font-heading--family);
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-foreground-heading);
+    margin-block: 0 16px;
+    padding-block-end: 10px;
+    border-block-end: 2px solid var(--color-foreground-heading);
+  }
+
+  .policy-nav__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: policy-nav;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px 40px;
+  }
+
+  @media screen and (min-width: 750px) {
+    .policy-nav__list {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .policy-nav__item {
+    counter-increment: policy-nav;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .policy-nav__item::before {
+    content: counter(policy-nav, decimal-leading-zero);
+    font-family: var(--font-heading--family);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-primary);
+  }
+
+  .policy-nav__link {
+    color: var(--color-foreground);
+    text-decoration: none;
+  }
+
+  .policy-nav__link:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .policy-nav__link:focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 2px;
+  }
+
+  .shopify-policy__body :is(h2, h3, h4, h5, h6) {
+    /* Clear the sticky header plus announcement bar when deep-linked.
+       Kept in step with the same offset in sections/faq.liquid. */
+    scroll-margin-top: 150px;
+  }
+
+  /* The same 2px rule the FAQ draws under its category labels, here marking
+     the start of each policy section. The margins override the rte clamp,
+     which opens far more air above a large heading than these pages need
+     once the hr already separates sections. */
+  .shopify-policy__body h2 {
+    margin-block: 1.5rem 1rem;
+    padding-block-end: 10px;
+    border-block-end: 2px solid var(--color-foreground-heading);
+  }
+
+  .shopify-policy__body .rte a {
+    color: var(--color-primary);
+    text-underline-offset: 3px;
+  }
+
+  /* The FAQ's per-question permalink, mirrored per section: same 14px chain
+     icon in a 24px WCAG 2.5.8 target, dimmed until hover or focus. Appended
+     into each h2 by policy-nav.js. */
+  .shopify-policy__body h2 .policy-anchor {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 24px;
+    block-size: 24px;
+    margin-inline-start: 8px;
+    vertical-align: middle;
+    color: var(--color-foreground);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+  }
+
+  .shopify-policy__body h2 .policy-anchor:hover {
+    opacity: 1;
+  }
+
+  .shopify-policy__body h2 .policy-anchor:focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 2px;
+    opacity: 1;
+  }
+
+  .policy-anchor__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .shopify-policy__body hr {
+    border: 0;
+    border-block-start: 1px solid var(--color-border);
+    margin-block: 20px;
+  }
+
+  /* Matches the FAQ's own mobile step-down, so the two measures stay
+     identical at every width rather than only on desktop. */
+  @media screen and (max-width: 768px) {
+    .shopify-policy__container {
+      padding-inline: 16px;
+    }
+  }
+{% endstylesheet %}
