@@ -6,20 +6,29 @@
 layout, not through this theme, and read off-brand next to the FAQ and About pages. Two separate
 causes, both fixed here.
 
-**`templates/policy.json` had been deleted by a live-theme sync, not by a decision.** Commit
-`6c8df26` ("sync", 2026-01-28) removed it, and with no policy template Shopify falls back to its own
-`.shopify-policy__container` markup, so `sections/main-policy.liquid` had not rendered on any policy
-page since. The version that was deleted also appended a whole contact form to every policy page;
-the one restored here declares the `main` section only, which is why re-adding it is not a revert of
-whatever prompted the delete. If a future `shopify-sync` reconcile PR drops the file again, that is
-the signal to halt the auto-deploy on that PR and look at the sync, not to re-add it and move on.
+**`templates/policy.json` went missing through a live-theme sync, not through a decision.** With no
+policy template Shopify falls back to its own `.shopify-policy__container` markup, which is why
+`sections/main-policy.liquid` had not rendered on a single policy page: the section was in the repo
+the whole time with nothing routing to it. A `sync` commit deleted the template on 2026-01-28,
+before this repo's history was reset, so that commit is not reachable from `main` and there is
+nothing here to point at; the deletion is only visible as an absence. The version it removed also
+appended a whole contact form to every policy page, so the one restored here declares the `main`
+section only. Re-adding it is therefore not a revert of whatever prompted the delete.
+
+**The general rule that came out of it:** a reconcile PR that deletes a file passes every auto-deploy
+gate. The out-of-scope-diff check watches `.github/`, `layout/theme.liquid` and a LOC threshold, and
+a deletion elsewhere trips none of them, so a template can leave the theme with no signal at all and
+stay gone until someone notices the pages look wrong. If a future `shopify-sync` PR drops this file
+again, draft it and look at the sync rather than re-adding the file.
 
 **The section had a width token that never existed.** It set `max-width: var(--page-width-narrow)`,
 and the real token is `--narrow-page-width` (applied through the `.page-width-narrow` class, not read
 directly). An undefined custom property resolves to nothing, so the body was full-width even in the
 period when the template did render. It now carries the same explicit narrow measure as
-`sections/faq.liquid`, 720px with 20px inline padding, rather than a token indirection that a rename
-can silently empty again.
+`sections/faq.liquid`, 720px with 20px inline padding stepping down to 16px under 768px, rather than
+a token indirection that a rename can silently empty again. The mobile step is not decoration: the
+FAQ has one, and a "same measure as the FAQ" that only held on desktop is the kind of claim that
+survives in a comment long after it stops being true.
 
 **The `rte` class on the body wrapper is load-bearing.** Everything that makes a pasted policy body
 look native (the branded table with its uppercase header row and mobile scroll, list indentation,
@@ -33,19 +42,50 @@ the `<nav>` and its "On this page" heading are emitted by the section, hidden, a
 the heading `id`s are assigned at runtime from the heading text, so they are in-page jump targets
 only. A reworded heading changes its anchor, and nothing in the repo or in CI would notice, so these
 are not durable link targets the way the FAQ's `custom_anchor` values are. Nothing deep-links into a
-policy heading today; keep it that way, or move the anchor into content that a person controls.
+policy heading today. The escape hatch, if one ever needs to: the component assigns an `id` only to a
+heading that has none, so an `id` written into the Admin body wins and is as durable as the body is.
 
-**`scroll-margin-top: 150px` is now duplicated in two sections.** Both `sections/faq.liquid` and
-`sections/main-policy.liquid` clear the sticky header plus the announcement bar with the same
-hardcoded offset, and both carry a comment saying so. A shared variable was the alternative; two
-commented sites was judged the cheaper coupling for two call sites, but it is a coupling, and a
-header height change has to visit both.
+**`scroll-margin-top: 150px` is now duplicated in two sections, and a third offset already exists.**
+Both `sections/faq.liquid` and `sections/main-policy.liquid` clear the sticky header plus the
+announcement bar with the same hardcoded offset, and both carry a comment saying so. The choice was
+not "no shared variable exists yet": `--scroll-margin: 50px` is defined in
+`snippets/theme-styles-variables.liquid` and consumed by `blocks/_accordion-row.liquid`. Reusing it
+would have meant either changing its value under an existing consumer or adding a second token, so
+the duplication won on cost. The thing to know is that the repo now carries three deep-link offsets
+across two mechanisms, and a header height change has to visit both hardcoded sites.
 
 **`scripts/a11y/paths.json` had to change with the template.** Its `/policies/refund-policy` entry
 declared `"template": null` because the page was Shopify-rendered; the entry now points at
 `templates/policy.json`. That is not cosmetic: `scripts/a11y/test/paths.test.mjs` asserts every JSON
 template in `templates/` has an audited path, so adding the file without editing that entry fails the
-build. One entry, not one per policy page, per the file's own one-path-per-template rule.
+build.
+
+**That file's one-path-per-template rule gets its first deliberate exception here, and the heading
+counts are why.** The first pass kept a single policy path, on the rule as written. But this is the
+only template in the theme whose rendered content varies per URL: one template, five live shop
+policies, bodies that are Admin content the repo does not author, and a component that branches on
+them at three `h2`s. Counted against the live bodies, refund has 9 headings and privacy 13, so both
+take the nav branch, while terms of service and contact information have none at all and take the
+other one. A single refund path therefore audited one branch and left the other, on the largest body
+in the store, entirely unvisited. Three paths now: refund for the nav, terms of service for the
+nav-hidden branch, and privacy because it is Shopify auto-managed and its body can change with no
+commit in this repo to trigger a run.
+
+**A second, opposite coverage hole was open the whole time and is closed here too.** The
+post-deploy smoke probes structural paths plus every product in the sitemap, and the sitemap does
+not list policy pages. That was fine while they were Shopify-rendered, since no theme Liquid could
+break them. It stops being fine the moment they render through `sections/main-policy.liquid`: a
+Liquid error there takes all five down at once, including the page `hasMerchantReturnPolicy` points
+at, and the smoke would still report green. `/policies/refund-policy` is now in the `smoke-paths`
+default in `.github/actions/shopify-theme-push/action.yml`.
+
+**And the test that caught the template change only enforced half its own contract.** It walked
+`templates/` and asserted every file was claimed by an entry; nothing walked the entries and
+asserted each named a real file. Adding a template could not be done silently, but deleting one
+could, leaving a stale claim behind with the suite green. `every declared template exists on disk`
+closes that direction, which matters here more than it reads: reverting to Shopify's default policy
+rendering means deleting `templates/policy.json`, and that is the exact shape of rollback the gap
+would have hidden.
 
 
 ## FAQ: category headings, and the content to justify them (unreleased)

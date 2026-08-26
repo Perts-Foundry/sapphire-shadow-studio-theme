@@ -3,9 +3,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
-  summarize, runSmoke, authenticateStorefront, PASS, SOFT_WARN, HARD_FAIL,
+  summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
 const THEME = '181702754604';
@@ -634,4 +637,24 @@ test('authenticateStorefront: a network failure is error, and the retries are bo
   ]);
   await auth(throttled, { sleep, backoff: [1, 2] });
   assert.deepEqual(sleep.delays, [1, 2], 'exactly one POST per backoff entry, then give up');
+});
+
+// --- action.yml drift ------------------------------------------------------
+
+test('the standalone path default matches the smoke-paths default in action.yml', () => {
+  // Two copies of the structural path list exist: action.yml's input default,
+  // which is what every deploy actually probes, and smoke.mjs's fallback, which
+  // is what a standalone --dry-run probes. A drift between them means the
+  // pre-flight check verifies a different set of routes than the gate does,
+  // which is precisely the check that is supposed to de-risk the gate.
+  // Parsed with a regex rather than a YAML dependency: the repo installs none,
+  // and the line is a plain double-quoted scalar.
+  const actionYml = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'action.yml'),
+    'utf8'
+  );
+  const block = actionYml.slice(actionYml.indexOf('  smoke-paths:'));
+  const match = /^ {4}default: "([^"]*)"$/m.exec(block);
+  assert.ok(match, 'could not find the smoke-paths default in action.yml');
+  assert.equal(match[1], DEFAULT_SMOKE_PATHS);
 });

@@ -120,6 +120,14 @@
     border-block-start: 1px solid var(--color-border);
     margin-block: 48px;
   }
+
+  /* Matches the FAQ's own mobile step-down, so the two measures stay identical
+     at every width rather than only on desktop. */
+  @media screen and (max-width: 768px) {
+    .policy {
+      padding-inline: 16px;
+    }
+  }
 {% endstylesheet %}
 
 {% schema %}

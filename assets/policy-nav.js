@@ -16,7 +16,9 @@ import { Component } from '@theme/component';
  * only when there are enough sections for a jump nav to earn its space.
  *
  * The ids are assigned at runtime, so they are in-page jump targets only and
- * are not durable link targets: a reworded heading changes its id.
+ * are not durable link targets: a reworded heading changes its id. A heading
+ * that already carries an id keeps it, which is the one way to author a
+ * durable anchor here.
  *
  * @extends {Component<PolicyNavRefs>}
  */
@@ -48,6 +50,11 @@ class PolicyNavComponent extends Component {
       const text = heading.textContent?.trim() ?? '';
 
       if (!heading.id) heading.id = uniqueId(slugify(text) || 'section');
+
+      // Without this, activating a jump link scrolls but leaves focus on the
+      // link, so the next Tab continues from the nav instead of the section the
+      // reader just jumped to. Same mechanism as the skip link's `#main` target.
+      heading.tabIndex = -1;
 
       const link = document.createElement('a');
       link.className = 'policy__nav-link';

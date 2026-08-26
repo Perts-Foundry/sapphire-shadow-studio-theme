@@ -516,10 +516,17 @@ async function fetchWithBody(url, { jar, fetchImpl, sleep, backoff, timeoutMs })
 }
 
 // --- CLI entry -------------------------------------------------------------
+export const DEFAULT_SMOKE_PATHS = '/ /cart /collections/all /search /policies/refund-policy';
+
 function envConfig() {
   const base = process.env.SMOKE_BASE_URL
     || (process.env.SHOPIFY_FLAG_STORE ? `https://${process.env.SHOPIFY_FLAG_STORE}` : '');
-  const paths = (process.env.SMOKE_PATHS || '/ /cart /collections/all /search')
+  // Keep in sync with the `smoke-paths` default in action.yml, which is the
+  // source of truth; this copy exists only so a standalone --dry-run works
+  // without setting the env var. smoke.test.mjs asserts the two match, so
+  // changing one without the other fails the build rather than silently
+  // dry-running a different path list than the deploy probes.
+  const paths = (process.env.SMOKE_PATHS || DEFAULT_SMOKE_PATHS)
     .split(/\s+/).filter(Boolean);
   // Parse a positive integer env override, falling back to the default when the
   // value is absent, non-numeric (NaN), or non-positive. A bare Number() would

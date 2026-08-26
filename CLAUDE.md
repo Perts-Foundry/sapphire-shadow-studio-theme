@@ -81,6 +81,8 @@ Admin Customize/Code edits go on the `EDIT HERE - Admin Sync` theme, never live 
 
 **Escape hatch**: mark the auto-reconcile PR as a draft (`gh pr ready --undo <n>`); auto-deploy skips drafts. Convert back to ready-for-review to resume.
 
+**A reconcile PR that DELETES a theme file is a halt signal**: none of the gates above look at deletions. Draft the PR and find out what the admin theme did, rather than re-adding the file, which may not be what should come back. This has happened (`release-notes.md`, policy pages).
+
 ### Live theme and preview cleanup
 
 Do not click "Customize" or "Edit code" on the live theme card in admin; use the sync theme (README's "Branches and themes" table has the theme ID and disconnected-from-GitHub details). Orphaned `pr-N-preview` themes have no scheduled sweep; the failure signal is `:warning: **Preview cleanup warning**` in the deploy-report comment, and README's Troubleshooting table has the recovery commands.
@@ -252,7 +254,7 @@ Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks
 
 ### HTML
 
-- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`. The suffix is there to keep repeated blocks unique. **Exception: link anchors**, whose job is to be stable and hand-authorable, so they are bare. The only one today is `SizeChart` (`anchor_id` on `_accordion-row`, emitted by `scripts/size-chart/`, targeted by `snippets/size-guide-link.liquid` and by shared `#SizeChart` URLs). Do NOT "fix" it to `SizeChart-{{ block.id }}`; that silently breaks the size-guide link and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` fails if you do. A second narrow exception: snippets rendered exactly once from `layout/theme.liquid` have no section or block ID to suffix with, so their IDs are bare singletons (today only `VacationPopupHeading` in `snippets/vacation-popup.liquid`).
+- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`. The suffix is there to keep repeated blocks unique. **Exception: link anchors**, whose job is to be stable and hand-authorable, so they are bare. The only one today is `SizeChart` (`anchor_id` on `_accordion-row`, emitted by `scripts/size-chart/`, targeted by `snippets/size-guide-link.liquid` and by shared `#SizeChart` URLs). Do NOT "fix" it to `SizeChart-{{ block.id }}`; that silently breaks the size-guide link and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` fails if you do. A second narrow exception: snippets rendered exactly once from `layout/theme.liquid` have no section or block ID to suffix with, so their IDs are bare singletons (today only `VacationPopupHeading` in `snippets/vacation-popup.liquid`). A third: `assets/policy-nav.js` slugifies every policy-body `h2` into a bare runtime ID (no Liquid ever sees them). Unlike `SizeChart` these are **not** durable targets, since rewording a heading changes its anchor and nothing checks it. For a shareable one, put an `id` in the Admin body: the component only assigns when a heading has none. That works on operator-authored policies, not the auto-managed privacy policy, whose body Shopify rewrites.
 - Typed inputs (`type="search|tel|url|date|time|datetime-local|month|week|color"`) for native validation and mobile keyboards. `pattern=` for regex validation; `formnovalidate` / `formaction` on submit buttons that bypass validation or post elsewhere.
 - View transitions: declare `@view-transition` and per-element `view-transition-name` for smooth navigation.
 - Avoid `position: fixed` near the bottom of the viewport on mobile (the on-screen keyboard overlaps it).
@@ -275,13 +277,13 @@ Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks
 
 ### Component-specific accessibility patterns
 
-Load `docs/accessibility-patterns.md` before implementing or modifying any of these widgets: **accordion, breadcrumb, cart drawer, chat window, color swatch, combobox, carousel, disclosure, dropdown navigation, flip card, form, modal, product card, slider, switch, tab, tooltip**. Anything that maps to one of these primitives (`<dialog>` ≈ modal; toasts ≈ `aria-live` region; bare "dropdown" ≈ combobox / disclosure / dropdown navigation depending on behaviour); load the same file and use the nearest match. Anything else: global rules above + WCAG.
+Load `docs/accessibility-patterns.md` before implementing or modifying any of these widgets: **accordion, breadcrumb, cart drawer, chat window, color swatch, combobox, carousel, disclosure, dropdown navigation, flip card, form, jump nav, modal, product card, slider, switch, tab, tooltip**. Anything that maps to one of these primitives (`<dialog>` ≈ modal; toasts ≈ `aria-live` region; bare "dropdown" ≈ combobox / disclosure / dropdown navigation depending on behaviour); load the same file and use the nearest match. Anything else: global rules above + WCAG.
 
 ## Translations
 
 - Keys live in `locales/en.default.json` (storefront) and `locales/en.default.schema.json` (schema).
 - **Add the key to the locale file before referencing it**; theme-check fails red on dangling keys.
-- When adding storefront-visible strings, mirror into non-English locale files (`locales/it.json`, `locales/ro.json`, etc.) with `TODO` placeholders if real translations aren't available.
+- When adding storefront-visible strings, mirror into `locales/it.json` and `locales/ro.json` with `TODO: ` placeholders. Those two only, not the other 30: the store publishes exactly one locale, so nothing else is served, and these are the two anyone has kept current (the rest carry the same 8 upstream-era `TODO:` keys and nothing since). Nothing in CI checks either direction (`MatchingTranslations` is off; pa11y audits the default locale), and the premise is an Admin setting, so confirm it rather than assuming: `{ shopLocales { locale primary published } }` through the client in the shipping-copy snippet below. More than one published locale means backfill the rest first.
 
 ## Theme settings
 
