@@ -64,6 +64,8 @@ class PolicyNavComponent extends Component {
       // link, so the next Tab continues from the nav instead of the section the
       // reader just jumped to. Same mechanism as the skip link's `#main` target.
       heading.tabIndex = -1;
+
+      heading.append(buildPermalink(heading.id));
     }
 
     if (headings.length >= PolicyNavComponent.MIN_HEADINGS) {
@@ -117,6 +119,65 @@ class PolicyNavComponent extends Component {
       target.focus({ preventScroll: true });
     });
   }
+}
+
+/**
+ * Builds the copy-link permalink appended to each section heading, mirroring
+ * the FAQ's per-question permalink (same chain icon, same copy-to-clipboard
+ * with a temporary "Link copied!" title, same 14px icon in a 24px target).
+ * Unlike the FAQ's, it lives inside the heading: an h2 is not interactive,
+ * so there is no nested-interactive problem to position around.
+ *
+ * @param {string} id - The heading's assigned id.
+ * @returns {HTMLAnchorElement} The permalink element.
+ */
+function buildPermalink(id) {
+  const anchor = document.createElement('a');
+  anchor.className = 'policy-anchor';
+  anchor.href = `#${encodeURIComponent(id)}`;
+  anchor.setAttribute('aria-label', 'Copy link to this section');
+  anchor.setAttribute('title', 'Copy link');
+  anchor.append(buildLinkIcon());
+
+  anchor.addEventListener('click', () => {
+    const url = `${window.location.origin}${window.location.pathname}#${encodeURIComponent(id)}`;
+    navigator.clipboard?.writeText(url).then(() => {
+      anchor.setAttribute('title', 'Link copied!');
+      setTimeout(() => anchor.setAttribute('title', 'Copy link'), 2000);
+    });
+  });
+
+  return anchor;
+}
+
+/**
+ * The FAQ permalink's chain icon, built with DOM APIs rather than innerHTML.
+ *
+ * @returns {SVGSVGElement} A 24x24-viewBox chain-link icon.
+ */
+function buildLinkIcon() {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'policy-anchor__icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const paths = [
+    'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71',
+    'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
+  ];
+  for (const d of paths) {
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+
+  return svg;
 }
 
 /**

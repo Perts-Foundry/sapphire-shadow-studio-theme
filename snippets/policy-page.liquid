@@ -157,6 +157,37 @@
     text-underline-offset: 3px;
   }
 
+  /* The FAQ's per-question permalink, mirrored per section: same 14px chain
+     icon in a 24px WCAG 2.5.8 target, dimmed until hover or focus. Appended
+     into each h2 by policy-nav.js. */
+  .shopify-policy__body h2 .policy-anchor {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 24px;
+    block-size: 24px;
+    margin-inline-start: 8px;
+    vertical-align: middle;
+    color: var(--color-foreground);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+  }
+
+  .shopify-policy__body h2 .policy-anchor:hover {
+    opacity: 1;
+  }
+
+  .shopify-policy__body h2 .policy-anchor:focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 2px;
+    opacity: 1;
+  }
+
+  .policy-anchor__icon {
+    width: 14px;
+    height: 14px;
+  }
+
   .shopify-policy__body hr {
     border: 0;
     border-block-start: 1px solid var(--color-border);
