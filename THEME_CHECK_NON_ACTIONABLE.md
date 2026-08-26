@@ -165,8 +165,8 @@ However, this is purely cosmetic and provides no functional benefit.
 #### Affected Objects and Locations
 
 ##### `policy` object (2 warnings)
-- `sections/main-policy.liquid:17` - `{{ policy.title }}`
-- `sections/main-policy.liquid:20` - `{{ policy.body }}`
+- `sections/main-policy.liquid:16` - `{{ policy.title }}`
+- `sections/main-policy.liquid:41` - `{{ policy.body }}`
 
 ##### `comment` object (1 warning)
 - `snippets/blog-comment-form.liquid:52` - `comment.status`

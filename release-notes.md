@@ -1,5 +1,53 @@
 # Release Notes
 
+## Policy pages: a theme template again, and a jump nav (unreleased)
+
+`/policies/refund-policy` and `/policies/shipping-policy` rendered through Shopify's bare default
+layout, not through this theme, and read off-brand next to the FAQ and About pages. Two separate
+causes, both fixed here.
+
+**`templates/policy.json` had been deleted by a live-theme sync, not by a decision.** Commit
+`6c8df26` ("sync", 2026-01-28) removed it, and with no policy template Shopify falls back to its own
+`.shopify-policy__container` markup, so `sections/main-policy.liquid` had not rendered on any policy
+page since. The version that was deleted also appended a whole contact form to every policy page;
+the one restored here declares the `main` section only, which is why re-adding it is not a revert of
+whatever prompted the delete. If a future `shopify-sync` reconcile PR drops the file again, that is
+the signal to halt the auto-deploy on that PR and look at the sync, not to re-add it and move on.
+
+**The section had a width token that never existed.** It set `max-width: var(--page-width-narrow)`,
+and the real token is `--narrow-page-width` (applied through the `.page-width-narrow` class, not read
+directly). An undefined custom property resolves to nothing, so the body was full-width even in the
+period when the template did render. It now carries the same explicit narrow measure as
+`sections/faq.liquid`, 720px with 20px inline padding, rather than a token indirection that a rename
+can silently empty again.
+
+**The `rte` class on the body wrapper is load-bearing.** Everything that makes a pasted policy body
+look native (the branded table with its uppercase header row and mobile scroll, list indentation,
+blockquote rule) comes from `.rte` in `assets/base.css`. It reads like a leftover class next to the
+new BEM ones; removing it strips the table back to browser defaults.
+
+**The jump-nav shell is server-rendered and the anchors are not.** JS cannot read a locale key, so
+the `<nav>` and its "On this page" heading are emitted by the section, hidden, and
+`assets/policy-nav.js` only fills the list and unhides it, and only when the body has three or more
+`h2`s. Without JS the shell stays hidden and the page is unchanged. The consequence worth knowing:
+the heading `id`s are assigned at runtime from the heading text, so they are in-page jump targets
+only. A reworded heading changes its anchor, and nothing in the repo or in CI would notice, so these
+are not durable link targets the way the FAQ's `custom_anchor` values are. Nothing deep-links into a
+policy heading today; keep it that way, or move the anchor into content that a person controls.
+
+**`scroll-margin-top: 150px` is now duplicated in two sections.** Both `sections/faq.liquid` and
+`sections/main-policy.liquid` clear the sticky header plus the announcement bar with the same
+hardcoded offset, and both carry a comment saying so. A shared variable was the alternative; two
+commented sites was judged the cheaper coupling for two call sites, but it is a coupling, and a
+header height change has to visit both.
+
+**`scripts/a11y/paths.json` had to change with the template.** Its `/policies/refund-policy` entry
+declared `"template": null` because the page was Shopify-rendered; the entry now points at
+`templates/policy.json`. That is not cosmetic: `scripts/a11y/test/paths.test.mjs` asserts every JSON
+template in `templates/` has an audited path, so adding the file without editing that entry fails the
+build. One entry, not one per policy page, per the file's own one-path-per-template rule.
+
+
 ## FAQ: category headings, and the content to justify them (unreleased)
 
 The page went from 12 questions to 30 in one change, which is the part that forced the theme work:

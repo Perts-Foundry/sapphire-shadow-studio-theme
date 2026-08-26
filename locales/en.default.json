@@ -367,6 +367,9 @@
     "blog_post_date": "Date",
     "blog_post_description": "An excerpt of your blog post's content"
   },
+  "policy": {
+    "on_this_page": "On this page"
+  },
   "products": {
     "product": {
       "add_to_cart": "Add to cart",

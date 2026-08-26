@@ -80,7 +80,7 @@
     { "path": "/pages/custom-orders", "label": "page (custom orders)", "template": "templates/page.custom-orders.json" },
     { "path": "/pages/data-sharing-opt-out", "label": "page (generic template)", "template": "templates/page.json" },
     { "path": "/blogs/news", "label": "blog listing", "template": "templates/blog.json" },
-    { "path": "/policies/refund-policy", "label": "shop policy (Shopify-rendered)", "template": null },
+    { "path": "/policies/refund-policy", "label": "shop policy (refund)", "template": "templates/policy.json" },
     { "path": "/404-intentionally-missing", "label": "404", "template": "templates/404.json" }
   ]
 }

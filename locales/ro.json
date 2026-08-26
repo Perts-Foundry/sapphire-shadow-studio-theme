@@ -343,6 +343,9 @@
     "blog_post_date": "Data",
     "blog_post_description": "Un fragment din postarea pe blog"
   },
+  "policy": {
+    "on_this_page": "TODO: On this page"
+  },
   "products": {
     "product": {
       "add_to_cart": "Adaugă în coș",
