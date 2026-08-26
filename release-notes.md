@@ -1,5 +1,45 @@
 # Release Notes
 
+## FAQ: category headings, and the content to justify them (unreleased)
+
+The page went from 12 questions to 30 in one change, which is the part that forced the theme work:
+a flat list of 30 rows is not scannable, and five headings make it one.
+
+**One section, not five.** Grouping by splitting the page into five `faq` sections would have been
+the smaller diff, and it would have emitted five `FAQPage` nodes and five Expand All buttons on one
+page. So the grouping lives inside the section instead, as a `faq_heading` block type carrying a
+single `heading` text setting.
+
+**A heading block is excluded from the `FAQPage` JSON-LD by construction, not by a guard.** The
+loop already skipped any block whose `question` or `answer` was blank, and a `faq_heading` block has
+neither setting, so it never satisfies the condition. That is worth knowing before adding a third
+block type: one that happens to carry a `question` setting would start appearing in the structured
+data with nothing added to the loop to let it.
+
+**The heading renders outside `.faq-row`, which breaks the first-child border.** The top border of
+the list came from `.faq-row:first-child .faq-item`, and that selector stops matching the moment a
+heading opens the list. `.faq-heading + .faq-row .faq-item` restores it, once per group rather than
+once per page. The two selectors cannot both match the same row, so there is no doubled border.
+
+**The schema had no `max_blocks`, and Shopify's default is 16.** The page now holds 35 blocks (30
+questions plus five headings), so the section declares `max_blocks: 50`: headroom rather than an
+exact fit, and 50 is the ceiling the platform allows. A future editor who hits that limit is not
+looking at a bug in the section.
+
+**Existing block ids and question wording are unchanged on purpose.** Anchors are generated as
+`question | handleize | truncate: 50`, so rewording a question silently breaks every link anyone has
+shared to it. Reordering the `block_order` array is free; editing the `question` string is not. The
+vacation entry keeps its `away-from-studio` custom anchor, which every vacation surface deep-links
+and nothing in CI checks.
+
+**Several of the new answers state facts that live nowhere in this repo.** Cat-allergy handling,
+gift-note and packing-slip behaviour, PO box and APO/FPO deliverability, local pickup, and whether
+promo codes exist are operator knowledge, not code. They were drafted from the shop policies and the
+Admin API where those could answer, and flagged for the operator where they could not. Shipping
+numbers, tracking behaviour, split-shipment behaviour and the response-time figure are copied from
+the Shopify policy pages, which makes them a fifth thing to update when a policy changes: the
+four sources of truth in CLAUDE.md's shipping-copy note, plus this page.
+
 ## Reorder review: a purchase list the tool renders, not the operator (unreleased)
 
 Another follow-up in the read-only half. Nothing here writes to the store, edits `thresholds.json` or
