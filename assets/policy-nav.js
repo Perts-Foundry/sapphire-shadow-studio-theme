@@ -18,10 +18,13 @@ import { Component } from '@theme/component';
  * for a jump nav to earn its space. The shell is server-rendered at all
  * because its heading comes from a locale key JS cannot read.
  *
- * The ids are assigned at runtime, so they are in-page jump targets only and
- * are not durable link targets: a reworded heading changes its id. A heading
- * that already carries an id keeps it, which is the one way to author a
- * durable anchor here (in the Admin policy body; not available on the
+ * The ids are assigned at runtime from the heading text and double as the
+ * shareable /policies/...#section links (an incoming hash is scrolled to
+ * after assignment, since native fragment scroll ran before the ids
+ * existed). They are only as durable as the wording: a reworded heading
+ * changes its id and nothing checks sent links. A heading that already
+ * carries an id keeps it, which is the one way to author an id that
+ * survives rewording (in the Admin policy body; not available on the
  * auto-managed privacy policy, whose body Shopify rewrites).
  *
  * @extends {Component<PolicyNavRefs>}
@@ -50,36 +53,69 @@ class PolicyNavComponent extends Component {
       (heading) => heading.textContent?.trim()
     );
 
-    if (headings.length < PolicyNavComponent.MIN_HEADINGS) return;
-
-    const fragment = document.createDocumentFragment();
-
+    // Ids are assigned to every section heading, not only when the nav shows:
+    // they are the shareable /policies/...#section links, and tying their
+    // existence to the nav threshold would break sent links if a policy ever
+    // shrank below it.
     for (const heading of headings) {
-      const text = heading.textContent?.trim() ?? '';
-
-      if (!heading.id) heading.id = uniqueId(slugify(text) || 'section');
+      if (!heading.id) heading.id = uniqueId(slugify(heading.textContent?.trim() ?? '') || 'section');
 
       // Without this, activating a jump link scrolls but leaves focus on the
       // link, so the next Tab continues from the nav instead of the section the
       // reader just jumped to. Same mechanism as the skip link's `#main` target.
       heading.tabIndex = -1;
-
-      const link = document.createElement('a');
-      link.className = 'policy-nav__link';
-      link.href = `#${encodeURIComponent(heading.id)}`;
-      link.textContent = text;
-
-      const item = document.createElement('li');
-      item.className = 'policy-nav__item';
-      item.append(link);
-      fragment.append(item);
     }
 
-    list.replaceChildren(fragment);
-    // Move only the nav node, not this custom element: re-inserting the
-    // element would re-fire connectedCallback and rebuild mid-build.
-    title.after(nav);
-    nav.hidden = false;
+    if (headings.length >= PolicyNavComponent.MIN_HEADINGS) {
+      const fragment = document.createDocumentFragment();
+
+      for (const heading of headings) {
+        const link = document.createElement('a');
+        link.className = 'policy-nav__link';
+        link.href = `#${encodeURIComponent(heading.id)}`;
+        link.textContent = heading.textContent?.trim() ?? '';
+
+        const item = document.createElement('li');
+        item.className = 'policy-nav__item';
+        item.append(link);
+        fragment.append(item);
+      }
+
+      list.replaceChildren(fragment);
+      // Move only the nav node, not this custom element: re-inserting the
+      // element would re-fire connectedCallback and rebuild mid-build.
+      title.after(nav);
+      nav.hidden = false;
+    }
+
+    this.#scrollToIncomingHash(content);
+  }
+
+  /**
+   * Honors a `#section` in the URL on arrival. The ids above do not exist at
+   * parse time, so the browser's native fragment scroll finds nothing and
+   * gives up; once they are assigned, a link someone was sent has to be
+   * finished by hand. rAF so the scroll happens after this frame's layout,
+   * the same rule the form-summary pattern follows.
+   *
+   * @param {HTMLElement} content - The policy body the ids were assigned in.
+   */
+  #scrollToIncomingHash(content) {
+    let hash = '';
+    try {
+      hash = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return;
+    }
+    if (!hash) return;
+
+    const target = document.getElementById(hash);
+    if (!target || !content.contains(target)) return;
+
+    requestAnimationFrame(() => {
+      target.scrollIntoView();
+      target.focus({ preventScroll: true });
+    });
   }
 }
 

@@ -47,13 +47,17 @@ narrow measure as `sections/faq.liquid`, 720px with 20px inline padding stepping
 row, mobile scroll), list indentation and blockquote rule all come from `.rte` in `assets/base.css`,
 which Shopify's own markup happens to carry. The snippet styles around it, not instead of it.
 
-**Jump-nav anchors are runtime-only.** JS cannot read a locale key, so the `<nav>` and its "On this
-page" heading are server-rendered in the snippet, hidden, and `policy-nav.js` fills and unhides.
-Heading `id`s are slugified from heading text at runtime: a reworded heading changes its anchor and
-nothing notices, so these are not durable link targets the way the FAQ's `custom_anchor` values are.
-The escape hatch: the component assigns an `id` only to a heading that has none, so an `id` written
-into the Admin body wins; that works on operator-authored policies, not the auto-managed privacy
-body, which Shopify rewrites. The nav also depends on the Admin bodies having real `h2`s at all,
+**Jump-nav anchors are runtime-assigned, and shareable on purpose.** JS cannot read a locale key,
+so the `<nav>` and its "On this page" heading are server-rendered in the snippet, hidden, and
+`policy-nav.js` fills and unhides. Heading `id`s are slugified from heading text at runtime, on
+every section heading regardless of the nav threshold, and the component finishes an incoming
+`#hash` by hand (native fragment scroll ran before the ids existed, so without that step every sent
+link lands at the top). So `/policies/shipping-policy#custom-personalized-orders`-style links are
+supported customer-facing URLs, but they are only as durable as the wording: a reworded heading
+changes its anchor and nothing notices, unlike the FAQ's `custom_anchor` values. The escape hatch:
+the component assigns an `id` only to a heading that has none, so an `id` written into the Admin
+body wins; that works on operator-authored policies, not the auto-managed privacy body, which
+Shopify rewrites. The nav also depends on the Admin bodies having real `h2`s at all,
 which is why the body cleanup (paste-artifact classes, `&nbsp;`, `<strong>`-wrapped headings, `h4`s
 collapsed to `h3`) ran against `REFUND_POLICY` and `SHIPPING_POLICY` via `shopPolicyUpdate` before
 this shipped, gated on byte-identical wording assertions and durable backups.
