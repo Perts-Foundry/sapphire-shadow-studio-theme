@@ -57,7 +57,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Are your pieces made in a home with cats?",
-            "answer": "<p>Yes. This is a home studio and we have cats. They don't get anywhere near finished pieces, and every order is inspected and lint-rolled before it goes in the bag and gets sealed.</p><p>That's honest housekeeping, not a hypoallergenic claim. If your allergy is a serious one, <a href=\"/pages/contact\">tell us before you order</a>.</p>",
+            "answer": "<p>Yes. This is a home studio and we have pets, cats included. They don't get anywhere near finished pieces, and every order is inspected and lint-rolled before it goes in the bag and gets sealed.</p><p>That's honest housekeeping, not a hypoallergenic claim. If your allergy is a serious one, <a href=\"/pages/contact\">tell us before you order</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -103,7 +103,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Can I cancel or modify my order after placing it?",
-            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/pages/contact\">Reach out to us</a> immediately and we'll see what options we can figure out together. Our <a href=\"/policies/terms-of-service\">Terms of Service</a> cover how order acceptance and cancellation work.</p>",
+            "answer": "<p>Once your order's placed, it goes into production so we can't guarantee changes or cancellation.<br/><br/>But hey, life happens. <a href=\"/pages/contact\">Reach out to us</a> immediately and we'll see what options we can figure out together.</p>",
             "custom_anchor": ""
           }
         },
@@ -111,7 +111,7 @@
           "type": "faq_item",
           "settings": {
             "question": "I need an order as fast as possible, can you help?",
-            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after your piece is made.<br/><br/><strong>Rush production</strong> speeds up the making itself, but you need to <a href=\"/pages/contact\">contact us</a><em> before</em> ordering to arrange it; however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>Current production and transit times are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>.</p>",
+            "answer": "<p>We've got two options!<br/><br/><strong>Expedited shipping</strong> (available at checkout) speeds up delivery after your piece is made.<br/><br/><strong>Rush production</strong> speeds up the making itself, but you need to <a href=\"/pages/contact\">contact us</a><em> before</em> ordering to arrange it; however, there is no guarantee. Rush fees vary based on our workload.<br/><br/>Our <a href=\"/policies/shipping-policy\">Shipping Policy</a> has all the details on both options and is the final say on timing.</p>",
             "custom_anchor": ""
           }
         },
@@ -127,7 +127,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Do you have promo codes or an email list?",
-            "answer": "<p>We don't run codes often, so if you're hunting for one before checkout, you're probably not missing much.</p><p>New designs, restocks, and anything we do run go to the email list first. Sign-up is at the bottom of any page, and we don't send much.</p>",
+            "answer": "<p>We don't run codes often, so if you're hunting for one before checkout, you're probably not missing much.</p><p>New designs, restocks, and anything we do run go to the email list first. The sign-up form is in the footer of every page, including this one, and we don't send much.</p>",
             "custom_anchor": ""
           }
         },
@@ -205,7 +205,7 @@
           "type": "faq_item",
           "settings": {
             "question": "How do I track my order?",
-            "answer": "<p>Every order ships with tracking. The number and a link come by email the moment your package leaves us.</p><p>Give the tracking page a little time to update before you worry: that first lag is the carrier's, not ours. If it sits still much longer than the windows in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, <a href=\"/pages/contact\">tell us</a> and we'll open a trace.</p>",
+            "answer": "<p>Every order ships with tracking. The number and a link come by email the moment your package leaves us.</p><p>Give the tracking page a little time to update before you worry: that first lag is the carrier's, not ours. If it sits still much longer than the windows in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, <a href=\"/pages/contact\">tell us</a> and we'll chase it down with the carrier.</p>",
             "custom_anchor": ""
           }
         },
@@ -243,7 +243,7 @@
           "type": "faq_item",
           "settings": {
             "question": "What is the return/refund policy?",
-            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. The Shift Fuel crewneck is the exception, that one can come back if it meets the return conditions. Gift cards aren't returnable.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>The return window, eligibility rules, and how to start a return are all in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
+            "answer": "<p>The short version: most of what we make is final sale, so please check the size chart before you pick your size. A few pieces are returnable if they meet the return conditions, and gift cards never are.</p><p>Every product page spells out what applies before you add to cart, and we've got your back if something arrives damaged or we messed up.<br/><br/>The return window, eligibility rules, and how to start a return are all in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
             "custom_anchor": ""
           }
         },
@@ -259,7 +259,7 @@
           "type": "faq_item",
           "settings": {
             "question": "My order arrived damaged or incorrect, what now?",
-            "answer": "<p>Tell us right away and we'll fix it. Open the package and look it over when it lands.</p><p>If something's damaged, defective, or just not what you ordered, <a href=\"/pages/contact\">send us your order number and a photo</a>. Final sale doesn't apply when the mistake is ours.</p><p>What we cover and how it gets resolved is in our <a href=\"/policies/refund-policy\">Refund Policy</a>.</p>",
+            "answer": "<p>Tell us right away and we'll fix it. Open the package and look it over when it lands, and if something's damaged, defective, or just not what you ordered, <a href=\"/pages/contact\">send us your order number and a photo</a>.</p><p>Our <a href=\"/policies/refund-policy\">Refund Policy</a> covers what we do from there.</p>",
             "custom_anchor": ""
           }
         },
