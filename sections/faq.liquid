@@ -74,22 +74,31 @@
   }
 
   /*
-   * Category headings sit between rows, not inside them, so the rule above
-   * stops matching the moment a heading opens the list. Every group needs its
-   * own top border, and the two selectors never both match the same row.
+   * Deliberately not just a bigger question. A category label that differs
+   * only in weight reads as one more row at a glance, which is the failure the
+   * grouping exists to fix. So it goes the other way: smaller than a question,
+   * uppercase, widely tracked, and carrying a rule across the column.
    */
-  .faq-section-{{ section_id }} .faq-heading + .faq-row .faq-item {
-    border-block-start: 1px solid var(--color-border);
-  }
-
   .faq-section-{{ section_id }} .faq-heading {
     font-family: var(--font-heading--family);
-    font-size: calc({{ section.settings.question_size }}px * 1.15);
+    font-size: calc({{ section.settings.question_size }}px * 0.8);
     font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
     color: var(--color-foreground-heading);
-    margin-block: 40px 12px;
+    opacity: 0.75;
+    margin-block: 56px 0;
+    padding-block-end: 10px;
+    border-block-end: 2px solid var(--color-foreground-heading);
   }
 
+  /*
+   * The heading's own rule IS the top border of the group's first row. The
+   * `.faq-row:first-child` rule above stops matching once a heading opens the
+   * list, and nothing replaces it, which is the point: a hairline 10px under a
+   * 2px rule reads as a mistake.
+   */
   .faq-section-{{ section_id }} .faq-heading:first-child {
     margin-block-start: 0;
   }
@@ -261,7 +270,8 @@
     }
 
     .faq-section-{{ section_id }} .faq-heading {
-      margin-block: 32px 8px;
+      margin-block-start: 44px;
+      letter-spacing: 0.1em;
     }
   }
 {% endstyle %}

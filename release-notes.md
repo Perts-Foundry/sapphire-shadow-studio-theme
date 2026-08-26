@@ -16,10 +16,16 @@ neither setting, so it never satisfies the condition. That is worth knowing befo
 block type: one that happens to carry a `question` setting would start appearing in the structured
 data with nothing added to the loop to let it.
 
-**The heading renders outside `.faq-row`, which breaks the first-child border.** The top border of
-the list came from `.faq-row:first-child .faq-item`, and that selector stops matching the moment a
-heading opens the list. `.faq-heading + .faq-row .faq-item` restores it, once per group rather than
-once per page. The two selectors cannot both match the same row, so there is no doubled border.
+**The heading renders outside `.faq-row`, which breaks the first-child border, and that is fine.**
+The top border of the list came from `.faq-row:first-child .faq-item`, and that selector stops
+matching the moment a heading opens the list. Nothing replaces it: the heading's own 2px rule is the
+top border of its group's first row, and a hairline sitting 10px under that rule reads as a mistake.
+
+**A category label is smaller than a question, not bigger.** The first pass styled the headings as
+scaled-up questions, which is exactly what makes a heading disappear: at a glance it is one more bold
+row in a column of bold rows, and the grouping buys nothing. They are instead set smaller than the
+question text, uppercase, tracked out at 0.14em, dimmed slightly, and carried on a rule across the
+column, with 56px of air above. Different axis, not more of the same one.
 
 **The schema had no `max_blocks`, and Shopify's default is 16.** The page now holds 35 blocks (30
 questions plus five headings), so the section declares `max_blocks: 50`: headroom rather than an
