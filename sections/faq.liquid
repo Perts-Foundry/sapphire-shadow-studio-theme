@@ -363,8 +363,21 @@
 
   `strip_html` on the answer is required, not cosmetic: the setting is `richtext`,
   and `acceptedAnswer.text` must be plain text.
+
+  The guard counts questions rather than blocks. A section holding only
+  `faq_heading` blocks (a category added before its questions, or one left
+  behind while reorganising) has a non-zero block count and nothing to say, and
+  would otherwise emit a FAQPage node with an empty `mainEntity`.
 {%- endcomment -%}
-{%- if section.blocks.size > 0 -%}
+{%- liquid
+  assign faq_question_count = 0
+  for block in section.blocks
+    if block.settings.question != blank and block.settings.answer != blank
+      assign faq_question_count = faq_question_count | plus: 1
+    endif
+  endfor
+-%}
+{%- if faq_question_count > 0 -%}
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
