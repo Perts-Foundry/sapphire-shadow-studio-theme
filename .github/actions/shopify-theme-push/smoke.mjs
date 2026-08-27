@@ -16,9 +16,11 @@
 // only contribution there is the snippet layout/theme.liquid injects.
 //
 // OUTPUT HYGIENE (public repo): only "path verdict status host theme-id"
-// tuples are ever emitted. The password, POST body, cookie jar, Set-Cookie /
-// Cookie / Authorization / Location headers, and response bodies are NEVER
-// printed or written to GITHUB_OUTPUT, on any branch. The minted session
+// tuples plus a reason built from literals and those same fields are ever
+// emitted. The password, POST body, cookie jar, Set-Cookie / Cookie /
+// Authorization / Location headers, and response bodies are NEVER printed or
+// written to GITHUB_OUTPUT, on any branch. A body may be READ for an assertion
+// (the policy markers below); only the fixed marker NAMES may be emitted. The minted session
 // cookie value is registered with ::add-mask:: so Actions redacts it even if a
 // future edit leaks it.
 //
@@ -37,17 +39,20 @@ export const HARD_FAIL = 'HARD-FAIL';
 
 // Server-rendered markup required on a /policies/* page. `snippets/policy-page.liquid`
 // (rendered from layout/theme.liquid behind its request.page_type == 'policy'
-// guard) is the only theme code that runs on those pages, and the custom-element
-// tag is the one part of it reliably present in the server HTML: the <nav> ships
-// `hidden` and the <ul> ships empty, because assets/policy-nav.js fills the list
-// from the body's h2s and unhides it only at three or more headings. So the list
-// items and the visible state are not assertable without a browser; the tag is.
+// guard) is the only theme code that runs on those pages. The whole shell is
+// server-rendered, heading included, so the tag is not the only candidate marker;
+// it is the most stable one, being neither locale-dependent (the heading text is)
+// nor a CSS class anyone may rename. What is NOT assertable without a browser is
+// the list content and the visible state: the <nav> ships `hidden` and the <ul>
+// ships empty, because assets/policy-nav.js fills the list from the body's h2s
+// and unhides it only at three or more headings.
 export const POLICY_MARKERS = ['policy-nav-component'];
 
 // A structural path whose body carries POLICY_MARKERS. A prefix test rather than
 // a hardcoded path, so an overridden SMOKE_PATHS listing a different or an extra
-// policy is covered too.
-export const isPolicyPath = (path) => /^\/policies\//.test(path);
+// policy is covered too. Case-insensitive: a hand-written `/Policies/...` in an
+// override should skip the check silently no more than it should 404.
+export const isPolicyPath = (path) => /^\/policies\//i.test(path);
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 export const BROWSER_HEADERS = {

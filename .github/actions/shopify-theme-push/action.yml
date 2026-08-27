@@ -58,8 +58,10 @@ inputs:
       response body checked for the jump-nav custom element, since a snippet
       that stops rendering leaves the status, host and theme-id all green. That
       check is a SOFT-WARN, never a HARD-FAIL, so a rollback to a theme
-      predating the snippet is not blocked by it. See
-      docs/smoke-test-reference.md.
+      predating the snippet is not blocked by it. It is not free, though: a
+      SOFT-WARN is not a PASS, and the run still needs at least one verified
+      PASS overall, so narrowing this list to a single policy path and then
+      rolling back would exit 1 on that rule. See docs/smoke-test-reference.md.
     required: false
     default: "/ /cart /collections/all /search /policies/refund-policy"
   smoke-base-url:

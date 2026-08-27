@@ -702,6 +702,8 @@ test('isPolicyPath: prefix test, not a hardcoded single path', () => {
   assert.equal(isPolicyPath('/collections/all'), false);
   // Not a substring match: only a path that actually starts /policies/.
   assert.equal(isPolicyPath('/pages/policies/refund'), false);
+  // Case-insensitive, so a hand-written override does not silently skip the check.
+  assert.equal(isPolicyPath('/Policies/refund-policy'), true);
 });
 
 test('classify: markers checked after every HARD-FAIL condition, so they cannot mask one', () => {
@@ -829,14 +831,19 @@ test('runSmoke: non-policy structural paths are never body-read', async () => {
   assert.deepEqual(fetchImpl.reads.filter(u => !u.includes('sitemap')), []);
 });
 
-test('POLICY_MARKERS matches what snippets/policy-page.liquid server-renders', () => {
-  const snippet = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'snippets', 'policy-page.liquid'),
-    'utf8'
-  );
+test('POLICY_MARKERS matches what the theme actually server-renders on a policy page', () => {
+  // Two halves, because either one alone can go stale silently. The snippet must
+  // still emit the marker, AND layout/theme.liquid must still render the snippet:
+  // the dead templates/policy.liquid attempt is the standing proof that a file
+  // which is never invoked looks identical to one that works.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const snippet = readFileSync(join(repoRoot, 'snippets', 'policy-page.liquid'), 'utf8');
   for (const m of POLICY_MARKERS) {
     assert.ok(snippet.includes(m), `snippet no longer renders the ${m} marker`);
   }
+  const layout = readFileSync(join(repoRoot, 'layout', 'theme.liquid'), 'utf8');
+  assert.match(layout, /render 'policy-page'/, 'layout no longer renders the policy-page snippet');
+  assert.match(layout, /request\.page_type == 'policy'/, 'the policy guard is gone from the layout');
 });
 
 // --- action.yml drift ------------------------------------------------------

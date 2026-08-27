@@ -14,7 +14,8 @@ diagnosing a deploy failure it reported.
   `scripts/diagnostics/storefront-probe-node.mjs` (operator diagnostic; `.log` gitignored).
   Full root cause in `release-notes.md`.
 - **What it asserts.** Per path: HTTP `200` + final host == expected host +
-  `server-timing: theme;desc="<LIVE_THEME_ID>"`. Structural routes verify the deploy landed; the
+  `server-timing: theme;desc="<LIVE_THEME_ID>"`, plus, on `/policies/*` only, a body-marker
+  check (two bullets below). Structural routes verify the deploy landed; the
   list is the `smoke-paths` input default in `action.yml`, which is the single source of truth
   and carries the reasoning for each entry. `smoke.mjs` keeps a copy for standalone `--dry-run`
   and `smoke.test.mjs` fails if the two drift. One of them is `/policies/refund-policy`, standing
@@ -26,14 +27,20 @@ diagnosing a deploy failure it reported.
   `templates/policy.liquid` attempt failed: a file that uploads cleanly and never runs. So any
   structural path starting `/policies/` (a prefix test, so an overridden `SMOKE_PATHS` is covered)
   has its response body checked for every string in `POLICY_MARKERS`, today the
-  `policy-nav-component` custom-element tag. That tag is the only part of the shell reliably in
-  the server HTML: the `<nav>` ships `hidden` and the `<ul>` ships empty, because
-  `assets/policy-nav.js` fills the list from the body's `h2`s and unhides it only at three or
-  more headings. A missing marker is a **SOFT-WARN, never a HARD-FAIL**. That changes the failure
+  `policy-nav-component` custom-element tag. The whole shell is server-rendered, heading
+  included, so the tag is not the only candidate marker; it is the most stable one, being neither
+  locale-dependent (the heading text is) nor a CSS class anyone may rename. What is *not*
+  assertable without a browser is the list content and the visible state: the `<nav>` ships
+  `hidden` and the `<ul>` ships empty, because `assets/policy-nav.js` fills the list from the
+  body's `h2`s and unhides it only at three or more headings. A missing marker is a **SOFT-WARN, never a HARD-FAIL**. That changes the failure
   mode from silent green to a visible non-blocking warning; it deliberately does not block a bad
   deploy, because the smoke cannot tell a forward deploy that broke the snippet from a rollback
   to a theme predating it, and `README.md`'s primary rollback is a revert PR through the same
-  comment-deploy cycle, so the smoke does run against the older theme. A body that cannot be read
+  comment-deploy cycle, so the smoke does run against the older theme. The SOFT-WARN never fails
+  the run *on its own*, but it is not a free pass either: it removes a PASS from the count, and
+  the run still needs at least one verified PASS overall (the verdicts bullet below). Narrowing
+  `SMOKE_PATHS` to a single policy path and then rolling back would therefore exit 1, on the
+  `passes == 0` rule rather than on the marker. A body that cannot be read
   at all (reset mid-stream, decode failure) is a separate SOFT-WARN reason, "markers unknown",
   so a network fault stays diagnosable apart from genuinely absent markup. The body read shares
   the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or the
@@ -60,7 +67,8 @@ diagnosing a deploy failure it reported.
   surfaced in the report. On the content-probe path at least one verified PASS is required to
   exit 0, so a wholesale `429` wall cannot green a deploy blind (the locked no-secret
   `/password` fallback is exempt: a rendered page greens with reduced coverage). Output is
-  `path verdict status host theme-id` tuples only: never the password, cookie jar,
+  `path verdict status host theme-id` tuples plus a trailing parenthesised reason, which is
+  built from literals and those same fields: never the password, cookie jar,
   `Set-Cookie`/`Cookie` headers, or bodies. A body may be **read** for an assertion (the policy
   marker check above); it may never be **emitted**. Only marker names, drawn from the fixed
   `POLICY_MARKERS` list in the script, reach a reason string, and nothing puts body text into

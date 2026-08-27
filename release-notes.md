@@ -13,10 +13,12 @@ below failed, as a file that uploads cleanly and never runs.
 
 `fetchObservation` now takes an optional `markers` list, and `runSmoke` passes
 `POLICY_MARKERS = ['policy-nav-component']` for any structural path starting `/policies/`. The
-custom-element tag is the marker because it is the only part of the shell reliably present in the
-server HTML: the `<nav>` ships `hidden` and the `<ul>` ships empty, since `assets/policy-nav.js`
-fills the list from the body's `h2`s and unhides it only at three or more headings, so the list
-items and the visible state are not assertable without a browser.
+custom-element tag is the marker not because it is the only candidate (the whole shell is
+server-rendered, heading included) but because it is the most stable one: it is neither
+locale-dependent, as the heading text is, nor a CSS class anyone may rename. What is not assertable
+without a browser is the list content and the visible state: the `<nav>` ships `hidden` and the
+`<ul>` ships empty, since `assets/policy-nav.js` fills the list from the body's `h2`s and unhides it
+only at three or more headings.
 
 **Why SOFT-WARN, stated precisely, because "it's the safe default" is not the reason.** This changes
 the failure mode from silent green to a visible non-blocking warning. It does not block a bad
@@ -27,6 +29,12 @@ makes the primary rollback a revert PR shipped through the same comment-deploy c
 does run against the older theme. A SOFT-WARN seen immediately after a deploy may also be edge-cache
 lag rather than broken markup; re-check the page before acting on it.
 
+SOFT-WARN is not a free pass, and the docs say so rather than promising more than the code delivers:
+a SOFT-WARN is not a PASS, and `summarize` still requires at least one verified PASS overall, so
+narrowing `SMOKE_PATHS` to a single policy path and then rolling back exits 1 on that rule rather
+than on the marker. The four other structural paths are what keeps that from biting on a normal
+deploy.
+
 **Three things the body read had to get right, all of which a naive version gets wrong.**
 
 1. **It is bounded by the existing timeout.** `clearTimeout(timer)` used to run in a `finally` the
@@ -34,8 +42,11 @@ lag rather than broken markup; re-check the page before acting on it.
    and is cleared once the hop is completely done, so a stalled trickle after the headers aborts on
    the same `timeoutMs` budget. An unbounded read would hang the job to a CI step timeout, which is
    a job failure rather than a smoke verdict and is far harder to read off a deploy report.
-   `fetchWithBody` still has that unbounded-read shape for the sitemap; it was left alone here
-   rather than fixed in passing, so it stays a known and separate item.
+   `fetchWithBody` still has that unbounded-read shape for the sitemap read: `clearTimeout` fires
+   as soon as the headers arrive, and the `try`/`catch` around the enumeration catches a throw but
+   not a hang, so a stalled sitemap body parks the run until the job's own 15-minute cap with the
+   theme already live. It was left alone rather than fixed in passing, to keep this change to one
+   subject; the pattern to copy is now one function above it.
 2. **The read is wrapped in try/catch.** A connection reset mid-body or a decode failure becomes
    "markers unknown (body unreadable)", its own SOFT-WARN reason, so a network fault stays
    diagnosable apart from genuinely absent markup. An uncaught throw would escape the structural
@@ -218,10 +229,9 @@ every declared template exists on disk, closing the direction that a deletion us
 `/policies/refund-policy` joined the `smoke-paths` default: the sitemap does not list policy pages,
 `hasMerchantReturnPolicy` points at this one, and a 404 there usually means an emptied Admin policy.
 The list's two copies (action.yml authoritative, `smoke.mjs` fallback for standalone `--dry-run`)
-are held together by a drift test. Still open: none of these checks asserts the nav actually
-renders; a presence probe (the shell is server-rendered, so it is visible to a no-JS fetch) is
-tracked in TODO.md, and it should soft-warn rather than hard-fail so a rollback to a theme without
-the snippet cannot be blocked by its own smoke.
+are held together by a drift test. None of these checks asserted that the nav actually renders,
+which was recorded here as the open gap; that presence probe has since shipped, as a SOFT-WARN, and
+is written up under "Smoke: the policy pages get a markup assertion" above.
 
 **A drift report is a claim to verify, not a diff to apply.** `THEME_CHECK_NON_ACTIONABLE.md`'s note
 that the `policy` object lives in `templates/policy.liquid` was "corrected" mid-change to `.json`
