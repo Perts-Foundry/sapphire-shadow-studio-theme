@@ -263,9 +263,10 @@ grounds `blocks/launch-countdown.liquid` records for dropping it: the duplicated
 `sections/password.liquid` is modelled on `.launch-countdown__eyebrow` instead, tracked caps in the
 heading font, which also reads as one voice with the countdown directly above it. Its star size and
 gap are the countdown's `0.6em` and `0.35em` of h1 restated against the smaller eyebrow size
-(`0.6 / 0.36` and `0.35 / 0.36`), and the stars take
-`var(--color-primary-button-background)` so they match the pills, the way `.follow-lockup` does on
-the homepage. The heading is a `custom-liquid` block rather than a `text` block deliberately: the
+(`0.6 / 0.36` and `0.35 / 0.36`), and the stars inherit the heading's own foreground rather than
+taking `var(--color-primary-button-background)` the way `.follow-lockup` does on the homepage:
+against this page's navy that accent blue read as a near-miss of the pills below it rather than a
+match, so they follow `.launch-countdown__star` and stay white. The heading is a `custom-liquid` block rather than a `text` block deliberately: the
 section's mobile rule `.section-password .text-block.custom-font-size` is documented as catching
 every text block on the page, so a second one would silently inherit the newsletter line's size, and
 a richtext setting strips the class attributes the CSS needs. Teardown at launch is tracked in
