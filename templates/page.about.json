@@ -1583,31 +1583,6 @@
                 "closing_heading"
               ]
             },
-            "closing_body": {
-              "type": "text",
-              "settings": {
-                "text": "<p>The best way to get to know us is to wear something we made. Have an idea of your own? Custom pieces are our favorite kind of challenge.</p>",
-                "width": "100%",
-                "max_width": "narrow",
-                "alignment": "center",
-                "type_preset": "rte",
-                "font": "var(--font-body--family)",
-                "font_size": "",
-                "line_height": "normal",
-                "letter_spacing": "normal",
-                "case": "none",
-                "wrap": "pretty",
-                "color": "var(--color-foreground)",
-                "background": false,
-                "background_color": "#00000026",
-                "corner_radius": 0,
-                "padding-block-start": 0,
-                "padding-block-end": 0,
-                "padding-inline-start": 0,
-                "padding-inline-end": 0
-              },
-              "blocks": {}
-            },
             "closing_buttons": {
               "type": "group",
               "settings": {
@@ -1681,7 +1656,6 @@
           },
           "block_order": [
             "closing_lockup",
-            "closing_body",
             "closing_buttons"
           ]
         }
