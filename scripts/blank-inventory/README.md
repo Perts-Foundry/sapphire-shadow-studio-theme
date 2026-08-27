@@ -205,6 +205,13 @@ sensibly rather than sorting alphabetically among the declared ones). Reordering
 manifest reorders the matrix, the reorder table and the purchase list together; nothing has to be
 edited alongside it.
 
+There is a fourth surface, and it does produce a diff: `serializeThresholds` emits `thresholds.json`
+in `cartesianCells` order, so a manifest reshuffle churns that file's key order on the next
+regeneration. Body order is exempt by design, so reordering bodies is always free. And note the limit
+of the compensating control: the cross-artifact cohesion test reconciles `thresholds.json` against
+the manifest, so *adding* a colour or a size fails CI until a matching minimum exists, but it says
+nothing about *reordering* existing entries. Reordering is covered by the unit tests only.
+
 It used to be a cross product instead: the approved bodies against the whole colour vocabulary and
 the whole size vocabulary learned from the store. That product invents cells for combinations a body
 is not made in, and once such a cell carries a nonzero minimum it sits in the reorder list flagged
@@ -305,8 +312,10 @@ a cell with a minimum and no blank group at all; it stays exit 0 (`audit` owns g
 is always in the reorder list, and the counts of `?` and `!` cells are printed in both the full and
 the `--below` view so a terse read cannot hide them.
 
-The reorder list is sorted by shortfall descending, ties breaking on body, colour, then garment size
-order, and the shortfall is the leading column because it is the number the list is read for. A
+The reorder list is sorted by shortfall descending, ties breaking on body, colour, then size order
+(the manifest's declared order on every production run, per the size-ruler note above; `SIZE_ORDER`
+only where no declared order is passed in), and the shortfall is the leading column because it is the
+number the list is read for. A
 negative on-hand (Shopify permits an oversell) yields an unclamped shortfall.
 
 ### Per-body totals
@@ -476,6 +485,14 @@ it is the reconciliation that owns it: the thresholds file must reconcile agains
 nothing unthresholded, nothing stale, and every body's cells summing to its stated budget. That is
 the cross-artifact cohesion check the split newly makes possible, and it runs offline, so a bad data
 migration fails CI rather than the next live run.
+
+**`test/fixtures.mjs`'s `BODIES` / `COLORS` / `SIZES` are read from `catalogue.json`, and which tests
+may use them is a rule, not a preference.** A test that validates LOGIC (sorting, derivation,
+reconciliation, anything order-sensitive) must build its own manifest with a hand-authored
+`manifestFor()` override. Using the derived defaults there computes the expected output from the same
+data as the actual output, so it checks self-consistency rather than correctness, and it passes for
+the wrong reason. Only a test whose intent is genuinely "matches production" may use the defaults.
+The file's header states the rule; this is the pointer for anyone reading the suite list first.
 
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that

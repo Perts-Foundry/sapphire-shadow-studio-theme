@@ -163,9 +163,41 @@ test('the allowlist union does ADD: a manifest-only colour and body word become 
   for (const token of ['FOREST', 'GREEN', 'FORESTGREEN', 'SAMPLE', 'LONGSLEEVE', 'SAMPLELONGSLEEVE']) {
     assert.ok(segments.includes(token), `${token} should be derived`);
   }
+  // A digit-leading word is a legal non-leading blank-id segment, so it has to be derived too;
+  // dropping it would trip the guard on the very fixture that uses the new body.
+  assert.ok(
+    segmentsFromManifest({ bodies: new Map([['tee-2pack', { colors: ['black'], sizes: ['m'] }]]) }).includes('2PACK'),
+    '2PACK should be derived from tee-2pack'
+  );
   // And the live manifest's own vocabulary really is in the allowlist the guard uses.
-  for (const token of segmentsFromManifest(MANIFEST)) {
+  const live = segmentsFromManifest(MANIFEST);
+  assert.ok(live.length > 5, 'the live derivation must be non-empty, or the loop below is vacuous');
+  for (const token of live) {
     assert.ok(ALLOWED_SEGMENTS.has(token), `${token} should have been unioned in`);
+  }
+});
+
+test('a manifest size carrying punctuation cannot corrupt the detection regex', () => {
+  // These tokens are interpolated into a RegExp source. normaliseAxis lowercases and trims but does
+  // not restrict characters, so parseCatalogue would accept both of these. Unfiltered, the first
+  // throws a SyntaxError at module load and takes the whole guard down, and the second compiles and
+  // silently changes what the alternation matches. Neither could ever be a blank-id segment, so both
+  // are dropped.
+  for (const hostile of ['3xl(tall', 's?', 'm|xl', '2xl.*']) {
+    const tokens = sizeAlternation([hostile]);
+    assert.deepEqual(tokens, sizeAlternation([]), `${hostile} must be dropped, not carried through`);
+    assert.doesNotThrow(() => new RegExp(`(?:${tokens.join('|')})`), `${hostile} must not break the regex`);
+  }
+  // And a well-formed manifest size is still added, so the filter is not just rejecting everything.
+  assert.ok(sizeAlternation(['6xl']).includes('6XL'));
+});
+
+test('the allowlist union never NARROWS: the hand-curated tokens all survive it', () => {
+  // The allowlist's own negative, matching the size union's. A union that degraded into a
+  // replacement would drop every synthetic fixture token, and the fixture suite would start failing
+  // the guard rather than the guard failing a test, which reads as an unrelated breakage.
+  for (const token of ['ACME', 'BLANKA', 'BLANKB', 'GRAY', 'WHITE', 'HOODIE', 'SUPPLIER', 'QUARTERZIP']) {
+    assert.ok(ALLOWED_SEGMENTS.has(token), `${token} is hand-curated and must survive the union`);
   }
 });
 
@@ -173,7 +205,9 @@ test('no manifest-derived token can blind the detector', () => {
   // The collision check. Widening an allowlist is only safe while the added tokens cannot themselves
   // form, or launder, a blank-id shape. A derived token is a single word with no underscore, so it
   // is never an id on its own, and an id that also carries a non-vocabulary segment still fails.
-  for (const token of segmentsFromManifest(MANIFEST)) {
+  const live = segmentsFromManifest(MANIFEST);
+  assert.ok(live.length > 5, 'the live derivation must be non-empty, or this loop is vacuous');
+  for (const token of live) {
     assert.ok(!token.includes('_'), `${token} must not itself be underscore-separated`);
     assert.deepEqual(findSuspectTokens(token), [], `${token} alone is not a blank id`);
     const laundered = suspect('BLACK', token, 'MILLCO' + 'APPAREL', '0001', 'M');

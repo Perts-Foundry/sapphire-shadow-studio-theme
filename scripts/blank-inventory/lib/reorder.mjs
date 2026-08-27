@@ -193,9 +193,13 @@ export function axisLabel(axes, axis, value) {
  *
  * NOT a global cross product any more. Each body contributes only the colours and sizes declared for
  * it, so a body made in one colour contributes one colour row and not one per colour on the store.
- * Canonical order is bodies by code point (as buildAxes sorts them), then that body's colours in
- * MANIFEST DECLARATION ORDER, then sizes in garment order. Body order deliberately does not follow
- * the manifest, so reordering bodies in the manifest can never churn the committed thresholds file.
+ * Canonical order is bodies by code point (as buildAxes sorts them), then that body's colours and
+ * then its sizes, both in MANIFEST DECLARATION ORDER on the manifest path and in `SIZE_ORDER` on the
+ * legacy one. Body order deliberately does not follow the manifest, so reordering bodies there can
+ * never churn the committed thresholds file. Reordering colours or sizes CAN: this is what
+ * `serializeThresholds` emits by, so a manifest reshuffle churns the file's key order on the next
+ * regeneration. That is the price of the manifest being the one ruler, and it is a diff to review
+ * rather than a behaviour change.
  *
  * @param {{bodies: string[], colors: string[], sizes: string[], ranges?: Map<string, object>}} axes
  * @returns {Array<{key: string, body: string, color: string, size: string}>}
@@ -748,7 +752,7 @@ function cellFacts(cell) {
  * Order and filter the flagged cells.
  *
  * Sorted by shortfall descending, because the question the report answers is "what do I order
- * first". Ties break on body, then colour, then garment size order, so two runs over the same store
+ * first". Ties break on body, then colour, then size order, so two runs over the same store
  * print the same table.
  *
  * `belowOnly` does not filter: every flag is already a shortfall. It is carried here so the terse
@@ -893,7 +897,7 @@ export function bodyTotals(pivot, resolved) {
  * would be exactly that.
  *
  * Ordering is the same everywhere so two runs over the same store render identically: bodies by code
- * point (as buildAxes sorts them), colours by display label, sizes in garment order.
+ * point (as buildAxes sorts them), colours by display label, sizes by `sizeOrder` (below).
  *
  * `sizeOrder` is the declared size sequence, normally `axes.sizes`, and it governs both the size
  * columns inside a colour and the ordering of the excluded lists, so the two cannot disagree.

@@ -389,10 +389,17 @@ test('the fixture axes are the manifest\'s own vocabulary, in display case and d
   assert.ok(COLORS.every((c) => /^[A-Z]/.test(c)), 'colours are title-cased for display');
 });
 
-test('VEST_BLACK_ONLY is read from the manifest, and models a single-colour body', () => {
+test('VEST_BLACK_ONLY is read from the manifest, and models a single-colour body', async () => {
   // The constant is derived, and fixtures.mjs throws at load if the vest ever gains a second colour.
   // That assertion is the point: every test using this constant models "one body is narrower than
   // the others", and a silently multi-colour vest would convert all of them with nothing failing.
-  assert.equal(VEST_BLACK_ONLY.colors.length, 1);
-  assert.deepEqual(VEST_BLACK_ONLY.colors, ['black']);
+  assert.equal(VEST_BLACK_ONLY.colors.length, 1, 'the single-colour invariant every consumer relies on');
+  // The value itself is read from the manifest, so it is asserted against the manifest and not
+  // against a literal: a literal here would be a fourth place the vest's colour is written down,
+  // which is the duplication this change removes.
+  const manifest = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  assert.deepEqual(VEST_BLACK_ONLY, {
+    colors: manifest.bodies.get('vest-womens').colors,
+    sizes: manifest.bodies.get('vest-womens').sizes,
+  });
 });

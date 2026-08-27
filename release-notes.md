@@ -91,9 +91,13 @@ any size the manifest does not declare, which must still rank sensibly rather th
 alphabetical heap. `3xl` and `4xl` stay in it for that second reason even though no body declares
 them.
 
-**All six `compareSizes` call sites were moved together, on purpose.** Three sit inside `buildAxes`
-and three are downstream (`selectReorders`, and two in `buildPurchaseList`). Migrating only the first
-group would have left half the report in manifest order and half in `SIZE_ORDER`, which is a worse
+**Five of the six `compareSizes` call sites moved together, and the sixth stayed on purpose.** There
+were six: three inside `buildAxes` and three downstream (`selectReorders`, and two in
+`buildPurchaseList`). Five moved. The one that stayed is `globalSizes` inside `buildAxes`, which is
+reached only when no `ranges` were passed, so it is the legacy ruler doing its job rather than a
+missed site; anyone auditing the claim will find that surviving call and should read it that way.
+Migrating only some of the other five would have left half the report in manifest order and half in
+`SIZE_ORDER`, which is a worse
 regression than the one being fixed: an internally inconsistent report is harder to notice than a
 uniformly wrong one. `selectReorders` and `buildPurchaseList` therefore each gained an optional
 `sizeOrder` in their existing options object, defaulting to `SIZE_ORDER` so every current caller keeps
@@ -148,9 +152,28 @@ Deriving it outright would have narrowed it from eight size tokens to the six th
 so a real id ending `_3XL` would stop being detected: a leak detector getting weaker in exchange for
 tidiness. Both the alternation and `ALLOWED_SEGMENTS` are therefore the hand-curated list unioned with
 the manifest's colour, body and size words (hyphens and spaces both split and flattened, so
-`quarter-zip` yields QUARTER, ZIP and QUARTERZIP). Every manifest token is already in the list today,
-so the union is a no-op on current data; the value is forward-looking, in that a new colour joins the
-allowlist automatically instead of tripping the guard on the fixture that uses it.
+`quarter-zip` yields QUARTER, ZIP and QUARTERZIP).
+
+**The size union is a no-op today; the allowlist union is not, and saying otherwise would give the
+next reviewer the wrong baseline.** All six declared sizes are already among the legacy eight, so the
+alternation is unchanged. The allowlist genuinely widens, by four tokens the hand list did not carry:
+`GREYHEATHER`, `CLASSICNAVY`, `VESTWOMENS` (the flattened forms, which the hand list only ever had
+split) and the bare `QUARTER`. All four are colour or garment words and so satisfy the
+positive-detection rule stated in the file, but "the union changes nothing" would be false, and the
+question a future reviewer asks is exactly whether widening this list is safe. Beyond today, the
+value is forward-looking: a new colour joins the allowlist automatically instead of tripping the
+guard on the fixture that uses it.
+
+**Manifest sizes are filtered to `[A-Z0-9]+` before they reach the regex, not escaped.** They are
+interpolated into a `RegExp` source, and `normaliseAxis` lowercases and trims but does not restrict
+characters, so `parseCatalogue` would accept a size of `3xl(tall)`, which throws a `SyntaxError` at
+module load and takes the guard down on an otherwise valid catalogue edit, or `s?`, which compiles
+and silently changes what the alternation matches. Escaping would preserve both as literals, but a
+blank id's segments are `[A-Z0-9]+` by construction, so a size carrying punctuation could never
+appear in one and is not something to detect. Dropping it is both safe and correct, and the legacy
+eight are unaffected either way, so this can never narrow detection below the old behaviour. A
+digit-LEADING word is kept, though: a body `tee-2pack` must yield `2PACK`, because that is a legal
+non-leading blank-id segment and dropping it would trip the guard on the fixture using the new body.
 
 The union is added AFTER the `ALLOWED_SEGMENTS` declaration rather than folded into it, because the
 positive-detection rule comment has to stay immediately above that declaration: a test matches on the

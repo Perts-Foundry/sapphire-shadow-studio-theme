@@ -8,8 +8,9 @@
 //
 // The check is STRUCTURAL and names no supplier: it looks for the shape of a blank id
 // (underscore-separated uppercase segments ending in a size token) and allows only segments drawn
-// from the synthetic vocabulary used by the test fixtures. A real supplier token is, by
-// construction, not in that list, so it fails.
+// from the synthetic vocabulary used by the test fixtures, unioned with the colour, body and size
+// words catalogue.json declares (see the union note below the imports). A real supplier token is, by
+// construction, in neither, so it fails.
 //
 // Usage: node scripts/blank-inventory/check-no-real-blank-ids.mjs [files...]
 //        (with no arguments, scans every git-tracked file)
@@ -44,15 +45,22 @@ export const LEGACY_SIZE_TOKENS = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL
  * GREYHEATHER. Both forms, because a blank id may join the words either way and neither spelling
  * names a supplier.
  *
+ * A DIGIT-LEADING WORD COUNTS. A body `tee-2pack` must yield 2PACK, because `2PACK` is a legal
+ * non-leading segment of a blank id and would otherwise trip the guard on the fixture that uses it,
+ * which is the exact failure this union exists to prevent. The filter requires at least one LETTER
+ * rather than a leading one: a purely numeric segment is already exempt in `findSuspectTokens`, so
+ * adding one here would be noise.
+ *
  * @param {string} value
  * @returns {string[]}
  */
+const IS_WORD = /^[A-Z0-9]*[A-Z][A-Z0-9]*$/;
 function tokensOf(value) {
   const parts = String(value).split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.toUpperCase());
-  const out = parts.filter((w) => /^[A-Z][A-Z0-9]*$/.test(w));
+  const out = parts.filter((w) => IS_WORD.test(w));
   if (parts.length > 1) {
     const joined = parts.join('');
-    if (/^[A-Z][A-Z0-9]*$/.test(joined)) out.push(joined);
+    if (IS_WORD.test(joined)) out.push(joined);
   }
   return out;
 }
@@ -61,12 +69,24 @@ function tokensOf(value) {
  * Size tokens to detect: the legacy eight unioned with whatever the manifest declares, longest first
  * so the regex alternation stays greedy-correct (`2XL` must be tried before `L`).
  *
+ * MANIFEST VALUES ARE FILTERED TO `[A-Z0-9]+`, NOT ESCAPED, and the difference matters. These go
+ * straight into a `RegExp` source, and `normaliseAxis` lowercases and trims but does not restrict
+ * characters, so `parseCatalogue` would accept a size of `3xl(tall)` (which throws a SyntaxError at
+ * module load and takes the guard down on an otherwise valid catalogue edit) or `s?` (which compiles
+ * and silently changes what the alternation matches). Escaping would preserve both as literals, but a
+ * blank id's segments are `[A-Z0-9]+` by construction, so a size carrying punctuation could never
+ * appear in one and is not something to detect. Dropping it is both safe and correct; the legacy
+ * eight are unaffected either way, so this can never narrow detection below the old behaviour.
+ *
  * @param {Iterable<string>} manifestSizes - normalised size tokens
  * @returns {string[]}
  */
 export function sizeAlternation(manifestSizes) {
   const set = new Set(LEGACY_SIZE_TOKENS);
-  for (const size of manifestSizes) set.add(String(size).toUpperCase());
+  for (const size of manifestSizes) {
+    const token = String(size).toUpperCase();
+    if (/^[A-Z0-9]+$/.test(token)) set.add(token);
+  }
   return [...set].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
 }
 

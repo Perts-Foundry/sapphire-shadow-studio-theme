@@ -956,11 +956,13 @@ test('deriveThresholds gives a body zero rather than a wrong number when the cur
   assert.equal(Object.values(built.cells).reduce((a, c) => a + c.min, 0), 0);
 });
 
-test('buildAxes exposes the flat union of the declared ranges, deduped and in garment size order', () => {
+test('buildAxes exposes the flat union of the declared ranges, deduped and in declaration order', () => {
   const axes = buildAxes({ bodies: BODIES, ranges: manifestFor({ 'vest-womens': MID_SIZES_ONLY }).bodies });
+  // Hardcoded, not derived from SIZES/COLORS: those now come from the same manifest the axes do, so
+  // comparing against them would assert self-consistency rather than the union's own behaviour.
   // Colours in first-declaring-body order, each once even though two bodies declare all three.
   assert.deepEqual(axes.colors, ['black', 'grey heather', 'classic navy']);
-  assert.deepEqual(axes.sizes, SIZES.map((s) => s.toLowerCase()));
+  assert.deepEqual(axes.sizes, ['xs', 's', 'm', 'l', 'xl', '2xl']);
 });
 
 test('buildAxes accepts the plain-object form of ranges as well as a Map', () => {
@@ -1202,7 +1204,15 @@ test('bodies, colours and sizes come out in one deterministic order', () => {
   const everySize = SIZES.map((size) => variant({ body: 'crewneck', color: 'Black', size, quantity: 1 }));
   const sizeMins = plResolved(Object.fromEntries(SIZES.map((s) => [key('crewneck', 'Black', s), 4])));
   const sized = buildPurchaseList(buildPivot({ variants: everySize, axes: plAxes }), sizeMins);
-  assert.deepEqual(sized.bodies[0].colors[0].rows.map((r) => r.sizeLabel), SIZES, 'garment order, not lexicographic');
+  // Hardcoded rather than compared against SIZES. `plAxes` passes no `sizeOrder`, so this is the
+  // legacy SIZE_ORDER path; SIZES is now the manifest's declared order and the two agree only by
+  // coincidence today. Comparing them would fail on a manifest reshuffle for a reason that has
+  // nothing to do with what this test asserts.
+  assert.deepEqual(
+    sized.bodies[0].colors[0].rows.map((r) => r.sizeLabel),
+    ['XS', 'S', 'M', 'L', 'XL', '2XL'],
+    'garment order, not lexicographic'
+  );
 });
 
 test('per-colour, per-body and grand totals are the sums of the lines under them', () => {
@@ -1465,25 +1475,74 @@ test('buildPurchaseList follows the declared order, in the buy rows and the excl
   assert.deepEqual(legacy.excluded.noGroup.map((c) => c.size), ['s', 'xl']);
 });
 
-test('all four manifest-path sites agree on one ordering, so no half-migration can leave the report split', () => {
+test('every order-consuming site agrees, so no half-migration can leave the report internally split', () => {
   const { pivot, resolved } = shuffledFixture();
   const declared = shuffledAxes.sizes;
   const flags = flagReorders(pivot, resolved);
-  const seen = [
-    shuffledAxes.ranges.get('crewneck').sizes,
-    cartesianCells(shuffledAxes).map((c) => c.size),
+  const list = buildPurchaseList(pivot, resolved, { sizeOrder: declared });
+  // Five sites, not four, and NOT the per-body range itself: comparing `ranges.get(...).sizes` to
+  // `declared` is comparing a list to itself, which is the tautology this list used to open with.
+  const seen = {
+    'cartesianCells (matrix columns)': cartesianCells(shuffledAxes).map((c) => c.size),
     // Only the sizes that actually flag, in the order selectReorders puts them.
-    selectReorders({ flags, sizeOrder: declared }).map((f) => f.size),
-    buildPurchaseList(pivot, resolved, { sizeOrder: declared }).bodies[0].colors[0].rows.map((r) => r.size),
-  ];
-  for (const list of seen) {
+    selectReorders: selectReorders({ flags, sizeOrder: declared }).map((f) => f.size),
+    'buildPurchaseList rows': list.bodies[0].colors[0].rows.map((r) => r.size),
+    // byCell, which orders the excluded lists. An excluded list in one order under a matrix in
+    // another is exactly the internal inconsistency this test exists to catch, and the site the
+    // earlier version of this test missed.
+    'buildPurchaseList excluded': list.excluded.noGroup.map((c) => c.size),
+    'serializeThresholds keys': Object.keys(
+      JSON.parse(
+        serializeThresholds(
+          { version: 1, provenance: { budgets: { crewneck: 1 } }, cells: Object.fromEntries(cartesianCells(shuffledAxes).map((c) => [c.key, { min: 1 }])) },
+          shuffledAxes
+        )
+      ).cells
+    ).map((k) => k.split('|')[2]),
+  };
+  for (const [site, sizes] of Object.entries(seen)) {
+    assert.ok(sizes.length > 1, `${site} produced nothing to order`);
     // Each site sees a subset of the axis, so compare position rather than the whole list.
-    const positions = list.map((s) => declared.indexOf(s));
+    const positions = sizes.map((s) => declared.indexOf(s));
     assert.ok(
       positions.every((p, i) => p !== -1 && (i === 0 || p > positions[i - 1])),
-      `expected declared order, got ${JSON.stringify(list)}`
+      `${site}: expected declared order, got ${JSON.stringify(sizes)}`
     );
   }
+});
+
+test('cmdReorder passes the declared order to BOTH views, not just one', async () => {
+  // The library is exhaustively covered above and the two places it is actually used were not: with
+  // `sizeOrder: axes.sizes` deleted from both call sites, every other test here still passed. A
+  // source assertion rather than an end-to-end run, in the style of the write-command guard above:
+  // cmdReorder needs a live store, and the thing worth pinning is that neither view was forgotten.
+  const cli = await readFile(path.join(repoRoot, 'scripts/blank-inventory/blank-inventory.mjs'), 'utf8');
+  const body = cli.slice(cli.indexOf('async function cmdReorder'));
+  const end = body.indexOf('\nasync function ', 1);
+  const cmd = end === -1 ? body : body.slice(0, end);
+  assert.match(cmd, /selectReorders\(\{[^}]*sizeOrder: axes\.sizes/, 'the reorder table must get the declared order');
+  assert.match(cmd, /buildPurchaseList\([^)]*sizeOrder: axes\.sizes/, 'the purchase list must get it too');
+});
+
+test('with two bodies declaring conflicting size orders, the union is first-declaration-wins', () => {
+  // Not a hypothetical once sizes are declared per body rather than sorted: two bodies CAN now
+  // disagree, where before both were sorted and could not. cmdReorder passes the flat union as the
+  // one ruler for every body, so the pinned behaviour is that the first body to declare a size fixes
+  // its position, and the second body's rows follow the first body's order. Recorded rather than
+  // guarded against: the alternative, a per-body ruler, would make two bodies' columns line up
+  // differently in one matrix, which is worse to read than one arbitrary but stable order.
+  const axes = buildAxes({
+    bodies: ['crewneck', 'quarter-zip'],
+    ranges: manifestFor({
+      crewneck: { colors: ['black'], sizes: ['s', 'm'] },
+      'quarter-zip': { colors: ['black'], sizes: ['m', 's'] },
+      'vest-womens': null,
+    }).bodies,
+  });
+  assert.deepEqual(axes.sizes, ['s', 'm'], 'crewneck declared first, so its order wins the union');
+  assert.deepEqual(axes.ranges.get('quarter-zip').sizes, ['m', 's'], 'the per-body range keeps its own order');
+  // And the flat union is what the comparator ranks by, so the report is consistent across bodies.
+  assert.deepEqual(['m', 's'].sort(makeSizeComparator(axes.sizes)), ['s', 'm']);
 });
 
 test('with no ranges the legacy SIZE_ORDER ruler is unchanged, 3XL and 4XL included', () => {
