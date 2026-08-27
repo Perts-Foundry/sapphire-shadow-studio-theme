@@ -22,10 +22,14 @@ page, not a one-off.
 scheme-3 section and the team cards are scheme-3 on scheme-1; a scheme-3 card on the scheme-3 values
 section would have been invisible, which is why those groups set `inherit_color_scheme: false`.
 
-**The team cards are deliberately text only.** `blocks/image.liquid` renders a generic apparel
-placeholder SVG when its `image` setting is blank, which looks broken rather than empty, and the cat
-photo the old block referenced (`shopify://shop_images/Kitkat-Rory.jpg`) does not exist in Files and
-never did. Three text cards read as intentional; the remaining photo work is in `TODO.md`.
+**The team cards shipped text only, then gained photos in a follow-up on this same branch.** The
+first pass omitted images because `blocks/image.liquid` renders a generic apparel placeholder SVG
+when its `image` setting is blank, and the cat photo the old block referenced
+(`shopify://shop_images/Kitkat-Rory.jpg`) did not exist in Files and never did. Four photos were then
+processed offline (downscaled under Shopify's 20-megapixel cap, sRGB, EXIF stripped; one collar tag
+carrying a scannable pet-recovery QR code was feather-blurred before upload), uploaded to Files as
+`about-*.jpg` with alt set on the file (`blocks/image.liquid` exposes no alt setting), and added as
+`image` blocks: one leading each human card, and a two-up row group of both cats on the cats card.
 
 **The follow-us card now appears on a second page, and that is not a breach of the one-placement
 rule.** That rule is per page region: the homepage carries the card once, the footer's follow column

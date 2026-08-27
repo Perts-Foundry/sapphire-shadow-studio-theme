@@ -973,6 +973,27 @@
                 "padding-inline-end": 28
               },
               "blocks": {
+                "team_maddie_photo": {
+                  "type": "image",
+                  "settings": {
+                    "image": "shopify://shop_images/about-maddie.jpg",
+                    "link": "",
+                    "image_ratio": "portrait",
+                    "width": "fill",
+                    "custom_width": 100,
+                    "width_mobile": "fill",
+                    "custom_width_mobile": 100,
+                    "height": "fit",
+                    "border": "none",
+                    "border_width": 1,
+                    "border_opacity": 100,
+                    "border_radius": 16,
+                    "padding-block-start": 0,
+                    "padding-block-end": 0,
+                    "padding-inline-start": 0,
+                    "padding-inline-end": 0
+                  }
+                },
                 "team_maddie_name": {
                   "type": "text",
                   "settings": {
@@ -1050,6 +1071,7 @@
                 }
               },
               "block_order": [
+                "team_maddie_photo",
                 "team_maddie_name",
                 "team_maddie_role",
                 "team_maddie_bio"
@@ -1094,6 +1116,27 @@
                 "padding-inline-end": 28
               },
               "blocks": {
+                "team_seth_photo": {
+                  "type": "image",
+                  "settings": {
+                    "image": "shopify://shop_images/about-seth.jpg",
+                    "link": "",
+                    "image_ratio": "portrait",
+                    "width": "fill",
+                    "custom_width": 100,
+                    "width_mobile": "fill",
+                    "custom_width_mobile": 100,
+                    "height": "fit",
+                    "border": "none",
+                    "border_width": 1,
+                    "border_opacity": 100,
+                    "border_radius": 16,
+                    "padding-block-start": 0,
+                    "padding-block-end": 0,
+                    "padding-inline-start": 0,
+                    "padding-inline-end": 0
+                  }
+                },
                 "team_seth_name": {
                   "type": "text",
                   "settings": {
@@ -1171,6 +1214,7 @@
                 }
               },
               "block_order": [
+                "team_seth_photo",
                 "team_seth_name",
                 "team_seth_role",
                 "team_seth_bio"
@@ -1215,6 +1259,93 @@
                 "padding-inline-end": 28
               },
               "blocks": {
+                "team_cats_photos": {
+                  "type": "group",
+                  "settings": {
+                    "content_direction": "row",
+                    "vertical_on_mobile": false,
+                    "horizontal_alignment": "flex-start",
+                    "vertical_alignment": "flex-start",
+                    "align_baseline": false,
+                    "horizontal_alignment_flex_direction_column": "flex-start",
+                    "vertical_alignment_flex_direction_column": "flex-start",
+                    "gap": 8,
+                    "width": "fill",
+                    "custom_width": 100,
+                    "width_mobile": "fill",
+                    "custom_width_mobile": 100,
+                    "height": "fit",
+                    "custom_height": 100,
+                    "inherit_color_scheme": true,
+                    "color_scheme": "scheme-3",
+                    "background_media": "none",
+                    "video_position": "cover",
+                    "background_image_position": "cover",
+                    "border": "none",
+                    "border_width": 1,
+                    "border_opacity": 100,
+                    "border_radius": 0,
+                    "toggle_overlay": false,
+                    "overlay_color": "#00000026",
+                    "overlay_style": "solid",
+                    "gradient_direction": "to top",
+                    "link": "",
+                    "open_in_new_tab": false,
+                    "placeholder": "",
+                    "padding-block-start": 0,
+                    "padding-block-end": 0,
+                    "padding-inline-start": 0,
+                    "padding-inline-end": 0
+                  },
+                  "blocks": {
+                    "team_cats_photo_kitcat": {
+                      "type": "image",
+                      "settings": {
+                        "image": "shopify://shop_images/about-kitcat.jpg",
+                        "link": "",
+                        "image_ratio": "portrait",
+                        "width": "custom",
+                        "custom_width": 50,
+                        "width_mobile": "custom",
+                        "custom_width_mobile": 50,
+                        "height": "fit",
+                        "border": "none",
+                        "border_width": 1,
+                        "border_opacity": 100,
+                        "border_radius": 16,
+                        "padding-block-start": 0,
+                        "padding-block-end": 0,
+                        "padding-inline-start": 0,
+                        "padding-inline-end": 0
+                      }
+                    },
+                    "team_cats_photo_rory": {
+                      "type": "image",
+                      "settings": {
+                        "image": "shopify://shop_images/about-rory.jpg",
+                        "link": "",
+                        "image_ratio": "portrait",
+                        "width": "custom",
+                        "custom_width": 50,
+                        "width_mobile": "custom",
+                        "custom_width_mobile": 50,
+                        "height": "fit",
+                        "border": "none",
+                        "border_width": 1,
+                        "border_opacity": 100,
+                        "border_radius": 16,
+                        "padding-block-start": 0,
+                        "padding-block-end": 0,
+                        "padding-inline-start": 0,
+                        "padding-inline-end": 0
+                      }
+                    }
+                  },
+                  "block_order": [
+                    "team_cats_photo_kitcat",
+                    "team_cats_photo_rory"
+                  ]
+                },
                 "team_cats_name": {
                   "type": "text",
                   "settings": {
@@ -1292,6 +1423,7 @@
                 }
               },
               "block_order": [
+                "team_cats_photos",
                 "team_cats_name",
                 "team_cats_role",
                 "team_cats_bio"
