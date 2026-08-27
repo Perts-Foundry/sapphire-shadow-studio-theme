@@ -746,11 +746,56 @@ test('runSmoke: policy page missing the jump-nav marker -> SOFT-WARN, still exit
   assert.equal(r.exitCode, 0);
 });
 
-test('runSmoke: policy page 404 still HARD-FAILs, marker logic swallows no existing verdict', async () => {
-  const fetchImpl = policyFetch({ status: 404, body: POLICY_BODY_BROKEN });
+test('runSmoke: policy page 404 still HARD-FAILs, and no body is read on a non-200', async () => {
+  const fetchImpl = trackBodyReads(policyFetch({ status: 404, body: POLICY_BODY_BROKEN }));
   const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
   assert.ok(r.lines.some(l => new RegExp(`^${POLICY_PATH} HARD-FAIL 404`).test(l)));
   assert.equal(r.exitCode, 1);
+  // The `status === 200` guard, pinned directly rather than only through the 429 case.
+  assert.deepEqual(fetchImpl.reads.filter(u => u.includes('/policies/')), []);
+});
+
+test('runSmoke: a policy path that redirects into the /password wall reads no body', async () => {
+  const inner = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [(u, o) => u.endsWith('/') && !o.headers?.cookie, { status: 200, serverTiming: themeTiming() }],
+    [(u) => u.includes('/policies/'), { status: 302, location: '/password', body: POLICY_BODY_BROKEN }],
+    [(u) => u.endsWith('/password'), { status: 200, body: POLICY_BODY_BROKEN }],
+  ]);
+  const fetchImpl = trackBodyReads(inner);
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  // The hop loop stops at the auth wall, so the marker check never runs and the
+  // existing auth-wall verdict is what the operator sees.
+  assert.ok(r.lines.some(l => new RegExp(`^${POLICY_PATH} HARD-FAIL`).test(l)));
+  assert.ok(r.lines.some(l => /auth wall/.test(l)));
+  assert.ok(!r.lines.some(l => /markers unknown|missing markup/.test(l)));
+  assert.deepEqual(fetchImpl.reads.filter(u => u.includes('/policies/') || u.includes('/password')), []);
+});
+
+test('the probe timeout still bounds the body read: a stalled body aborts rather than hanging', { timeout: 10000 }, async () => {
+  // The riskiest line in the change is the clearTimeout that moved into the `finally`. Putting it
+  // back where it was (firing the moment the headers arrive) makes this test HANG rather than fail,
+  // which is exactly the failure mode being guarded: an unbounded read parks the deploy job until
+  // the CI step cap, with the theme already live. Nothing else in the suite notices that mutation.
+  // The explicit per-test timeout is what turns that hang into a red test: node:test does not bound
+  // a test by default, so the mutant would otherwise stall CI instead of reporting.
+  const inner = policyFetch({ status: 200, serverTiming: themeTiming(), body: POLICY_BODY_OK });
+  const fetchImpl = async (url, opts) => {
+    const res = await inner(url, opts);
+    if (url.includes('/policies/')) {
+      // A body that never arrives and never errors: only the abort signal can end it.
+      res.text = () => new Promise((_resolve, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    }
+    return res;
+  };
+  // A real (short) timeout budget. `sleep` is still the recording no-op, so nothing else waits.
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH], timeoutMs: 50 }));
+  const line = r.lines.find(l => l.startsWith(POLICY_PATH));
+  assert.match(line, /SOFT-WARN/);
+  assert.match(line, /unreadable/);
+  assert.equal(r.exitCode, 0);
 });
 
 test('runSmoke: no policy body text reaches lines, reasons or GITHUB_OUTPUT (PASS and SOFT-WARN)', async () => {
@@ -764,8 +809,11 @@ test('runSmoke: no policy body text reaches lines, reasons or GITHUB_OUTPUT (PAS
       }));
       lines = r.lines;
     });
-    // The probe of this exact path ran, so the assertion is not vacuous.
+    // Both channels actually carried something, so the doesNotMatch assertions below are not
+    // passing for free on an empty string.
     assert.ok(lines.some(l => l.startsWith(POLICY_PATH)), 'policy path was probed');
+    assert.match(written, /smoke_output/, 'GITHUB_OUTPUT was actually written');
+    assert.ok(logged.length > 0, 'the log sink actually received lines');
     const blob = [lines.join('\n'), logged.join('\n'), written].join('\n');
     assert.doesNotMatch(blob, new RegExp(BODY_NEEDLE));
     assert.doesNotMatch(blob, /shopify-policy__body|<nav|<main/);
