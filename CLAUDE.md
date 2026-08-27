@@ -21,7 +21,7 @@ The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch
 
 ### What is NOT sensitive (and is fine to commit)
 
-- Founder narrative and brand voice already on the storefront's About/FAQ page (first names, husband-and-wife framing, prior-career mentions, pet references); pet-name image filenames (`Kitkat-Rory.jpg`) are fine when those names appear in visible copy.
+- Founder narrative and brand voice already on the storefront's About/FAQ page (first names, husband-and-wife framing, prior-career mentions, pet references); pet-name image filenames (`about-kitcat-card.jpg`) are fine when those names appear in visible copy.
 - The brand name "Sapphire Shadow Studio", the public store handle, the live theme numeric ID, and the storefront domain: all public on every page render.
 - App-embed install UUIDs and public `/policies/...` content: observable to any storefront visitor.
 - State-level location framing in storefront copy (not legal/strategy context), and synthetic test fixtures.
