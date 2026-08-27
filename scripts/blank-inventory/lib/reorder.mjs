@@ -28,8 +28,16 @@ export const THRESHOLDS_PATH = 'scripts/blank-inventory/thresholds.json';
 export const NO_GROUP = 'no-group';
 
 /**
- * Size order, smallest first. Sorting sizes lexicographically puts "2XL" before "S" and "XL" before
- * "XS", which turns every matrix row into nonsense and silently reorders the reorder table.
+ * The FALLBACK size ruler, smallest first. Sorting sizes lexicographically puts "2XL" before "S" and
+ * "XL" before "XS", which turns every matrix row into nonsense and silently reorders the table.
+ *
+ * On the manifest path this list is no longer the ruler: `catalogue.json` declares each body's sizes
+ * in order, `parseCatalogue` preserves that order into its Map, and `buildAxes` carries it through
+ * without sorting, so the manifest itself is the ruler and there is one list rather than two. This
+ * constant still governs two cases. The legacy path, where no `ranges` were passed and the sizes are
+ * whatever the store's vocabulary happened to contain, and any size the manifest does not declare,
+ * which must still rank sensibly rather than landing in an alphabetical heap. That is why `3xl` and
+ * `4xl` stay in it even though no body declares them today.
  */
 export const SIZE_ORDER = ['xs', 's', 'm', 'l', 'xl', '2xl', '3xl', '4xl'];
 
@@ -55,6 +63,28 @@ export function compareSizes(a, b) {
 const cmpString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
+ * A size comparator that ranks by position in `order`, which on the manifest path is the declared
+ * size sequence carried out of `catalogue.json` by `buildAxes`.
+ *
+ * A size absent from `order` sorts AFTER every declared one, by `SIZE_ORDER` and then alphabetically,
+ * rather than by whatever the declared list happens to contain. Nothing validates sizes against the
+ * manifest here (that refusal lives in `reconcileCatalogue`), so an undeclared size can reach this
+ * comparator, and it must land somewhere sensible instead of at index zero.
+ *
+ * Passing nothing yields `compareSizes` itself, so a caller that has no declared order keeps the
+ * legacy ruler unchanged.
+ *
+ * @param {string[]|null} [order] - normalised size tokens, smallest first
+ * @returns {(a: string, b: string) => number}
+ */
+export function makeSizeComparator(order) {
+  if (!order || !order.length) return compareSizes;
+  const index = new Map(order.map((size, i) => [size, i]));
+  const rank = (size) => (index.has(size) ? index.get(size) : index.size + sizeRank(size));
+  return (a, b) => rank(a) - rank(b) || cmpString(a, b);
+}
+
+/**
  * The axis space the thresholds file must cover.
  *
  * Bodies come from the APPROVED body map (by way of the catalogue manifest, which reconciles against
@@ -72,6 +102,15 @@ const cmpString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
  *
  * `colors` and `sizes` remain the flat union across bodies, for display and for the fallback; nothing
  * builds a cell from them when `ranges` is present.
+ *
+ * ON THE MANIFEST PATH, DECLARED ORDER IS THE RULER AND NOTHING IS SORTED. `parseCatalogue`
+ * documents that the declaration order of `colors` and `sizes` is preserved into its Map and is
+ * load-bearing, so carrying it through here makes `catalogue.json` literally the size ruler: the
+ * order the reorder matrix prints is the order written in the file, and `SIZE_ORDER` stops being a
+ * second list that has to agree with it. Without `ranges` the legacy `SIZE_ORDER` sort is unchanged.
+ * The returned `sizes` is what downstream callers pass back in as `sizeOrder` (see
+ * `makeSizeComparator`), so the matrix, the reorder table and the purchase list all order sizes the
+ * same way; splitting them would leave half a report in manifest order and half in legacy order.
  *
  * @param {object} params
  * @param {string[]} params.bodies
@@ -115,7 +154,8 @@ export function buildAxes({ bodies, colors, sizes, ranges = null, display = {} }
     }
     perBody.set(body, {
       colors: declared ? norm(declared.colors, 'Color') : globalColors,
-      sizes: declared ? norm(declared.sizes, 'Size').sort(compareSizes) : globalSizes,
+      // Declared order, not sorted: see the declaration-order rule in the doc block above.
+      sizes: declared ? norm(declared.sizes, 'Size') : globalSizes,
     });
   }
 
@@ -126,7 +166,8 @@ export function buildAxes({ bodies, colors, sizes, ranges = null, display = {} }
       for (const c of range.colors) if (!unionColors.includes(c)) unionColors.push(c);
       for (const s of range.sizes) if (!unionSizes.includes(s)) unionSizes.push(s);
     }
-    unionSizes.sort(compareSizes);
+    // Not sorted, for the same reason the per-body lists are not: first declaration wins, exactly as
+    // the colour union already worked.
   }
 
   return { bodies: bodyList, colors: unionColors, sizes: unionSizes, ranges: perBody, display };
@@ -152,9 +193,13 @@ export function axisLabel(axes, axis, value) {
  *
  * NOT a global cross product any more. Each body contributes only the colours and sizes declared for
  * it, so a body made in one colour contributes one colour row and not one per colour on the store.
- * Canonical order is bodies by code point (as buildAxes sorts them), then that body's colours in
- * MANIFEST DECLARATION ORDER, then sizes in garment order. Body order deliberately does not follow
- * the manifest, so reordering bodies in the manifest can never churn the committed thresholds file.
+ * Canonical order is bodies by code point (as buildAxes sorts them), then that body's colours and
+ * then its sizes, both in MANIFEST DECLARATION ORDER on the manifest path and in `SIZE_ORDER` on the
+ * legacy one. Body order deliberately does not follow the manifest, so reordering bodies there can
+ * never churn the committed thresholds file. Reordering colours or sizes CAN: this is what
+ * `serializeThresholds` emits by, so a manifest reshuffle churns the file's key order on the next
+ * regeneration. That is the price of the manifest being the one ruler, and it is a diff to review
+ * rather than a behaviour change.
  *
  * @param {{bodies: string[], colors: string[], sizes: string[], ranges?: Map<string, object>}} axes
  * @returns {Array<{key: string, body: string, color: string, size: string}>}
@@ -707,27 +752,32 @@ function cellFacts(cell) {
  * Order and filter the flagged cells.
  *
  * Sorted by shortfall descending, because the question the report answers is "what do I order
- * first". Ties break on body, then colour, then garment size order, so two runs over the same store
+ * first". Ties break on body, then colour, then size order, so two runs over the same store
  * print the same table.
  *
  * `belowOnly` does not filter: every flag is already a shortfall. It is carried here so the terse
  * view and the full view are provably the same selection, rendered differently.
  *
+ * `sizeOrder` is the declared size sequence, normally `axes.sizes`. Omitting it falls back to
+ * `SIZE_ORDER`, so a caller that predates the manifest keeps working unchanged.
+ *
  * @param {object} params
  * @param {Array<object>} params.flags
  * @param {string|null} [params.body]
  * @param {boolean} [params.belowOnly]
+ * @param {string[]|null} [params.sizeOrder]
  * @returns {Array<object>}
  */
-export function selectReorders({ flags, body = null, belowOnly = false }) {
+export function selectReorders({ flags, body = null, belowOnly = false, sizeOrder = null }) {
   void belowOnly;
+  const cmpSize = makeSizeComparator(sizeOrder);
   const filtered = body ? flags.filter((f) => f.body === body) : [...flags];
   return filtered.sort(
     (a, b) =>
       b.shortfall - a.shortfall ||
       cmpString(a.body, b.body) ||
       cmpString(a.color, b.color) ||
-      compareSizes(a.size, b.size)
+      cmpSize(a.size, b.size)
   );
 }
 
@@ -847,14 +897,19 @@ export function bodyTotals(pivot, resolved) {
  * would be exactly that.
  *
  * Ordering is the same everywhere so two runs over the same store render identically: bodies by code
- * point (as buildAxes sorts them), colours by display label, sizes in garment order.
+ * point (as buildAxes sorts them), colours by display label, sizes by `sizeOrder` (below).
+ *
+ * `sizeOrder` is the declared size sequence, normally `axes.sizes`, and it governs both the size
+ * columns inside a colour and the ordering of the excluded lists, so the two cannot disagree.
+ * Omitting it falls back to `SIZE_ORDER`.
  *
  * @param {{bodies: Array<object>}} pivot
  * @param {Map<string, {min: number}>} resolved
- * @param {{body?: string|null}} [options]
+ * @param {{body?: string|null, sizeOrder?: string[]|null}} [options]
  * @returns {{bodies: Array<object>, excluded: {unsettled: Array<object>, noGroup: Array<object>}, totalUnits: number}}
  */
-export function buildPurchaseList(pivot, resolved, { body = null } = {}) {
+export function buildPurchaseList(pivot, resolved, { body = null, sizeOrder = null } = {}) {
+  const cmpSize = makeSizeComparator(sizeOrder);
   const bodies = [];
   const unsettled = [];
   const noGroup = [];
@@ -869,7 +924,7 @@ export function buildPurchaseList(pivot, resolved, { body = null } = {}) {
       const rows = [];
       let colorUnits = 0;
 
-      for (const cell of [...colorRow.cells].sort((a, b) => compareSizes(a.size, b.size))) {
+      for (const cell of [...colorRow.cells].sort((a, b) => cmpSize(a.size, b.size))) {
         const min = resolved.get(cell.key)?.min ?? 0;
         if (min <= 0) continue;
         const facts = {
@@ -915,7 +970,7 @@ export function buildPurchaseList(pivot, resolved, { body = null } = {}) {
     bodies.push({ body: bodyRow.body, bodyLabel: bodyRow.bodyLabel ?? bodyRow.body, units: bodyUnits, colors });
   }
 
-  const byCell = (a, b) => cmpString(a.body, b.body) || cmpString(a.colorLabel, b.colorLabel) || compareSizes(a.size, b.size);
+  const byCell = (a, b) => cmpString(a.body, b.body) || cmpString(a.colorLabel, b.colorLabel) || cmpSize(a.size, b.size);
   return { bodies, excluded: { unsettled: unsettled.sort(byCell), noGroup: noGroup.sort(byCell) }, totalUnits };
 }
 

@@ -12,6 +12,7 @@ import {
   CATALOGUE_PATH,
   CATALOGUE_VERSION,
 } from '../lib/catalogue-manifest.mjs';
+import { normaliseAxis } from '../lib/groups.mjs';
 import { variant, manifestDoc, manifestFor, VEST_BLACK_ONLY, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -358,4 +359,47 @@ test('the manifest module cannot reach a mutation, and neither can the lint that
 
   const lint = await readFile(path.join(repoRoot, 'scripts/catalogue/check-catalogue.mjs'), 'utf8');
   assert.deepEqual(importsOf(lint), ['node:fs/promises', 'node:path', 'node:url', '../blank-inventory/lib/catalogue-manifest.mjs']);
+});
+
+// --- the fixture axes are derived from the manifest --------------------------
+//
+// BODIES / COLORS / SIZES in test/fixtures.mjs used to be a hand-written second copy of the
+// catalogue's vocabulary. They are read from the committed manifest now, so these assert the
+// DERIVATION (case handling and ordering), not the values: asserting the values against the same
+// file they come from would be self-consistency dressed as a test.
+
+test('the fixture axes are the manifest\'s own vocabulary, in display case and declaration order', async () => {
+  const manifest = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+
+  assert.deepEqual(BODIES, [...manifest.bodies.keys()], 'bodies are the manifest ids verbatim');
+
+  const unionOf = (axis) => {
+    const out = [];
+    for (const range of manifest.bodies.values()) {
+      for (const value of range[axis]) if (!out.includes(value)) out.push(value);
+    }
+    return out;
+  };
+  // Round-trip rather than a hardcoded expectation: the fixtures hold display spellings, and what
+  // matters is that normalising them lands back on exactly the declared values, in order.
+  assert.deepEqual(SIZES.map((s) => normaliseAxis(s, 'Size')), unionOf('sizes'));
+  assert.deepEqual(COLORS.map((c) => normaliseAxis(c, 'Color')), unionOf('colors'));
+  // Display case, not the normalised form: these stand in for Admin option values.
+  assert.ok(SIZES.every((s) => s === s.toUpperCase()), 'sizes are upper-cased for display');
+  assert.ok(COLORS.every((c) => /^[A-Z]/.test(c)), 'colours are title-cased for display');
+});
+
+test('VEST_BLACK_ONLY is read from the manifest, and models a single-colour body', async () => {
+  // The constant is derived, and fixtures.mjs throws at load if the vest ever gains a second colour.
+  // That assertion is the point: every test using this constant models "one body is narrower than
+  // the others", and a silently multi-colour vest would convert all of them with nothing failing.
+  assert.equal(VEST_BLACK_ONLY.colors.length, 1, 'the single-colour invariant every consumer relies on');
+  // The value itself is read from the manifest, so it is asserted against the manifest and not
+  // against a literal: a literal here would be a fourth place the vest's colour is written down,
+  // which is the duplication this change removes.
+  const manifest = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  assert.deepEqual(VEST_BLACK_ONLY, {
+    colors: manifest.bodies.get('vest-womens').colors,
+    sizes: manifest.bodies.get('vest-womens').sizes,
+  });
 });

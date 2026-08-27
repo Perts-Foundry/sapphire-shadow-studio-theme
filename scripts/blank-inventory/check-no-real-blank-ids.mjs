@@ -8,8 +8,9 @@
 //
 // The check is STRUCTURAL and names no supplier: it looks for the shape of a blank id
 // (underscore-separated uppercase segments ending in a size token) and allows only segments drawn
-// from the synthetic vocabulary used by the test fixtures. A real supplier token is, by
-// construction, not in that list, so it fails.
+// from the synthetic vocabulary used by the test fixtures, unioned with the colour, body and size
+// words catalogue.json declares (see the union note below the imports). A real supplier token is, by
+// construction, in neither, so it fails.
 //
 // Usage: node scripts/blank-inventory/check-no-real-blank-ids.mjs [files...]
 //        (with no arguments, scans every git-tracked file)
@@ -18,7 +19,97 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const SIZES = 'XS|S|M|L|XL|2XL|3XL|4XL';
+import { parseCatalogue, CATALOGUE_PATH } from './lib/catalogue-manifest.mjs';
+
+// THE MANIFEST WIDENS THIS GUARD; IT NEVER NARROWS IT. Both the size alternation and the allowlist
+// below are the hand-curated list UNIONED with what catalogue.json declares. Deriving either
+// outright would be the tidier-looking change and a strictly worse detector: the manifest declares
+// six sizes today, so a derived alternation would drop `3XL` and `4XL`, and a real blank id ending
+// `_3XL` would stop being detected. A leak detector that gets weaker in exchange for tidiness is not
+// a trade worth making. The value of the union is forward-looking: a colour added to the manifest
+// joins the allowlist automatically instead of tripping the guard on the fixture that uses it.
+//
+// A MALFORMED MANIFEST CRASHES THIS GUARD, and that is deliberate. parseCatalogue throws rather than
+// degrading, so a broken catalogue.json fails the CI step instead of quietly scanning with a
+// half-built vocabulary. This file's whole stance is that a leak detector failing open is worse than
+// none (see the SKIP note below); failing closed here is the same stance.
+const MANIFEST = parseCatalogue(readFileSync(new URL(`../../${CATALOGUE_PATH}`, import.meta.url), 'utf8'));
+
+/** The eight size tokens this guard has always detected, whatever the catalogue declares. */
+export const LEGACY_SIZE_TOKENS = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
+
+/**
+ * Uppercase word tokens for one manifest value, both split and flattened.
+ *
+ * `quarter-zip` yields QUARTER, ZIP and QUARTERZIP; `grey heather` yields GREY, HEATHER and
+ * GREYHEATHER. Both forms, because a blank id may join the words either way and neither spelling
+ * names a supplier.
+ *
+ * A DIGIT-LEADING WORD COUNTS. A body `tee-2pack` must yield 2PACK, because `2PACK` is a legal
+ * non-leading segment of a blank id and would otherwise trip the guard on the fixture that uses it,
+ * which is the exact failure this union exists to prevent. The filter requires at least one LETTER
+ * rather than a leading one: a purely numeric segment is already exempt in `findSuspectTokens`, so
+ * adding one here would be noise.
+ *
+ * @param {string} value
+ * @returns {string[]}
+ */
+const IS_WORD = /^[A-Z0-9]*[A-Z][A-Z0-9]*$/;
+function tokensOf(value) {
+  const parts = String(value).split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.toUpperCase());
+  const out = parts.filter((w) => IS_WORD.test(w));
+  if (parts.length > 1) {
+    const joined = parts.join('');
+    if (IS_WORD.test(joined)) out.push(joined);
+  }
+  return out;
+}
+
+/**
+ * Size tokens to detect: the legacy eight unioned with whatever the manifest declares, longest first
+ * so the regex alternation stays greedy-correct (`2XL` must be tried before `L`).
+ *
+ * MANIFEST VALUES ARE FILTERED TO `[A-Z0-9]+`, NOT ESCAPED, and the difference matters. These go
+ * straight into a `RegExp` source, and `normaliseAxis` lowercases and trims but does not restrict
+ * characters, so `parseCatalogue` would accept a size of `3xl(tall)` (which throws a SyntaxError at
+ * module load and takes the guard down on an otherwise valid catalogue edit) or `s?` (which compiles
+ * and silently changes what the alternation matches). Escaping would preserve both as literals, but a
+ * blank id's segments are `[A-Z0-9]+` by construction, so a size carrying punctuation could never
+ * appear in one and is not something to detect. Dropping it is both safe and correct; the legacy
+ * eight are unaffected either way, so this can never narrow detection below the old behaviour.
+ *
+ * @param {Iterable<string>} manifestSizes - normalised size tokens
+ * @returns {string[]}
+ */
+export function sizeAlternation(manifestSizes) {
+  const set = new Set(LEGACY_SIZE_TOKENS);
+  for (const size of manifestSizes) {
+    const token = String(size).toUpperCase();
+    if (/^[A-Z0-9]+$/.test(token)) set.add(token);
+  }
+  return [...set].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * Allowlist tokens implied by a manifest: its colour words and its body words.
+ *
+ * These name a colour or a KIND of clothing, never a maker of one, so they satisfy the
+ * positive-detection rule stated below.
+ *
+ * @param {{bodies: Map<string, {colors: string[], sizes: string[]}>}} manifest
+ * @returns {string[]}
+ */
+export function segmentsFromManifest(manifest) {
+  const out = new Set();
+  for (const [body, range] of manifest.bodies) {
+    for (const token of tokensOf(body)) out.add(token);
+    for (const color of range.colors) for (const token of tokensOf(color)) out.add(token);
+  }
+  return [...out];
+}
+
+const SIZE_TOKENS = sizeAlternation([...MANIFEST.bodies.values()].flatMap((r) => r.sizes));
+const SIZES = SIZE_TOKENS.join('|');
 const BLANK_ID_SHAPE = new RegExp(String.raw`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}_(?:${SIZES})\b`, 'g');
 
 // THE POSITIVE-DETECTION RULE, stated before the allowlist because every future edit to the list
@@ -47,7 +138,15 @@ const ALLOWED_SEGMENTS = new Set([
   'COLOR', 'COLOUR', 'BLANK', 'SIZE', 'SUPPLIER', 'STYLE', 'BODY',
 ]);
 
-const SIZE_SET = new Set(SIZES.split('|'));
+// The manifest union, added AFTER the declaration above rather than folded into it. The
+// positive-detection rule comment has to stay immediately above `const ALLOWED_SEGMENTS`: a test
+// matches on the text between the two, so a reviewer widening the list cannot miss the rule.
+// `add`, never a replacement, for the reason given at the top of this file.
+for (const segment of segmentsFromManifest(MANIFEST)) ALLOWED_SEGMENTS.add(segment);
+
+export { ALLOWED_SEGMENTS };
+
+const SIZE_SET = new Set(SIZE_TOKENS);
 
 // Binary and vendored paths that are never prose.
 //

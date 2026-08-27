@@ -11,7 +11,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { defaultWorkDir, resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from '../lib/workdir.mjs';
-import { findSuspectTokens } from '../check-no-real-blank-ids.mjs';
+import {
+  findSuspectTokens, sizeAlternation, segmentsFromManifest, LEGACY_SIZE_TOKENS, ALLOWED_SEGMENTS,
+} from '../check-no-real-blank-ids.mjs';
+import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+
+const MANIFEST = parseCatalogue(readFileSync(new URL(`../../../${CATALOGUE_PATH}`, import.meta.url), 'utf8'));
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..');
 
@@ -117,6 +122,97 @@ test('no allowlisted segment reads as a company name', () => {
   const src = readFileSync(new URL('../check-no-real-blank-ids.mjs', import.meta.url), 'utf8');
   const rule = src.match(/THE POSITIVE-DETECTION RULE[\s\S]*?const ALLOWED_SEGMENTS/)?.[0] ?? '';
   assert.match(rule, /could never be a supplier's name/);
+});
+
+// --- the manifest union ----------------------------------------------------
+//
+// The guard's size alternation and allowlist are now the hand-curated lists UNIONED with what
+// catalogue.json declares. `blank-inventory:guard` printing "scanned N file(s)" says nothing about
+// detection POWER: a union that silently degraded into a replacement would print the same line and
+// still exit 0, which is exactly the mistake these tests exist to prevent.
+//
+// Synthetic vocabulary only below, per the file's own rule and CLAUDE.md.
+
+test('the size union never NARROWS: a legacy-only size is still detected', () => {
+  // The mandatory negative. The committed manifest declares six sizes and no 3XL, so a derived
+  // (rather than unioned) alternation would drop it and a real blank id ending _3XL would sail
+  // through. Asserted through the live guard, not a helper, so it covers the wiring too.
+  const token = suspect('BLACK', 'NORTH' + 'RIDGE', 'CREWNECK', '0001', '3XL');
+  assert.deepEqual(findSuspectTokens(token), [token], '_3XL must still be a detectable ending');
+  assert.deepEqual(sizeAlternation(['m', 'l']), sizeAlternation([]), 'a narrow manifest adds nothing and removes nothing');
+  for (const legacy of LEGACY_SIZE_TOKENS) {
+    assert.ok(sizeAlternation(['m']).includes(legacy), `${legacy} survives a manifest that omits it`);
+  }
+});
+
+test('the size union does ADD: a manifest-only size becomes detectable', () => {
+  const widened = sizeAlternation(['6xl']);
+  assert.ok(widened.includes('6XL'));
+  assert.ok(LEGACY_SIZE_TOKENS.every((s) => widened.includes(s)));
+  // Longest-first, so the alternation stays greedy-correct: 2XL must be tried before L.
+  const lengths = widened.map((s) => s.length);
+  assert.deepEqual(lengths, [...lengths].sort((a, b) => b - a));
+});
+
+test('the allowlist union does ADD: a manifest-only colour and body word become allowed', () => {
+  const synthetic = {
+    bodies: new Map([['sample-longsleeve', { colors: ['forest green'], sizes: ['m'] }]]),
+  };
+  const segments = segmentsFromManifest(synthetic);
+  // Split and flattened forms both, because a blank id may join the words either way.
+  for (const token of ['FOREST', 'GREEN', 'FORESTGREEN', 'SAMPLE', 'LONGSLEEVE', 'SAMPLELONGSLEEVE']) {
+    assert.ok(segments.includes(token), `${token} should be derived`);
+  }
+  // A digit-leading word is a legal non-leading blank-id segment, so it has to be derived too;
+  // dropping it would trip the guard on the very fixture that uses the new body.
+  assert.ok(
+    segmentsFromManifest({ bodies: new Map([['tee-2pack', { colors: ['black'], sizes: ['m'] }]]) }).includes('2PACK'),
+    '2PACK should be derived from tee-2pack'
+  );
+  // And the live manifest's own vocabulary really is in the allowlist the guard uses.
+  const live = segmentsFromManifest(MANIFEST);
+  assert.ok(live.length > 5, 'the live derivation must be non-empty, or the loop below is vacuous');
+  for (const token of live) {
+    assert.ok(ALLOWED_SEGMENTS.has(token), `${token} should have been unioned in`);
+  }
+});
+
+test('a manifest size carrying punctuation cannot corrupt the detection regex', () => {
+  // These tokens are interpolated into a RegExp source. normaliseAxis lowercases and trims but does
+  // not restrict characters, so parseCatalogue would accept both of these. Unfiltered, the first
+  // throws a SyntaxError at module load and takes the whole guard down, and the second compiles and
+  // silently changes what the alternation matches. Neither could ever be a blank-id segment, so both
+  // are dropped.
+  for (const hostile of ['3xl(tall', 's?', 'm|xl', '2xl.*']) {
+    const tokens = sizeAlternation([hostile]);
+    assert.deepEqual(tokens, sizeAlternation([]), `${hostile} must be dropped, not carried through`);
+    assert.doesNotThrow(() => new RegExp(`(?:${tokens.join('|')})`), `${hostile} must not break the regex`);
+  }
+  // And a well-formed manifest size is still added, so the filter is not just rejecting everything.
+  assert.ok(sizeAlternation(['6xl']).includes('6XL'));
+});
+
+test('the allowlist union never NARROWS: the hand-curated tokens all survive it', () => {
+  // The allowlist's own negative, matching the size union's. A union that degraded into a
+  // replacement would drop every synthetic fixture token, and the fixture suite would start failing
+  // the guard rather than the guard failing a test, which reads as an unrelated breakage.
+  for (const token of ['ACME', 'BLANKA', 'BLANKB', 'GRAY', 'WHITE', 'HOODIE', 'SUPPLIER', 'QUARTERZIP']) {
+    assert.ok(ALLOWED_SEGMENTS.has(token), `${token} is hand-curated and must survive the union`);
+  }
+});
+
+test('no manifest-derived token can blind the detector', () => {
+  // The collision check. Widening an allowlist is only safe while the added tokens cannot themselves
+  // form, or launder, a blank-id shape. A derived token is a single word with no underscore, so it
+  // is never an id on its own, and an id that also carries a non-vocabulary segment still fails.
+  const live = segmentsFromManifest(MANIFEST);
+  assert.ok(live.length > 5, 'the live derivation must be non-empty, or this loop is vacuous');
+  for (const token of live) {
+    assert.ok(!token.includes('_'), `${token} must not itself be underscore-separated`);
+    assert.deepEqual(findSuspectTokens(token), [], `${token} alone is not a blank id`);
+    const laundered = suspect('BLACK', token, 'MILLCO' + 'APPAREL', '0001', 'M');
+    assert.deepEqual(findSuspectTokens(laundered), [laundered], `${token} must not launder a supplier token`);
+  }
 });
 
 test('the guard no longer exempts a .blank-inventory path at any depth', async () => {

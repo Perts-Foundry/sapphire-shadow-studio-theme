@@ -13,13 +13,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
-- [ ] **Smoke: assert the policy jump-nav shell renders.** The post-deploy smoke probes
-  `/policies/refund-policy` for status/host/theme-id only, so the policy restyle silently not
-  rendering (the exact failure mode of the dead `templates/policy.liquid` attempt, see
-  `release-notes.md`) would still pass. The shell is server-rendered by `snippets/policy-page.liquid`,
-  so a no-JS fetch can check the response body for `policy-nav-component`. Make it SOFT-WARN, not
-  HARD-FAIL: a rollback to a theme without the snippet must not be blocked by its own smoke.
-
 - [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
   `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the
   `launch_countdown` entry in `templates/password.json`, and the countdown deviation entry in
@@ -82,13 +75,6 @@ manifest. Do them one at a time, each in its own PR, and consolidate per tool ra
 - [ ] **Migrate `scripts/applique-grid/patterns.json`'s product block onto the manifest.** Its
   `product.handle`, `product.gid` and `product.colorValues` become a manifest lookup, and
   `lib/registry.mjs` asserts agreement instead of storing a copy.
-- [ ] **Point blank-inventory's remaining private vocabulary at the manifest.** `SIZE_ORDER` in
-  `lib/reorder.mjs` becomes the manifest's canonical size sequence; the `SIZES` / `COLORS` / `BODIES`
-  axes in `test/fixtures.mjs` (a deliberate contract, per that file's header) assert equality with
-  the manifest instead of restating it; `learnVocab` in `lib/groups.mjs` gains a cross-check that the
-  learned vocabulary stays inside the declared one. Optionally generate the size alternation in
-  `check-no-real-blank-ids.mjs` from the manifest too, but its colour and garment allowlist stays
-  hand-curated per that file's own safety rule.
 - [ ] **Add a manifest consistency lint across the theme and audit surfaces.** One CI check asserting
   agreement between the manifest and: the `color_option_name` / `size_option_name` defaults in
   `config/settings_schema.json` (the option axis names), the product-template coverage in

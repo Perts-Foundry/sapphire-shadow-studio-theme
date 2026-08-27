@@ -6,9 +6,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync as readFile, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
-  summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, PASS, SOFT_WARN, HARD_FAIL,
+  summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, POLICY_MARKERS,
+  isPolicyPath, PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
 const THEME = '181702754604';
@@ -637,6 +640,258 @@ test('authenticateStorefront: a network failure is error, and the retries are bo
   ]);
   await auth(throttled, { sleep, backoff: [1, 2] });
   assert.deepEqual(sleep.delays, [1, 2], 'exactly one POST per backoff entry, then give up');
+});
+
+
+// --- policy jump-nav markers ----------------------------------------------
+//
+// The five /policies/* pages are not themeable: Shopify renders them, and the
+// only theme code that runs there is snippets/policy-page.liquid, injected by
+// layout/theme.liquid's policy guard. Status/host/theme-id all stay green when
+// that snippet stops rendering, so the body is checked for the custom-element
+// tag. SOFT-WARN only: a rollback to a theme predating the snippet ships
+// through the same comment-deploy cycle and must not be blocked by this check.
+
+const POLICY_PATH = '/policies/refund-policy';
+// A needle that appears nowhere in the marker list, so any leak of body text
+// into a line, a reason or GITHUB_OUTPUT is detectable.
+const BODY_NEEDLE = 'ZZBODYNEEDLEZZ';
+const POLICY_BODY_OK = `<main>${BODY_NEEDLE}<policy-nav-component><nav hidden><ul></ul></nav></policy-nav-component></main>`;
+const POLICY_BODY_BROKEN = `<main>${BODY_NEEDLE}<div class="shopify-policy__body"></div></main>`;
+
+/** Wrap a scripted fetch so every res.text() call is recorded by URL. */
+function trackBodyReads(fetchImpl) {
+  const reads = [];
+  const wrapped = async (url, opts) => {
+    const res = await fetchImpl(url, opts);
+    const orig = res.text.bind(res);
+    res.text = async () => { reads.push(url); return orig(); };
+    return res;
+  };
+  wrapped.reads = reads;
+  return wrapped;
+}
+
+/** Run `fn` with GITHUB_OUTPUT pointed at a temp file; returns its contents. */
+async function withGithubOutput(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'smoke-out-'));
+  const file = join(dir, 'gh-output');
+  const prev = process.env.GITHUB_OUTPUT;
+  process.env.GITHUB_OUTPUT = file;
+  try {
+    await fn();
+    return readFile(file, 'utf8');
+  } finally {
+    if (prev === undefined) delete process.env.GITHUB_OUTPUT;
+    else process.env.GITHUB_OUTPUT = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Scripted fetch whose policy route serves `body`; everything else is 200 on-theme. */
+const policyFetch = (policyDesc) => scriptedFetch([
+  [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+  [(u) => u.includes('/policies/'), policyDesc],
+  [() => true, { status: 200, serverTiming: themeTiming() }],
+]);
+
+test('isPolicyPath: prefix test, not a hardcoded single path', () => {
+  assert.equal(isPolicyPath('/policies/refund-policy'), true);
+  assert.equal(isPolicyPath('/policies/privacy-policy'), true);
+  assert.equal(isPolicyPath('/'), false);
+  assert.equal(isPolicyPath('/collections/all'), false);
+  // Not a substring match: only a path that actually starts /policies/.
+  assert.equal(isPolicyPath('/pages/policies/refund'), false);
+  // Case-insensitive, so a hand-written override does not silently skip the check.
+  assert.equal(isPolicyPath('/Policies/refund-policy'), true);
+});
+
+test('classify: markers checked after every HARD-FAIL condition, so they cannot mask one', () => {
+  const missing = { ...cbase, markersMissing: ['policy-nav-component'] };
+  assert.equal(classify({ ...missing, status: 404 }).verdict, HARD_FAIL);
+  assert.equal(classify({ ...missing, status: 503 }).verdict, HARD_FAIL);
+  assert.equal(classify({ ...missing, status: 200, themeDesc: '999' }).verdict, HARD_FAIL);
+  assert.equal(classify({ ...missing, status: 200, finalHost: 'evil.example' }).verdict, HARD_FAIL);
+  // Only an otherwise-clean 200 degrades to SOFT-WARN.
+  const r = classify({ ...missing, status: 200 });
+  assert.equal(r.verdict, SOFT_WARN);
+  assert.match(r.reason, /policy-nav-component/);
+});
+
+test('classify: an unreadable body is its own SOFT-WARN reason, never a HARD-FAIL', () => {
+  const r = classify({ ...cbase, status: 200, markerReadError: true });
+  assert.equal(r.verdict, SOFT_WARN);
+  assert.match(r.reason, /unreadable/);
+  assert.doesNotMatch(r.reason, /missing markup/);
+});
+
+test('classify: empty markersMissing on a clean 200 is still PASS', () => {
+  assert.equal(classify({ ...cbase, status: 200, markersMissing: [] }).verdict, PASS);
+});
+
+test('runSmoke: policy page with the jump-nav marker present -> PASS, exit 0', async () => {
+  const fetchImpl = policyFetch({ status: 200, serverTiming: themeTiming(), body: POLICY_BODY_OK });
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  assert.ok(r.lines.some(l => l.startsWith(`${POLICY_PATH} PASS`)), r.lines.join('\n'));
+  assert.equal(r.exitCode, 0);
+});
+
+test('runSmoke: policy page missing the jump-nav marker -> SOFT-WARN, still exit 0 (rollback safety)', async () => {
+  const fetchImpl = policyFetch({ status: 200, serverTiming: themeTiming(), body: POLICY_BODY_BROKEN });
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  const line = r.lines.find(l => l.startsWith(POLICY_PATH));
+  assert.match(line, /SOFT-WARN/);
+  assert.match(line, /policy-nav-component/);
+  // A rollback deploy must not be blocked by the check that exists to notice it.
+  assert.equal(r.exitCode, 0);
+});
+
+test('runSmoke: policy page 404 still HARD-FAILs, and no body is read on a non-200', async () => {
+  const fetchImpl = trackBodyReads(policyFetch({ status: 404, body: POLICY_BODY_BROKEN }));
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  assert.ok(r.lines.some(l => new RegExp(`^${POLICY_PATH} HARD-FAIL 404`).test(l)));
+  assert.equal(r.exitCode, 1);
+  // The `status === 200` guard, pinned directly rather than only through the 429 case.
+  assert.deepEqual(fetchImpl.reads.filter(u => u.includes('/policies/')), []);
+});
+
+test('runSmoke: a policy path that redirects into the /password wall reads no body', async () => {
+  const inner = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [(u, o) => u.endsWith('/') && !o.headers?.cookie, { status: 200, serverTiming: themeTiming() }],
+    [(u) => u.includes('/policies/'), { status: 302, location: '/password', body: POLICY_BODY_BROKEN }],
+    [(u) => u.endsWith('/password'), { status: 200, body: POLICY_BODY_BROKEN }],
+  ]);
+  const fetchImpl = trackBodyReads(inner);
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  // The hop loop stops at the auth wall, so the marker check never runs and the
+  // existing auth-wall verdict is what the operator sees.
+  assert.ok(r.lines.some(l => new RegExp(`^${POLICY_PATH} HARD-FAIL`).test(l)));
+  assert.ok(r.lines.some(l => /auth wall/.test(l)));
+  assert.ok(!r.lines.some(l => /markers unknown|missing markup/.test(l)));
+  assert.deepEqual(fetchImpl.reads.filter(u => u.includes('/policies/') || u.includes('/password')), []);
+});
+
+test('the probe timeout still bounds the body read: a stalled body aborts rather than hanging', { timeout: 10000 }, async () => {
+  // The riskiest line in the change is the clearTimeout that moved into the `finally`. Putting it
+  // back where it was (firing the moment the headers arrive) makes this test HANG rather than fail,
+  // which is exactly the failure mode being guarded: an unbounded read parks the deploy job until
+  // the CI step cap, with the theme already live. Nothing else in the suite notices that mutation.
+  // The explicit per-test timeout is what turns that hang into a red test: node:test does not bound
+  // a test by default, so the mutant would otherwise stall CI instead of reporting.
+  const inner = policyFetch({ status: 200, serverTiming: themeTiming(), body: POLICY_BODY_OK });
+  const fetchImpl = async (url, opts) => {
+    const res = await inner(url, opts);
+    if (url.includes('/policies/')) {
+      // A body that never arrives and never errors: only the abort signal can end it.
+      res.text = () => new Promise((_resolve, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    }
+    return res;
+  };
+  // A real (short) timeout budget. `sleep` is still the recording no-op, so nothing else waits.
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH], timeoutMs: 50 }));
+  const line = r.lines.find(l => l.startsWith(POLICY_PATH));
+  assert.match(line, /SOFT-WARN/);
+  assert.match(line, /unreadable/);
+  assert.equal(r.exitCode, 0);
+});
+
+test('runSmoke: no policy body text reaches lines, reasons or GITHUB_OUTPUT (PASS and SOFT-WARN)', async () => {
+  for (const body of [POLICY_BODY_OK, POLICY_BODY_BROKEN]) {
+    const fetchImpl = policyFetch({ status: 200, serverTiming: themeTiming(), body });
+    let lines = [];
+    const logged = [];
+    const written = await withGithubOutput(async () => {
+      const r = await runSmoke(baseArgs({
+        fetchImpl, structuralPaths: ['/', POLICY_PATH], log: (l) => logged.push(l),
+      }));
+      lines = r.lines;
+    });
+    // Both channels actually carried something, so the doesNotMatch assertions below are not
+    // passing for free on an empty string.
+    assert.ok(lines.some(l => l.startsWith(POLICY_PATH)), 'policy path was probed');
+    assert.match(written, /smoke_output/, 'GITHUB_OUTPUT was actually written');
+    assert.ok(logged.length > 0, 'the log sink actually received lines');
+    const blob = [lines.join('\n'), logged.join('\n'), written].join('\n');
+    assert.doesNotMatch(blob, new RegExp(BODY_NEEDLE));
+    assert.doesNotMatch(blob, /shopify-policy__body|<nav|<main/);
+    // Only the marker NAME may appear, and only in the SOFT-WARN reason.
+    if (body === POLICY_BODY_OK) assert.doesNotMatch(blob, /policy-nav-component/);
+  }
+});
+
+test('runSmoke: with a redirect, only the final hop body is read', async () => {
+  const inner = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [(u) => u.endsWith(POLICY_PATH), { status: 301, location: '/policies/refund', body: POLICY_BODY_BROKEN }],
+    [(u) => u.endsWith('/policies/refund'), { status: 200, url: `${BASE}/policies/refund`, serverTiming: themeTiming(), body: POLICY_BODY_OK }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const fetchImpl = trackBodyReads(inner);
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  assert.equal(r.exitCode, 0);
+  assert.ok(r.lines.some(l => l.startsWith(`${POLICY_PATH} PASS`)), r.lines.join('\n'));
+  const policyReads = fetchImpl.reads.filter(u => u.includes('/policies/'));
+  assert.deepEqual(policyReads, [`${BASE}/policies/refund`], 'only the final hop was read');
+});
+
+test('runSmoke: the 429 retry path reads no body, and the retried 200 does', async () => {
+  const sleep = recordingSleep();
+  const inner = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [(u) => u.includes('/policies/'), [
+      { status: 429, body: POLICY_BODY_BROKEN },
+      { status: 200, serverTiming: themeTiming(), body: POLICY_BODY_OK },
+    ]],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const fetchImpl = trackBodyReads(inner);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/', POLICY_PATH] }));
+  assert.ok(r.lines.some(l => l.startsWith(`${POLICY_PATH} PASS`)), r.lines.join('\n'));
+  // Exactly one body read on this path: the 200, not the 429.
+  assert.equal(fetchImpl.reads.filter(u => u.includes('/policies/')).length, 1);
+});
+
+test('runSmoke: a body read that throws -> SOFT-WARN "unreadable", never HARD-FAIL, exit 0', async () => {
+  const inner = policyFetch({ status: 200, serverTiming: themeTiming(), body: POLICY_BODY_OK });
+  const fetchImpl = async (url, opts) => {
+    const res = await inner(url, opts);
+    if (url.includes('/policies/')) res.text = async () => { throw new Error('ECONNRESET'); };
+    return res;
+  };
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', POLICY_PATH] }));
+  const line = r.lines.find(l => l.startsWith(POLICY_PATH));
+  assert.match(line, /SOFT-WARN/);
+  assert.match(line, /unreadable/);
+  assert.ok(!r.lines.some(l => /HARD-FAIL/.test(l)));
+  assert.equal(r.exitCode, 0);
+});
+
+test('runSmoke: non-policy structural paths are never body-read', async () => {
+  const inner = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [() => true, { status: 200, serverTiming: themeTiming(), body: POLICY_BODY_BROKEN }],
+  ]);
+  const fetchImpl = trackBodyReads(inner);
+  await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/', '/cart', '/search'] }));
+  assert.deepEqual(fetchImpl.reads.filter(u => !u.includes('sitemap')), []);
+});
+
+test('POLICY_MARKERS matches what the theme actually server-renders on a policy page', () => {
+  // Two halves, because either one alone can go stale silently. The snippet must
+  // still emit the marker, AND layout/theme.liquid must still render the snippet:
+  // the dead templates/policy.liquid attempt is the standing proof that a file
+  // which is never invoked looks identical to one that works.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const snippet = readFileSync(join(repoRoot, 'snippets', 'policy-page.liquid'), 'utf8');
+  for (const m of POLICY_MARKERS) {
+    assert.ok(snippet.includes(m), `snippet no longer renders the ${m} marker`);
+  }
+  const layout = readFileSync(join(repoRoot, 'layout', 'theme.liquid'), 'utf8');
+  assert.match(layout, /render 'policy-page'/, 'layout no longer renders the policy-page snippet');
+  assert.match(layout, /request\.page_type == 'policy'/, 'the policy guard is gone from the layout');
 });
 
 // --- action.yml drift ------------------------------------------------------

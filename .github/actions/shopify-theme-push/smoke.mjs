@@ -11,11 +11,16 @@
 // server-timing theme;desc == the live theme id. Structural routes (/, /cart,
 // ...) verify the deploy landed; every published product (enumerated from the
 // sitemap) is probed so a deploy that breaks a product's availability fails.
+// /policies/* additionally has its body checked for the jump-nav custom element
+// (SOFT-WARN only), because Shopify renders those pages itself and the theme's
+// only contribution there is the snippet layout/theme.liquid injects.
 //
 // OUTPUT HYGIENE (public repo): only "path verdict status host theme-id"
-// tuples are ever emitted. The password, POST body, cookie jar, Set-Cookie /
-// Cookie / Authorization / Location headers, and response bodies are NEVER
-// printed or written to GITHUB_OUTPUT, on any branch. The minted session
+// tuples plus a reason built from literals and those same fields are ever
+// emitted. The password, POST body, cookie jar, Set-Cookie / Cookie /
+// Authorization / Location headers, and response bodies are NEVER printed or
+// written to GITHUB_OUTPUT, on any branch. A body may be READ for an assertion
+// (the policy markers below); only the fixed marker NAMES may be emitted. The minted session
 // cookie value is registered with ::add-mask:: so Actions redacts it even if a
 // future edit leaks it.
 //
@@ -31,6 +36,23 @@ import { randomUUID } from 'node:crypto';
 export const PASS = 'PASS';
 export const SOFT_WARN = 'SOFT-WARN';
 export const HARD_FAIL = 'HARD-FAIL';
+
+// Server-rendered markup required on a /policies/* page. `snippets/policy-page.liquid`
+// (rendered from layout/theme.liquid behind its request.page_type == 'policy'
+// guard) is the only theme code that runs on those pages. The whole shell is
+// server-rendered, heading included, so the tag is not the only candidate marker;
+// it is the most stable one, being neither locale-dependent (the heading text is)
+// nor a CSS class anyone may rename. What is NOT assertable without a browser is
+// the list content and the visible state: the <nav> ships `hidden` and the <ul>
+// ships empty, because assets/policy-nav.js fills the list from the body's h2s
+// and unhides it only at three or more headings.
+export const POLICY_MARKERS = ['policy-nav-component'];
+
+// A structural path whose body carries POLICY_MARKERS. A prefix test rather than
+// a hardcoded path, so an overridden SMOKE_PATHS listing a different or an extra
+// policy is covered too. Case-insensitive: a hand-written `/Policies/...` in an
+// override should skip the check silently no more than it should 404.
+export const isPolicyPath = (path) => /^\/policies\//i.test(path);
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 export const BROWSER_HEADERS = {
@@ -74,12 +96,17 @@ export function hostOf(url) {
  * @param {string|null} o.redirectPath pathname of a final 3xx Location, if any
  * @param {boolean} o.retriesExhausted true when a 429 survived all retries
  * @param {boolean} [o.isProduct]      path is an enumerated product (404 label)
+ * @param {string[]|null} [o.markersMissing] required body markers not found on a
+ *   200. Names only, drawn from the fixed list the caller passed in; never body
+ *   text (see the output-hygiene note at the top of this file).
+ * @param {boolean} [o.markerReadError] the body could not be read at all, so the
+ *   markers are unknown rather than absent
  * @returns {{verdict: string, reason: string}}
  */
 export function classify(o) {
   const {
     status, finalHost, expectedHost, themeDesc, expectedThemeId,
-    redirectPath, retriesExhausted, isProduct,
+    redirectPath, retriesExhausted, isProduct, markersMissing, markerReadError,
   } = o;
 
   if (retriesExhausted) return { verdict: SOFT_WARN, reason: 'throttled (429 after retries)' };
@@ -107,6 +134,17 @@ export function classify(o) {
   if (!themeDesc) return { verdict: HARD_FAIL, reason: 'no theme-id in server-timing' };
   if (themeDesc !== expectedThemeId) {
     return { verdict: HARD_FAIL, reason: `theme-id mismatch ${themeDesc} != ${expectedThemeId}` };
+  }
+  // Body markers are checked LAST, after every HARD-FAIL condition above, so a
+  // marker warning can never mask a genuine failure. Both outcomes are capped
+  // at SOFT-WARN: the smoke cannot tell a forward deploy that broke the markup
+  // from a deliberate rollback to a theme that predates it, so the same verdict
+  // has to serve both and the safe direction is non-blocking. A body that could
+  // not be read gets its own reason so a network fault stays diagnosable apart
+  // from genuinely absent markup.
+  if (markerReadError) return { verdict: SOFT_WARN, reason: 'markers unknown (body unreadable)' };
+  if (markersMissing && markersMissing.length) {
+    return { verdict: SOFT_WARN, reason: `missing markup: ${markersMissing.join(', ')}` };
   }
   return { verdict: PASS, reason: 'ok' };
 }
@@ -241,50 +279,86 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
 /**
  * Fetch with a per-request timeout, manual-redirect hop-following (stopping at
  * a /password wall), and retry-on-429 with backoff.
- * @returns {Promise<{status:number|null, finalHost:string|null, themeDesc:string|null, redirectPath:string|null, retriesExhausted:boolean}>}
+ *
+ * When `markers` is supplied, the body of the FINAL hop is read on a 200 and
+ * checked for each marker string. Only the names of the missing markers are
+ * returned; the body itself is discarded here and never reaches a caller, a
+ * log line, or GITHUB_OUTPUT (see the output-hygiene note at the top of this
+ * file). No body is read on a redirect hop, on a non-200, or on the 429 retry
+ * path.
+ * @param {string} url
+ * @param {object} opts
+ * @param {string[]} [opts.markers] fixed marker strings to require in the body
+ * @returns {Promise<{status:number|null, finalHost:string|null, themeDesc:string|null, redirectPath:string|null, retriesExhausted:boolean, markersMissing:string[]|null, markerReadError:boolean}>}
  */
 async function fetchObservation(url, {
-  jar, fetchImpl, sleep, backoff, timeoutMs, maxHops = 5,
+  jar, fetchImpl, sleep, backoff, timeoutMs, maxHops = 5, markers = null,
 }) {
   let attempt = 0;
   while (true) {
     let current = url;
     let hops = 0;
     let status = null, finalHost = null, themeDesc = null, redirectPath = null;
+    let markersMissing = null, markerReadError = false;
     let hitError = false;
     while (true) {
       const headers = { ...BROWSER_HEADERS };
       if (jar && jar.size) headers.cookie = cookieHeader(jar);
       const ctl = new AbortController();
+      // The timer stays live across the optional body read below and is cleared
+      // in the `finally` once this hop is completely done, so a stalled trickle
+      // after the headers arrive aborts on the same timeoutMs budget. Clearing
+      // it as soon as the headers land (which is what fetchWithBody still does)
+      // would leave the read unbounded, and an unbounded read hangs the job to
+      // a CI step timeout: a job failure rather than a smoke verdict, and far
+      // harder to read off a deploy report.
       const timer = setTimeout(() => ctl.abort(), timeoutMs);
-      let res;
+      let followTo = null;
       try {
-        res = await fetchImpl(current, { headers, redirect: 'manual', signal: ctl.signal });
-      } catch {
-        hitError = true;
-        break;
+        let res;
+        try {
+          res = await fetchImpl(current, { headers, redirect: 'manual', signal: ctl.signal });
+        } catch {
+          hitError = true;
+          break;
+        }
+        if (jar) updateJar(jar, res);
+        status = res.status;
+        finalHost = hostOf(res.url) || finalHost;
+        const loc = res.headers.get('location');
+        if (status >= 300 && status < 400 && loc) {
+          let locUrl;
+          try { locUrl = new URL(loc, current); } catch { locUrl = null; }
+          redirectPath = locUrl ? locUrl.pathname : loc;
+          // Stop at the /password auth wall or after maxHops; otherwise follow.
+          if (/^\/password/.test(redirectPath) || hops >= maxHops || !locUrl) {
+            finalHost = locUrl ? locUrl.host : finalHost;
+            break;
+          }
+          followTo = locUrl.href;
+        } else {
+          themeDesc = parseThemeId(res.headers.get('server-timing'));
+          if (markers && markers.length && status === 200) {
+            try {
+              const body = await res.text();
+              // Only marker NAMES escape this scope; `body` is dropped here.
+              markersMissing = markers.filter((m) => !String(body).includes(m));
+            } catch {
+              // A reset mid-body or a decode failure means the markers are
+              // unknown, not absent. It must not become an uncaught rejection:
+              // that would escape the probe loop and fail the whole deploy job,
+              // a harder failure than the regression this check warns about.
+              markersMissing = null;
+              markerReadError = true;
+            }
+          }
+          break;
+        }
       } finally {
         clearTimeout(timer);
       }
-      if (jar) updateJar(jar, res);
-      status = res.status;
-      finalHost = hostOf(res.url) || finalHost;
-      const loc = res.headers.get('location');
-      if (status >= 300 && status < 400 && loc) {
-        let locUrl;
-        try { locUrl = new URL(loc, current); } catch { locUrl = null; }
-        redirectPath = locUrl ? locUrl.pathname : loc;
-        // Stop at the /password auth wall or after maxHops; otherwise follow.
-        if (/^\/password/.test(redirectPath) || hops >= maxHops || !locUrl) {
-          finalHost = locUrl ? locUrl.host : finalHost;
-          break;
-        }
-        current = locUrl.href;
-        hops += 1;
-        continue;
-      }
-      themeDesc = parseThemeId(res.headers.get('server-timing'));
-      break;
+      current = followTo;
+      hops += 1;
     }
 
     if (!hitError && status === 429 && attempt < backoff.length) {
@@ -296,6 +370,7 @@ async function fetchObservation(url, {
     return {
       status: hitError ? null : status,
       finalHost, themeDesc, redirectPath, retriesExhausted,
+      markersMissing, markerReadError,
     };
   }
 }
@@ -465,7 +540,10 @@ export async function runSmoke({
   for (const path of structural) {
     if (!first) await sleep(paceMs);
     first = false;
-    const obs = await fetchObservation(`${baseUrl}${path}`, probeOpts);
+    const obs = await fetchObservation(
+      `${baseUrl}${path}`,
+      isPolicyPath(path) ? { ...probeOpts, markers: POLICY_MARKERS } : probeOpts,
+    );
     record(path, obs, false);
   }
   let probed = 0;

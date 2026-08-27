@@ -1,5 +1,202 @@
 # Release Notes
 
+## Smoke: the policy pages get a markup assertion (unreleased)
+
+The post-deploy smoke probed `/policies/refund-policy` for HTTP 200, the right host and the right
+theme id in `server-timing`, and never looked at the page content. The five `/policies/*` pages are
+not themeable: Shopify renders them, and the only theme code that runs there is
+`snippets/policy-page.liquid`, which `layout/theme.liquid` injects behind its
+`request.page_type == 'policy'` guard. So if that snippet stopped rendering, all five pages would
+silently lose the restyle and the jump nav while the deploy still reported green. That is not a
+hypothetical failure mode; it is exactly how the dead `templates/policy.liquid` attempt recorded
+below failed, as a file that uploads cleanly and never runs.
+
+`fetchObservation` now takes an optional `markers` list, and `runSmoke` passes
+`POLICY_MARKERS = ['policy-nav-component']` for any structural path starting `/policies/`. The
+custom-element tag is the marker not because it is the only candidate (the whole shell is
+server-rendered, heading included) but because it is the most stable one: it is neither
+locale-dependent, as the heading text is, nor a CSS class anyone may rename. What is not assertable
+without a browser is the list content and the visible state: the `<nav>` ships `hidden` and the
+`<ul>` ships empty, since `assets/policy-nav.js` fills the list from the body's `h2`s and unhides it
+only at three or more headings.
+
+**Why SOFT-WARN, stated precisely, because "it's the safe default" is not the reason.** This changes
+the failure mode from silent green to a visible non-blocking warning. It does not block a bad
+deploy, and it is not meant to. The smoke cannot distinguish a forward deploy that broke the snippet
+from a rollback to a theme that predates it, so one verdict has to serve both cases and the safe
+direction is the non-blocking one. The rollback case is real rather than theoretical: `README.md`
+makes the primary rollback a revert PR shipped through the same comment-deploy cycle, so the smoke
+does run against the older theme. A SOFT-WARN seen immediately after a deploy may also be edge-cache
+lag rather than broken markup; re-check the page before acting on it.
+
+SOFT-WARN is not a free pass, and the docs say so rather than promising more than the code delivers:
+a SOFT-WARN is not a PASS, and `summarize` still requires at least one verified PASS overall, so
+narrowing `SMOKE_PATHS` to a single policy path and then rolling back exits 1 on that rule rather
+than on the marker. The four other structural paths are what keeps that from biting on a normal
+deploy.
+
+**Three things the body read had to get right, all of which a naive version gets wrong.**
+
+1. **It is bounded by the existing timeout.** `clearTimeout(timer)` used to run in a `finally` the
+   moment the headers arrived. The hop is now wrapped so the timer stays live across the body read
+   and is cleared once the hop is completely done, so a stalled trickle after the headers aborts on
+   the same `timeoutMs` budget. An unbounded read would hang the job to a CI step timeout, which is
+   a job failure rather than a smoke verdict and is far harder to read off a deploy report.
+   `fetchWithBody` still has that unbounded-read shape for the sitemap read: `clearTimeout` fires
+   as soon as the headers arrive, and the `try`/`catch` around the enumeration catches a throw but
+   not a hang, so a stalled sitemap body parks the run until the job's own 15-minute cap with the
+   theme already live. It was left alone rather than fixed in passing, to keep this change to one
+   subject; the pattern to copy is now one function above it.
+2. **The read is wrapped in try/catch.** A connection reset mid-body or a decode failure becomes
+   "markers unknown (body unreadable)", its own SOFT-WARN reason, so a network fault stays
+   diagnosable apart from genuinely absent markup. An uncaught throw would escape the structural
+   probe loop and fail the deploy job, a harder failure than the regression this check exists to
+   warn about, and a failure mode that did not exist before.
+3. **No body text is ever returned.** The function returns only the names of the missing markers,
+   drawn from the fixed list passed in. `docs/smoke-test-reference.md` states that output is
+   path/verdict/status/host/theme-id tuples and never bodies; reading a body for an assertion is
+   compatible with that rule, emitting one is not. The no-leak test asserts this on both the PASS
+   and the SOFT-WARN policy branches, not on a non-policy path, which would be vacuous because a
+   non-policy path never calls the read at all.
+
+**Brotli was checked rather than assumed.** The storefront serves
+`content-encoding: br`, and a decode mismatch here would surface as a spurious SOFT-WARN with no
+visible cause, the worst kind of false signal for this check. A live probe with this script's own
+`BROWSER_HEADERS` confirmed undici decodes it losslessly (a 145 KB response arriving as complete
+HTML through `res.text()`), so no explicit `accept-encoding` override is set. Re-check that if the
+probe headers ever change.
+
+The check lives in `classify`, after every existing HARD-FAIL condition, so a marker warning can
+never mask a genuine failure and `classify` stays the single verdict authority for content probes.
+The path test is a `/policies/` prefix rather than a hardcoded path, so an overridden `SMOKE_PATHS`
+listing a different or an additional policy is covered. Markers are opt-in per call, so the
+sitemap-wide product sweep gains no body reads.
+
+## blank-inventory's vocabulary comes from catalogue.json (unreleased)
+
+`catalogue.json` was the single source of truth for the catalogue's shape, and the reorder review
+already computed its cell space from it. Three other places inside blank-inventory still restated the
+same vocabulary, and nothing reconciled them. Each is now **derived from** the manifest rather than
+merely checked against it, so exactly one list exists.
+
+**The manifest is the size ruler now, not a list that has to agree with one.** `SIZE_ORDER` existed
+because sizes do not sort alphabetically ("2XL" before "S"). `buildAxes` used to sort the manifest's
+declared sizes against it, which made two lists for one fact. On the manifest path nothing sorts:
+`parseCatalogue` already documented that declaration order is preserved into its Map and is
+load-bearing, so carrying it through makes the file itself the ruler. The order the reorder matrix,
+the reorder table and the purchase list print is the order written in `catalogue.json`.
+
+`SIZE_ORDER` stays, as the fallback for two cases: the legacy path where no `ranges` were passed, and
+any size the manifest does not declare, which must still rank sensibly rather than landing in an
+alphabetical heap. `3xl` and `4xl` stay in it for that second reason even though no body declares
+them.
+
+**Five of the six `compareSizes` call sites moved together, and the sixth stayed on purpose.** There
+were six: three inside `buildAxes` and three downstream (`selectReorders`, and two in
+`buildPurchaseList`). Five moved. The one that stayed is `globalSizes` inside `buildAxes`, which is
+reached only when no `ranges` were passed, so it is the legacy ruler doing its job rather than a
+missed site; anyone auditing the claim will find that surviving call and should read it that way.
+Migrating only some of the other five would have left half the report in manifest order and half in
+`SIZE_ORDER`, which is a worse
+regression than the one being fixed: an internally inconsistent report is harder to notice than a
+uniformly wrong one. `selectReorders` and `buildPurchaseList` therefore each gained an optional
+`sizeOrder` in their existing options object, defaulting to `SIZE_ORDER` so every current caller keeps
+working, and `cmdReorder` passes `axes.sizes` to both. A new `makeSizeComparator(order)` export is
+what ranks by declared position, falling back to `SIZE_ORDER` and then alphabetical for anything
+undeclared.
+
+**`reorder.mjs` cannot import the manifest, and the size order arrives as data for that reason.** A
+test asserts that module's import list is exactly `['./groups.mjs']` (it is how "this module cannot
+reach a mutation" is proved), and `catalogue-manifest.mjs` already imports `reorder.mjs`, so importing
+back would be a cycle and a red test. The wiring already existed and is single-caller: `axesFromStore`
+is the only production caller of `buildAxes` and already passes `ranges: manifest.bodies`.
+
+**The default fixtures cannot prove any of this, so the tests use an override.** The real declared
+order is already ascending, so "preserves declaration order" and "sorts by `SIZE_ORDER`" produce
+identical output and a test built on the committed catalogue would be vacuous. The ordering tests run
+on a deliberately non-alphabetical declared order instead, and a consistency test asserts the four
+manifest-path sites agree with each other so a future partial migration cannot split the report.
+
+**One existing contract test changed meaning and was updated deliberately.** `serializeThresholds`
+was asserted to order colours in manifest order but sizes in garment order; sizes now follow the
+manifest too, for the same reason colours do. Body order still does not, so reordering bodies in the
+manifest still cannot churn the committed thresholds file.
+
+**The test fixtures' axes are derived, and the rule about which tests may use them is the
+load-bearing part.** `BODIES`, `COLORS` and `SIZES` in `test/fixtures.mjs` were a hand-written second
+copy in display case; they are read from the manifest at module load now (`readFileSync` plus
+`parseCatalogue`, synchronous, so no top-level `await` and no change to how anything imports
+fixtures). The rule, stated in that file's header: a test that validates LOGIC (sorting, derivation,
+reconciliation, anything order-sensitive) must use a hand-authored `manifestFor()` override, because
+otherwise its expected output is computed from the same data as its actual output and it checks
+self-consistency rather than correctness. Only a test whose intent is genuinely "matches production"
+may use the derived defaults. `MID_SIZES_ONLY` stays hand-written: it is a deliberately narrow
+scenario, not a statement about the catalogue.
+
+`VEST_BLACK_ONLY` reads the vest's actual declared range instead of restating `['black']`, and
+`fixtures.mjs` throws at load if that range is ever more than one colour. That assertion is the point
+rather than a formality: every consumer of the constant models "one body is narrower than the
+others", and a derived-but-unchecked constant would silently convert all of them into multi-colour
+scenarios with nothing failing to flag the shift.
+
+**Known consequence, and the limit of the existing compensating control.** Editing `catalogue.json`
+now changes what the derived-default tests exercise, with no review moment of their own. The
+cross-artifact cohesion test reconciles `thresholds.json` against the manifest, so *adding* a colour
+or a size fails CI until a matching minimum exists. It says nothing about *reordering* existing
+entries, which is exactly what the size-ruler change is sensitive to. The override tests are what
+covers reordering; do not lean on the cohesion test for it.
+
+**The blank-id guard is unioned with the manifest, never replaced by it.** `check-no-real-blank-ids.mjs`
+detects the shape of a supplier-encoded blank id, and its size alternation is the tail of that regex.
+Deriving it outright would have narrowed it from eight size tokens to the six the catalogue declares,
+so a real id ending `_3XL` would stop being detected: a leak detector getting weaker in exchange for
+tidiness. Both the alternation and `ALLOWED_SEGMENTS` are therefore the hand-curated list unioned with
+the manifest's colour, body and size words (hyphens and spaces both split and flattened, so
+`quarter-zip` yields QUARTER, ZIP and QUARTERZIP).
+
+**The size union is a no-op today; the allowlist union is not, and saying otherwise would give the
+next reviewer the wrong baseline.** All six declared sizes are already among the legacy eight, so the
+alternation is unchanged. The allowlist genuinely widens, by four tokens the hand list did not carry:
+`GREYHEATHER`, `CLASSICNAVY`, `VESTWOMENS` (the flattened forms, which the hand list only ever had
+split) and the bare `QUARTER`. All four are colour or garment words and so satisfy the
+positive-detection rule stated in the file, but "the union changes nothing" would be false, and the
+question a future reviewer asks is exactly whether widening this list is safe. Beyond today, the
+value is forward-looking: a new colour joins the allowlist automatically instead of tripping the
+guard on the fixture that uses it.
+
+**Manifest sizes are filtered to `[A-Z0-9]+` before they reach the regex, not escaped.** They are
+interpolated into a `RegExp` source, and `normaliseAxis` lowercases and trims but does not restrict
+characters, so `parseCatalogue` would accept a size of `3xl(tall)`, which throws a `SyntaxError` at
+module load and takes the guard down on an otherwise valid catalogue edit, or `s?`, which compiles
+and silently changes what the alternation matches. Escaping would preserve both as literals, but a
+blank id's segments are `[A-Z0-9]+` by construction, so a size carrying punctuation could never
+appear in one and is not something to detect. Dropping it is both safe and correct, and the legacy
+eight are unaffected either way, so this can never narrow detection below the old behaviour. A
+digit-LEADING word is kept, though: a body `tee-2pack` must yield `2PACK`, because that is a legal
+non-leading blank-id segment and dropping it would trip the guard on the fixture using the new body.
+
+The union is added AFTER the `ALLOWED_SEGMENTS` declaration rather than folded into it, because the
+positive-detection rule comment has to stay immediately above that declaration: a test matches on the
+text between the two so a reviewer widening the list cannot miss the rule. Importing the manifest
+means a malformed `catalogue.json` crashes the guard, which is fail-closed and consistent with the
+file's existing stance that a leak detector failing open is worse than none.
+
+**`blank-inventory:guard` printing "scanned N file(s)" proves nothing about detection power**, which
+is why the union has its own tests rather than relying on that line. A union that silently degraded
+into a replacement would print the same output and still exit 0. Three tests close it: a negative
+regression proving a legacy-only `_3XL` id is still flagged, a positive one proving a manifest-only
+size or token is now also covered, and a collision check proving no derived token can itself form or
+launder a blank-id shape. All three use synthetic vocabulary only.
+
+**The `learnVocab` cross-check in the backlog item was deliberately not implemented.** The proposal
+was that `learnVocab` in `lib/groups.mjs` gain a check that the learned store vocabulary stays inside
+the declared one. It would be strictly weaker than what already exists. `learnVocab` records a colour
+or size only *after* skipping untagged and bodiless variants, so its vocabulary covers exactly the
+variants `reconcileCatalogue` already walks, and that function already refuses any tagged variant
+whose full body+colour+size cell the manifest does not declare. A per-axis check over the same
+population adds nothing to a per-cell refusal. Nothing about `learnVocab` changed, so no test was
+orphaned.
+
 ## About page rebuilt on native theme sections (unreleased)
 
 `templates/page.about.json` was a single AI-generated app block (`ai_gen_block_23c928c`) carrying its
@@ -157,10 +354,9 @@ every declared template exists on disk, closing the direction that a deletion us
 `/policies/refund-policy` joined the `smoke-paths` default: the sitemap does not list policy pages,
 `hasMerchantReturnPolicy` points at this one, and a 404 there usually means an emptied Admin policy.
 The list's two copies (action.yml authoritative, `smoke.mjs` fallback for standalone `--dry-run`)
-are held together by a drift test. Still open: none of these checks asserts the nav actually
-renders; a presence probe (the shell is server-rendered, so it is visible to a no-JS fetch) is
-tracked in TODO.md, and it should soft-warn rather than hard-fail so a rollback to a theme without
-the snippet cannot be blocked by its own smoke.
+are held together by a drift test. None of these checks asserted that the nav actually renders,
+which was recorded here as the open gap; that presence probe has since shipped, as a SOFT-WARN, and
+is written up under "Smoke: the policy pages get a markup assertion" above.
 
 **A drift report is a claim to verify, not a diff to apply.** `THEME_CHECK_NON_ACTIONABLE.md`'s note
 that the `policy` object lives in `templates/policy.liquid` was "corrected" mid-change to `.json`

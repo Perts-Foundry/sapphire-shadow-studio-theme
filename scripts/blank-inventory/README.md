@@ -197,6 +197,21 @@ threshold to make its own report pass would destroy the only review surface this
 and which colours and sizes each body is made in. The reorder review computes its required cell space
 from that declaration, one body at a time, so a body made in one colour contributes one colour row.
 
+**The manifest is also the size ruler.** The order `colors` and `sizes` are written in is the order
+the report prints them: `parseCatalogue` preserves declaration order and `buildAxes` carries it
+through without sorting. `SIZE_ORDER` in `lib/reorder.mjs` is now only a fallback, for the legacy
+path where no ranges were passed and for a size the manifest does not declare (which must still rank
+sensibly rather than sorting alphabetically among the declared ones). Reordering `sizes` in the
+manifest reorders the matrix, the reorder table and the purchase list together; nothing has to be
+edited alongside it.
+
+There is a fourth surface, and it does produce a diff: `serializeThresholds` emits `thresholds.json`
+in `cartesianCells` order, so a manifest reshuffle churns that file's key order on the next
+regeneration. Body order is exempt by design, so reordering bodies is always free. And note the limit
+of the compensating control: the cross-artifact cohesion test reconciles `thresholds.json` against
+the manifest, so *adding* a colour or a size fails CI until a matching minimum exists, but it says
+nothing about *reordering* existing entries. Reordering is covered by the unit tests only.
+
 It used to be a cross product instead: the approved bodies against the whole colour vocabulary and
 the whole size vocabulary learned from the store. That product invents cells for combinations a body
 is not made in, and once such a cell carries a nonzero minimum it sits in the reorder list flagged
@@ -297,8 +312,10 @@ a cell with a minimum and no blank group at all; it stays exit 0 (`audit` owns g
 is always in the reorder list, and the counts of `?` and `!` cells are printed in both the full and
 the `--below` view so a terse read cannot hide them.
 
-The reorder list is sorted by shortfall descending, ties breaking on body, colour, then garment size
-order, and the shortfall is the leading column because it is the number the list is read for. A
+The reorder list is sorted by shortfall descending, ties breaking on body, colour, then size order
+(the manifest's declared order on every production run, per the size-ruler note above; `SIZE_ORDER`
+only where no declared order is passed in), and the shortfall is the leading column because it is the
+number the list is read for. A
 negative on-hand (Shopify permits an oversell) yields an unclamped shortfall.
 
 ### Per-body totals
@@ -469,6 +486,14 @@ nothing unthresholded, nothing stale, and every body's cells summing to its stat
 the cross-artifact cohesion check the split newly makes possible, and it runs offline, so a bad data
 migration fails CI rather than the next live run.
 
+**`test/fixtures.mjs`'s `BODIES` / `COLORS` / `SIZES` are read from `catalogue.json`, and which tests
+may use them is a rule, not a preference.** A test that validates LOGIC (sorting, derivation,
+reconciliation, anything order-sensitive) must build its own manifest with a hand-authored
+`manifestFor()` override. Using the derived defaults there computes the expected output from the same
+data as the actual output, so it checks self-consistency rather than correctness, and it passes for
+the wrong reason. Only a test whose intent is genuinely "matches production" may use the defaults.
+The file's header states the rule; this is the pointer for anyone reading the suite list first.
+
 **The live end-to-end checks are operator-invoked by hand and are deliberately not wired into any
 npm script.** A CI job writing production inventory from a public repo is the failure that
 separation exists to prevent.
@@ -486,3 +511,11 @@ with no precedent is refused rather than guessed. Test fixtures use synthetic id
 known-synthetic, garment, colour, or size vocabulary. Its detection rests entirely on supplier
 **name** tokens (numeric style segments are exempt), so the allowlist must never gain a word that
 could be a company name.
+
+That allowlist and the guard's size alternation are the hand-curated lists **unioned** with the
+colour, body and size words `catalogue.json` declares, never replaced by them. A replacement would
+narrow the alternation from eight size tokens to the six the catalogue declares, so a real id ending
+`_3XL` would stop being detected: a leak detector trading power for tidiness. The union is
+forward-looking instead, so a colour added to the manifest joins the allowlist automatically rather
+than tripping the guard on the fixture that uses it. A malformed manifest crashes the guard, which
+is the same fail-closed stance as the rest of the file.
