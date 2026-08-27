@@ -270,7 +270,14 @@ match, so they follow `.launch-countdown__star` and stay white. The heading is a
 section's mobile rule `.section-password .text-block.custom-font-size` is documented as catching
 every text block on the page, so a second one would silently inherit the newsletter line's size, and
 a richtext setting strips the class attributes the CSS needs. Teardown at launch is tracked in
-`TODO.md` alongside the countdown, with the note that unlike the countdown these may be worth keeping.
+`TODO.md` alongside the countdown, with the note that unlike the countdown these may be worth keeping. The heading's rules are prefixed `.section-password ` for a reason worth
+knowing before anyone "simplifies" them back to a single class: `assets/base.css` carries
+`:first-child:is(p, h1, h2, ...) { margin-block-start: 0 }`, the h2 is the only child of its
+custom-liquid wrapper, and that selector lands at (0,1,1) against a bare class's (0,1,0). Its top
+margin therefore resolved to zero at every value it was given, with no warning from theme-check or
+CI, until the prefix outranked it. This is the same specificity trick the neighbouring
+`.section-password .text-block.custom-font-size` rule documents, and the second time this one file
+has needed it.
 
 **The story section's studio.jpg is a section background, not an inline image.** It started as a
 verbatim copy of the homepage editorial treatment (full-width, navy `#071e3f` gradient overlay) with
