@@ -250,6 +250,35 @@ once. This is a second page carrying the card, not a second placement on one pag
 renders styled only because `.hero-lockup` and the Dancing Script face ship with `sections/hero.liquid`
 and this page has a `hero` section; a page without one would render the lockup unstyled.
 
+**The password page is the third page to carry it, and it is the one that could not reuse the star
+lockup.** The gate is the only page a pre-launch visitor sees, so the social links are the one
+low-friction way to follow the studio before launch; the newsletter signup was previously the only
+one. The `follow-us` block itself dropped in unchanged, settings byte-identical to the homepage's,
+because it is only a wrapper around `snippets/social-links.liquid`. The heading could not be: the
+paragraph above says the homepage lockup renders styled only because `.hero-lockup` and the
+self-hosted Dancing Script ship with `sections/hero.liquid`, and this page has no `hero` section,
+which is exactly the "page without one" case. Re-hosting the face here was rejected on the same
+grounds `blocks/launch-countdown.liquid` records for dropping it: the duplicated `@font-face` and its
+42 KB preload were removed from this page on purpose. So `.password-follow__heading` in
+`sections/password.liquid` is modelled on `.launch-countdown__eyebrow` instead, tracked caps in the
+heading font, which also reads as one voice with the countdown directly above it. Its star size and
+gap are the countdown's `0.6em` and `0.35em` of h1 restated against the smaller eyebrow size
+(`0.6 / 0.36` and `0.35 / 0.36`), and the stars inherit the heading's own foreground rather than
+taking `var(--color-primary-button-background)` the way `.follow-lockup` does on the homepage:
+against this page's navy that accent blue read as a near-miss of the pills below it rather than a
+match, so they follow `.launch-countdown__star` and stay white. The heading is a `custom-liquid` block rather than a `text` block deliberately: the
+section's mobile rule `.section-password .text-block.custom-font-size` is documented as catching
+every text block on the page, so a second one would silently inherit the newsletter line's size, and
+a richtext setting strips the class attributes the CSS needs. Teardown at launch is tracked in
+`TODO.md` alongside the countdown, with the note that unlike the countdown these may be worth keeping. The heading's rules are prefixed `.section-password ` for a reason worth
+knowing before anyone "simplifies" them back to a single class: `assets/base.css` carries
+`:first-child:is(p, h1, h2, ...) { margin-block-start: 0 }`, the h2 is the only child of its
+custom-liquid wrapper, and that selector lands at (0,1,1) against a bare class's (0,1,0). Its top
+margin therefore resolved to zero at every value it was given, with no warning from theme-check or
+CI, until the prefix outranked it. This is the same specificity trick the neighbouring
+`.section-password .text-block.custom-font-size` rule documents, and the second time this one file
+has needed it.
+
 **The story section's studio.jpg is a section background, not an inline image.** It started as a
 verbatim copy of the homepage editorial treatment (full-width, navy `#071e3f` gradient overlay) with
 `section_height` set to `""` rather than the homepage's fixed `custom` height, because the About copy
