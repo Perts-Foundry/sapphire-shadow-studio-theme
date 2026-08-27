@@ -7,8 +7,14 @@ own hardcoded hex palette, fixed pixel type sizes, stock icon cards and a rotati
 ignored the theme's color schemes, heading fonts, star lockup and eyebrow idiom, so it read as a
 different site next to the homepage. The page is now composed from native sections following the
 Custom Orders pattern (`main` disabled, `hero` plus generic `section` sections), and the block file is
-deleted. Every piece of body copy is preserved verbatim; only the hero sub-line was split, its first
-sentence becoming the lockup's pre-line.
+deleted. Every sentence of body copy survives; three were moved rather than kept in place. The hero
+sub-line was split, its first sentence becoming the lockup's pre-line. And the old block's mission
+paragraph repeated its own first value card word for word, a duplication the rebuild inherited
+unchanged: the values intro now ends at its three-sentence thesis, and the two repeated sentences
+plus the one sentence that appeared nowhere else ("If the print quality seems questionable, it's
+out.") live only on the Quality First card. The starred word in the `<h1>` lockup is "The Studio"
+rather than the old "About Us", so it carries voice like the other two lockups on the site and pays
+off the homepage button ("Meet the studio") that links here.
 
 **Settings objects were copied from named analogues, not hand-authored.** A section or group in this
 theme carries 30 to 40 settings, and a template that omits one silently falls back to the schema
@@ -29,7 +35,17 @@ when its `image` setting is blank, and the cat photo the old block referenced
 processed offline (downscaled under Shopify's 20-megapixel cap, sRGB, EXIF stripped; one collar tag
 carrying a scannable pet-recovery QR code was feather-blurred before upload), uploaded to Files as
 `about-*.jpg` with alt set on the file (`blocks/image.liquid` exposes no alt setting), and added as
-`image` blocks: one leading each human card, and a two-up row group of both cats on the cats card.
+`image` blocks: one leading each human card, and a stacked group of both cats on the cats card.
+
+**The cat crops are load-bearing geometry and nothing enforces them.** `blocks/image.liquid` sets
+`image_ratio: "adapt"`, so every photo renders at whatever aspect its file happens to be. The two
+human cards carry one 1600x2000 portrait each (ratio 0.800, so `1.25 x W` tall at card content width
+`W`); the cats card carries two 2000x1227 landscapes stacked (ratio 1.630, so `1.227 x W` plus the
+group's 8px gap). Those land within half a pixel of each other at this page's real card width, which
+is why the row reads level. Re-crop or replace either cat file at a different aspect and the cats
+card changes height, the team row goes ragged, and nothing in the repo, theme-check or CI says a
+word. `height: "fill"` on the three card groups bounds the damage but does not prevent it. Keep both
+cat files at 1.630, or recompute all four together.
 
 **The follow-us card now appears on a second page, and that is not a breach of the one-placement
 rule.** That rule is per page region: the homepage carries the card once, the footer's follow column
@@ -37,10 +53,24 @@ once. This is a second page carrying the card, not a second placement on one pag
 renders styled only because `.hero-lockup` and the Dancing Script face ship with `sections/hero.liquid`
 and this page has a `hero` section; a page without one would render the lockup unstyled.
 
-**The story section's studio.jpg is a section background, not an inline image.** It reuses the
-homepage editorial treatment (navy `#071e3f` gradient overlay, full-width) but with `section_height`
-set to `""` rather than the homepage's fixed `custom` height, because the About copy is three
-paragraphs and would be clipped at a fixed height.
+**The story section's studio.jpg is a section background, not an inline image.** It started as a
+verbatim copy of the homepage editorial treatment (full-width, navy `#071e3f` gradient overlay) with
+`section_height` set to `""` rather than the homepage's fixed `custom` height, because the About copy
+is three paragraphs and would be clipped at a fixed height.
+
+**Freeing that height is what broke the overlay, and the two settings are coupled.**
+`snippets/overlay.liquid` renders `overlay_style: "gradient"` as
+`linear-gradient(to top, <color>, <color 0% alpha>)`: fully opaque at the bottom edge, fully
+transparent at the top. That works on the homepage because `editorial_Qw7Rt2` is a fixed 78vh holding
+an eyebrow, an h2, one sentence and a button, so all of its text sits in the bottom third, deep in
+the opaque end. Copy the same overlay onto a content-height section holding a heading plus three
+paragraphs and the text column fills the section, which pushes the eyebrow, the h2 and the first
+paragraph into the transparent end, rendering white type over the bare photograph. The overlay is now
+`overlay_style: "solid"` at `#071e3fcc`, which is uniform over the whole passage and, as a side
+effect, stops the section reading as a duplicate of the homepage slab whose "Meet the studio" button
+links here. **A gradient overlay only protects text it is tall enough to reach: pair it with a fixed
+`section_height`, or use a solid overlay.** Nothing validates this; the failure is silent and
+visual-only.
 
 ## Policy pages: restyled in place, with a jump nav (unreleased)
 
