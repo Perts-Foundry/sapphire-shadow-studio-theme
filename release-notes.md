@@ -1,5 +1,66 @@
 # Release Notes
 
+## Smoke: the policy pages get a markup assertion (unreleased)
+
+The post-deploy smoke probed `/policies/refund-policy` for HTTP 200, the right host and the right
+theme id in `server-timing`, and never looked at the page content. The five `/policies/*` pages are
+not themeable: Shopify renders them, and the only theme code that runs there is
+`snippets/policy-page.liquid`, which `layout/theme.liquid` injects behind its
+`request.page_type == 'policy'` guard. So if that snippet stopped rendering, all five pages would
+silently lose the restyle and the jump nav while the deploy still reported green. That is not a
+hypothetical failure mode; it is exactly how the dead `templates/policy.liquid` attempt recorded
+below failed, as a file that uploads cleanly and never runs.
+
+`fetchObservation` now takes an optional `markers` list, and `runSmoke` passes
+`POLICY_MARKERS = ['policy-nav-component']` for any structural path starting `/policies/`. The
+custom-element tag is the marker because it is the only part of the shell reliably present in the
+server HTML: the `<nav>` ships `hidden` and the `<ul>` ships empty, since `assets/policy-nav.js`
+fills the list from the body's `h2`s and unhides it only at three or more headings, so the list
+items and the visible state are not assertable without a browser.
+
+**Why SOFT-WARN, stated precisely, because "it's the safe default" is not the reason.** This changes
+the failure mode from silent green to a visible non-blocking warning. It does not block a bad
+deploy, and it is not meant to. The smoke cannot distinguish a forward deploy that broke the snippet
+from a rollback to a theme that predates it, so one verdict has to serve both cases and the safe
+direction is the non-blocking one. The rollback case is real rather than theoretical: `README.md`
+makes the primary rollback a revert PR shipped through the same comment-deploy cycle, so the smoke
+does run against the older theme. A SOFT-WARN seen immediately after a deploy may also be edge-cache
+lag rather than broken markup; re-check the page before acting on it.
+
+**Three things the body read had to get right, all of which a naive version gets wrong.**
+
+1. **It is bounded by the existing timeout.** `clearTimeout(timer)` used to run in a `finally` the
+   moment the headers arrived. The hop is now wrapped so the timer stays live across the body read
+   and is cleared once the hop is completely done, so a stalled trickle after the headers aborts on
+   the same `timeoutMs` budget. An unbounded read would hang the job to a CI step timeout, which is
+   a job failure rather than a smoke verdict and is far harder to read off a deploy report.
+   `fetchWithBody` still has that unbounded-read shape for the sitemap; it was left alone here
+   rather than fixed in passing, so it stays a known and separate item.
+2. **The read is wrapped in try/catch.** A connection reset mid-body or a decode failure becomes
+   "markers unknown (body unreadable)", its own SOFT-WARN reason, so a network fault stays
+   diagnosable apart from genuinely absent markup. An uncaught throw would escape the structural
+   probe loop and fail the deploy job, a harder failure than the regression this check exists to
+   warn about, and a failure mode that did not exist before.
+3. **No body text is ever returned.** The function returns only the names of the missing markers,
+   drawn from the fixed list passed in. `docs/smoke-test-reference.md` states that output is
+   path/verdict/status/host/theme-id tuples and never bodies; reading a body for an assertion is
+   compatible with that rule, emitting one is not. The no-leak test asserts this on both the PASS
+   and the SOFT-WARN policy branches, not on a non-policy path, which would be vacuous because a
+   non-policy path never calls the read at all.
+
+**Brotli was checked rather than assumed.** The storefront serves
+`content-encoding: br`, and a decode mismatch here would surface as a spurious SOFT-WARN with no
+visible cause, the worst kind of false signal for this check. A live probe with this script's own
+`BROWSER_HEADERS` confirmed undici decodes it losslessly (a 145 KB response arriving as complete
+HTML through `res.text()`), so no explicit `accept-encoding` override is set. Re-check that if the
+probe headers ever change.
+
+The check lives in `classify`, after every existing HARD-FAIL condition, so a marker warning can
+never mask a genuine failure and `classify` stays the single verdict authority for content probes.
+The path test is a `/policies/` prefix rather than a hardcoded path, so an overridden `SMOKE_PATHS`
+listing a different or an additional policy is covered. Markers are opt-in per call, so the
+sitemap-wide product sweep gains no body reads.
+
 ## About page rebuilt on native theme sections (unreleased)
 
 `templates/page.about.json` was a single AI-generated app block (`ai_gen_block_23c928c`) carrying its

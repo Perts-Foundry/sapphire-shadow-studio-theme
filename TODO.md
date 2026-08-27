@@ -13,13 +13,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 
 ## Product and storefront
 
-- [ ] **Smoke: assert the policy jump-nav shell renders.** The post-deploy smoke probes
-  `/policies/refund-policy` for status/host/theme-id only, so the policy restyle silently not
-  rendering (the exact failure mode of the dead `templates/policy.liquid` attempt, see
-  `release-notes.md`) would still pass. The shell is server-rendered by `snippets/policy-page.liquid`,
-  so a no-JS fetch can check the response body for `policy-nav-component`. Make it SOFT-WARN, not
-  HARD-FAIL: a rollback to a theme without the snippet must not be blocked by its own smoke.
-
 - [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
   `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the
   `launch_countdown` entry in `templates/password.json`, and the countdown deviation entry in

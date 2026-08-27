@@ -54,7 +54,12 @@ inputs:
       page the Organization JSON-LD's hasMerchantReturnPolicy points at. The
       sitemap does not list policy pages, so nothing else here would notice. A
       404 on this path usually means an emptied Admin policy body rather than
-      broken Liquid.
+      broken Liquid. Any path here starting /policies/ additionally has its
+      response body checked for the jump-nav custom element, since a snippet
+      that stops rendering leaves the status, host and theme-id all green. That
+      check is a SOFT-WARN, never a HARD-FAIL, so a rollback to a theme
+      predating the snippet is not blocked by it. See
+      docs/smoke-test-reference.md.
     required: false
     default: "/ /cart /collections/all /search /policies/refund-policy"
   smoke-base-url:

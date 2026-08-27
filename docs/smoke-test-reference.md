@@ -21,6 +21,23 @@ diagnosing a deploy failure it reported.
   in for all five shop policies: Shopify renders them itself, but inside `layout/theme.liquid`
   (whose policy guard hosts the restyle and jump nav), the sitemap does not list them, and a
   `404` there usually means an emptied Admin policy rather than broken Liquid.
+- **Policy pages also get a markup assertion (SOFT-WARN only).** Status, host and theme-id all
+  stay green when `snippets/policy-page.liquid` stops rendering, which is exactly how the dead
+  `templates/policy.liquid` attempt failed: a file that uploads cleanly and never runs. So any
+  structural path starting `/policies/` (a prefix test, so an overridden `SMOKE_PATHS` is covered)
+  has its response body checked for every string in `POLICY_MARKERS`, today the
+  `policy-nav-component` custom-element tag. That tag is the only part of the shell reliably in
+  the server HTML: the `<nav>` ships `hidden` and the `<ul>` ships empty, because
+  `assets/policy-nav.js` fills the list from the body's `h2`s and unhides it only at three or
+  more headings. A missing marker is a **SOFT-WARN, never a HARD-FAIL**. That changes the failure
+  mode from silent green to a visible non-blocking warning; it deliberately does not block a bad
+  deploy, because the smoke cannot tell a forward deploy that broke the snippet from a rollback
+  to a theme predating it, and `README.md`'s primary rollback is a revert PR through the same
+  comment-deploy cycle, so the smoke does run against the older theme. A body that cannot be read
+  at all (reset mid-stream, decode failure) is a separate SOFT-WARN reason, "markers unknown",
+  so a network fault stays diagnosable apart from genuinely absent markup. The body read shares
+  the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or the
+  429 retry path.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->
@@ -44,7 +61,11 @@ diagnosing a deploy failure it reported.
   exit 0, so a wholesale `429` wall cannot green a deploy blind (the locked no-secret
   `/password` fallback is exempt: a rendered page greens with reduced coverage). Output is
   `path verdict status host theme-id` tuples only: never the password, cookie jar,
-  `Set-Cookie`/`Cookie` headers, or bodies.
+  `Set-Cookie`/`Cookie` headers, or bodies. A body may be **read** for an assertion (the policy
+  marker check above); it may never be **emitted**. Only marker names, drawn from the fixed
+  `POLICY_MARKERS` list in the script, reach a reason string, and nothing puts body text into
+  the emitted lines or `GITHUB_OUTPUT`. `smoke.test.mjs` asserts that on both the PASS and the
+  SOFT-WARN policy branches.
 - **Docs-only PRs skip the push entirely.** The `gate` job computes `theme_touched` (any of
   the 8 theme dirs, or a rename out of one; fail-safe `true` on listing error); the `deploy`
   job's "Live theme push" step (which runs both push and smoke) is guarded on it, so a
