@@ -75,13 +75,6 @@ manifest. Do them one at a time, each in its own PR, and consolidate per tool ra
 - [ ] **Migrate `scripts/applique-grid/patterns.json`'s product block onto the manifest.** Its
   `product.handle`, `product.gid` and `product.colorValues` become a manifest lookup, and
   `lib/registry.mjs` asserts agreement instead of storing a copy.
-- [ ] **Point blank-inventory's remaining private vocabulary at the manifest.** `SIZE_ORDER` in
-  `lib/reorder.mjs` becomes the manifest's canonical size sequence; the `SIZES` / `COLORS` / `BODIES`
-  axes in `test/fixtures.mjs` (a deliberate contract, per that file's header) assert equality with
-  the manifest instead of restating it; `learnVocab` in `lib/groups.mjs` gains a cross-check that the
-  learned vocabulary stays inside the declared one. Optionally generate the size alternation in
-  `check-no-real-blank-ids.mjs` from the manifest too, but its colour and garment allowlist stays
-  hand-curated per that file's own safety rule.
 - [ ] **Add a manifest consistency lint across the theme and audit surfaces.** One CI check asserting
   agreement between the manifest and: the `color_option_name` / `size_option_name` defaults in
   `config/settings_schema.json` (the option axis names), the product-template coverage in

@@ -72,6 +72,108 @@ The path test is a `/policies/` prefix rather than a hardcoded path, so an overr
 listing a different or an additional policy is covered. Markers are opt-in per call, so the
 sitemap-wide product sweep gains no body reads.
 
+## blank-inventory's vocabulary comes from catalogue.json (unreleased)
+
+`catalogue.json` was the single source of truth for the catalogue's shape, and the reorder review
+already computed its cell space from it. Three other places inside blank-inventory still restated the
+same vocabulary, and nothing reconciled them. Each is now **derived from** the manifest rather than
+merely checked against it, so exactly one list exists.
+
+**The manifest is the size ruler now, not a list that has to agree with one.** `SIZE_ORDER` existed
+because sizes do not sort alphabetically ("2XL" before "S"). `buildAxes` used to sort the manifest's
+declared sizes against it, which made two lists for one fact. On the manifest path nothing sorts:
+`parseCatalogue` already documented that declaration order is preserved into its Map and is
+load-bearing, so carrying it through makes the file itself the ruler. The order the reorder matrix,
+the reorder table and the purchase list print is the order written in `catalogue.json`.
+
+`SIZE_ORDER` stays, as the fallback for two cases: the legacy path where no `ranges` were passed, and
+any size the manifest does not declare, which must still rank sensibly rather than landing in an
+alphabetical heap. `3xl` and `4xl` stay in it for that second reason even though no body declares
+them.
+
+**All six `compareSizes` call sites were moved together, on purpose.** Three sit inside `buildAxes`
+and three are downstream (`selectReorders`, and two in `buildPurchaseList`). Migrating only the first
+group would have left half the report in manifest order and half in `SIZE_ORDER`, which is a worse
+regression than the one being fixed: an internally inconsistent report is harder to notice than a
+uniformly wrong one. `selectReorders` and `buildPurchaseList` therefore each gained an optional
+`sizeOrder` in their existing options object, defaulting to `SIZE_ORDER` so every current caller keeps
+working, and `cmdReorder` passes `axes.sizes` to both. A new `makeSizeComparator(order)` export is
+what ranks by declared position, falling back to `SIZE_ORDER` and then alphabetical for anything
+undeclared.
+
+**`reorder.mjs` cannot import the manifest, and the size order arrives as data for that reason.** A
+test asserts that module's import list is exactly `['./groups.mjs']` (it is how "this module cannot
+reach a mutation" is proved), and `catalogue-manifest.mjs` already imports `reorder.mjs`, so importing
+back would be a cycle and a red test. The wiring already existed and is single-caller: `axesFromStore`
+is the only production caller of `buildAxes` and already passes `ranges: manifest.bodies`.
+
+**The default fixtures cannot prove any of this, so the tests use an override.** The real declared
+order is already ascending, so "preserves declaration order" and "sorts by `SIZE_ORDER`" produce
+identical output and a test built on the committed catalogue would be vacuous. The ordering tests run
+on a deliberately non-alphabetical declared order instead, and a consistency test asserts the four
+manifest-path sites agree with each other so a future partial migration cannot split the report.
+
+**One existing contract test changed meaning and was updated deliberately.** `serializeThresholds`
+was asserted to order colours in manifest order but sizes in garment order; sizes now follow the
+manifest too, for the same reason colours do. Body order still does not, so reordering bodies in the
+manifest still cannot churn the committed thresholds file.
+
+**The test fixtures' axes are derived, and the rule about which tests may use them is the
+load-bearing part.** `BODIES`, `COLORS` and `SIZES` in `test/fixtures.mjs` were a hand-written second
+copy in display case; they are read from the manifest at module load now (`readFileSync` plus
+`parseCatalogue`, synchronous, so no top-level `await` and no change to how anything imports
+fixtures). The rule, stated in that file's header: a test that validates LOGIC (sorting, derivation,
+reconciliation, anything order-sensitive) must use a hand-authored `manifestFor()` override, because
+otherwise its expected output is computed from the same data as its actual output and it checks
+self-consistency rather than correctness. Only a test whose intent is genuinely "matches production"
+may use the derived defaults. `MID_SIZES_ONLY` stays hand-written: it is a deliberately narrow
+scenario, not a statement about the catalogue.
+
+`VEST_BLACK_ONLY` reads the vest's actual declared range instead of restating `['black']`, and
+`fixtures.mjs` throws at load if that range is ever more than one colour. That assertion is the point
+rather than a formality: every consumer of the constant models "one body is narrower than the
+others", and a derived-but-unchecked constant would silently convert all of them into multi-colour
+scenarios with nothing failing to flag the shift.
+
+**Known consequence, and the limit of the existing compensating control.** Editing `catalogue.json`
+now changes what the derived-default tests exercise, with no review moment of their own. The
+cross-artifact cohesion test reconciles `thresholds.json` against the manifest, so *adding* a colour
+or a size fails CI until a matching minimum exists. It says nothing about *reordering* existing
+entries, which is exactly what the size-ruler change is sensitive to. The override tests are what
+covers reordering; do not lean on the cohesion test for it.
+
+**The blank-id guard is unioned with the manifest, never replaced by it.** `check-no-real-blank-ids.mjs`
+detects the shape of a supplier-encoded blank id, and its size alternation is the tail of that regex.
+Deriving it outright would have narrowed it from eight size tokens to the six the catalogue declares,
+so a real id ending `_3XL` would stop being detected: a leak detector getting weaker in exchange for
+tidiness. Both the alternation and `ALLOWED_SEGMENTS` are therefore the hand-curated list unioned with
+the manifest's colour, body and size words (hyphens and spaces both split and flattened, so
+`quarter-zip` yields QUARTER, ZIP and QUARTERZIP). Every manifest token is already in the list today,
+so the union is a no-op on current data; the value is forward-looking, in that a new colour joins the
+allowlist automatically instead of tripping the guard on the fixture that uses it.
+
+The union is added AFTER the `ALLOWED_SEGMENTS` declaration rather than folded into it, because the
+positive-detection rule comment has to stay immediately above that declaration: a test matches on the
+text between the two so a reviewer widening the list cannot miss the rule. Importing the manifest
+means a malformed `catalogue.json` crashes the guard, which is fail-closed and consistent with the
+file's existing stance that a leak detector failing open is worse than none.
+
+**`blank-inventory:guard` printing "scanned N file(s)" proves nothing about detection power**, which
+is why the union has its own tests rather than relying on that line. A union that silently degraded
+into a replacement would print the same output and still exit 0. Three tests close it: a negative
+regression proving a legacy-only `_3XL` id is still flagged, a positive one proving a manifest-only
+size or token is now also covered, and a collision check proving no derived token can itself form or
+launder a blank-id shape. All three use synthetic vocabulary only.
+
+**The `learnVocab` cross-check in the backlog item was deliberately not implemented.** The proposal
+was that `learnVocab` in `lib/groups.mjs` gain a check that the learned store vocabulary stays inside
+the declared one. It would be strictly weaker than what already exists. `learnVocab` records a colour
+or size only *after* skipping untagged and bodiless variants, so its vocabulary covers exactly the
+variants `reconcileCatalogue` already walks, and that function already refuses any tagged variant
+whose full body+colour+size cell the manifest does not declare. A per-axis check over the same
+population adds nothing to a per-cell refusal. Nothing about `learnVocab` changed, so no test was
+orphaned.
+
 ## About page rebuilt on native theme sections (unreleased)
 
 `templates/page.about.json` was a single AI-generated app block (`ai_gen_block_23c928c`) carrying its

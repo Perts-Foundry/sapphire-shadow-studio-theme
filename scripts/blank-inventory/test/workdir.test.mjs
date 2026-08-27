@@ -11,7 +11,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { defaultWorkDir, resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from '../lib/workdir.mjs';
-import { findSuspectTokens } from '../check-no-real-blank-ids.mjs';
+import {
+  findSuspectTokens, sizeAlternation, segmentsFromManifest, LEGACY_SIZE_TOKENS, ALLOWED_SEGMENTS,
+} from '../check-no-real-blank-ids.mjs';
+import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+
+const MANIFEST = parseCatalogue(readFileSync(new URL(`../../../${CATALOGUE_PATH}`, import.meta.url), 'utf8'));
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..');
 
@@ -117,6 +122,63 @@ test('no allowlisted segment reads as a company name', () => {
   const src = readFileSync(new URL('../check-no-real-blank-ids.mjs', import.meta.url), 'utf8');
   const rule = src.match(/THE POSITIVE-DETECTION RULE[\s\S]*?const ALLOWED_SEGMENTS/)?.[0] ?? '';
   assert.match(rule, /could never be a supplier's name/);
+});
+
+// --- the manifest union ----------------------------------------------------
+//
+// The guard's size alternation and allowlist are now the hand-curated lists UNIONED with what
+// catalogue.json declares. `blank-inventory:guard` printing "scanned N file(s)" says nothing about
+// detection POWER: a union that silently degraded into a replacement would print the same line and
+// still exit 0, which is exactly the mistake these tests exist to prevent.
+//
+// Synthetic vocabulary only below, per the file's own rule and CLAUDE.md.
+
+test('the size union never NARROWS: a legacy-only size is still detected', () => {
+  // The mandatory negative. The committed manifest declares six sizes and no 3XL, so a derived
+  // (rather than unioned) alternation would drop it and a real blank id ending _3XL would sail
+  // through. Asserted through the live guard, not a helper, so it covers the wiring too.
+  const token = suspect('BLACK', 'NORTH' + 'RIDGE', 'CREWNECK', '0001', '3XL');
+  assert.deepEqual(findSuspectTokens(token), [token], '_3XL must still be a detectable ending');
+  assert.deepEqual(sizeAlternation(['m', 'l']), sizeAlternation([]), 'a narrow manifest adds nothing and removes nothing');
+  for (const legacy of LEGACY_SIZE_TOKENS) {
+    assert.ok(sizeAlternation(['m']).includes(legacy), `${legacy} survives a manifest that omits it`);
+  }
+});
+
+test('the size union does ADD: a manifest-only size becomes detectable', () => {
+  const widened = sizeAlternation(['6xl']);
+  assert.ok(widened.includes('6XL'));
+  assert.ok(LEGACY_SIZE_TOKENS.every((s) => widened.includes(s)));
+  // Longest-first, so the alternation stays greedy-correct: 2XL must be tried before L.
+  const lengths = widened.map((s) => s.length);
+  assert.deepEqual(lengths, [...lengths].sort((a, b) => b - a));
+});
+
+test('the allowlist union does ADD: a manifest-only colour and body word become allowed', () => {
+  const synthetic = {
+    bodies: new Map([['sample-longsleeve', { colors: ['forest green'], sizes: ['m'] }]]),
+  };
+  const segments = segmentsFromManifest(synthetic);
+  // Split and flattened forms both, because a blank id may join the words either way.
+  for (const token of ['FOREST', 'GREEN', 'FORESTGREEN', 'SAMPLE', 'LONGSLEEVE', 'SAMPLELONGSLEEVE']) {
+    assert.ok(segments.includes(token), `${token} should be derived`);
+  }
+  // And the live manifest's own vocabulary really is in the allowlist the guard uses.
+  for (const token of segmentsFromManifest(MANIFEST)) {
+    assert.ok(ALLOWED_SEGMENTS.has(token), `${token} should have been unioned in`);
+  }
+});
+
+test('no manifest-derived token can blind the detector', () => {
+  // The collision check. Widening an allowlist is only safe while the added tokens cannot themselves
+  // form, or launder, a blank-id shape. A derived token is a single word with no underscore, so it
+  // is never an id on its own, and an id that also carries a non-vocabulary segment still fails.
+  for (const token of segmentsFromManifest(MANIFEST)) {
+    assert.ok(!token.includes('_'), `${token} must not itself be underscore-separated`);
+    assert.deepEqual(findSuspectTokens(token), [], `${token} alone is not a blank id`);
+    const laundered = suspect('BLACK', token, 'MILLCO' + 'APPAREL', '0001', 'M');
+    assert.deepEqual(findSuspectTokens(laundered), [laundered], `${token} must not launder a supplier token`);
+  }
 });
 
 test('the guard no longer exempts a .blank-inventory path at any depth', async () => {

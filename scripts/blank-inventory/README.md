@@ -197,6 +197,14 @@ threshold to make its own report pass would destroy the only review surface this
 and which colours and sizes each body is made in. The reorder review computes its required cell space
 from that declaration, one body at a time, so a body made in one colour contributes one colour row.
 
+**The manifest is also the size ruler.** The order `colors` and `sizes` are written in is the order
+the report prints them: `parseCatalogue` preserves declaration order and `buildAxes` carries it
+through without sorting. `SIZE_ORDER` in `lib/reorder.mjs` is now only a fallback, for the legacy
+path where no ranges were passed and for a size the manifest does not declare (which must still rank
+sensibly rather than sorting alphabetically among the declared ones). Reordering `sizes` in the
+manifest reorders the matrix, the reorder table and the purchase list together; nothing has to be
+edited alongside it.
+
 It used to be a cross product instead: the approved bodies against the whole colour vocabulary and
 the whole size vocabulary learned from the store. That product invents cells for combinations a body
 is not made in, and once such a cell carries a nonzero minimum it sits in the reorder list flagged
@@ -486,3 +494,11 @@ with no precedent is refused rather than guessed. Test fixtures use synthetic id
 known-synthetic, garment, colour, or size vocabulary. Its detection rests entirely on supplier
 **name** tokens (numeric style segments are exempt), so the allowlist must never gain a word that
 could be a company name.
+
+That allowlist and the guard's size alternation are the hand-curated lists **unioned** with the
+colour, body and size words `catalogue.json` declares, never replaced by them. A replacement would
+narrow the alternation from eight size tokens to the six the catalogue declares, so a real id ending
+`_3XL` would stop being detected: a leak detector trading power for tidiness. The union is
+forward-looking instead, so a colour added to the manifest joins the allowlist automatically rather
+than tripping the guard on the fixture that uses it. A malformed manifest crashes the guard, which
+is the same fail-closed stance as the rest of the file.

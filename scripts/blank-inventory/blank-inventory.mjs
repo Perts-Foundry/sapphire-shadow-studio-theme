@@ -997,7 +997,10 @@ async function cmdReorder(opts) {
   const { receipts } = await loadReceipts();
   const pivot = buildPivot({ variants: store.variants, axes, pendingSeedBlankIds: pendingSeedBlankIds(receipts) });
   const flags = flagReorders(pivot, reconciled.resolved);
-  const table = selectReorders({ flags, body: bodyFlag, belowOnly });
+  // `axes.sizes` is the manifest's declared size sequence. Passed to BOTH views so the matrix, the
+  // reorder table and the purchase list cannot disagree about size order; a partial migration would
+  // print half the report in manifest order and half in SIZE_ORDER.
+  const table = selectReorders({ flags, body: bodyFlag, belowOnly, sizeOrder: axes.sizes });
   const counts = pivotCounts(pivot, reconciled.resolved);
   const totals = bodyTotals(pivot, reconciled.resolved);
 
@@ -1029,7 +1032,7 @@ async function cmdReorder(opts) {
   if (purchaseList) {
     // A different question from the matrix, so it replaces it rather than following it. `--below` is
     // implied by this view (it lists only short sizes), so passing it as well is an accepted no-op.
-    console.log(renderPurchaseList(buildPurchaseList(pivot, reconciled.resolved, { body: bodyFlag })));
+    console.log(renderPurchaseList(buildPurchaseList(pivot, reconciled.resolved, { body: bodyFlag, sizeOrder: axes.sizes })));
     return;
   }
 

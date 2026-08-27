@@ -7,18 +7,74 @@
 // casing, and distribution is deliberate: clean toy fixtures let tests pass while production breaks.
 //
 // No real blank id, supplier name, or style number may appear in this file. See CLAUDE.md.
+//
+// THE AXES ARE DERIVED FROM catalogue.json, NOT HAND-MAINTAINED. `BODIES`, `COLORS` and `SIZES`
+// used to be a second copy of the catalogue's vocabulary, kept in step with the manifest by hand
+// and by nothing else. They are now read from the committed manifest at module load. Only the
+// vocabulary is shared; every blank id, variant and quantity below is still synthetic.
+//
+// WHICH TESTS MAY USE THESE DEFAULTS, AND WHICH MAY NOT. This is the load-bearing rule, and it is
+// broader than "keep manifestFor() override-capable":
+//
+//   - A test that validates LOGIC (sorting, derivation, reconciliation, anything order-sensitive)
+//     must use an explicit hand-authored `manifestFor()` override, independent of the live file.
+//     Otherwise its expected output is computed from the same data as its actual output, which
+//     checks self-consistency rather than correctness.
+//   - A test whose intent is genuinely "matches production" may use the derived defaults.
+//
+// The consequence to be aware of: editing catalogue.json now changes what the derived-default tests
+// exercise, with no review moment of their own. The cross-artifact cohesion test in reorder.test.mjs
+// reconciles thresholds.json against the manifest, so ADDING a colour or a size fails CI until a
+// matching minimum exists. It says nothing about REORDERING existing entries, which is exactly what
+// the size-ruler tests are sensitive to; those use an override for that reason.
 
+import { readFileSync } from 'node:fs';
 import { vocabKey, normaliseAxis } from '../lib/groups.mjs';
+import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
 
-export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
-export const COLORS = ['Black', 'Grey Heather', 'Classic Navy'];
+const MANIFEST = parseCatalogue(
+  readFileSync(new URL(`../../../${CATALOGUE_PATH}`, import.meta.url), 'utf8')
+);
+
+/** First-seen union of one axis across every declared body, in declaration order. */
+function unionOf(axis) {
+  const out = [];
+  for (const range of MANIFEST.bodies.values()) {
+    for (const value of range[axis]) if (!out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+const titleCase = (value) => value.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 
 /**
- * Three bodies, matching the real catalogue's shape. Two would be enough to make a test pass and
- * would still hide the bug this axis exists to fix: with two, "the other one" is unambiguous, so a
- * lookup that falls back to the wrong body still lands somewhere plausible.
+ * The catalogue's sizes, in declaration order, in DISPLAY case.
+ *
+ * Display case rather than the normalised form because these stand in for Admin option values,
+ * which is what the code under test receives. Declaration order rather than sorted, because that
+ * order is now the size ruler (see buildAxes) and a fixture that re-sorted it would model a
+ * catalogue this one is not.
  */
-export const BODIES = ['crewneck', 'quarter-zip', 'vest-womens'];
+export const SIZES = unionOf('sizes').map((s) => s.toUpperCase());
+
+/** The catalogue's colours, in first-seen declaration order, in display case. */
+export const COLORS = unionOf('colors').map(titleCase);
+
+/**
+ * Every body the catalogue declares. Three today, and three is the floor that matters: two would be
+ * enough to make a test pass and would still hide the bug this axis exists to fix, because with two
+ * "the other one" is unambiguous, so a lookup that falls back to the wrong body still lands
+ * somewhere plausible.
+ */
+export const BODIES = [...MANIFEST.bodies.keys()];
+
+if (BODIES.length < 3) {
+  throw new Error(
+    `${CATALOGUE_PATH} declares ${BODIES.length} body/bodies. These fixtures need at least three: ` +
+      `with two, a lookup that falls back to the wrong body still lands somewhere plausible and the ` +
+      `multi-body bug they exist to catch goes green.`
+  );
+}
 
 /** Pseudonymised stand-ins for the live colour+style prefixes, per body. */
 const COLOR_TOKEN = {
@@ -161,14 +217,36 @@ export function thresholdsFor(overrides = {}, defaultMin = 5) {
  * @returns {{version: number, bodies: Map<string, {colors: string[], sizes: string[]}>}}
  */
 /**
- * The real catalogue's narrowing: the women's vest is made in Black only.
+ * The real catalogue's narrowing: the women's vest is made in one colour only.
  *
- * Shared rather than redeclared per suite, because it is the one divergence the whole split exists
- * to represent, and two copies would let one drift into describing a catalogue that is not this one.
+ * Read from the manifest rather than restated, and shared rather than redeclared per suite, because
+ * it is the one divergence the whole per-body split exists to represent and two copies would let one
+ * drift into describing a catalogue that is not this one.
+ *
+ * THE SINGLE-COLOUR ASSERTION IS THE POINT, not a formality. Every consumer of this constant is
+ * modelling "one body is narrower than the others". If the vest ever gained a second colour, a
+ * derived-but-unchecked constant would silently convert all of them into multi-colour scenarios with
+ * nothing failing to flag the shift, which is precisely the class of silent drift deriving from the
+ * manifest is supposed to end. So it fails loudly at load instead.
  */
+const VEST_BODY = 'vest-womens';
+const vestRange = MANIFEST.bodies.get(VEST_BODY);
+if (!vestRange) {
+  throw new Error(
+    `${CATALOGUE_PATH} no longer declares "${VEST_BODY}". These fixtures model a catalogue where one ` +
+      `body is narrower than the others; pick the new narrow body and update VEST_BLACK_ONLY.`
+  );
+}
+if (vestRange.colors.length !== 1) {
+  throw new Error(
+    `${CATALOGUE_PATH} declares ${vestRange.colors.length} colours for "${VEST_BODY}". Every test ` +
+      `using VEST_BLACK_ONLY models a single-colour body; a second colour turns them all into ` +
+      `multi-colour scenarios with nothing else failing. Update those tests deliberately.`
+  );
+}
 export const VEST_BLACK_ONLY = {
-  colors: ['black'],
-  sizes: SIZES.map((s) => s.toLowerCase()),
+  colors: [...vestRange.colors],
+  sizes: [...vestRange.sizes],
 };
 
 /**
@@ -177,6 +255,9 @@ export const VEST_BLACK_ONLY = {
  * Colour narrowing and size narrowing run through different loops in buildPivot and
  * deriveThresholds, so a fixture set that only ever narrows colours leaves half the per-body path
  * unexercised.
+ *
+ * HAND-WRITTEN ON PURPOSE, unlike the axes above. This is a deliberately narrow scenario, not a
+ * statement about the catalogue, so deriving it from the manifest would be deriving a fiction.
  */
 export const MID_SIZES_ONLY = { colors: ['black'], sizes: ['m', 'l'] };
 

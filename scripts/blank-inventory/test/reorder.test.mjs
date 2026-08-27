@@ -27,6 +27,8 @@ import {
   serializeThresholds,
   sinceDate,
   compareSizes,
+  makeSizeComparator,
+  SIZE_ORDER,
   cartesianCells,
   NO_GROUP,
   THRESHOLDS_PATH,
@@ -978,9 +980,13 @@ test('buildAxes reads only own properties of an object range, never an inherited
   );
 });
 
-test('serializeThresholds orders bodies by code point, colours in manifest order, sizes in garment order', () => {
+test('serializeThresholds orders bodies by code point, colours and sizes in manifest order', () => {
   // Body order deliberately does NOT follow the manifest: reordering bodies there must never churn
-  // the committed thresholds file. Colour order does, because it is the matrix row order.
+  // the committed thresholds file. Colour order does, because it is the matrix row order, and size
+  // order now does for the same reason: the manifest is the size ruler, so a declared sequence is
+  // carried through rather than re-sorted against SIZE_ORDER. This assertion used to expect
+  // XS/M/2XL from a manifest declaring 2xl/m/xs, which is exactly the second ruler that change
+  // removes.
   const shuffled = manifestFor({
     crewneck: { colors: ['classic navy', 'black'], sizes: ['2xl', 'm', 'xs'] },
     'quarter-zip': null,
@@ -996,12 +1002,12 @@ test('serializeThresholds orders bodies by code point, colours in manifest order
     cells: Object.fromEntries(cartesianCells(axes).map((c) => [c.key, { min: 1 }]).reverse()),
   };
   assert.deepEqual(Object.keys(JSON.parse(serializeThresholds(doc, axes)).cells), [
-    key('crewneck', 'Classic Navy', 'XS'),
-    key('crewneck', 'Classic Navy', 'M'),
     key('crewneck', 'Classic Navy', '2XL'),
-    key('crewneck', 'Black', 'XS'),
-    key('crewneck', 'Black', 'M'),
+    key('crewneck', 'Classic Navy', 'M'),
+    key('crewneck', 'Classic Navy', 'XS'),
     key('crewneck', 'Black', '2XL'),
+    key('crewneck', 'Black', 'M'),
+    key('crewneck', 'Black', 'XS'),
     ...SIZES.map((s) => key('vest-womens', 'Black', s)),
   ]);
 });
@@ -1379,4 +1385,121 @@ test('an unsettled cell is named only when the unknown reading could change the 
     'M is 8-9 against a minimum of 4: no reading in that range is short, so there is nothing to resolve'
   );
   assert.deepEqual(list.bodies, [], 'and none of the three becomes a buy line either');
+});
+
+// --- the manifest is the size ruler ------------------------------------------
+//
+// `SIZE_ORDER` used to be the only size ruler, and the manifest's declared sequence was sorted
+// against it on the way through `buildAxes`. That made two lists for one fact. The manifest now
+// carries the order and nothing re-sorts it, so the order the report prints is the order written in
+// `catalogue.json`.
+//
+// THE DEFAULT FIXTURES CANNOT PROVE THIS. The real declared order is already ascending, so
+// "preserves declaration order" and "sorts by SIZE_ORDER" produce identical output and any test
+// built on the committed catalogue would be vacuous. Everything below therefore runs on a
+// deliberately non-alphabetical override, which is what makes the change falsifiable.
+
+const SHUFFLED = ['l', 'xs', 'xl', 's'];
+const SHUFFLED_BY_SIZE_ORDER = ['xs', 's', 'l', 'xl'];
+
+const shuffledAxes = buildAxes({
+  bodies: ['crewneck'],
+  colors: COLORS,
+  sizes: SIZES,
+  ranges: manifestFor({
+    crewneck: { colors: ['black'], sizes: SHUFFLED },
+    'quarter-zip': null,
+    'vest-womens': null,
+  }).bodies,
+  display: {
+    body: new Map([['crewneck', 'crewneck']]),
+    color: new Map([['black', 'Black']]),
+    size: new Map(SHUFFLED.map((s) => [s, s.toUpperCase()])),
+  },
+});
+
+/** A pivot over the shuffled axes: two sizes carry stock, two have no blank group at all. */
+function shuffledFixture() {
+  resetSeq();
+  const variants = ['l', 'xs'].map((s) => variant({ body: 'crewneck', color: 'Black', size: s.toUpperCase(), quantity: 0 }));
+  const resolved = new Map(cartesianCells(shuffledAxes).map((c) => [c.key, { min: 2 }]));
+  return { pivot: buildPivot({ variants, axes: shuffledAxes }), resolved };
+}
+
+test('buildAxes carries the manifest declaration order through instead of sorting it', () => {
+  assert.deepEqual(shuffledAxes.ranges.get('crewneck').sizes, SHUFFLED, 'per-body sizes are declared order');
+  assert.deepEqual(shuffledAxes.sizes, SHUFFLED, 'and so is the union');
+  // The assertion is only meaningful because the two orders differ.
+  assert.notDeepEqual(SHUFFLED, SHUFFLED_BY_SIZE_ORDER);
+});
+
+test('the matrix column order is the declared order, not SIZE_ORDER', () => {
+  assert.deepEqual(cartesianCells(shuffledAxes).map((c) => c.size), SHUFFLED);
+});
+
+test('selectReorders follows the declared order when given one, and SIZE_ORDER when not', () => {
+  // Equal shortfalls, so the size tie-break is the only thing deciding, and a scrambled input so a
+  // pass cannot come from the array already being in the right order.
+  const flags = ['s', 'xl', 'l', 'xs'].map((size) => ({ body: 'crewneck', color: 'black', size, shortfall: 1 }));
+  assert.deepEqual(
+    selectReorders({ flags, sizeOrder: shuffledAxes.sizes }).map((f) => f.size),
+    SHUFFLED
+  );
+  assert.deepEqual(selectReorders({ flags }).map((f) => f.size), SHUFFLED_BY_SIZE_ORDER, 'omitting it keeps the legacy ruler');
+});
+
+test('buildPurchaseList follows the declared order, in the buy rows and the excluded lists alike', () => {
+  const { pivot, resolved } = shuffledFixture();
+  const list = buildPurchaseList(pivot, resolved, { sizeOrder: shuffledAxes.sizes });
+  assert.deepEqual(
+    list.bodies[0].colors[0].rows.map((r) => r.size),
+    ['l', 'xs'],
+    'buy rows in declared order'
+  );
+  // byCell orders the excluded lists. It must agree with the rows above: an excluded list in one
+  // order under a matrix in another is the internally inconsistent report this is guarding against.
+  assert.deepEqual(list.excluded.noGroup.map((c) => c.size), ['xl', 's']);
+
+  const legacy = buildPurchaseList(pivot, resolved);
+  assert.deepEqual(legacy.bodies[0].colors[0].rows.map((r) => r.size), ['xs', 'l'], 'omitting it keeps the legacy ruler');
+  assert.deepEqual(legacy.excluded.noGroup.map((c) => c.size), ['s', 'xl']);
+});
+
+test('all four manifest-path sites agree on one ordering, so no half-migration can leave the report split', () => {
+  const { pivot, resolved } = shuffledFixture();
+  const declared = shuffledAxes.sizes;
+  const flags = flagReorders(pivot, resolved);
+  const seen = [
+    shuffledAxes.ranges.get('crewneck').sizes,
+    cartesianCells(shuffledAxes).map((c) => c.size),
+    // Only the sizes that actually flag, in the order selectReorders puts them.
+    selectReorders({ flags, sizeOrder: declared }).map((f) => f.size),
+    buildPurchaseList(pivot, resolved, { sizeOrder: declared }).bodies[0].colors[0].rows.map((r) => r.size),
+  ];
+  for (const list of seen) {
+    // Each site sees a subset of the axis, so compare position rather than the whole list.
+    const positions = list.map((s) => declared.indexOf(s));
+    assert.ok(
+      positions.every((p, i) => p !== -1 && (i === 0 || p > positions[i - 1])),
+      `expected declared order, got ${JSON.stringify(list)}`
+    );
+  }
+});
+
+test('with no ranges the legacy SIZE_ORDER ruler is unchanged, 3XL and 4XL included', () => {
+  const legacy = buildAxes({ bodies: ['crewneck'], colors: ['Black'], sizes: ['4XL', 'M', '3XL', 'XS', '2XL'] });
+  assert.deepEqual(legacy.sizes, ['xs', 'm', '2xl', '3xl', '4xl']);
+  // 3xl and 4xl stay in SIZE_ORDER even though no body declares them: an undeclared size must still
+  // rank sensibly rather than landing in an alphabetical heap.
+  assert.ok(SIZE_ORDER.includes('3xl') && SIZE_ORDER.includes('4xl'));
+});
+
+test('makeSizeComparator ranks undeclared sizes after every declared one', () => {
+  const cmp = makeSizeComparator(SHUFFLED);
+  assert.deepEqual(['3xl', 's', 'm', 'l'].sort(cmp), ['l', 's', 'm', '3xl'], 'declared first, then SIZE_ORDER');
+  // Two sizes in neither list fall back to alphabetical rather than to declaration position 0.
+  assert.deepEqual(['zz', 'aa', 'xs'].sort(cmp), ['xs', 'aa', 'zz']);
+  // No order at all is the legacy comparator itself, not a no-op.
+  assert.equal(makeSizeComparator(null), compareSizes);
+  assert.equal(makeSizeComparator([]), compareSizes);
 });
