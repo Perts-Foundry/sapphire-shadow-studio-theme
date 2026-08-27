@@ -1,3 +1,12 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
 {
   "sections": {
     "main": {
@@ -17,7 +26,7 @@
         "hero_lockup": {
           "type": "custom-liquid",
           "settings": {
-            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">More than sweaters</span><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">About Us</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span><span class=\"hero-lockup__tag\">made with intention</span></h1>"
+            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">More than sweaters</span><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">The Studio</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span><span class=\"hero-lockup__tag\">made with intention</span></h1>"
           }
         },
         "hero_sub": {
@@ -186,7 +195,7 @@
         "values_intro": {
           "type": "text",
           "settings": {
-            "text": "<p>This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning. Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out.</p>",
+            "text": "<p>This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning.</p>",
             "width": "100%",
             "max_width": "narrow",
             "alignment": "center",
@@ -259,7 +268,7 @@
                 "custom_width": 100,
                 "width_mobile": "fill",
                 "custom_width_mobile": 100,
-                "height": "fit",
+                "height": "fill",
                 "custom_height": 100,
                 "inherit_color_scheme": false,
                 "color_scheme": "scheme-4",
@@ -286,7 +295,7 @@
                 "values_card_1_text": {
                   "type": "text",
                   "settings": {
-                    "text": "<h3>Quality First</h3><p>Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected.</p>",
+                    "text": "<h3>Quality First</h3><p>Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -328,7 +337,7 @@
                 "custom_width": 100,
                 "width_mobile": "fill",
                 "custom_width_mobile": 100,
-                "height": "fit",
+                "height": "fill",
                 "custom_height": 100,
                 "inherit_color_scheme": false,
                 "color_scheme": "scheme-4",
@@ -439,7 +448,7 @@
                 "custom_width": 100,
                 "width_mobile": "fill",
                 "custom_width_mobile": 100,
-                "height": "fit",
+                "height": "fill",
                 "custom_height": 100,
                 "inherit_color_scheme": false,
                 "color_scheme": "scheme-4",
@@ -508,7 +517,7 @@
                 "custom_width": 100,
                 "width_mobile": "fill",
                 "custom_width_mobile": 100,
-                "height": "fit",
+                "height": "fill",
                 "custom_height": 100,
                 "inherit_color_scheme": false,
                 "color_scheme": "scheme-4",
@@ -796,8 +805,8 @@
         "border_opacity": 100,
         "border_radius": 0,
         "toggle_overlay": true,
-        "overlay_color": "#071e3f",
-        "overlay_style": "gradient",
+        "overlay_color": "#071e3fcc",
+        "overlay_style": "solid",
         "gradient_direction": "to top",
         "padding-block-start": 72,
         "padding-block-end": 64
