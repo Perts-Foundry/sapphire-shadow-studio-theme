@@ -16,7 +16,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
   `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the
   `launch_countdown` entry in `templates/password.json`, and the countdown deviation entry in
-  `docs/accessibility-patterns.md`. Decide separately whether the dark password-page treatment stays
+  `docs/accessibility-patterns.md`. Also decide on the pre-launch social links added alongside it:
+  the `follow_heading` and `follow_links` entries in `templates/password.json` and the
+  `.password-follow__*` rules in `sections/password.liquid`. Unlike the countdown these may be worth
+  keeping once the gate is off, since the block is just a wrapper around the shared
+  `snippets/social-links.liquid`; the decision is whether the password page still earns them when the
+  footer and homepage are reachable. Decide separately whether the dark password-page treatment stays
   (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
   involved, so there is nothing to unwind there.
