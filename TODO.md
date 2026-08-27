@@ -45,12 +45,6 @@ several of the pass's other findings.
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
-- [ ] **The About page references a file that does not exist.** `templates/page.about.json` sets
-  `team_member_3_image` to `shopify://shop_images/Kitkat-Rory.jpg`, and no file by that name is in
-  Files (all 77 enumerated). The block falls back to `placeholder_svg_tag`. Team members 1 and 2 have
-  no image set at all, so the team row renders as three placeholder tiles. Either upload the cat photo
-  under that exact name, repoint the setting, or drop the images from the block. Admin (file upload)
-  plus possibly the template.
 
 ## Catalogue manifest adoption
 
