@@ -976,9 +976,9 @@
                 "team_maddie_photo": {
                   "type": "image",
                   "settings": {
-                    "image": "shopify://shop_images/about-maddie.jpg",
+                    "image": "shopify://shop_images/about-maddie-card.jpg",
                     "link": "",
-                    "image_ratio": "portrait",
+                    "image_ratio": "adapt",
                     "width": "fill",
                     "custom_width": 100,
                     "width_mobile": "fill",
@@ -1119,9 +1119,9 @@
                 "team_seth_photo": {
                   "type": "image",
                   "settings": {
-                    "image": "shopify://shop_images/about-seth.jpg",
+                    "image": "shopify://shop_images/about-seth-card.jpg",
                     "link": "",
-                    "image_ratio": "portrait",
+                    "image_ratio": "adapt",
                     "width": "fill",
                     "custom_width": 100,
                     "width_mobile": "fill",
@@ -1262,8 +1262,8 @@
                 "team_cats_photos": {
                   "type": "group",
                   "settings": {
-                    "content_direction": "row",
-                    "vertical_on_mobile": false,
+                    "content_direction": "column",
+                    "vertical_on_mobile": true,
                     "horizontal_alignment": "flex-start",
                     "vertical_alignment": "flex-start",
                     "align_baseline": false,
@@ -1301,13 +1301,13 @@
                     "team_cats_photo_kitcat": {
                       "type": "image",
                       "settings": {
-                        "image": "shopify://shop_images/about-kitcat.jpg",
+                        "image": "shopify://shop_images/about-kitcat-card.jpg",
                         "link": "",
-                        "image_ratio": "portrait",
-                        "width": "custom",
-                        "custom_width": 50,
-                        "width_mobile": "custom",
-                        "custom_width_mobile": 50,
+                        "image_ratio": "adapt",
+                        "width": "fill",
+                        "custom_width": 100,
+                        "width_mobile": "fill",
+                        "custom_width_mobile": 100,
                         "height": "fit",
                         "border": "none",
                         "border_width": 1,
@@ -1322,13 +1322,13 @@
                     "team_cats_photo_rory": {
                       "type": "image",
                       "settings": {
-                        "image": "shopify://shop_images/about-rory.jpg",
+                        "image": "shopify://shop_images/about-rory-card.jpg",
                         "link": "",
-                        "image_ratio": "portrait",
-                        "width": "custom",
-                        "custom_width": 50,
-                        "width_mobile": "custom",
-                        "custom_width_mobile": 50,
+                        "image_ratio": "adapt",
+                        "width": "fill",
+                        "custom_width": 100,
+                        "width_mobile": "fill",
+                        "custom_width_mobile": 100,
                         "height": "fit",
                         "border": "none",
                         "border_width": 1,
