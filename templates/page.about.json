@@ -131,7 +131,7 @@
             "overlay_style": "solid",
             "gradient_direction": "to top",
             "padding-block-start": 0,
-            "padding-block-end": 0,
+            "padding-block-end": 24,
             "padding-inline-start": 0,
             "padding-inline-end": 0
           },
@@ -582,7 +582,7 @@
         "overlay_color": "#00000026",
         "overlay_style": "solid",
         "gradient_direction": "to top",
-        "padding-block-start": 72,
+        "padding-block-start": 48,
         "padding-block-end": 72
       }
     },
@@ -658,7 +658,7 @@
                 "overlay_style": "solid",
                 "gradient_direction": "to top",
                 "padding-block-start": 0,
-                "padding-block-end": 0,
+                "padding-block-end": 24,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
               },
@@ -725,7 +725,7 @@
               "type": "text",
               "name": "t:names.text",
               "settings": {
-                "text": "<p>Sapphire Shadow Studio is what happened when Maddie's lifelong love of making things met Seth's refusal to let it stay a side project.</p><p>For ten years, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. Time with family and friends became something squeezed into gaps rather than built around. The making happened in the margins, when it happened at all.</p><p>The hours are hers now, and that alone was worth the risk. What she brought with her from the emergency department was a way of working: verify everything, trust nothing you haven't seen, treat a small detail as though something depends on it. Seth took over the parts that were never going to be her favorite, and the two of them have run it that way ever since.</p>",
+                "text": "<p>Sapphire Shadow Studio is what happened when Maddie's lifelong love of making things met Seth's refusal to let it stay a side project.</p><p>Maddie spent nine years in health care, eight of them in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. Time with family and friends became something squeezed into gaps rather than built around. The making happened in the margins, when it happened at all.</p><p>The hours are hers now, and that alone was worth the risk. What she brought with her from the emergency department was a way of working: verify everything, trust nothing you haven't seen, treat a small detail as though something depends on it. Seth took over the parts that were never going to be her favorite, and the two of them have run it that way ever since.</p>",
                 "width": "100%",
                 "max_width": "narrow",
                 "alignment": "left",
@@ -779,10 +779,10 @@
         "border_opacity": 100,
         "border_radius": 0,
         "toggle_overlay": true,
-        "overlay_color": "#071e3fcc",
+        "overlay_color": "#071e3f99",
         "overlay_style": "solid",
         "gradient_direction": "to top",
-        "padding-block-start": 72,
+        "padding-block-start": 48,
         "padding-block-end": 64
       }
     },
@@ -820,7 +820,7 @@
             "overlay_style": "solid",
             "gradient_direction": "to top",
             "padding-block-start": 0,
-            "padding-block-end": 0,
+            "padding-block-end": 24,
             "padding-inline-start": 0,
             "padding-inline-end": 0
           },
@@ -1030,7 +1030,7 @@
                 "team_maddie_bio": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Ten years of emergency medicine made her exacting about details, and the studio has been better for it ever since.</p>",
+                    "text": "<p>The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Eight years of emergency medicine made her exacting about details, and the studio has been better for it ever since.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1252,7 +1252,7 @@
                     "align_baseline": false,
                     "horizontal_alignment_flex_direction_column": "flex-start",
                     "vertical_alignment_flex_direction_column": "flex-start",
-                    "gap": 8,
+                    "gap": 4,
                     "width": "fill",
                     "custom_width": 100,
                     "width_mobile": "fill",
@@ -1322,11 +1322,63 @@
                         "padding-inline-start": 0,
                         "padding-inline-end": 0
                       }
+                    },
+                    "team_cats_kitcat_label": {
+                      "type": "text",
+                      "settings": {
+                        "text": "<p>Kitcat</p>",
+                        "width": "fit-content",
+                        "max_width": "normal",
+                        "alignment": "left",
+                        "type_preset": "custom",
+                        "font": "var(--font-body--family)",
+                        "font_size": "0.75rem",
+                        "line_height": "normal",
+                        "letter_spacing": "loose",
+                        "case": "uppercase",
+                        "wrap": "pretty",
+                        "color": "var(--color-foreground)",
+                        "background": false,
+                        "background_color": "#00000026",
+                        "corner_radius": 0,
+                        "padding-block-start": 0,
+                        "padding-block-end": 8,
+                        "padding-inline-start": 0,
+                        "padding-inline-end": 0
+                      },
+                      "blocks": {}
+                    },
+                    "team_cats_rory_label": {
+                      "type": "text",
+                      "settings": {
+                        "text": "<p>Rory</p>",
+                        "width": "fit-content",
+                        "max_width": "normal",
+                        "alignment": "left",
+                        "type_preset": "custom",
+                        "font": "var(--font-body--family)",
+                        "font_size": "0.75rem",
+                        "line_height": "normal",
+                        "letter_spacing": "loose",
+                        "case": "uppercase",
+                        "wrap": "pretty",
+                        "color": "var(--color-foreground)",
+                        "background": false,
+                        "background_color": "#00000026",
+                        "corner_radius": 0,
+                        "padding-block-start": 0,
+                        "padding-block-end": 0,
+                        "padding-inline-start": 0,
+                        "padding-inline-end": 0
+                      },
+                      "blocks": {}
                     }
                   },
                   "block_order": [
                     "team_cats_photo_kitcat",
-                    "team_cats_photo_rory"
+                    "team_cats_kitcat_label",
+                    "team_cats_photo_rory",
+                    "team_cats_rory_label"
                   ]
                 },
                 "team_cats_name": {
@@ -1448,7 +1500,7 @@
         "overlay_color": "#00000026",
         "overlay_style": "solid",
         "gradient_direction": "to top",
-        "padding-block-start": 72,
+        "padding-block-start": 48,
         "padding-block-end": 72
       }
     },
@@ -1485,7 +1537,7 @@
             "overlay_color": "#00000026",
             "overlay_style": "solid",
             "gradient_direction": "to top",
-            "padding-block-start": 56,
+            "padding-block-start": 32,
             "padding-block-end": 56,
             "padding-inline-start": 40,
             "padding-inline-end": 40
@@ -1522,7 +1574,7 @@
                 "overlay_style": "solid",
                 "gradient_direction": "to top",
                 "padding-block-start": 0,
-                "padding-block-end": 0,
+                "padding-block-end": 24,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0
               },
@@ -1725,7 +1777,7 @@
             "overlay_color": "#00000026",
             "overlay_style": "solid",
             "gradient_direction": "to top",
-            "padding-block-start": 48,
+            "padding-block-start": 24,
             "padding-block-end": 48,
             "padding-inline-start": 40,
             "padding-inline-end": 40
@@ -1784,7 +1836,7 @@
                 "background": false,
                 "background_color": "#00000026",
                 "corner_radius": 0,
-                "padding-block-start": 0,
+                "padding-block-start": 24,
                 "padding-block-end": 0,
                 "padding-inline-start": 0,
                 "padding-inline-end": 0

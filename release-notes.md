@@ -66,11 +66,19 @@ an eyebrow, an h2, one sentence and a button, so all of its text sits in the bot
 the opaque end. Copy the same overlay onto a content-height section holding a heading plus three
 paragraphs and the text column fills the section, which pushes the eyebrow, the h2 and the first
 paragraph into the transparent end, rendering white type over the bare photograph. The overlay is now
-`overlay_style: "solid"` at `#071e3fcc`, which is uniform over the whole passage and, as a side
+`overlay_style: "solid"`, which is uniform over the whole passage and, as a side
 effect, stops the section reading as a duplicate of the homepage slab whose "Meet the studio" button
 links here. **A gradient overlay only protects text it is tall enough to reach: pair it with a fixed
 `section_height`, or use a solid overlay.** Nothing validates this; the failure is silent and
 visual-only.
+
+**The solid overlay's alpha is a contrast floor, not a taste setting.** It started at `#071e3fcc`
+(80%) and was lightened to `#071e3f99` (60%) to let studio.jpg read through. 60% is about as far as
+it goes: the section's white body copy sits at roughly 4.6:1 where the photograph is at its
+brightest, and 50% drops that to about 3.3:1, under the 4.5:1 minimum. Because the contrast depends
+on the photograph rather than on the colour scheme, the automated audits report this section
+INDETERMINATE and no check will catch a regression here. Re-check by hand against the brightest part
+of the image if the alpha or the background image ever changes.
 
 ## Policy pages: restyled in place, with a jump nav (unreleased)
 
