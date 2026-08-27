@@ -50,6 +50,19 @@
     justify-content: var(--follow-us-alignment, flex-start);
   }
 
+  /* On narrow screens the block spans the full width alone, so side alignment
+     reads as drift; center every instance regardless of the alignment setting. */
+  @media screen and (max-width: 749px) {
+    .follow-us,
+    .follow-us .social-links {
+      align-items: center;
+    }
+
+    .follow-us .social-links__list {
+      justify-content: center;
+    }
+  }
+
   /* Pill treatment: each handle becomes a bordered pill that lifts on hover. */
   .follow-us--pills .social-links__list {
     gap: var(--gap-sm, 8px);
