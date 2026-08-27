@@ -26,13 +26,13 @@
         "hero_lockup": {
           "type": "custom-liquid",
           "settings": {
-            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">More than sweaters</span><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">The Studio</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span><span class=\"hero-lockup__tag\">made with intention</span></h1>"
+            "custom_liquid": "<h1 class=\"hero-lockup\"><span class=\"hero-lockup__pre\">Welcome to</span><span class=\"hero-lockup__word-row\"><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span><span class=\"hero-lockup__word\">The Studio</span><span class=\"hero-lockup__star\" aria-hidden=\"true\">{{ 'sss-star.svg' | inline_asset_content }}</span></span><span class=\"hero-lockup__tag\">made with intention</span></h1>"
           }
         },
         "hero_sub": {
           "type": "text",
           "settings": {
-            "text": "<p>It's about creating something that actually matters. Behind every cozy custom sweater is a simple belief: the things people wear should feel as intentional as the moments they're wearing them for.</p>",
+            "text": "<p>We're a small studio with a simple rule: nothing goes out that we wouldn't want to own ourselves.</p>",
             "width": "100%",
             "max_width": "narrow",
             "alignment": "center",
@@ -192,31 +192,6 @@
             "values_heading"
           ]
         },
-        "values_intro": {
-          "type": "text",
-          "settings": {
-            "text": "<p>This isn't fast fashion. It's not mass-produced. It's two people who genuinely care about making something worth owning.</p>",
-            "width": "100%",
-            "max_width": "narrow",
-            "alignment": "center",
-            "type_preset": "rte",
-            "font": "var(--font-body--family)",
-            "font_size": "",
-            "line_height": "normal",
-            "letter_spacing": "normal",
-            "case": "none",
-            "wrap": "pretty",
-            "color": "var(--color-foreground)",
-            "background": false,
-            "background_color": "#00000026",
-            "corner_radius": 0,
-            "padding-block-start": 0,
-            "padding-block-end": 0,
-            "padding-inline-start": 0,
-            "padding-inline-end": 0
-          },
-          "blocks": {}
-        },
         "values_row_1": {
           "type": "group",
           "settings": {
@@ -295,7 +270,7 @@
                 "values_card_1_text": {
                   "type": "text",
                   "settings": {
-                    "text": "<h3>Quality First</h3><p>Every product starts with materials that pass a simple test: would we want to own it ourselves? If the fabric feels cheap, it gets rejected. If the print quality seems questionable, it's out.</p>",
+                    "text": "<h3>Quality First</h3><p>We test everything before it's offered: how it feels, how it wears, how it holds up after real use. Anything that disappoints at that stage never makes it to the store.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -364,7 +339,7 @@
                 "values_card_2_text": {
                   "type": "text",
                   "settings": {
-                    "text": "<h3>Personal Attention</h3><p>Every order gets personal attention. Real people handle it: checking details, ensuring quality, packaging with care. It's the opposite of anonymous.</p>",
+                    "text": "<h3>Handled by Us</h3><p>Every order gets personal attention: someone reads what you asked for, makes it, checks it, and packs the box. If something's unclear, we ask rather than guess.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -475,7 +450,7 @@
                 "values_card_3_text": {
                   "type": "text",
                   "settings": {
-                    "text": "<h3>Never Rushed</h3><p>Each design goes through rounds of testing and refinement. Does it look as good in person as it does on screen? Does it hold up after washing?</p>",
+                    "text": "<h3>Never Rushed</h3><p>Every design goes through rounds of revision before anyone sees it. Some take weeks. Some sit unfinished for months until we are satisfied. Nothing ships out until it is meant to.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -544,7 +519,7 @@
                 "values_card_4_text": {
                   "type": "text",
                   "settings": {
-                    "text": "<h3>Made for You</h3><p>Fun, unique, eye-catching designs that aren't the kind of pieces that blend into the background. They're the ones that start conversations.</p>",
+                    "text": "<h3>Made for You</h3><p>We specialize in making custom pieces that showcase your unique style. Your colors, your details, your idea, made once and made for you.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -580,7 +555,6 @@
       },
       "block_order": [
         "values_lockup",
-        "values_intro",
         "values_row_1",
         "values_row_2"
       ],
@@ -719,7 +693,7 @@
                   "type": "text",
                   "name": "t:names.text",
                   "settings": {
-                    "text": "<h2>How late nights and big dreams became a business</h2>",
+                    "text": "<h2>From the emergency department to the studio</h2>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -751,7 +725,7 @@
               "type": "text",
               "name": "t:names.text",
               "settings": {
-                "text": "<p>Sapphire Shadow Studio was born from one woman's leap of faith, backed by her husband's unwavering belief that she could pull it off.</p><p>For nearly a decade, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. The schedule dictated everything. Time with family and friends became something squeezed into gaps rather than built around. Creativity? That lived somewhere in the margins, waiting.</p><p>Then came the late nights with a different kind of purpose. Sketching designs instead of charting vitals. Testing fabrics instead of taking temperatures. What started as a search for better work-life balance evolved into something bigger: a creative outlet that finally felt like hers.</p>",
+                "text": "<p>Sapphire Shadow Studio is what happened when Maddie's lifelong love of making things met Seth's refusal to let it stay a side project.</p><p>For ten years, Maddie worked in emergency departments as an EMT and nurse. The work was meaningful, but the hours were relentless. Time with family and friends became something squeezed into gaps rather than built around. The making happened in the margins, when it happened at all.</p><p>The hours are hers now, and that alone was worth the risk. What she brought with her from the emergency department was a way of working: verify everything, trust nothing you haven't seen, treat a small detail as though something depends on it. Seth took over the parts that were never going to be her favorite, and the two of them have run it that way ever since.</p>",
                 "width": "100%",
                 "max_width": "narrow",
                 "alignment": "left",
@@ -879,7 +853,7 @@
             "team_heading": {
               "type": "text",
               "settings": {
-                "text": "<h2>Meet the team behind the seams</h2>",
+                "text": "<h2>The two of us, plus supervisors</h2>",
                 "width": "100%",
                 "max_width": "normal",
                 "alignment": "center",
@@ -1031,7 +1005,7 @@
                 "team_maddie_role": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>Founder &amp; Creative Director</p>",
+                    "text": "<p>Designer &amp; Maker</p>",
                     "width": "fit-content",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1056,7 +1030,7 @@
                 "team_maddie_bio": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Her years in healthcare taught her that attention to detail isn't optional when the outcome matters.</p>",
+                    "text": "<p>The heart and hands of Sapphire Shadow Studio. She designs every product, obsesses over every detail, and brings the creative vision that makes each piece unique. Ten years of emergency medicine made her exacting about details, and the studio has been better for it ever since.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1174,7 +1148,7 @@
                 "team_seth_role": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>Operations &amp; Technology</p>",
+                    "text": "<p>Business &amp; Technology</p>",
                     "width": "fit-content",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1199,7 +1173,7 @@
                 "team_seth_bio": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>The behind-the-scenes force who makes everything actually work. He handles the website, manages all the backend tech and coding, and serves as the honest eye that vets every design before it goes live. Professional and smart with just enough goofiness to keep things fun.</p>",
+                    "text": "<p>The engineering half of the studio. The store, the systems, and the tooling behind the business were built from scratch by him. He carries the business load so Maddie can focus on the creative work, and every design she's unsure about gets run past him first.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1383,7 +1357,7 @@
                 "team_cats_role": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>Chief Morale Officers</p>",
+                    "text": "<p>Supervisors</p>",
                     "width": "fit-content",
                     "max_width": "normal",
                     "alignment": "left",
@@ -1408,7 +1382,7 @@
                 "team_cats_bio": {
                   "type": "text",
                   "settings": {
-                    "text": "<p>The unofficial supervisors who ensure every work session includes mandatory cuddle breaks. They inspect every package, test every cozy sweater for nap-worthiness, and provide emotional support during late-night creative sessions. Essential team members who work for treats and head scratches.</p>",
+                    "text": "<p>Impossibly cute and permanently underfoot. They supervise the way all management does, from a comfortable position, saying nothing useful until we make a mistake and then meowing about it.</p>",
                     "width": "100%",
                     "max_width": "normal",
                     "alignment": "left",
