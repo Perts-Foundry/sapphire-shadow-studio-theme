@@ -25,6 +25,8 @@ import { readFile, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
+import { resolvedPaths } from '../../a11y/build-pa11yci.mjs';
+
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
 /** Where the frozen bytes live. */
@@ -111,8 +113,10 @@ export async function captureBaseline(repoRoot = REPO_ROOT) {
 
   // 4. The six accessibility labels, in declaration order. Order is one of the manifest's two order
   //    contracts, so the list is frozen as a LIST and not as a set.
-  const a11y = await readJson('scripts/a11y/paths.json');
-  const a11yProductEntries = (a11y.paths ?? [])
+  // Read through `resolvedPaths()`, not off the raw file: the per-product entries are derived from
+  // catalogue.json now, and the raw file carries a marker where they sit. That is what makes this a
+  // byte-stability assertion rather than a re-read of the same literals.
+  const a11yProductEntries = (resolvedPaths().paths ?? [])
     .filter((e) => String(e.path).startsWith('/products/'))
     .map((e) => ({ path: e.path, label: e.label, template: e.template }));
 

@@ -193,6 +193,12 @@ async function readJson(file, repoRoot) {
  * the materialisation test in scripts/size-chart/test/profile-io.test.mjs, plus the frozen
  * byte-stability snapshot in scripts/size-chart/test/pre-migration-bytes.test.mjs.
  *
+ * The last two, over the accessibility audit's product coverage in both directions, retired with the
+ * a11y migration: `build-pa11yci.mjs` expands a marker in paths.json into one entry per manifest
+ * product, so the audited list cannot miss a product or name one that is not declared. Their
+ * replacements are the labelled LOGIC and MATCHES PRODUCTION tests in
+ * scripts/a11y/test/build-pa11yci.test.mjs.
+ *
  * @type {Array<{id: string, source: string, severity: string, run: (ctx: object) => Promise<string|null>}>}
  */
 export const CHECKS = [
@@ -264,36 +270,6 @@ export const CHECKS = [
             `will not match option values until one side is corrected. This is a WARNING because ` +
             `settings_data.json is Admin-editable and reconciled onto main by sync.yml; refusing here ` +
             `would red a PR nobody in this repo authored.`;
-    },
-  },
-
-  // 5-6. The accessibility audit's product coverage, both directions. RETIRES once build-pa11yci.mjs
-  // derives the product block from the manifest: at that point this compares the manifest with a
-  // list built from it.
-  {
-    id: 'a11y-covers-every-product',
-    source: 'scripts/a11y/paths.json',
-    severity: REFUSE,
-    async run({ manifest, a11yProductHandles }) {
-      const diff = setDiff(
-        a11yProductHandles,
-        [...manifest.products.keys()],
-        'audited',
-        'declared in catalogue.json'
-      );
-      return diff && `scripts/a11y/paths.json product coverage disagrees with the manifest. ${diff}`;
-    },
-  },
-  {
-    id: 'a11y-audits-no-unknown-product',
-    source: 'scripts/a11y/paths.json',
-    severity: REFUSE,
-    async run({ manifest, a11yProductTemplates }) {
-      const declared = [...manifest.products.values()].map((p) => templateFileFor(manifest, p.handle));
-      const diff = setDiff(a11yProductTemplates, declared, 'audited', 'declared in catalogue.json');
-      return (
-        diff && `scripts/a11y/paths.json product TEMPLATE coverage disagrees with the manifest. ${diff}`
-      );
     },
   },
 
@@ -462,11 +438,6 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
   const settingsData = await readJson('config/settings_data.json', repoRoot);
   const settingsDataValues = new Map(Object.entries(settingsData?.current ?? settingsData ?? {}));
 
-  const a11yPaths = await readJson('scripts/a11y/paths.json', repoRoot);
-  const a11yProductEntries = (a11yPaths.paths ?? []).filter((e) => String(e.path).startsWith('/products/'));
-  const a11yProductHandles = a11yProductEntries.map((e) => String(e.path).replace('/products/', ''));
-  const a11yProductTemplates = a11yProductEntries.map((e) => e.template);
-
   const templateFiles = (await listDir(path.join(repoRoot, 'templates')))
     .filter((f) => /^product\..+\.json$/.test(f))
     .map((f) => `templates/${f}`)
@@ -482,8 +453,6 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
     manifest,
     settingsSchemaDefaults,
     settingsDataValues,
-    a11yProductHandles,
-    a11yProductTemplates,
     templateFiles,
     appliqueHandle,
     docs: {

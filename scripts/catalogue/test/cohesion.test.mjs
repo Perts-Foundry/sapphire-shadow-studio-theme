@@ -89,12 +89,6 @@ function sources(over = {}) {
       ['color_option_name', 'Color'],
       ['size_option_name', 'Size'],
     ]),
-    a11yProductHandles: ['a-crew', 'b-vest', 'the-gift-card'],
-    a11yProductTemplates: [
-      'templates/product.a-crew.json',
-      'templates/product.b-vest.json',
-      'templates/product.gift-card.json',
-    ],
     templateFiles: [
       'templates/product.a-crew.json',
       'templates/product.b-vest.json',
@@ -124,8 +118,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 11);
-  assert.equal(CHECKS.length, 11);
+  assert.equal(COHESION_CHECK_COUNT, 9);
+  assert.equal(CHECKS.length, 9);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -171,30 +165,6 @@ test('a settings_data value that does not equal the manifest axis name WARNS, an
   assert.deepEqual(out.warnings, ['settings-data-color-option', 'settings-data-size-option']);
   assert.match(out.messages['settings-data-color-option'], /will not match option values/);
   assert.match(out.messages['settings-data-color-option'], /Admin-editable/);
-});
-
-test('a product with no audited path, and an audited path for no product, both REFUSE', async () => {
-  const missing = await fired({ a11yProductHandles: ['a-crew', 'b-vest'] });
-  assert.ok(missing.refusals.includes('a11y-covers-every-product'));
-  assert.match(missing.messages['a11y-covers-every-product'], /"the-gift-card"/);
-
-  const extra = await fired({ a11yProductHandles: [...sources().a11yProductHandles, 'ghost'] });
-  assert.ok(extra.refusals.includes('a11y-covers-every-product'));
-  assert.match(extra.messages['a11y-covers-every-product'], /"ghost"/);
-});
-
-test('the a11y TEMPLATE check reads the template suffix, not the handle', async () => {
-  // The gift card is the case that separates the two: its handle is "the-gift-card" and its
-  // template is "gift-card". A check that built the path from the handle would fail on a correct
-  // repo, which is the defect the template field exists to end.
-  const out = await fired({
-    a11yProductTemplates: [
-      'templates/product.a-crew.json',
-      'templates/product.b-vest.json',
-      'templates/product.the-gift-card.json',
-    ],
-  });
-  assert.ok(out.refusals.includes('a11y-audits-no-unknown-product'));
 });
 
 test('a missing product template REFUSES, and names the fallback that hides it', async () => {
@@ -282,7 +252,6 @@ async function messagesFor(over) {
 const FORGED_CASES = [
   ['config/settings_schema.json', { settingsSchemaDefaults: new Map([['color_option_name', FORGED], ['size_option_name', 'Size']]) }],
   ['config/settings_data.json', { settingsDataValues: new Map([['color_option_name', FORGED], ['size_option_name', 'Size']]) }],
-  ['scripts/a11y/paths.json', { a11yProductHandles: [...sources().a11yProductHandles, FORGED] }],
   ['templates/', { templateFiles: [...sources().templateFiles, FORGED] }],
   ['scripts/applique-grid/patterns.json', { appliqueHandle: FORGED }],
   ['docs/sku-scheme.md', { docs: { skuScheme: SKU_SCHEME_DOC.replace('| A Crew | `ACRW` |', `| ${FORGED.replace(/\n/g, ' ')} | \`X\` |`), altText: ALT_TEXT_DOC } }],
