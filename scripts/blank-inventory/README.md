@@ -19,21 +19,34 @@ quantities variant by variant, tagging every new variant) is tedious and silentl
 A blank is a **physical garment**, not a colour+size. The catalogue has several bodies (crewneck,
 quarter-zip, women's vest); two products on different bodies share no stock even at the same colour
 and size, which is why a count sheet has one table per body. Every blank is keyed on
-**body+colour+size**. No Shopify field carries the body, so the tool infers it and the operator
-approves the guess; the approved map is hashed and authoritative, and is a precondition of every
-other command.
+**body+colour+size**.
+
+No Shopify field carries the body, so it is **declared** in `catalogue.json` at the repo root, per
+product, and that declaration is the only authority. A product the manifest does not declare is
+never guessed: read commands report it and write paths refuse on it.
+
+It used to work the other way. The tool inferred a body from each product's handle and title, the
+operator approved the guess at a `bodies --stage propose|approve` gate, and the approved map was
+sealed in a hash-checked artifact under `~/.local/state/`. That workflow is **gone**. Its own
+rationale was that a committed map "needs a PR per new product" and inference avoided the cost; the
+premise turned out to be false, because a new product already needed a PR in six other places. What
+inference actually bought was an authority in an uncommitted local file, invisible to CI and to
+review, which is why all six of those places grew a private copy of the same vocabulary. The full
+argument, including exactly what the reversal lost, is in `release-notes.md`.
+
+A leftover `bodies.json` or `bodies-proposal.json` in the working directory is **inert**: nothing
+reads it. The tool says so once per run and leaves it alone, because it is the record of what the
+old gate approved and deleting it is the operator's call.
 
 ## Commands
 
 ```bash
-# Propose a body per product (no Shopify writes; writes a proposal file), then approve the hashed
-# map. Run this FIRST; every other
-# command refuses without it. A product added later is refused on writes until you re-propose.
-node scripts/blank-inventory/blank-inventory.mjs bodies --stage propose
-node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve   # after editing the proposal
-node scripts/blank-inventory/blank-inventory.mjs bodies --stage show      # the approved map
+# Print the declared garment body of each product, from catalogue.json. Read-only: it takes no
+# flags, writes nothing, and there is nothing to approve. To change an assignment, or to add a
+# product, edit catalogue.json in a reviewed PR.
+node scripts/blank-inventory/blank-inventory.mjs bodies
 
-# Health report (no Shopify writes). Start here every time once bodies are approved.
+# Health report (no Shopify writes). Start here every time.
 # It also archives expired seeding receipts (see below); that is a move inside the working
 # directory, not a store write.
 # --json emits the whole report (catalogue, coverage, groups with per-group histograms and member
@@ -108,7 +121,7 @@ node scripts/blank-inventory/blank-inventory.mjs untag --variant gid://shopify/P
 Env: `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, from the repo-root `.env`
 via `node --env-file=.env ...` (see [`../README.md`](../README.md) > Credentials). The working
 directory (plan
-artifacts, receipts, the body map) defaults **outside the repo** at `~/.local/state/blank-inventory/`
+artifacts and receipts) defaults **outside the repo** at `~/.local/state/blank-inventory/`
 (override with `BLANK_INVENTORY_DIR`); it holds real blank ids, so it must never sit inside this
 public checkout. A stray `.blank-inventory/` in the tree makes the tool warn and refuse writes until
 it is moved.
@@ -223,16 +236,30 @@ budget, a supplier name or a blank id in the manifest; never state a colour rang
 file. The manifest is safe in a public repo because its values are storefront option values that any
 visitor sees on a product page.
 
-The manifest and the approved body map must agree **exactly** on the set of bodies, in both
-directions, and both directions refuse. The body map stays the authority on which product is which
-physical garment; the manifest is the authority on each body's range. Values are rejected rather than
-normalised, exactly as the thresholds file's keys are, and duplicate detection runs twice: on raw
-object keys (a repeated body) and on array values (a colour listed twice, which no JSON key check can
-see).
+The manifest is reconciled against the **live store**, not against a second artifact. It used to be
+compared two-way against the approved body map; the body index is derived from the manifest now, so
+that comparison would check the manifest against a derivative of itself. What the gate checks instead:
+a live tracked product missing from the census, a declared handle with no live product, a live title
+that differs from the declared one, and a live GID that differs from the declared one. The GID check
+is the one that matters most, because a GID is stable for the life of a product: a mismatch means the
+handle now resolves to a *different* product, and writing media or options against it edits the wrong
+one. A declared body with no product refuses offline, in `npm run catalogue:lint`.
 
-The manifest is hand-edited in a reviewed PR. No command creates or edits it. `npm run catalogue:lint`
-validates it offline in CI through the same parser the tool uses, so a manifest that passes CI is
-exactly a manifest the reorder review accepts.
+Values are rejected rather than normalised, exactly as the thresholds file's keys are, and duplicate
+detection runs twice: on raw object keys (a repeated body) and on array values (a colour listed
+twice, which no JSON key check can see).
+
+The manifest is hand-edited in a reviewed PR. No command and no agent creates or edits it.
+`npm run catalogue:lint` validates it offline in CI through the same parser the tool uses, so a
+manifest that passes CI is exactly a manifest the reorder review accepts. That lint also runs the
+**cohesion checks**, which compare the manifest against every other repo-side surface that restates
+any of its vocabulary, so a copy cannot drift back in.
+
+The manifest declares more than bodies now: the option axis names, every colour and size value with
+its Admin spelling, and the complete product census (handle, product line, body, theme template
+suffix, title and GID) with gift cards included. `scripts/lib/catalogue-manifest.mjs` holds the
+schema and the derived accessors; it lives under `scripts/lib/` rather than here precisely so the six
+other areas that read it do not pick up a load-time dependency on this tool's planner.
 
 ### thresholds.json
 
@@ -262,8 +289,10 @@ one; a correction is a new entry.
 | Condition | `reorder` | `demand` |
 |---|---|---|
 | `catalogue.json` missing, unparseable, or wrong version | **exit 1** | **exit 1** |
-| a body declared in the manifest but not in the approved body map | **exit 1** | **exit 1** |
-| an approved body missing from the manifest | **exit 1** | **exit 1** |
+| a live tracked product not declared in the manifest | **exit 1**, naming each handle | **exit 1** |
+| a declared handle with no live product | **exit 1**, naming each handle | **exit 1** |
+| a live product title that differs from the declared one | **exit 1** | **exit 1** |
+| a live product GID that differs from the declared one | **exit 1** | **exit 1** |
 | a tagged variant whose body+colour+size the manifest does not declare | **exit 1**, naming each key | **exit 1** |
 | a declared colour or size no tagged variant has yet | warning, exit 0 | warning |
 | a body+colour+size with no entry | **exit 1**, naming every missing key | **exit 1** |

@@ -7,229 +7,53 @@
 // exactly one group to write to, and stock had already been mirrored across garments that share no
 // blank. Body is the missing dimension.
 //
-// WHY IT IS PROPOSED, NOT DECLARED. No Shopify field carries the body. productType is empty, tags are
-// marketing labels, vendor is the brand, and no product metafield exists. Rather than maintain a
-// side-channel field or a hardcoded map that needs a PR per new product, the tool INFERS a body per
-// product, the operator APPROVES the proposal at a gate, and the approved artifact becomes
-// authoritative.
+// WHY IT IS NOW DECLARED, NOT INFERRED. This module used to INFER a body per product from keyword
+// matches on the handle and title, present the proposal at an operator gate, and seal the approved
+// result in a hash-checked artifact under ~/.local/state/. Its own header argued that a committed map
+// "needs a PR per new product" and that inference avoided that cost.
 //
-// THE SAFETY PROPERTY, and the reason this does not contradict resolveBlank's refuse-rather-than-
-// invent posture: inference happens at PROPOSAL time with an operator gate in between, never at
-// write time. Guessing silently into a write is the original bug. Guessing into a table the operator
-// approves is the same shape as every other gate here.
+// THAT PREMISE WAS EMPIRICALLY FALSE, and the repo was the evidence. A new product already required a
+// PR in six places (the SKU tables, the photo-naming product table, a size-chart profile's handle
+// list, the applique registry, the a11y path list, a product template). Inference bought no
+// PR-avoidance at all; what it bought was an authority living in an uncommitted local file, invisible
+// to CI and to review, which is precisely why all six of those places grew a private copy of the same
+// vocabulary. catalogue.json is now the ONE authority on a product's body, for existing and future
+// products alike, and it must be updated for CI to pass.
 //
-// DETERMINISM. The approved artifact is authoritative and is never silently re-inferred. Body
-// assignment must not vary between runs over the same catalogue; a fresh guess each run would be
-// worse than a hardcoded map, because it would be worse AND invisible.
+// WHAT WAS LOST, EXACTLY: the operator gate. Body assignment was machine-proposed, re-presented for
+// approval, and sealed against hand edits. There is now no re-presentation and no seal. What replaces
+// it: the manifest changes only in a reviewed PR; the offline lint refuses inconsistency; seven
+// consumers derive from it, so a wrong body appears in the same diff as a wrong size-chart binding
+// and a wrong photo token; and the networked gate gained live title and GID checks. Genuinely weaker:
+// the hash seal. A manifest edit is now a signed, reviewed, auditable event instead of a silent local
+// file write. Full argument in release-notes.md.
 //
-// Existing blank ids are deliberately NOT an inference signal. They currently all name one family,
-// which is precisely the state being corrected.
+// WHAT NOTHING CATCHES: a manifest that declares the WRONG body for a product that really exists.
+// Nothing offline can know, and the live store carries no body field, which is the very observation
+// that motivated inference in the first place. Mitigation is a diff, not a check.
 
-import { createHash, randomUUID } from 'node:crypto';
-
-export const BODIES_VERSION = 1;
-
-/** Confidence in an inferred body. Only `high` is safe to approve without reading closely. */
-export const HIGH = 'high';
-export const LOW = 'low';
-export const NONE = 'none';
+import { garmentProducts } from '../../lib/catalogue-manifest.mjs';
 
 /**
- * Garment keywords, longest-first so "quarter-zip" wins over a bare "zip" and "crewneck" is not
- * shadowed by "crew". Each maps to a body id used as a grouping key and as an id segment.
+ * Index the manifest for body lookup.
  *
- * This list is a starting vocabulary, not a closed world: an unmatched product is surfaced at the
- * gate for the operator to name, never silently bucketed.
- */
-export const GARMENT_KEYWORDS = [
-  ['quarter-zip', 'quarter-zip'],
-  ['quarter zip', 'quarter-zip'],
-  ['qtr-zip', 'quarter-zip'],
-  ['half-zip', 'half-zip'],
-  ['crewneck', 'crewneck'],
-  ['crew-neck', 'crewneck'],
-  ['sweatshirt', 'sweatshirt'],
-  ['pullover', 'pullover'],
-  ['hoodie', 'hoodie'],
-  ['long-sleeve', 'long-sleeve'],
-  ['t-shirt', 'tee'],
-  ['tshirt', 'tee'],
-  ['tank', 'tank'],
-  ['jacket', 'jacket'],
-  ['vest', 'vest'],
-  ['tee', 'tee'],
-];
-
-/** Fit qualifiers. A women's cut is a different physical blank from the unisex one. */
-const FIT_KEYWORDS = [
-  ['womens', 'womens'],
-  ['women', 'womens'],
-  ['ladies', 'womens'],
-  ['mens', 'mens'],
-];
-
-const normalise = (s) => String(s ?? '').toLowerCase().replace(/[_\s]+/g, '-');
-
-/**
- * Infer a body for one product from its handle, falling back to its title.
+ * Non-garment products (`"body": null`, today the gift card) are excluded rather than assigned a
+ * body: they are not garments and never join a blank group. That exclusion used to be inferred from
+ * "has no tracked variants"; it is declared now.
  *
- * Pure: no network, no artifact, no catalogue. The handle is the primary signal because it is
- * stable; the title is secondary because it is merchandising copy and changes freely.
- *
- * @param {{handle: string, title?: string}} product
- * @returns {{bodyId: string|null, signal: string, confidence: string}}
- */
-export function inferBody(product) {
-  const handle = normalise(product?.handle);
-  const title = normalise(product?.title);
-
-  for (const [source, text] of [
-    ['handle', handle],
-    ['title', title],
-  ]) {
-    const matches = GARMENT_KEYWORDS.filter(([kw]) => text.includes(kw));
-    if (!matches.length) continue;
-
-    // Longest keyword wins: "quarter-zip" must beat a substring match, and a product whose handle
-    // legitimately names two garments is ambiguous rather than silently resolved to the first.
-    const bodies = [...new Set(matches.map(([, body]) => body))];
-    const [kw, body] = matches.reduce((a, b) => (b[0].length > a[0].length ? b : a));
-    const fit = FIT_KEYWORDS.find(([f]) => text.includes(f));
-    const bodyId = fit ? `${body}-${fit[1]}` : body;
-
-    if (bodies.length > 1) {
-      return {
-        bodyId: null,
-        signal: `${source} matches ${bodies.length} garments (${bodies.join(', ')})`,
-        confidence: NONE,
-      };
-    }
-    return {
-      bodyId,
-      signal: `${source} contains "${kw}"${fit ? ` and "${fit[0]}"` : ''}`,
-      confidence: source === 'handle' ? HIGH : LOW,
-    };
-  }
-
-  return { bodyId: null, signal: 'no garment keyword in handle or title', confidence: NONE };
-}
-
-/**
- * Build a body proposal over the catalogue.
- *
- * Products with no tracked variants (gift cards and similar) are excluded rather than assigned a
- * body: they are not garments and never join a blank group.
- *
- * @param {object} params
- * @param {Array<{handle: string, title?: string}>} params.products
- * @param {object[]} params.variants - normalised variants, used only to find tracked products
- * @returns {{rows: object[], excluded: object[]}}
- */
-export function proposeBodies({ products, variants }) {
-  const tracked = new Set(variants.filter((v) => v.tracked !== false).map((v) => v.productHandle));
-
-  const rows = [];
-  const excluded = [];
-  for (const p of products) {
-    if (!tracked.has(p.handle)) {
-      excluded.push({ productHandle: p.handle, reason: 'no tracked variants' });
-      continue;
-    }
-    const { bodyId, signal, confidence } = inferBody(p);
-    rows.push({ productHandle: p.handle, title: p.title ?? null, bodyId, signal, confidence });
-  }
-  rows.sort((a, b) => a.productHandle.localeCompare(b.productHandle));
-  excluded.sort((a, b) => a.productHandle.localeCompare(b.productHandle));
-  return { rows, excluded };
-}
-
-/** Fields that define a proposal's identity. Order matters for a stable hash. */
-function canonicalPayload(artifact) {
-  return JSON.stringify({
-    version: artifact.version,
-    proposalId: artifact.proposalId,
-    bodies: [...artifact.bodies]
-      .sort((a, b) => a.productHandle.localeCompare(b.productHandle))
-      .map((b) => ({ productHandle: b.productHandle, bodyId: b.bodyId })),
-  });
-}
-
-/**
- * @param {object} artifact
- * @returns {string}
- */
-export function hashBodies(artifact) {
-  return createHash('sha256').update(canonicalPayload(artifact)).digest('hex');
-}
-
-/**
- * Build an immutable body artifact from approved rows.
- *
- * @param {object} params
- * @param {object[]} params.rows
- * @param {object[]} [params.excluded]
- * @param {string} [params.proposalId]
- * @param {string} [params.createdAt]
- * @returns {object}
- */
-export function createBodiesArtifact({ rows, excluded = [], proposalId = randomUUID(), createdAt = new Date().toISOString() }) {
-  const unnamed = rows.filter((r) => !r.bodyId);
-  if (unnamed.length) {
-    throw new Error(
-      `Cannot approve a body proposal with ${unnamed.length} unnamed product(s): ` +
-        `${unnamed.map((r) => r.productHandle).join(', ')}. Name each one explicitly; a product with ` +
-        `no body cannot be tagged, and defaulting it would put a garment in the wrong stock pool.`
-    );
-  }
-  const artifact = {
-    version: BODIES_VERSION,
-    proposalId,
-    createdAt,
-    bodies: rows.map((r) => ({
-      productHandle: r.productHandle,
-      bodyId: r.bodyId,
-      signal: r.signal ?? null,
-      confidence: r.confidence ?? null,
-    })),
-    excluded,
-  };
-  artifact.contentHash = hashBodies(artifact);
-  return artifact;
-}
-
-/**
- * Load and validate an approved artifact. Refuses a hand-edited one, like the plan artifact does.
- * @param {object} artifact
- * @returns {object}
- */
-export function verifyBodiesArtifact(artifact) {
-  if (!artifact || artifact.version !== BODIES_VERSION) {
-    throw new Error(`Unsupported body artifact (version ${artifact?.version}). Re-run "bodies --stage propose".`);
-  }
-  if (hashBodies(artifact) !== artifact.contentHash) {
-    throw new Error(
-      `Body artifact hash mismatch: it has been edited since it was approved. Artifacts are never ` +
-        `hand-edited; re-run "bodies --stage propose" and approve the new one.`
-    );
-  }
-  return artifact;
-}
-
-/**
- * Index an approved artifact for lookup.
- * @param {object} artifact
+ * @param {{products: Map<string, {handle: string, body: string|null}>}} manifest
  * @returns {Map<string, string>} productHandle -> bodyId
  */
-export function bodyIndex(artifact) {
-  return new Map(artifact.bodies.map((b) => [b.productHandle, b.bodyId]));
+export function bodyIndex(manifest) {
+  return new Map(garmentProducts(manifest).map((p) => [p.handle, p.body]));
 }
 
 /**
  * Resolve a variant's body, or refuse.
  *
- * A product absent from the approved artifact is NEVER guessed here. Read commands surface it as a
- * warning and continue; write paths call this and stop. That is what makes a newly added product
- * loud instead of silently absorbed into whichever pool its colour and size happen to match.
+ * A product absent from the manifest is NEVER guessed here. Read commands surface it as a warning and
+ * continue; write paths call this and stop. That is what makes a newly added product loud instead of
+ * silently absorbed into whichever pool its colour and size happen to match.
  *
  * @param {Map<string, string>} index
  * @param {{productHandle: string}} variant
@@ -239,17 +63,18 @@ export function bodyOf(index, variant) {
   const body = index.get(variant?.productHandle);
   if (!body) {
     throw new Error(
-      `No approved body for product "${variant?.productHandle}". Run "bodies --stage propose", ` +
-        `approve the proposal, and re-run. This tool never infers a body at write time.`
+      `No declared body for product "${variant?.productHandle}". Declare it in catalogue.json, in a ` +
+        `reviewed PR, and re-run. This tool never infers a body: the manifest is the only authority ` +
+        `on which physical garment a product is printed on.`
     );
   }
   return body;
 }
 
 /**
- * Attach the approved body to each variant.
+ * Attach the declared body to each variant.
  *
- * A variant whose product is not in the artifact gets `body: null` rather than a guess. Read paths
+ * A variant whose product is not in the manifest gets `body: null` rather than a guess. Read paths
  * report those; write paths refuse on them. Returns copies; the input is not mutated.
  *
  * @param {Map<string, string>|null} index
@@ -261,7 +86,7 @@ export function attachBodies(index, variants) {
 }
 
 /**
- * Products in the catalogue that the approved artifact does not cover.
+ * Products on the live store that the manifest does not cover.
  * @param {Map<string, string>} index
  * @param {object[]} variants
  * @returns {string[]} product handles

@@ -27,10 +27,24 @@
 // reconciles thresholds.json against the manifest, so ADDING a colour or a size fails CI until a
 // matching minimum exists. It says nothing about REORDERING existing entries, which is exactly what
 // the size-ruler tests are sensitive to; those use an override for that reason.
+//
+// WHAT THIS FILE DERIVES, AND WHAT IT DELIBERATELY DOES NOT. The manifest grew from three bodies to
+// the whole catalogue vocabulary: option axis names, per-colour display and slug spellings, and the
+// complete product census with titles and GIDs. Only `BODIES`, `COLORS` and `SIZES` are derived here.
+// Nothing else should be: these fixtures model a STOCK PICTURE, and a product title or a GID has no
+// part in one. A fixture that grew a product census would be a fourth copy of the census, kept in
+// step by nothing, which is the state the manifest exists to end.
+//
+// THERE IS NO MANIFEST-DOCUMENT BUILDER HERE ANY MORE. `manifestDoc` used to serialise a v1 document
+// so the schema's raw-text checks could run against it. Those checks moved to
+// scripts/catalogue/test/catalogue-manifest.test.mjs, where every document is hand-authored: a
+// schema test fed a document derived from the committed manifest asserts that the file agrees with
+// itself. Do not reintroduce one. `manifestFor` stays, because it builds the `{bodies}` shape the
+// reorder axis code consumes, and every caller overrides it into a deliberately narrow catalogue.
 
 import { readFileSync } from 'node:fs';
 import { vocabKey, normaliseAxis } from '../lib/groups.mjs';
-import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+import { parseCatalogue, CATALOGUE_PATH, CATALOGUE_VERSION } from '../../lib/catalogue-manifest.mjs';
 
 const MANIFEST = parseCatalogue(
   readFileSync(new URL(`../../../${CATALOGUE_PATH}`, import.meta.url), 'utf8')
@@ -273,25 +287,7 @@ export function manifestFor(overrides = {}) {
     if (range === null) bodies.delete(body);
     else bodies.set(body, { colors: [...range.colors], sizes: [...range.sizes] });
   }
-  return { version: 1, bodies };
-}
-
-/**
- * A catalogue manifest as TEXT, so the raw-text checks (duplicate keys, JSON syntax) are exercised
- * the way the tool runs. The default mirrors the real catalogue's shape, vest narrowing included.
- *
- * @param {object} [over]
- * @returns {string}
- */
-export function manifestDoc({ version = 1, comment, bodies } = {}) {
-  const doc = { version };
-  if (comment !== undefined) doc.comment = comment;
-  // Derived from manifestFor rather than hand-listed, so this cannot become a third copy of the
-  // committed manifest that goes stale the moment a body or a colour is added.
-  doc.bodies =
-    bodies ??
-    Object.fromEntries([...manifestFor({ 'vest-womens': VEST_BLACK_ONLY }).bodies.entries()]);
-  return JSON.stringify(doc, null, 2);
+  return { version: CATALOGUE_VERSION, bodies };
 }
 
 /**

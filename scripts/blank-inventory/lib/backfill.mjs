@@ -62,7 +62,7 @@ export function planBackfill({ variants, vocab, filter = {} }) {
         reason:
           `cannot be keyed: no ${missing.join(', ')}. ` +
           (missing.includes('body')
-            ? 'Run "bodies --stage propose" so this product has an approved body.'
+            ? 'Declare this product\'s garment body in catalogue.json, in a reviewed PR.'
             : 'A variant with no colour or size has no blank to draw from; check its options in Admin.'),
       });
       continue;

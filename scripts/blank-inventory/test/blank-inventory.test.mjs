@@ -140,9 +140,17 @@ test('makeWriter surfaces a stale compare-and-swap as a failed outcome, not an e
 // One helper, called by both `reorder` and `demand`, so the two cannot drift into different gates
 // for the same file. It runs before the thresholds file is even read.
 
-/** A store shaped like loadStore's return value, cut down to what the gate reads. */
-function fakeStore({ variants = [], colors = ['Black'], sizes = ['M'] } = {}) {
+/**
+ * A store shaped like loadStore's return value, cut down to what the gate reads.
+ *
+ * `products` and `variants` are BOTH here now. The gate stopped comparing the manifest against the
+ * approved body map (which is derived from the manifest, so that comparison could never fail for a
+ * real reason) and compares it against the LIVE STORE instead, so the fake has to carry the live
+ * side: a product census with titles and GIDs, and the variant list that says which are tracked.
+ */
+function fakeStore({ variants = [], colors = ['Black'], sizes = ['M'], products = null } = {}) {
   return {
+    products: products ?? [{ id: LIVE_GID, handle: 'crew', title: 'Crew' }],
     variants,
     display: {
       body: new Map(),
@@ -161,21 +169,40 @@ function spyRefuse(seen) {
   };
 }
 
-const ARTIFACT = { bodies: [{ productHandle: 'a', bodyId: 'crewneck' }] };
-const ONE_BODY_MANIFEST = JSON.stringify({
-  version: 1,
-  bodies: { crewneck: { colors: ['black'], sizes: ['m'] } },
-});
+const LIVE_GID = 'gid://shopify/Product/1';
+
+/**
+ * A hand-authored one-body, one-product manifest.
+ *
+ * HAND-AUTHORED, not read from catalogue.json, and every gate test below uses it. Feeding these the
+ * committed manifest would make each assertion a statement about today's catalogue rather than about
+ * the gate's decision logic, and would rewrite itself the next time a product ships.
+ *
+ * @param {object} [over] - shallow overrides on the product entry
+ */
+function oneProductManifest(over = {}) {
+  return JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' } },
+    sizes: { m: { display: 'M' } },
+    bodies: { crewneck: { colors: ['black'], sizes: ['m'] } },
+    products: {
+      crew: { line: 'lead2', body: 'crewneck', template: 'crew', title: 'Crew', gid: LIVE_GID, ...over },
+    },
+  });
+}
+
+const ONE_BODY_MANIFEST = oneProductManifest();
 
 test('catalogueGate refuses a tagged variant whose combination the manifest does not declare', async () => {
   const seen = [];
   await assert.rejects(
     catalogueGate({
-      artifact: ARTIFACT,
       store: fakeStore({
         colors: ['Black', 'Classic Navy'],
         variants: [
-          { id: 'v1', body: 'crewneck', color: 'Classic Navy', size: 'M', blankId: 'NAVY_ACME_BLANKA_0001_M' },
+          { id: 'v1', productHandle: 'crew', body: 'crewneck', color: 'Classic Navy', size: 'M', blankId: 'NAVY_ACME_BLANKA_0001_M' },
         ],
       }),
       json: false,
@@ -189,13 +216,130 @@ test('catalogueGate refuses a tagged variant whose combination the manifest does
   assert.deepEqual(seen[0].assessment.refusals[0].keys, ['crewneck|classic navy|m']);
 });
 
+// --- the five networked refusal codes, offline -------------------------------
+//
+// These five can only FIRE at the networked gate, against a real store. Their decision logic is
+// pure, though, so each one gets a hand-authored manifest and a fake Admin payload pair here: one
+// that must refuse with exactly that code, and one that must not refuse at all. That turns "five
+// refusal classes fire only at the networked gate" from an untested-code exposure into a
+// data-freshness exposure, which is the most the offline half can do.
+
+test('an undeclared live product refuses, and a declared one does not', async () => {
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      store: fakeStore({
+        products: [
+          { id: LIVE_GID, handle: 'crew', title: 'Crew' },
+          { id: 'gid://shopify/Product/2', handle: 'newcomer', title: 'Newcomer' },
+        ],
+        variants: [{ productHandle: 'newcomer', tracked: true }],
+      }),
+      json: false,
+      read: async () => ONE_BODY_MANIFEST,
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  assert.deepEqual(seen[0].assessment.refusals.map((r) => r.code), ['catalogue-undeclared-products']);
+  assert.deepEqual(seen[0].assessment.refusals[0].keys, ['newcomer']);
+
+  const clean = [];
+  const ok = await catalogueGate({
+    store: fakeStore(),
+    json: false,
+    read: async () => ONE_BODY_MANIFEST,
+    refuse: spyRefuse(clean),
+  });
+  assert.deepEqual(clean, []);
+  assert.ok(ok.manifest);
+});
+
+test('an untracked undeclared live product does NOT refuse', async () => {
+  // A gift card has no tracked variants and joins no blank group, so it is out of scope for this
+  // gate in the same way it is out of scope for learnVocab. Refusing on it would make the reorder
+  // review unrunnable on a store that sells one.
+  const seen = [];
+  const out = await catalogueGate({
+    store: fakeStore({
+      products: [
+        { id: LIVE_GID, handle: 'crew', title: 'Crew' },
+        { id: 'gid://shopify/Product/9', handle: 'gift', title: 'Gift', tracked: false },
+      ],
+    }),
+    json: false,
+    read: async () => ONE_BODY_MANIFEST,
+    refuse: spyRefuse(seen),
+  });
+  assert.deepEqual(seen, []);
+  assert.ok(out.manifest);
+});
+
+test('a declared handle with no live product refuses', async () => {
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      store: fakeStore({ products: [{ id: 'gid://shopify/Product/2', handle: 'someone-else', title: 'Other' }] }),
+      json: false,
+      read: async () => ONE_BODY_MANIFEST,
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  const codes = seen[0].assessment.refusals.map((r) => r.code);
+  assert.ok(codes.includes('catalogue-stale-products'), `got ${codes.join(', ')}`);
+  assert.deepEqual(
+    seen[0].assessment.refusals.find((r) => r.code === 'catalogue-stale-products').keys,
+    ['crew']
+  );
+});
+
+test('a live title that differs from the declared one refuses, and a matching one does not', async () => {
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      store: fakeStore({ products: [{ id: LIVE_GID, handle: 'crew', title: 'Crew (renamed in Admin)' }] }),
+      json: false,
+      read: async () => ONE_BODY_MANIFEST,
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  assert.deepEqual(seen[0].assessment.refusals.map((r) => r.code), ['catalogue-title-mismatch']);
+  assert.deepEqual(seen[0].assessment.refusals[0].keys, ['crew']);
+
+  const clean = [];
+  await catalogueGate({ store: fakeStore(), json: false, read: async () => ONE_BODY_MANIFEST, refuse: spyRefuse(clean) });
+  assert.deepEqual(clean, []);
+});
+
+test('a live GID that differs from the declared one refuses, and a matching one does not', async () => {
+  // The one that matters most: a GID is stable for the life of a product, so a mismatch means the
+  // handle now resolves to a DIFFERENT product, and writing media against it edits the wrong one.
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      store: fakeStore({ products: [{ id: 'gid://shopify/Product/999', handle: 'crew', title: 'Crew' }] }),
+      json: false,
+      read: async () => ONE_BODY_MANIFEST,
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  assert.deepEqual(seen[0].assessment.refusals.map((r) => r.code), ['catalogue-gid-mismatch']);
+  assert.deepEqual(seen[0].assessment.refusals[0].keys, ['crew']);
+
+  const clean = [];
+  await catalogueGate({ store: fakeStore(), json: false, read: async () => ONE_BODY_MANIFEST, refuse: spyRefuse(clean) });
+  assert.deepEqual(clean, []);
+});
+
 test('a manifest refusal renders in exactly the shape a thresholds refusal does', async () => {
   // A --json consumer must not have to know which gate stopped the run in order to parse the answer.
   const seen = [];
   await assert.rejects(
     catalogueGate({
-      artifact: { bodies: [{ bodyId: 'quarter-zip' }] },
-      store: fakeStore(),
+      store: fakeStore({ products: [{ id: 'gid://shopify/Product/999', handle: 'crew', title: 'Renamed' }] }),
       json: true,
       read: async () => ONE_BODY_MANIFEST,
       refuse: spyRefuse(seen),
@@ -204,17 +348,15 @@ test('a manifest refusal renders in exactly the shape a thresholds refusal does'
   );
   const payload = refusalPayload(seen[0].assessment);
   assert.deepEqual(Object.keys(payload), ['error', 'keys', 'refusals', 'warnings']);
-  assert.equal(payload.error, 'catalogue-unknown-bodies', 'error names the first refusal');
-  // Both directions of the body-map disagreement fire, and `keys` carries every refusal's keys.
-  assert.deepEqual(payload.refusals.map((r) => r.code), ['catalogue-unknown-bodies', 'catalogue-unmapped-bodies']);
-  assert.deepEqual(payload.keys, ['crewneck', 'quarter-zip']);
+  assert.equal(payload.error, 'catalogue-title-mismatch', 'error names the first refusal');
+  assert.deepEqual(payload.refusals.map((r) => r.code), ['catalogue-title-mismatch', 'catalogue-gid-mismatch']);
+  assert.deepEqual(payload.keys, ['crew', 'crew']);
 });
 
 test('catalogueGate refuses a missing manifest rather than defaulting to an empty shape', async () => {
   const seen = [];
   await assert.rejects(
     catalogueGate({
-      artifact: ARTIFACT,
       store: fakeStore(),
       json: false,
       read: async () => {
@@ -230,7 +372,6 @@ test('catalogueGate refuses a missing manifest rather than defaulting to an empt
 test('a warnings-only reconcile does not refuse; it returns the manifest and its warnings', async () => {
   const seen = [];
   const out = await catalogueGate({
-    artifact: ARTIFACT,
     store: fakeStore({ colors: [], sizes: [] }), // nothing tagged yet, so every declared value is unseen
     json: false,
     read: async () => ONE_BODY_MANIFEST,
@@ -247,7 +388,6 @@ test('a malformed manifest refuses in the same object shape as every other gate 
   const seen = [];
   await assert.rejects(
     catalogueGate({
-      artifact: ARTIFACT,
       store: fakeStore(),
       json: true,
       read: async () => '{ not json',
@@ -261,6 +401,23 @@ test('a malformed manifest refuses in the same object shape as every other gate 
   assert.match(payload.refusals[0].message, /is not valid JSON/);
 });
 
+test('a version 1 manifest refuses with a message naming the migrator, and never auto-migrates', async () => {
+  const seen = [];
+  await assert.rejects(
+    catalogueGate({
+      store: fakeStore(),
+      json: false,
+      read: async () => JSON.stringify({ version: 1, bodies: { crewneck: { colors: ['black'], sizes: ['m'] } } }),
+      refuse: spyRefuse(seen),
+    }),
+    (err) => err.tag === REFUSED
+  );
+  const [refusal] = seen[0].assessment.refusals;
+  assert.equal(refusal.code, 'catalogue-invalid');
+  assert.match(refusal.message, /migrate-catalogue\.mjs/);
+  assert.match(refusal.message, /never auto-migrated/);
+});
+
 test('catalogueGate returns nothing at all when it refuses, rather than a half-built result', async () => {
   // `refuse` exits in production, so this is about the seam: a non-exiting refuse (a future
   // --dry-run, a collecting reporter) must not let the gate fall through and hand a caller a
@@ -268,7 +425,6 @@ test('catalogueGate returns nothing at all when it refuses, rather than a half-b
   const seen = [];
   const collect = (params) => seen.push(params);
   const missing = await catalogueGate({
-    artifact: ARTIFACT,
     store: fakeStore(),
     json: false,
     read: async () => {
@@ -277,8 +433,7 @@ test('catalogueGate returns nothing at all when it refuses, rather than a half-b
     refuse: collect,
   });
   const mismatched = await catalogueGate({
-    artifact: { bodies: [{ bodyId: 'quarter-zip' }] },
-    store: fakeStore(),
+    store: fakeStore({ products: [{ id: 'gid://shopify/Product/999', handle: 'crew', title: 'Crew' }] }),
     json: false,
     read: async () => ONE_BODY_MANIFEST,
     refuse: collect,

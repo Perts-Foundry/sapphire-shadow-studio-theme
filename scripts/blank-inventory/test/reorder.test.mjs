@@ -34,7 +34,8 @@ import {
   THRESHOLDS_PATH,
 } from '../lib/reorder.mjs';
 import { vocabKey, normaliseAxis, DRIFT, AWAITING_SEED, CONVERGED } from '../lib/groups.mjs';
-import { loadCatalogue } from '../lib/catalogue-manifest.mjs';
+import { loadCatalogue } from '../../lib/catalogue-manifest.mjs';
+import { importsOf, assertImportClosure } from '../../lib/import-closure.mjs';
 import { variant, thresholdsFor, budgetsFor, manifestFor, VEST_BLACK_ONLY, MID_SIZES_ONLY, resetSeq, BODIES, COLORS, SIZES } from './fixtures.mjs';
 
 const AXES = buildAxes({ bodies: BODIES, colors: COLORS, sizes: SIZES });
@@ -845,10 +846,18 @@ test('neither new command is a write command, and the lib cannot reach a mutatio
   // Assert the import list itself, not a substring search: the module header names mutations.mjs
   // precisely to say it must never import it, and a naive grep cannot tell the prohibition from the
   // violation.
-  const lib = await readFile(path.join(here, '../lib/reorder.mjs'), 'utf8');
-  const imports = [...lib.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
-  assert.deepEqual(imports, ['./groups.mjs']);
+  const libPath = path.join(here, '../lib/reorder.mjs');
+  const lib = await readFile(libPath, 'utf8');
+  assert.deepEqual(importsOf(lib), ['./groups.mjs', '../../lib/json-keys.mjs']);
   assert.doesNotMatch(lib, /setQuantity\(|adjustQuantity\(|metafieldsSet/);
+
+  // The exact list above catches only the DIRECT edge: reorder.mjs could import a neighbour that
+  // imports admin.mjs, this list would be updated to name the neighbour, and the prohibition would
+  // be gone with every assertion still green. The closure guard is what makes that impossible.
+  await assertImportClosure({
+    entry: libPath,
+    forbidden: [path.join(here, '../lib/mutations.mjs'), path.join(here, '../lib/admin.mjs')],
+  });
 });
 
 test('cartesianCells covers the whole axis space in canonical order', () => {

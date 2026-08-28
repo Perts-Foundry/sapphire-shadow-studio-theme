@@ -49,36 +49,44 @@ quarter-zip, women's vest), and two products on different bodies share **no** st
 colour and size. The tool keys every blank on body+colour+size for exactly this reason; a plan that
 ignored the body would write one garment's count into another garment's pool.
 
-No Shopify field carries the body, so the tool **infers** it per product and the operator **approves**
-the guess at a gate. This is the one thing that must exist before any other command runs.
+No Shopify field carries the body, so it is **declared** in `catalogue.json` at the repo root, one
+entry per product, and that file is the only authority. Nothing here infers a body, at proposal time
+or at write time.
 
-- `bodies --stage propose` reads the catalogue (no Shopify writes) and infers a body per product from
-  its handle and title, with a confidence marker. Like backfill's propose, it writes a proposal file
-  (holding every product's inferred body) to the working directory, so it is Shopify-write-free but
-  not read-only; never describe it as such.
-- **STOP: approve the body map.** Present every row: product, proposed body, and what it was inferred
-  from. The judgement the operator must make, because no data can confirm it: **products proposed as
-  the same body must be the same physical blank.** Two crewnecks from different suppliers are two
-  bodies. To correct a row, edit its `bodyId` in the proposal file and re-present the whole table;
-  any edit repeats this STOP in full.
-- `bodies --stage approve` hashes the approved map. It is then authoritative and never re-inferred,
-  so body assignment cannot drift between runs. A product added later is **refused on every write
-  path** until you re-propose, so a new product is loud, never silently absorbed into a pool.
+- `bodies` prints what the manifest declares. Read-only, no flags, no Shopify reads or writes, and
+  nothing to approve. A product with `"body": null` is not a garment and never joins a blank group.
+- A product the manifest does not declare is **never guessed**. Read commands report it as unmapped;
+  every write path refuses on it. A new product is therefore loud, not silently absorbed into
+  whichever pool its colour and size happen to match.
+- **The manifest is not yours to edit.** If a body is wrong or missing, say so and stop. Changing it
+  is a reviewed PR by the operator. Never edit `catalogue.json` to clear a refusal, and never untag a
+  variant to make one pass.
 
-Inference happens only at proposal time, behind this gate. The tool never infers a body at write
-time: guessing silently into a write is the original defect this axis exists to fix.
+The judgement the manifest encodes, which no data can confirm and which is the operator's alone:
+**two products declared on the same body must be the same physical blank.** Two crewnecks from
+different suppliers are two bodies. When reviewing a manifest change, that is the question to ask.
+
+There used to be a `bodies --stage propose|approve` gate here: the tool inferred a body from each
+product's handle and title, you presented the guess for approval, and the approved map was sealed in
+a hash-checked artifact. It is gone. What the reversal lost, exactly, is that operator gate: there is
+no longer a machine proposal, a re-presentation, or a seal. What replaces it is review (the manifest
+changes only in a PR), an offline CI lint, and six other tools deriving from the same file so a wrong
+body shows up in the same diff as a wrong size chart and a wrong photo token. `release-notes.md` has
+the full argument. If you find a leftover `bodies.json` in the working directory, it is inert: the
+tool says so, and deleting it is the operator's call.
 
 ## Pipeline
 
-The body-approval STOP above and gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own
-and `untag` has one. Ask the specific question, stop, and do not proceed without an explicit yes. Do
+Gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own and `untag` has one. (There used to
+be a body-approval STOP above this list; the body map is declared in a reviewed PR now, so the gate
+that replaced it is code review, not a runtime prompt.) Ask the specific question, stop, and do not proceed without an explicit yes. Do
 not batch gates.
 
-1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit` (with an approved body map
-   in place). Report coverage, group health, unmapped products, and any DRIFT. **DRIFT means the Flow
-   is failing: stop and troubleshoot, do not write on top of it.** Distinguish it from
-   `awaiting-seed`, which is expected after a backfill. Any product reported as unmapped means the
-   body map is stale: re-propose before writing.
+1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit`. Report coverage, group
+   health, unmapped products, and any DRIFT. **DRIFT means the Flow is failing: stop and
+   troubleshoot, do not write on top of it.** Distinguish it from `awaiting-seed`, which is expected
+   after a backfill. Any product reported as unmapped means `catalogue.json` is out of date: report
+   it to the operator and stop, because correcting it is a reviewed PR, not something to work around.
 
 2. **Ingest.** Either take the operator's pasted numbers as-is, or transcribe a photo (below).
 
@@ -93,7 +101,7 @@ not batch gates.
    `body,color,size,value` (with an optional `raw` column carrying the token as written) and needs a
    header row, or an explicit `--format`. It emits a hashed artifact and prints, per group, the
    chosen write target, why it was chosen, the compare-and-swap baseline, and how many siblings the
-   Flow should update. `plan` refuses to run without an approved body map.
+   Flow should update. `plan` refuses to run if any product it touches has no declared body.
 
 5. **STOP: approve the plan.** Present the plan output verbatim. On approval, apply exactly that
    artifact. If the operator strikes groups, re-run `plan` over a narrowed input to get a fresh
@@ -160,14 +168,16 @@ things:
 
 - `catalogue.json` is missing;
 - it does not parse, or fails its schema, or declares an unknown version;
-- the manifest and the approved body map disagree about which bodies exist, in either direction;
+- the manifest disagrees with the live store: a tracked product it does not declare, a declared
+  handle with no live product, or a title or GID that differs from the live one;
 - a live tagged variant's body+colour+size is not declared in the manifest.
 
 The last one is the loud check that replaces what the old cross product provided by accident. Its
 remedy is the operator declaring the missing colour or size in a reviewed PR. **Never edit the
 manifest yourself to clear it, never relax or bypass the check, and never untag a variant to make it
-pass.** A body-map disagreement is the same shape: the remedy for a missing body is a body-map
-re-propose under its own STOP, never deleting the body from either artifact to quieten the run.
+pass.** A live-store disagreement is the same shape: the remedy for an undeclared product, a stale
+handle, or a title or GID mismatch is the operator correcting the manifest in a reviewed PR. Report
+it and stop; never delete an entry from the manifest to quieten the run.
 
 A declared colour with no tagged variant yet is only a warning. Mention it and move on; nothing is
 wrong, and declaring a colour ahead of its first blank is the point of declaring at all.
@@ -285,7 +295,7 @@ If `reorder` exits 1, read the refusal `code` to learn WHICH file it is about, b
 live in different places:
 
 - a `catalogue-*` code is about `catalogue.json`: it is missing, unparseable, disagrees with the
-  approved body map, or a tagged variant falls outside the declared shape.
+  live store, or a tagged variant falls outside the declared shape.
 - anything else is about `thresholds.json`: missing, unparseable, a duplicate key, or a declared
   body+colour+size with no entry.
 
@@ -338,7 +348,7 @@ becomes a wrong stock level. So:
 - Output **only** CSV rows of `body,color,size,value,raw` (or `blank,value,raw`), with a header row.
   Nothing else. The `raw` column carries the token exactly as written so the confirmation table at
   gate 3 is generated from the file, not re-rendered from memory.
-- The body for each row comes from the **approved body map**, never guessed from the sheet. Fail
+- The body for each row comes from the **manifest's declaration**, never guessed from the sheet. Fail
   closed on any body token read off the sheet that is not in the approved set; no nearest-match.
 - Carry the **raw token as read** into gate 3 alongside the resolved number, so a plausible misread
   (14 read as 11) is visible instead of laundered into a clean figure.
@@ -387,7 +397,7 @@ actions are the operator's); or write to any variant outside the approved plan a
   treat the id as sensitive.** Never put a sensitive id in a file, a commit message, a PR body, or an
   issue. Legacy supplier-encoded ids are learned from the live store at runtime and never committed;
   tests use synthetic ids. CI enforces this (`npm run blank-inventory:guard`).
-- The working directory (plan artifacts, receipts, the body map) defaults **outside the repo**
+- The working directory (plan artifacts and receipts) defaults **outside the repo**
   (`~/.local/state/blank-inventory/`, override with `BLANK_INVENTORY_DIR`). A stray `.blank-inventory/`
   inside the checkout is a leak: the tool warns on every command and refuses writes until it is moved.
   Never paste working-directory contents into a commit, PR, or issue; refer to artifacts by path.

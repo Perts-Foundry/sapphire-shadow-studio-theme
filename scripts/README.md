@@ -11,6 +11,19 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   round reads one composite per couple dozen frames instead of every frame full-size.
 - `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
   by the pipeline scripts and by the applique-grid naming guard. One source of truth.
+- `lib/catalogue-manifest.mjs`: the schema, the validators and the derived accessors for the root
+  `catalogue.json`. It lives here rather than under `blank-inventory/lib/` because seven areas read
+  it, and leaving it there gave all of them a load-time dependency on the blank-inventory planner,
+  one module from `lib/mutations.mjs`. It imports exactly two zero-import leaves,
+  `lib/vocab.mjs` (`normaliseAxis`, the one normalisation rule every option axis shares) and
+  `lib/json-keys.mjs` (`findDuplicateKeys`, over raw JSON text). `blank-inventory/lib/groups.mjs`
+  and `blank-inventory/lib/reorder.mjs` re-export those two names permanently, so their own callers
+  are unaffected.
+- `lib/catalogue-cohesion.mjs`: the checks that compare `catalogue.json` against every other
+  repo-side surface restating any of its vocabulary. Run by the catalogue lint; offline, read-only.
+- `lib/import-closure.mjs`: test support. Walks a module's transitive relative-import graph, so the
+  "this module can never reach a mutation" guards assert the whole closure rather than one direct
+  edge. Fails loudly on any specifier form a static walk cannot follow.
 - `lib/heic.mjs`: the shared iPhone-HEIC decoder (`decodeToRaw`, `sharpFromRaw`, `DECODER_VERSION`,
   `extractIcc`) **and** the one colour transform all three pipelines use: `decodeToSrgb`, on top of
   `embedIccProfile` (a hand-written PNG `iCCP` chunk, the tagging step sharp does not offer) and
@@ -32,11 +45,13 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   [`sku/README.md`](sku/README.md) and [`../docs/sku-scheme.md`](../docs/sku-scheme.md). Orthogonal
   to `blank-inventory/`: a SKU identifies the finished piece, `custom.inventory_blank_sku` the
   shared blank garment.
-- `catalogue/`: the offline lint for the root `catalogue.json`, the committed manifest declaring
-  which garment bodies exist and which colours and sizes each one is made in. Read-only, no
-  credentials; it reuses `blank-inventory/lib/catalogue-manifest.mjs` so one schema serves both the
-  lint and the reorder review. The manifest is hand-edited by the operator in a reviewed PR; no
-  command creates or edits it. `npm run catalogue:lint` and `npm run catalogue:test`.
+- `catalogue/`: the offline lint for the root `catalogue.json`, the committed manifest declaring the
+  option axis names, the colour and size vocabulary with each value's Admin spelling, which garment
+  bodies exist and what each is made in, and the complete product census. Read-only, no credentials;
+  it reuses `lib/catalogue-manifest.mjs` so one schema serves both the lint and the reorder review,
+  and it runs `lib/catalogue-cohesion.mjs` so a private copy of that vocabulary cannot drift back
+  into another tool. The manifest is hand-edited by the operator in a reviewed PR; no command and no
+  agent creates or edits it. `npm run catalogue:lint` and `npm run catalogue:test`.
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).

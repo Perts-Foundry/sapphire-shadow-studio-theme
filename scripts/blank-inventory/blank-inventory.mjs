@@ -6,7 +6,7 @@
 // The `blank-inventory` skill (.claude/skills/blank-inventory/SKILL.md) drives it and holds the
 // operator approval STOPs; this file is the deterministic half.
 //
-//   bodies    propose and approve the garment body map; a precondition of every other command
+//   bodies    read-only: print the declared garment body of each product (from catalogue.json)
 //   audit     read-only health report: coverage, groups, drift vs awaiting-seed
 //   reorder   read-only: on-hand stock against the committed per-cell minimums (thresholds.json)
 //   demand    read-only: net units sold per body/colour/size, and proposed threshold adjustments
@@ -38,15 +38,17 @@ import { planBackfill, planBlankBootstrap, planSeed, untagVariants } from './lib
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
 import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
-import { proposeBodies, createBodiesArtifact, verifyBodiesArtifact, bodyIndex, attachBodies, unmappedHandles, HIGH } from './lib/bodies.mjs';
+import { bodyIndex, attachBodies, unmappedHandles } from './lib/bodies.mjs';
 import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, buildPurchaseList, renderPurchaseList, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
-import { loadCatalogue, reconcileCatalogue, assessCatalogue } from './lib/catalogue-manifest.mjs';
+import { loadCatalogue, reconcileCatalogue, assessCatalogue, garmentProducts, nonGarmentProducts } from '../lib/catalogue-manifest.mjs';
 
 // Absolute, and by default outside any checkout. See lib/workdir.mjs for why.
 const WORK_DIR = resolveWorkDir();
 const LOCK_FILE = path.join(WORK_DIR, '.lock');
-const BODIES_FILE = path.join(WORK_DIR, 'bodies.json');
-const BODIES_PROPOSAL_FILE = path.join(WORK_DIR, 'bodies-proposal.json');
+// The two artifacts the deleted propose/approve workflow used to write. Nothing reads them any
+// more; they are named only so a leftover copy produces a one-time "this file is inert" notice
+// rather than sitting in the work directory looking authoritative.
+const INERT_BODY_FILES = [path.join(WORK_DIR, 'bodies.json'), path.join(WORK_DIR, 'bodies-proposal.json')];
 // Where `audit` parks expired seeding receipts. A subdirectory rather than a delete: a receipt is
 // the record of a real write against the live store, so it is moved out of the way, never removed.
 const ARCHIVE_DIR_NAME = 'archive';
@@ -179,25 +181,69 @@ async function withLock(fn) {
 }
 
 // ---------------------------------------------------------------------------
-// The approved body map is read once per process. Nested re-reads (the per-row group reader, the
+// The committed manifest is read once per process. Nested re-reads (the per-row group reader, the
 // quiesce poller) must see the SAME body assignment as the plan they are checking; re-resolving it
 // mid-run could silently regroup variants between a plan and its apply.
+let manifestCache;
 let bodiesIndexCache;
+let inertNoticeShown = false;
+
+/** Where the committed manifest lives, resolved from this file rather than from the CWD. */
+const CATALOGUE_FILE = fileURLToPath(new URL('../../catalogue.json', import.meta.url));
+/**
+ * Read and cache the committed catalogue manifest, or refuse.
+ *
+ * EVERY command refuses on a missing or invalid manifest, read commands included. That is a change
+ * from the body-map artifact this replaced, which read commands tolerated: a missing body map was a
+ * WORKFLOW STATE (the operator had not run the propose/approve pair yet) and warning was the right
+ * response. A missing catalogue.json is a BROKEN CHECKOUT. There is no command that creates it, so
+ * there is nothing for a warning to tell the operator to go and run.
+ *
+ * @param {object} [params]
+ * @param {(path: string) => Promise<string>} [params.read]
+ * @param {string} [params.path]
+ * @returns {Promise<object>}
+ */
+async function ensureManifest({ read = (p) => readFile(p, 'utf8'), path: manifestPath = CATALOGUE_FILE } = {}) {
+  if (manifestCache === undefined) {
+    try {
+      manifestCache = await loadCatalogue({ read, path: manifestPath });
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+  return manifestCache;
+}
 
 /**
- * @param {boolean} requireApproved
- * @returns {Promise<Map<string, string>|null>}
+ * Notice a leftover body-map artifact exactly once per process.
+ *
+ * Silently ignoring it would leave a file in the work directory that looks like the authority and is
+ * not; deleting it for the operator would destroy the record of what the old gate approved.
  */
-async function ensureBodies(requireApproved) {
-  if (bodiesIndexCache === undefined) {
-    bodiesIndexCache = (await loadBodies({ requireApproved }))?.index ?? null;
-  } else if (requireApproved && !bodiesIndexCache) {
-    await loadBodies({ requireApproved: true }); // fails with the full message
-  }
+function noticeInertBodyFiles() {
+  if (inertNoticeShown) return;
+  inertNoticeShown = true;
+  const leftovers = INERT_BODY_FILES.filter((f) => existsSync(f));
+  if (!leftovers.length) return;
+  console.warn(
+    `\nNOTICE: ${leftovers.join(', ')} is left over from the deleted "bodies --stage propose|approve"\n` +
+      `workflow and is now INERT: nothing reads it. catalogue.json is the only authority on a\n` +
+      `product's garment body. Delete it when you have finished comparing it against the manifest.\n`
+  );
+}
+
+/**
+ * The declared body index, derived from the manifest.
+ * @returns {Promise<Map<string, string>>}
+ */
+async function ensureBodies() {
+  noticeInertBodyFiles();
+  if (bodiesIndexCache === undefined) bodiesIndexCache = bodyIndex(await ensureManifest());
   return bodiesIndexCache;
 }
 
-async function loadStore({ requireWrite, skipBodies = false }) {
+async function loadStore({ requireWrite }) {
   const client = createAdminClient();
   if (requireWrite) await assertScopes(client);
   const catalogue = await readCatalogue(liveFetchers(client));
@@ -214,14 +260,14 @@ async function loadStore({ requireWrite, skipBodies = false }) {
 
   // Body first: every key downstream depends on it, so attaching it after grouping would leave the
   // vocabulary keyed on a colour+size that means nothing on a multi-garment catalogue.
-  const index = skipBodies ? null : await ensureBodies(requireWrite);
+  const index = await ensureBodies();
   const variants = attachBodies(index, catalogue.variants);
-  const unmapped = index ? unmappedHandles(index, variants) : [];
+  const unmapped = unmappedHandles(index, variants);
   if (unmapped.length && requireWrite) {
     fail(
-      `${unmapped.length} product(s) have no approved body: ${unmapped.join(', ')}. A write cannot ` +
-        `proceed without knowing which physical garment each variant draws from. Re-run ` +
-        `"bodies --stage propose" and approve the new proposal.`
+      `${unmapped.length} product(s) have no declared body: ${unmapped.join(', ')}. A write cannot ` +
+        `proceed without knowing which physical garment each variant draws from. Declare each one in ` +
+        `catalogue.json, in a reviewed PR, and re-run.`
     );
   }
 
@@ -261,7 +307,7 @@ async function loadReceipts() {
  *
  * Why this is not a store write, and why `audit` may do it: `audit` is read-only AGAINST THE STORE,
  * which is the property that matters. Moving a file inside the operator's own working directory is
- * not a Shopify write, and `bodies --stage propose` and `backfill --stage propose` already write
+ * not a Shopify write, and `backfill --stage propose` already writes
  * files there, so this does not change the command's trust class.
  *
  * Why it happens at all: an expired seeding receipt explains nothing (a seed settles in 80 to 90
@@ -336,116 +382,63 @@ function printArchiveSummary({ archived, skipped }) {
 }
 
 // ---------------------------------------------------------------------------
-// The body axis. See lib/bodies.mjs for why body is proposed rather than declared.
+// The body axis. See lib/bodies.mjs for why body is declared rather than inferred, and what the
+// reversal cost.
 // ---------------------------------------------------------------------------
 
 /**
- * Load the approved body artifact.
+ * Print the declared body of every product.
  *
- * Read commands tolerate its absence and say so; write commands refuse. A write that resolved a
- * blank without knowing the garment is the original bug, so there is no "assume a default" path.
- *
- * @param {object} params
- * @param {boolean} params.requireApproved
- * @returns {Promise<{artifact: object, index: Map<string, string>}|null>}
+ * READ-ONLY. This used to be a three-stage `--stage propose|approve|show` workflow that inferred a
+ * body per product, presented the guess at an operator gate, and sealed the approved result in a
+ * hash-checked artifact. catalogue.json is the authority now, so there is nothing to propose and
+ * nothing to approve: this command prints what the manifest declares and writes nothing.
  */
-async function loadBodies({ requireApproved }) {
-  if (!existsSync(BODIES_FILE)) {
-    const msg =
-      `No approved body map at ${BODIES_FILE}. A blank is a physical garment, so the tool cannot ` +
-      `tell a crewneck from a vest without one. Run:\n` +
-      `  node scripts/blank-inventory/blank-inventory.mjs bodies --stage propose`;
-    if (requireApproved) fail(msg);
-    console.warn(`\nWARNING: ${msg}\n`);
-    return null;
-  }
-  const artifact = verifyBodiesArtifact(await readJson(BODIES_FILE));
-  return { artifact, index: bodyIndex(artifact) };
-}
-
-/** Render a proposal or approved body table. */
-function printBodyRows(rows) {
-  const w = Math.max(...rows.map((r) => r.productHandle.length), 12);
-  for (const r of rows) {
-    const conf = r.confidence === HIGH ? '' : `  <-- ${String(r.confidence).toUpperCase()} CONFIDENCE, check this`;
-    console.log(`  ${r.productHandle.padEnd(w)}  ${String(r.bodyId ?? '(UNNAMED)').padEnd(14)}  ${r.signal ?? ''}${conf}`);
-  }
-}
-
-async function cmdBodies(opts) {
-  const stage = opts.stage ?? 'propose';
-
-  if (stage === 'show') {
-    const loaded = await loadBodies({ requireApproved: true });
-    heading(`Approved bodies (proposal ${loaded.artifact.proposalId})`);
-    printBodyRows(loaded.artifact.bodies);
-    console.log(`\n  approved artifact ${BODIES_FILE}`);
-    return;
-  }
-
-  if (stage === 'propose') {
-    // skipBodies: this command exists to CREATE the body map, so warning about its absence here
-    // would be telling the operator to run the command they are already running.
-    const store = await loadStore({ requireWrite: false, skipBodies: true });
-    const { rows, excluded } = proposeBodies({ products: store.products, variants: store.variants });
-
-    heading(`Body proposal: ${rows.length} product(s)`);
-    printBodyRows(rows);
-    if (excluded.length) {
-      heading('Excluded (no tracked variants, so no body needed)');
-      for (const e of excluded) console.log(`  ${e.productHandle}  ${e.reason}`);
-    }
-
-    const unnamed = rows.filter((r) => !r.bodyId);
-    await writeJsonAtomic(BODIES_PROPOSAL_FILE, {
-      version: 1,
-      proposedAt: new Date().toISOString(),
-      rows,
-      excluded,
-    });
-
-    console.log(`\nProposal: ${BODIES_PROPOSAL_FILE}`);
-    console.log(
-      `\nThis is a GUESS from each product's handle and title, and it decides which products share ` +
-        `stock. Two products on one body share a pool; two on different bodies must not. Read every\n` +
-        `row before approving.`
+async function cmdBodies(opts = {}) {
+  // Refused by name rather than ignored. The propose/approve pair wrote real artifacts, and an
+  // operator or a script that still passes the flag must be told the workflow is gone, not handed a
+  // read-only report that looks like it worked.
+  if (opts.stage !== undefined) {
+    fail(
+      `"bodies --stage ${opts.stage}" no longer exists. The propose/approve/show workflow was ` +
+        `deleted: catalogue.json declares each product's garment body, so there is nothing to ` +
+        `propose and nothing to approve. Run "bodies" with no flags for the read-only report, and ` +
+        `edit catalogue.json in a reviewed PR to change an assignment.`
     );
-    if (unnamed.length) {
-      console.log(
-        `\n${unnamed.length} product(s) could not be named. Edit the "bodyId" field for each in the ` +
-          `proposal file; approval refuses while any is null.`
-      );
-    }
-    console.log(`\nTo correct a row, edit its "bodyId" in the file above, then:`);
-    console.log(`  node scripts/blank-inventory/blank-inventory.mjs bodies --stage approve`);
-    return;
   }
-
-  if (stage === 'approve') {
-    const src = opts.proposal ?? BODIES_PROPOSAL_FILE;
-    if (!existsSync(src)) fail(`No proposal at ${src}. Run "bodies --stage propose" first.`);
-    const proposal = await readJson(src);
-
-    // Re-present in full rather than trusting the operator to remember the propose output. An
-    // adjustment between the two commands is invisible otherwise, and this is the gate.
-    heading(`Approving ${proposal.rows.length} body assignment(s)`);
-    printBodyRows(proposal.rows);
-
-    const artifact = createBodiesArtifact({ rows: proposal.rows, excluded: proposal.excluded ?? [] });
-    await writeJsonAtomic(BODIES_FILE, artifact);
-
-    const bodies = [...new Set(artifact.bodies.map((b) => b.bodyId))].sort();
-    console.log(`\n  ${bodies.length} distinct body/bodies: ${bodies.join(', ')}`);
-    console.log(`  approved artifact ${BODIES_FILE}`);
-    console.log(
-      `\nThis artifact is hashed and is now authoritative. It is never re-inferred, so body ` +
-        `assignment cannot drift between runs. A product added later is refused on write paths ` +
-        `until you re-propose.`
+  if (opts.proposal !== undefined) {
+    fail(
+      `"bodies --proposal" no longer exists. There is no body proposal file: catalogue.json is the ` +
+        `only authority on a product's garment body.`
     );
-    return;
   }
 
-  fail(`Unknown --stage "${stage}". Use propose | approve | show.`);
+  const manifest = await ensureManifest();
+  noticeInertBodyFiles();
+
+  const garments = garmentProducts(manifest);
+  const others = nonGarmentProducts(manifest);
+  const w = Math.max(...[...manifest.products.keys()].map((h) => h.length), 12);
+
+  heading(`Declared bodies: ${garments.length} garment product(s)`);
+  for (const p of garments) {
+    const range = manifest.bodies.get(p.body);
+    console.log(
+      `  ${p.handle.padEnd(w)}  ${p.body.padEnd(14)}  ${range.colors.length} colour(s) x ${range.sizes.length} size(s)`
+    );
+  }
+
+  if (others.length) {
+    heading('Not garments (declared "body": null, so no blank group)');
+    for (const p of others) console.log(`  ${p.handle.padEnd(w)}  ${p.title}`);
+  }
+
+  console.log(`\n  declared in ${CATALOGUE_FILE}`);
+  console.log(
+    `\nThis is a DECLARATION, not a guess, and it decides which products share stock. Two products ` +
+      `on one\nbody share a pool; two on different bodies must not. Change it in a reviewed PR; no ` +
+      `command edits it.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -584,7 +577,7 @@ async function cmdAudit(opts) {
   // different blanks, which is right, not a contradiction.
   check(store.conflicts.length === 0, 'no Body+Color+Size resolves to two different blanks', `${store.conflicts.length} conflict(s)`);
   check(warnings.length === 0, 'every blank id matches the structural convention', `${warnings.length} warning(s)`);
-  check(store.unmapped.length === 0, 'every product has an approved body', `${store.unmapped.length} product(s) unmapped: ${store.unmapped.join(', ')}`);
+  check(store.unmapped.length === 0, 'every product has a declared body', `${store.unmapped.length} product(s) undeclared in catalogue.json: ${store.unmapped.join(', ')}`);
   check(store.unbodied.length === 0, 'every tagged variant has a body', `${store.unbodied.length} tagged variant(s) excluded from the vocabulary`);
 
   heading('Groups');
@@ -622,10 +615,10 @@ async function cmdPlan(opts) {
 
   const text = await readFile(opts.input, 'utf8');
   const { rows } = parseInput(text, { mode: opts.mode, format: opts.format });
-  // requireWrite is false (planning writes nothing to Shopify), but an approved body map is still a
+  // requireWrite is false (planning writes nothing to Shopify), but the declared body map is still a
   // hard precondition: a plan built on a colour+size key would target the wrong garment's pool, and
   // the plan is what apply executes without re-deriving.
-  await loadBodies({ requireApproved: true });
+  await ensureBodies();
   const store = await loadStore({ requireWrite: false });
 
   const { receipts, staleSeeds } = await loadReceipts();
@@ -709,7 +702,7 @@ async function cmdPlan(opts) {
 // planner will actually read, so the confirmation and the plan see the same bytes.
 // ---------------------------------------------------------------------------
 async function cmdVocab(opts) {
-  await loadBodies({ requireApproved: true });
+  await ensureBodies();
   const store = await loadStore({ requireWrite: false });
 
   if (opts.check) {
@@ -805,7 +798,6 @@ async function cmdVocab(opts) {
 const THRESHOLDS_FILE = fileURLToPath(new URL('./thresholds.json', import.meta.url));
 // The catalogue manifest lives at the repo root, not beside the policy file: it declares the shape
 // of the whole offering, and other tooling is expected to migrate onto it (see TODO.md).
-const CATALOGUE_FILE = fileURLToPath(new URL('../../catalogue.json', import.meta.url));
 
 /**
  * A flag that takes no value.
@@ -827,7 +819,7 @@ function boolOpt(flag, raw) {
  * The axis space the thresholds table must cover.
  *
  * Bodies and their colour and size ranges come from the committed catalogue manifest, which
- * `catalogueGate` has already proven to agree exactly with the approved body map. Reading the axis
+ * `catalogueGate` has already reconciled against the live store. Reading the axis
  * off the tagged population instead would let the table shrink exactly when coverage does, and
  * reading it off a global cross product (what this did before) invents cells for combinations a body
  * is not made in. The learned vocabulary still supplies `display`, which is the only place the
@@ -848,19 +840,24 @@ function axesFromStore(manifest, store) {
 }
 
 /**
- * Read the committed catalogue manifest and reconcile it against the body map and the live store, or
- * refuse.
+ * Read the committed catalogue manifest and reconcile it against the live store, or refuse.
  *
  * ONE helper, called by both `reorder` and `demand`, so the two cannot drift into different gates
  * for the same file. It runs BEFORE thresholds are loaded: an undeclared combination means the cell
  * space itself is wrong, and reporting unthresholded or stale cells computed from a wrong cell space
  * would bury the one refusal that matters under a list of consequences.
  *
+ * WHAT IT NO LONGER COMPARES: the two-way body-set check against the approved body map. The manifest
+ * is the only authority on a product's body now and the body index is derived FROM it, so that check
+ * would compare the manifest against a derivative of itself and could never fail for a real reason.
+ * The live store replaces it as the counterparty, which is the only thing that can disagree with the
+ * manifest about facts: an undeclared live product, a declared handle with no live product, a title
+ * mismatch and a GID mismatch all refuse here.
+ *
  * `read` and `refuse` are injected so the whole path is testable without a filesystem and without
  * exiting the test runner.
  *
  * @param {object} params
- * @param {object} params.artifact - the approved bodies artifact
  * @param {object} params.store
  * @param {boolean} params.json
  * @param {(path: string) => Promise<string>} [params.read]
@@ -869,7 +866,6 @@ function axesFromStore(manifest, store) {
  * @returns {Promise<{manifest: object, warnings: Array<object>}>}
  */
 export async function catalogueGate({
-  artifact,
   store,
   json,
   read = (p) => readFile(p, 'utf8'),
@@ -891,12 +887,26 @@ export async function catalogueGate({
     return;
   }
 
+  // `tracked` is annotated here rather than inside the pure module: only the variant read knows
+  // whether a product has any tracked variant at all, and an untracked product (a gift card) is not
+  // a garment and never joins a blank group, so it must not read as an undeclared one.
+  const trackedHandles = new Set(
+    (store.variants ?? []).filter((v) => v.tracked !== false).map((v) => v.productHandle)
+  );
+  const liveProducts = (store.products ?? []).map((p) => ({
+    handle: p.handle,
+    title: p.title,
+    gid: p.id,
+    tracked: trackedHandles.has(p.handle),
+  }));
+
   const assessment = assessCatalogue(
     reconcileCatalogue({
       manifest,
-      bodyMapBodies: artifact.bodies.map((b) => b.bodyId).filter(Boolean),
+      liveProducts,
       vocab: { colors: [...store.display.color.keys()], sizes: [...store.display.size.keys()] },
       variants: store.variants,
+      keyOf: vocabKey,
     })
   );
   // The bare return matters even though `refuse` exits in production: without it a non-exiting
@@ -978,11 +988,10 @@ async function cmdReorder(opts) {
     fail('--purchase-list has no --json form: it is a human-facing ordering aid, and its numbers are never a machine input. Use --json for the full report.');
   }
 
-  const loaded = await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
   // The manifest gate comes first, and before the thresholds file is even read: it decides what the
   // cell space IS, and every threshold divergence is measured against that space.
-  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ artifact: loaded.artifact, store, json: asJson });
+  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ store, json: asJson });
   const axes = axesFromStore(manifest, store);
   if (bodyFlag && !axes.bodies.includes(bodyFlag)) {
     fail(`Unknown --body "${bodyFlag}". The catalogue manifest declares: ${axes.bodies.join(', ')}.`);
@@ -1202,10 +1211,9 @@ async function cmdDemand(opts) {
     fail(err.message);
   }
 
-  const loaded = await loadBodies({ requireApproved: true });
   const store = await loadStore({ requireWrite: false });
   // Same shared gate, same order, for the same reason as `reorder`.
-  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ artifact: loaded.artifact, store, json: asJson });
+  const { manifest, warnings: catalogueWarnings } = await catalogueGate({ store, json: asJson });
   const axes = axesFromStore(manifest, store);
 
   const thresholds = await readThresholdsOrRefuse({ json: asJson });
@@ -1476,9 +1484,9 @@ async function cmdVerify(opts) {
 // ---------------------------------------------------------------------------
 async function cmdBackfill(opts) {
   const stage = opts.stage ?? 'propose';
-  // Required even at propose: without a body map every variant is unresolvable, so the proposal
+  // Required even at propose: with no declared body every variant is unresolvable, so the proposal
   // would be an empty report that looks like "nothing to do" rather than "cannot tell".
-  await loadBodies({ requireApproved: true });
+  await ensureBodies();
   const store = await loadStore({ requireWrite: stage !== 'propose' });
   const filter = { body: opts.body, color: opts.color, size: opts.size, productHandle: opts.product };
 
@@ -1697,7 +1705,7 @@ async function cmdUntag(opts) {
 const USAGE = `
 blank-inventory: shared-blank stock and metafield tooling.
 
-  bodies   --stage propose|approve|show    the garment body map (run this before anything else)
+  bodies                                   read-only: the declared garment body of each product
   audit    [--json] [--group <blankId>] [--stale]     read-only health report
   reorder  [--json] [--body <slug>] [--below] [--purchase-list]   on-hand vs thresholds.json, flag shortfalls
            (--purchase-list is the human-facing ordering view; it has no --json form, and the two are refused together)

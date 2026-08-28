@@ -71,6 +71,7 @@ Navy quarter-zip" is the string that names no value and goes shared.
 
 The values in Admin today, which is the only authority:
 
+<!-- catalogue:begin product-colors -->
 | Product | Color option values |
 |---|---|
 | Lead II Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
@@ -78,6 +79,7 @@ The values in Admin today, which is the only authority:
 | Shift Fuel Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
 | Huddle Crewneck | `Black` / `Grey Heather` / `Classic Navy` |
 | **Lead II Vest, Women's** | **`Black` only** |
+<!-- catalogue:end product-colors -->
 
 > Reconciled 2026-08-11 against the live Admin values for all five recorded products; this table,
 > `scripts/lib/photo-naming.mjs`, and `scripts/README.md` agree, and the uploader's
