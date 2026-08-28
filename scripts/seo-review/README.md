@@ -84,8 +84,12 @@ differ names which product regressed instead of moving a counter. The catch-all 
 valuable of the two: a value pointing at `all`, `frontpage`, or `all-products` is ignored by the
 theme while still looking correct in Admin. `BREADCRUMB_EXCLUDED_HANDLES` in `lib/checks.mjs`
 mirrors the snippet's exclusion list; change them together. Products documented as
-intentionally blank (`BREADCRUMB_BLANK_OK_HANDLES` in `admin.mjs`, today only the gift card) are
-exempt from the missing-value WARN so the check can reach zero findings. Full context, including the definition
+intentionally blank are exempt from the missing-value WARN so the check can reach zero findings.
+That set is derived: `breadcrumbBlankOkHandles()` in `admin.mjs` reads every product `catalogue.json`
+declares with `"body": null`, which is exactly the class with no parent collection to name, and
+covers each one under BOTH its handle and its template suffix. It was a literal `['gift-card']`
+compared against the Admin handle `sapphire-shadow-studio-gift-card`, so the skip had never fired
+and the gift card had been WARNing since the check shipped. Full context, including the definition
 and the per-product values: `docs/breadcrumb-collection-metafield.md`.
 
 Surface mode is the generalized launch-day checklist (B7): it runs anonymously on purpose.
