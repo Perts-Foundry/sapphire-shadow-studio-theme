@@ -173,6 +173,14 @@ async function readJson(file, repoRoot) {
  *   `severity` REFUSE for everything except the two settings_data.json checks, which WARN;
  *   `run`      returns a problem string, or null.
  *
+ * RETIRED CHECKS ARE DELETED, NOT KEPT GREEN. Three checks over scripts/sku/tables.json (its product
+ * census in both directions, its titles, and its colour vocabulary) lived here while that file still
+ * restated the manifest. It no longer does: `scripts/sku/lib/tables.mjs` validates the codes AGAINST
+ * the manifest at load, on every command and in `npm run sku:tables`, and refuses a leftover title
+ * outright. Asserting the same thing twice from two files is not defence in depth; it is a second
+ * place to update. The replacements are derivation tests in the owning suite, in
+ * scripts/sku/test/tables.test.mjs.
+ *
  * @type {Array<{id: string, source: string, severity: string, run: (ctx: object) => Promise<string|null>}>}
  */
 export const CHECKS = [
@@ -308,66 +316,6 @@ export const CHECKS = [
         `${unclaimed.length} product template(s) belong to no declared product: ${nameList(unclaimed)}. ` +
           `Either the product is missing from catalogue.json or the template is dead and should be ` +
           `deleted; both are worth a decision rather than a silent file.`
-      );
-    },
-  },
-
-  // 9-10. The SKU tables' product census, both directions. RETIRES once scripts/sku/ reads the
-  // census from the manifest.
-  {
-    id: 'sku-tables-cover-every-product',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const diff = setDiff(
-        Object.keys(skuTables.products ?? {}),
-        [...manifest.products.keys()],
-        'in scripts/sku/tables.json',
-        'declared in catalogue.json'
-      );
-      return diff && `scripts/sku/tables.json product census disagrees with the manifest. ${diff}`;
-    },
-  },
-  {
-    id: 'sku-tables-titles-match',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const wrong = [];
-      for (const [handle, entry] of Object.entries(skuTables.products ?? {})) {
-        const declared = manifest.products.get(handle);
-        if (!declared) continue; // the census check above owns that failure
-        if (entry.title !== declared.title) wrong.push(handle);
-      }
-      return (
-        wrong.length &&
-        `${wrong.length} product title(s) in scripts/sku/tables.json differ from catalogue.json: ` +
-          `${nameList(wrong)}. The title is printed on the SKU plan the operator approves, so the two ` +
-          `must name the same product in the same words.`
-      );
-    },
-  },
-
-  // 11. The SKU colour vocabulary. COMPARED AFTER normaliseAxis, which is what lets this pass against
-  // the unmigrated tables.json: it keys colours by their display spelling (`Grey Heather`) and the
-  // manifest keys them by identity (`grey heather`). The check asserts the same VALUES, not the same
-  // spelling. RETIRES once tables.json is re-keyed to manifest ids.
-  {
-    id: 'sku-tables-colors-match',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const actual = Object.keys(skuTables.colors ?? {}).map((c) => normaliseAxis(c, 'Color'));
-      const diff = setDiff(
-        actual,
-        [...manifest.colors.keys()],
-        'in scripts/sku/tables.json',
-        'declared in catalogue.json'
-      );
-      return (
-        diff &&
-        `scripts/sku/tables.json colour vocabulary disagrees with the manifest (compared after ` +
-          `normalisation, so a casing difference is not what this is reporting). ${diff}`
       );
     },
   },
@@ -582,8 +530,6 @@ export async function collectSources({ repoRoot, manifest, listDir, photoNamingP
     .map((f) => `templates/${f}`)
     .sort();
 
-  const skuTables = await readJson('scripts/sku/tables.json', repoRoot);
-
   const appliqueRegistry = await readJson('scripts/applique-grid/patterns.json', repoRoot);
   // The path this reads MOVES in the commit that migrates applique-grid: `product.handle` becomes a
   // top-level `handle`. Both are accepted here so the check reads the same fact either side of that
@@ -613,7 +559,6 @@ export async function collectSources({ repoRoot, manifest, listDir, photoNamingP
     a11yProductHandles,
     a11yProductTemplates,
     templateFiles,
-    skuTables,
     appliqueHandle,
     sizeChartHandles,
     photoProducts,

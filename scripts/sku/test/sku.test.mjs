@@ -46,8 +46,17 @@ test('the tables lint refuses a vacuous pass on tables with no products', async 
   const { tmpdir } = await import('node:os');
   const dir = await mkdtemp(path.join(tmpdir(), 'sku-lint-'));
   const file = path.join(dir, 'tables.json');
-  await writeFile(file, JSON.stringify({ version: 1, colors: { Black: 'BLK' }, products: {} }), 'utf8');
-  await assert.rejects(checkTables(file), /must not pass/);
+  await writeFile(file, JSON.stringify({ version: 2, colors: { black: 'BLK' }, products: {} }), 'utf8');
+  // The manifest is a stub built by hand rather than parsed: a real one cannot declare zero
+  // products, and the floor is defence-in-depth BEHIND the validator, so reaching it needs a
+  // manifest the schema would refuse. The file is internally consistent (its one colour is
+  // declared, its empty census matches), so nothing upstream of the floor objects.
+  const emptyCensus = {
+    options: new Map([['color', 'Color'], ['size', 'Size'], ['design', 'Design'], ['denomination', 'Denominations']]),
+    colors: new Map([['black', { display: 'Black', slug: 'black' }]]),
+    products: new Map(),
+  };
+  await assert.rejects(checkTables(file, emptyCensus), /must not pass/);
 });
 
 test('the working directory is outside any checkout and SKU_WORK_DIR overrides it', () => {

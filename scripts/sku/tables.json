@@ -1,11 +1,11 @@
 {
-  "version": 1,
-  "readme": "Variant SKU code tables. APPEND-ONLY: never reuse a retired code, and never edit a code that has shipped. Keys are the exact live option-value strings; copy them from `sku audit` output rather than retyping. See docs/sku-scheme.md before adding anything.",
+  "version": 2,
+  "readme": "Variant SKU CODE tables, and nothing else. APPEND-ONLY: never reuse a retired code, and never edit a code that has shipped. The product census, every product's title, the colour vocabulary's Admin spellings and the option axis names all come from the root catalogue.json; this file maps values to codes. Colour keys are catalogue.json colour IDS (lowercase); design and denomination keys are the exact live option-value strings, so copy them from `sku audit` output rather than retyping. See docs/sku-scheme.md before adding anything.",
   "ambiguityExemptions": ["GIFT"],
   "colors": {
-    "Black": "BLK",
-    "Grey Heather": "GRH",
-    "Classic Navy": "NVY"
+    "black": "BLK",
+    "grey heather": "GRH",
+    "classic navy": "NVY"
   },
   "designs": {
     "lead-ii": {
@@ -35,57 +35,32 @@
   "products": {
     "lead-ii-crewneck": {
       "code": "L2CN",
-      "title": "Lead II Crewneck",
       "designNamespace": "lead-ii",
-      "segments": [
-        { "kind": "design", "option": "Design" },
-        { "kind": "color", "option": "Color" },
-        { "kind": "size", "option": "Size" }
-      ]
+      "segments": [{ "kind": "design" }, { "kind": "color" }, { "kind": "size" }]
     },
     "lead-ii-quarter-zip": {
       "code": "L2QZ",
-      "title": "Lead II Quarter-Zip",
       "designNamespace": "lead-ii",
-      "segments": [
-        { "kind": "design", "option": "Design" },
-        { "kind": "color", "option": "Color" },
-        { "kind": "size", "option": "Size" }
-      ]
+      "segments": [{ "kind": "design" }, { "kind": "color" }, { "kind": "size" }]
     },
     "lead-ii-vest-womens": {
       "code": "L2VW",
-      "title": "Lead II Vest - Women's",
       "designNamespace": "lead-ii",
-      "segments": [
-        { "kind": "design", "option": "Design" },
-        { "kind": "color", "option": "Color" },
-        { "kind": "size", "option": "Size" }
-      ]
+      "segments": [{ "kind": "design" }, { "kind": "color" }, { "kind": "size" }]
     },
     "huddle-crewneck": {
       "code": "HDCN",
-      "title": "Huddle Crewneck",
       "designNamespace": "huddle",
-      "segments": [
-        { "kind": "design", "option": "Design" },
-        { "kind": "color", "option": "Color" },
-        { "kind": "size", "option": "Size" }
-      ]
+      "segments": [{ "kind": "design" }, { "kind": "color" }, { "kind": "size" }]
     },
     "shift-fuel-crewneck": {
       "code": "SFCN",
-      "title": "Shift Fuel Crewneck",
-      "segments": [
-        { "kind": "color", "option": "Color" },
-        { "kind": "size", "option": "Size" }
-      ]
+      "segments": [{ "kind": "color" }, { "kind": "size" }]
     },
     "sapphire-shadow-studio-gift-card": {
       "code": "GIFT",
-      "title": "Sapphire Shadow Studio Gift Card",
       "skuWritable": true,
-      "segments": [{ "kind": "denomination", "option": "Denominations" }]
+      "segments": [{ "kind": "denomination" }]
     }
   }
 }

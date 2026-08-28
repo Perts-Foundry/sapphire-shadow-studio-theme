@@ -101,14 +101,6 @@ function sources(over = {}) {
       'templates/product.b-vest.json',
       'templates/product.gift-card.json',
     ],
-    skuTables: {
-      colors: { Black: 'BLK', 'Grey Heather': 'GRH' },
-      products: {
-        'a-crew': { title: 'A Crew' },
-        'b-vest': { title: 'B Vest' },
-        'the-gift-card': { title: 'Gift Card' },
-      },
-    },
     appliqueHandle: 'a-crew',
     sizeChartHandles: ['a-crew', 'b-vest'],
     photoProducts: [
@@ -138,8 +130,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 16);
-  assert.equal(CHECKS.length, 16);
+  assert.equal(COHESION_CHECK_COUNT, 13);
+  assert.equal(CHECKS.length, 13);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -223,35 +215,6 @@ test('a product template belonging to no declared product REFUSES', async () => 
   assert.match(out.messages['no-unclaimed-product-template'], /"templates\/product\.orphan\.json"/);
 });
 
-test('a SKU tables census that disagrees REFUSES in both directions', async () => {
-  const short = await fired({ skuTables: { ...sources().skuTables, products: { 'a-crew': { title: 'A Crew' } } } });
-  assert.ok(short.refusals.includes('sku-tables-cover-every-product'));
-
-  const long = await fired({
-    skuTables: { ...sources().skuTables, products: { ...sources().skuTables.products, ghost: { title: 'Ghost' } } },
-  });
-  assert.ok(long.refusals.includes('sku-tables-cover-every-product'));
-});
-
-test('a SKU tables title that differs from the manifest REFUSES', async () => {
-  const out = await fired({
-    skuTables: { ...sources().skuTables, products: { ...sources().skuTables.products, 'a-crew': { title: 'A Crewneck' } } },
-  });
-  assert.deepEqual(out.refusals, ['sku-tables-titles-match']);
-  assert.match(out.messages['sku-tables-titles-match'], /"a-crew"/);
-});
-
-test('the SKU colour check compares VALUES, not spellings, which is what lets it pass unmigrated', async () => {
-  // tables.json keys colours by their display spelling; the manifest keys them by identity. The
-  // check normalises both sides first, so a casing difference is not a finding.
-  const cased = await fired({ skuTables: { ...sources().skuTables, colors: { BLACK: 'BLK', 'grey heather': 'GRH' } } });
-  assert.deepEqual(cased.refusals, [], 'casing alone is not a disagreement');
-
-  const wrong = await fired({ skuTables: { ...sources().skuTables, colors: { Black: 'BLK', Navy: 'NVY' } } });
-  assert.deepEqual(wrong.refusals, ['sku-tables-colors-match']);
-  assert.match(wrong.messages['sku-tables-colors-match'], /compared after normalisation/);
-});
-
 test('an applique handle that is undeclared, or is not a garment, both REFUSE', async () => {
   const unknown = await fired({ appliqueHandle: 'ghost' });
   assert.deepEqual(unknown.refusals, ['applique-product-is-a-garment']);
@@ -332,10 +295,10 @@ test('a DELETED marker is a refusal, not an empty region that silently retires t
 });
 
 test('a check that THROWS is a failed check, never a skipped one, and the run count still counts it', async () => {
-  const out = await runCohesion(sources({ skuTables: null }));
+  const out = await runCohesion(sources({ templateFiles: null }));
   assert.equal(out.run, COHESION_CHECK_COUNT, 'a throwing check is still a check that ran');
-  assert.ok(out.refusals.some((r) => r.id === 'sku-tables-cover-every-product'));
-  assert.match(out.refusals.find((r) => r.id === 'sku-tables-cover-every-product').message, /could not run/);
+  assert.ok(out.refusals.some((r) => r.id === 'no-unclaimed-product-template'));
+  assert.match(out.refusals.find((r) => r.id === 'no-unclaimed-product-template').message, /could not run/);
 });
 
 // ---------------------------------------------------------------------------
@@ -358,7 +321,6 @@ const FORGED_CASES = [
   ['config/settings_data.json', { settingsDataValues: new Map([['color_option_name', FORGED], ['size_option_name', 'Size']]) }],
   ['scripts/a11y/paths.json', { a11yProductHandles: [...sources().a11yProductHandles, FORGED] }],
   ['templates/', { templateFiles: [...sources().templateFiles, FORGED] }],
-  ['scripts/sku/tables.json', { skuTables: { colors: { [FORGED]: 'X' }, products: { [FORGED]: { title: FORGED } } } }],
   ['scripts/applique-grid/patterns.json', { appliqueHandle: FORGED }],
   ['scripts/size-chart/profiles/*.json', { sizeChartHandles: [FORGED] }],
   ['scripts/lib/photo-naming.mjs', { photoProducts: [{ handle: FORGED, title: FORGED, gid: FORGED, colorValues: [FORGED] }] }],

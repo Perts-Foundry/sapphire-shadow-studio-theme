@@ -1,10 +1,20 @@
-// Load and validate the committed code tables.
+// Load and validate the committed code tables, merged with the catalogue manifest.
 //
-// The tables are the source of truth for every SKU this tool derives, so a malformed table is not a
-// cosmetic problem: a lowercase colour code or a duplicated design code produces SKUs that are
+// The tables are the source of truth for every SKU CODE this tool derives, so a malformed table is
+// not a cosmetic problem: a lowercase colour code or a duplicated design code produces SKUs that are
 // wrong in a way nothing downstream can detect, on a field that is then frozen onto order lines.
 // Validation therefore happens at load, on every command, and the same checks back `sku:tables` in
 // CI. Nothing here touches the network or the filesystem except `loadTables`.
+//
+// WHAT THIS FILE NO LONGER HOLDS. It used to restate three things that catalogue.json now owns: the
+// product census with every product's title, the colour vocabulary in its Admin display spelling,
+// and each segment's Admin option NAME. All three are read from the manifest and merged in by
+// `effectiveTables`, so downstream modules keep receiving one object with the shape they always had.
+// The tables hold codes; the manifest holds the vocabulary those codes map.
+//
+// THE PRODUCT CENSUS IS CHECKED IN BOTH DIRECTIONS. A manifest product with no code cannot have a
+// SKU derived; a table entry for a product the manifest does not declare maps codes onto nothing.
+// Both refuse, so the two files cannot drift apart the way tables.json and photo-naming.mjs did.
 //
 // See docs/sku-scheme.md for what the codes mean and what "append-only" obliges.
 
@@ -13,7 +23,10 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const TABLES_VERSION = 1;
+import { normaliseAxis } from '../../lib/vocab.mjs';
+import { optionName, sizeValuesFor, loadCatalogue, CATALOGUE_PATH } from '../../lib/catalogue-manifest.mjs';
+
+export const TABLES_VERSION = 2;
 
 /** The committed tables, resolved from this module rather than from cwd. */
 export const TABLES_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'tables.json');
@@ -24,7 +37,19 @@ export const CODE_RE = /^[A-Z0-9]+$/;
 /** Ambiguous against 0 and 1 when read off a label or transcribed by hand. */
 export const AMBIGUOUS_CHARS = ['O', 'I'];
 
-const SEGMENT_KINDS = new Set(['design', 'color', 'size', 'denomination']);
+/**
+ * The segment kinds a product may declare.
+ *
+ * DERIVED FROM THE MANIFEST'S OPTION AXES, not restated. It was a hardcoded
+ * `['design','color','size','denomination']` here, which is the same four axis ids the manifest
+ * declares, and a fifth axis would have needed both edited in step with nothing checking.
+ *
+ * @param {object} manifest
+ * @returns {Set<string>}
+ */
+export function segmentKinds(manifest) {
+  return new Set(manifest.options.keys());
+}
 
 /**
  * Every code in the tables, with the scope that has to keep it unique.
@@ -52,17 +77,20 @@ export function allCodes(tables) {
 }
 
 /**
- * Validate the tables, collecting every problem rather than throwing on the first.
+ * Validate the tables against the manifest, collecting every problem rather than throwing on the
+ * first.
  *
  * Collecting matters for the lint: an operator adding three codes at once should see all three
  * mistakes in one run, not one per round trip.
  *
- * @param {object} tables
+ * @param {object} tables - the RAW committed tables, before merging
+ * @param {object} manifest
  * @returns {string[]} problems, empty when the tables are valid
  */
-export function validateTables(tables) {
+export function validateTables(tables, manifest) {
   const problems = [];
   if (!tables || typeof tables !== 'object') return ['tables.json is not an object.'];
+  if (!manifest || !manifest.products) return ['validateTables needs the catalogue manifest.'];
   if (tables.version !== TABLES_VERSION) {
     problems.push(`tables.json version is ${JSON.stringify(tables.version)}, expected ${TABLES_VERSION}.`);
   }
@@ -102,6 +130,43 @@ export function validateTables(tables) {
     else seen.set(code, key);
   }
 
+  // The colour vocabulary, both directions, against the manifest. Keys are manifest colour IDS, not
+  // Admin display spellings: the display spelling is the manifest's to state, and keying on it here
+  // was the third casing of the same value.
+  for (const key of Object.keys(tables.colors ?? {})) {
+    if (!manifest.colors.has(key)) {
+      const normalised = normaliseAxis(key, 'Color');
+      problems.push(
+        `colors "${key}" is not a colour declared in catalogue.json.` +
+          `${manifest.colors.has(normalised) ? ` Keys here are colour IDS: use "${normalised}".` : ''}`
+      );
+    }
+  }
+  for (const id of manifest.colors.keys()) {
+    if (!(id in (tables.colors ?? {}))) {
+      problems.push(`colour "${id}" is declared in catalogue.json but has no code here.`);
+    }
+  }
+
+  // The product census, both directions.
+  for (const handle of Object.keys(tables.products ?? {})) {
+    if (!manifest.products.has(handle)) {
+      problems.push(
+        `product "${handle}" is not declared in catalogue.json. A table entry for a product the ` +
+          `manifest has never heard of maps codes onto nothing.`
+      );
+    }
+  }
+  for (const handle of manifest.products.keys()) {
+    if (!(handle in (tables.products ?? {}))) {
+      problems.push(
+        `product "${handle}" is declared in catalogue.json but has no entry here, so no SKU can be ` +
+          `derived for any of its variants.`
+      );
+    }
+  }
+
+  const kinds = segmentKinds(manifest);
   for (const [handle, entry] of Object.entries(tables.products ?? {})) {
     const where = `product "${handle}"`;
     if (!entry || typeof entry !== 'object') {
@@ -113,21 +178,34 @@ export function validateTables(tables) {
     if (typeof entry.code === 'string' && entry.code.startsWith('0')) {
       problems.push(`${where} code "${entry.code}" starts with 0; a SKU must never start with 0.`);
     }
+    if ('title' in entry) {
+      problems.push(
+        `${where} carries a "title". Titles come from catalogue.json now; a second copy here is the ` +
+          `duplication this migration removed.`
+      );
+    }
     if (!Array.isArray(entry.segments) || !entry.segments.length) {
       problems.push(`${where} has no segments array.`);
       continue;
     }
-    const options = new Set();
+    const seen = new Set();
     for (const [i, seg] of entry.segments.entries()) {
-      if (!seg || !SEGMENT_KINDS.has(seg.kind)) {
-        problems.push(`${where} segment #${i} has unknown kind ${JSON.stringify(seg?.kind)}.`);
+      if (!seg || !kinds.has(seg.kind)) {
+        problems.push(
+          `${where} segment #${i} has unknown kind ${JSON.stringify(seg?.kind)}; catalogue.json ` +
+            `declares the axes ${[...kinds].join(', ')}.`
+        );
+        continue;
       }
-      if (typeof seg?.option !== 'string' || !seg.option) {
-        problems.push(`${where} segment #${i} has no option name.`);
-      } else if (options.has(seg.option)) {
-        problems.push(`${where} reads option "${seg.option}" twice.`);
-      } else options.add(seg.option);
-      if (seg?.kind === 'design' && !entry.designNamespace) {
+      if ('option' in seg) {
+        problems.push(
+          `${where} segment #${i} carries an "option" name. Option names come from catalogue.json's ` +
+            `"options" now, keyed by the segment's own kind.`
+        );
+      }
+      if (seen.has(seg.kind)) problems.push(`${where} reads the "${seg.kind}" axis twice.`);
+      else seen.add(seg.kind);
+      if (seg.kind === 'design' && !entry.designNamespace) {
         problems.push(`${where} has a design segment but no designNamespace.`);
       }
     }
@@ -143,13 +221,61 @@ export function validateTables(tables) {
 }
 
 /**
- * A stable digest of the tables' meaning.
+ * Merge the committed codes with the manifest's vocabulary into the object every other module reads.
+ *
+ * The merged shape is deliberately the SHAPE THE TABLES USED TO HAVE, so `derive.mjs`, `audit.mjs`
+ * and the planner keep their signatures: a product entry carries `title` and each segment carries
+ * `option`, they are just no longer restated in the committed file. Two things are new and only used
+ * downstream: `sizes`, the product's declared Admin size values, which is what lets `derive.mjs`
+ * refuse a size the product does not sell rather than passing any uppercase token through; and
+ * `body`, so a caller can tell a garment from a gift card without reaching back into the manifest.
+ *
+ * @param {object} tables - the RAW committed tables
+ * @param {object} manifest
+ * @returns {object} the effective tables
+ */
+export function effectiveTables(tables, manifest) {
+  const products = {};
+  for (const [handle, entry] of Object.entries(tables.products ?? {})) {
+    const declared = manifest.products.get(handle);
+    products[handle] = {
+      ...entry,
+      title: declared?.title ?? null,
+      body: declared?.body ?? null,
+      // A non-garment has no body and therefore no declared size range. `null` and not `[]`: an
+      // empty list would read as "sells no sizes", and `derive.mjs` has to tell that apart from
+      // "this axis does not apply here".
+      sizes: declared && declared.body !== null ? sizeValuesFor(manifest, handle) : null,
+      segments: (entry.segments ?? []).map((seg) => ({
+        ...seg,
+        option: manifest.options.has(seg.kind) ? optionName(manifest, seg.kind) : undefined,
+      })),
+    };
+  }
+  return { ...tables, products };
+}
+
+/**
+ * A stable digest of the tables' meaning, MERGED CONTRIBUTION INCLUDED.
  *
  * Plan artifacts embed this and `apply` refuses when it no longer matches, because a table edit
- * changes what a previously approved plan would write. It hashes the parsed structure with sorted
- * keys, so reformatting the file does not void an approval but changing a code does.
+ * changes what a previously approved plan would write. Since half the derivation inputs now come
+ * from the manifest, hashing only the committed file would let a manifest edit silently change every
+ * derived SKU while `assertTablesUnchanged` went on passing an old approved plan. SKUs freeze onto
+ * order lines, so that is the highest-consequence failure in this tool.
  *
- * @param {object} tables
+ * WHAT IS DELIBERATELY EXCLUDED, and why the exclusion is load-bearing: anything that does not feed
+ * derivation. A product `title` is merchandising copy and changes nothing about a SKU; a manifest
+ * product with no entry in the tables contributes nothing. Hashing the merged whole indiscriminately
+ * would invalidate every approved plan store-wide on a title typo fix, and nothing would notice that
+ * it had. The projection below is exactly the derivation inputs, and both directions are pinned by
+ * tests: a positive control (a manifest colour rename changes the hash) and a negative control (a
+ * title fix, and a manifest product absent from the tables, do not).
+ *
+ * It hashes a canonical structure with sorted keys, so reformatting a file does not void an approval
+ * but changing a code does.
+ *
+ * @param {object} tables - the EFFECTIVE tables
  * @returns {string}
  */
 export function hashTables(tables) {
@@ -159,42 +285,84 @@ export function hashTables(tables) {
       return Object.fromEntries(
         Object.keys(v)
           .sort()
-          .filter((k) => k !== 'readme')
           .map((k) => [k, canonical(v[k])])
       );
     }
     return v;
   };
-  return createHash('sha256').update(JSON.stringify(canonical(tables))).digest('hex');
+
+  const payload = {
+    version: tables.version,
+    ambiguityExemptions: [...(tables.ambiguityExemptions ?? [])].sort(),
+    colors: tables.colors ?? {},
+    designs: tables.designs ?? {},
+    denominations: tables.denominations ?? {},
+    products: Object.fromEntries(
+      Object.entries(tables.products ?? {}).map(([handle, entry]) => [
+        handle,
+        {
+          code: entry.code,
+          designNamespace: entry.designNamespace ?? null,
+          skuWritable: entry.skuWritable ?? null,
+          // The option NAME is a derivation input: it is the key the variant's own options are read
+          // by, so renaming an axis in Admin changes which value each segment sees.
+          segments: (entry.segments ?? []).map((s) => ({ kind: s.kind, option: s.option ?? null })),
+          // The declared size range is a derivation input too: it is what a size is validated
+          // against before it passes through into the SKU.
+          sizes: entry.sizes ?? null,
+        },
+      ])
+    ),
+  };
+  return createHash('sha256').update(JSON.stringify(canonical(payload))).digest('hex');
 }
 
 /**
- * Parse and validate tables from raw JSON text.
+ * Parse and validate tables from raw JSON text, returning the effective merged tables.
+ *
  * @param {string} text
- * @param {string} [source] - for error messages
+ * @param {object} params
+ * @param {object} params.manifest
+ * @param {string} [params.source] - for error messages
  * @returns {object}
  */
-export function parseTables(text, source = 'tables.json') {
+export function parseTables(text, { manifest, source = 'tables.json' }) {
   let tables;
   try {
     tables = JSON.parse(text);
   } catch (err) {
     throw new Error(`${source} is not valid JSON: ${err.message}`);
   }
-  const problems = validateTables(tables);
+  const problems = validateTables(tables, manifest);
   if (problems.length) {
     throw new Error(`${source} is invalid:\n  - ${problems.join('\n  - ')}`);
   }
-  return tables;
+  return effectiveTables(tables, manifest);
 }
 
 /**
- * Load the committed tables.
- * @param {string} [filePath]
- * @returns {Promise<object>}
+ * Load the committed tables and merge them with the committed manifest.
+ *
+ * @param {object} [params]
+ * @param {string} [params.filePath]
+ * @param {object} [params.manifest] - loaded from catalogue.json when absent
+ * @returns {Promise<object>} the effective tables
  */
-export async function loadTables(filePath = TABLES_PATH) {
-  return parseTables(await readFile(filePath, 'utf8'), filePath);
+export async function loadTables({ filePath = TABLES_PATH, manifest = null } = {}) {
+  const resolved = manifest ?? (await loadManifest());
+  return parseTables(await readFile(filePath, 'utf8'), { manifest: resolved, source: filePath });
+}
+
+/**
+ * The committed catalogue manifest, read from the repo root.
+ *
+ * A static import and a plain `readFile`, not a dynamic import: `scripts/lib/import-closure.mjs`
+ * refuses any specifier a static walk cannot follow inside a guarded closure, and there is no reason
+ * for this one to be the exception.
+ */
+async function loadManifest() {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  return loadCatalogue({ read: (p) => readFile(path.join(root, p), 'utf8'), path: CATALOGUE_PATH });
 }
 
 /**

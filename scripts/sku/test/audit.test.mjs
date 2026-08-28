@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { auditCatalogue, OK, MISS, MISMATCH, NULL_ACTIONABLE, NULL_EXEMPT } from '../lib/audit.mjs';
-import { TABLES, catalogue, variant } from './fixtures.mjs';
+import { EFFECTIVE as TABLES, catalogue, variant } from './fixtures.mjs';
+
+/** Tables whose two huddle designs share a code, so two variants derive one SKU. */
+const collidingDesignCodes = () => {
+  const t = JSON.parse(JSON.stringify(TABLES));
+  t.designs.huddle['Vet Tech'] = t.designs.huddle.Nurse;
+  return t;
+};
 
 const withExemptGift = () => {
   const t = JSON.parse(JSON.stringify(TABLES));
@@ -42,7 +49,7 @@ test('an unmapped value is grouped once with a variant count, not repeated per v
   assert.equal(report.misses.length, 1);
   assert.equal(report.misses[0].variantCount, 2);
   assert.equal(report.misses[0].value, 'Forest Green');
-  assert.match(report.misses[0].message, /colors: add "Forest Green"/);
+  assert.match(report.misses[0].message, /which catalogue\.json does not declare/);
 });
 
 test('an unknown product is reported once for the whole product', () => {
@@ -72,13 +79,16 @@ test('an exempt product with a correct SKU is still ok, not exempt', () => {
 });
 
 test('two variants deriving one SKU is reported as a tables defect', () => {
+  // Two design values sharing one code. `validateTables` refuses this, and the audit is the second
+  // line of defence: the collision is stated against the variants that would carry it.
+  const collided = collidingDesignCodes();
   const rows = [
-    variant('shift-fuel-crewneck', { Color: 'Black', Size: 'M' }, { id: 'v1' }),
-    variant('shift-fuel-crewneck', { Color: 'Black', Size: 'm' }, { id: 'v2' }),
+    variant('huddle-crewneck', { Design: 'Nurse', Color: 'Black', Size: 'M' }, { id: 'v1' }),
+    variant('huddle-crewneck', { Design: 'Vet Tech', Color: 'Black', Size: 'M' }, { id: 'v2' }),
   ];
-  const report = auditCatalogue(TABLES, rows);
+  const report = auditCatalogue(collided, rows);
   assert.equal(report.duplicates.length, 1);
-  assert.equal(report.duplicates[0].sku, 'SFCN-BLK-M');
+  assert.equal(report.duplicates[0].sku, 'HDCN-NRS-BLK-M');
   assert.deepEqual(report.duplicates[0].variantIds, ['v1', 'v2']);
   assert.equal(report.ok, false);
 });
