@@ -333,8 +333,7 @@ export const CHECKS = [
   },
 
   // 12. The applique registry names one product, and it must be a declared GARMENT: the pattern
-  // charts are printed on a body. Read at `product.handle` today; the path moves to a top-level
-  // `handle` in the same commit that migrates applique-grid, and this reader moves with it.
+  // charts are printed on a body. Read at the registry's top-level `handle`.
   {
     id: 'applique-product-is-a-garment',
     source: 'scripts/applique-grid/patterns.json',
@@ -474,10 +473,10 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
     .sort();
 
   const appliqueRegistry = await readJson('scripts/applique-grid/patterns.json', repoRoot);
-  // The path this reads MOVES in the commit that migrates applique-grid: `product.handle` becomes a
-  // top-level `handle`. Both are accepted here so the check reads the same fact either side of that
-  // commit rather than needing its own coordination.
-  const appliqueHandle = String(appliqueRegistry.handle ?? appliqueRegistry.product?.handle ?? '');
+  // Top-level now. It was nested under a `product` block until applique-grid was migrated; that
+  // block is gone from the committed file and `registry.mjs` refuses one, so there is no fallback to
+  // keep here.
+  const appliqueHandle = String(appliqueRegistry.handle ?? '');
 
   return {
     manifest,

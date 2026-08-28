@@ -621,16 +621,18 @@ test('vocab.mjs and json-keys.mjs are zero-import leaves', async () => {
   }
 });
 
-test('the ID and GID regexes copied into the schema module are byte-identical to the originals', async () => {
-  // COPIED, not moved: the applique registry still owns its own copy until its migration lands, and
-  // deleting it there in this change would break trunk in the window between the two PRs. This is
-  // what stops the two drifting apart for as long as both exist. It is deleted with the copy.
+test('the ID and GID regexes have exactly one definition, and applique-grid reads it', async () => {
+  // They were COPIED here when this module was written, with the originals left in
+  // scripts/applique-grid/lib/registry.mjs so trunk stayed green in the window between the two PRs,
+  // and a test asserted the two copies were byte-identical. The applique migration deleted the
+  // originals: PRODUCT_GID_RE has no caller left there at all (the GID comes from the manifest now),
+  // and ID_RE is imported from here. This is what stops a second copy reappearing.
   const registry = await readFile(path.join(repoRoot, 'scripts/applique-grid/lib/registry.mjs'), 'utf8');
-  const idSource = registry.match(/^const ID_RE = (.+);$/m)?.[1];
-  const gidSource = registry.match(/^const PRODUCT_GID_RE = (.+);$/m)?.[1];
-  assert.ok(idSource && gidSource, 'both originals are still readable from registry.mjs');
-  assert.equal(String(ID_RE), idSource);
-  assert.equal(String(PRODUCT_GID_RE), gidSource);
+  assert.doesNotMatch(registry, /^const ID_RE = /m, 'ID_RE is imported, not redeclared');
+  assert.doesNotMatch(registry, /PRODUCT_GID_RE\s*=/, 'PRODUCT_GID_RE has no second definition');
+  assert.match(registry, /ID_RE,/, 'ID_RE comes from the schema module');
+  assert.equal(String(ID_RE), '/^[a-z0-9]+(?:-[a-z0-9]+)*$/');
+  assert.equal(String(PRODUCT_GID_RE), '/^gid:\\/\\/shopify\\/Product\\/\\d+$/');
 });
 
 // ---------------------------------------------------------------------------

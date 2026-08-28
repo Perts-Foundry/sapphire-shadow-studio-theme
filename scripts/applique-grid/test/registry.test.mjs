@@ -5,11 +5,28 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   validate, assertValid, load, save, activePatterns, dropdownLines, dropdownText,
-  emptyRegistry, serialize, EMPTY_SENTINEL, isEmptySentinel, deriveId, pinnedMedia,
+  emptyRegistry, serialize, EMPTY_SENTINEL, isEmptySentinel, deriveId, pinnedMedia, materialise,
 } from '../lib/registry.mjs';
+import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fixture = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'registry.fixture.json'), 'utf8'));
+
+// Hand-authored, so the materialisation assertions state what the derivation does rather than what
+// today's catalogue happens to contain.
+const MANIFEST = parseCatalogue(
+  JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' }, 'grey heather': { display: 'Grey Heather', slug: 'grey-heather' } },
+    sizes: { s: { display: 'S' } },
+    bodies: { crewneck: { colors: ['black', 'grey heather'], sizes: ['s'] } },
+    products: {
+      'huddle-crewneck': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck', title: 'Huddle Crewneck', gid: 'gid://shopify/Product/7' },
+      'the-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/8' },
+    },
+  })
+);
 
 test('fixture registry validates clean', () => {
   assert.deepEqual(validate(fixture()), []);
@@ -24,6 +41,48 @@ test('sentinel is byte-equality, not structural emptiness', () => {
   const reg = emptyRegistry();
   reg.threads = ['white']; // structurally still empty of patterns, but not the sentinel bytes
   assert.equal(isEmptySentinel(serialize(reg)), false);
+});
+
+test('the bootstrap sentinel opens with the scalar handle and carries no product block', () => {
+  // ITS BYTES CHANGED, DELIBERATELY. `serialize` no longer emits the product block, so the sentinel
+  // this module ships is a different string than before the catalogue migration. That is the one
+  // declared exception to the byte-stability criterion the migration otherwise held to, and it is
+  // pinned here so a later formatting change is still caught.
+  assert.equal(EMPTY_SENTINEL.startsWith('{\n  "version": 1,\n  "handle": "huddle-crewneck",\n  "threads": [],\n'), true);
+  assert.equal(EMPTY_SENTINEL.includes('"product"'), false);
+  assert.equal(EMPTY_SENTINEL.includes('gid://'), false, 'the GID lives in catalogue.json now');
+  assert.equal(EMPTY_SENTINEL.endsWith('\n'), true);
+});
+
+test('serialize drops the derived product block, so a save cannot write it back into the file', () => {
+  const written = JSON.parse(serialize(materialise(emptyRegistry(), MANIFEST)));
+  assert.equal(written.product, undefined);
+  assert.equal(written.handle, 'huddle-crewneck');
+});
+
+// --- materialise ---------------------------------------------------------------------------
+
+test('materialise attaches the handle, GID and Color values from the manifest', () => {
+  const out = materialise({ version: 1, handle: 'huddle-crewneck' }, MANIFEST);
+  assert.deepEqual(out.product, {
+    handle: 'huddle-crewneck',
+    gid: 'gid://shopify/Product/7',
+    colorValues: ['Black', 'Grey Heather'],
+  });
+});
+
+test('a registry still carrying its own product block is REFUSED, not overwritten', () => {
+  // The block held a GID and a colour snapshot the audit compares against the live store. Silently
+  // replacing a stale copy would hide the drift that comparison exists to find.
+  assert.throws(
+    () => materialise({ version: 1, handle: 'huddle-crewneck', product: { handle: 'x' } }, MANIFEST),
+    /carries a "product" block/
+  );
+});
+
+test('an undeclared handle, and a non-garment one, both refuse', () => {
+  assert.throws(() => materialise({ version: 1, handle: 'ghost' }, MANIFEST), /No product "ghost"/);
+  assert.throws(() => materialise({ version: 1, handle: 'the-gift-card' }, MANIFEST), /"body": null/);
 });
 
 const expectProblem = (mutate, needle) => {
@@ -228,7 +287,6 @@ test('the ceiling is skipped when the chart params are themselves invalid', () =
 
 test('unknown keys are rejected in every container, not just gallery', () => {
   expectProblem((r) => { r.notAKey = 1; }, 'registry: unknown key "notAKey"');
-  expectProblem((r) => { r.product.vendor = 'x'; }, 'product: unknown key "vendor"');
   expectProblem((r) => { r.chart.gutter = 4; }, 'chart: unknown key "gutter"');
   expectProblem((r) => { r.patterns[0].notes = 'free text'; }, 'unknown key "notes"');
   expectProblem((r) => { r.patterns[0].crop.rotate = 90; }, 'crop: unknown key "rotate"');
