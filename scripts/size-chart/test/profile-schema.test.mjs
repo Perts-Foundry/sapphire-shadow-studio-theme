@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateProfile } from '../lib/profile-schema.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
+const SEED = resolvedProfile('crewneck-fleece');
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 // Index of the seed's columns for targeted mutation.
@@ -107,6 +108,7 @@ const RANGED = {
   display_name: 'Test Vest',
   unit: 'in',
   garment: 'vest',
+  body: 'vest-womens',
   garment_noun: 'vest',
   sizes: ['XS', 'S'],
   columns: [

@@ -14,6 +14,7 @@ import {
   productTemplateFiles,
   readShippedTemplate,
 } from './shipped-template.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 // Every shipped profile must validate and render an SVG without throwing. This is the coverage that
 // exercises the whole generalization payload at once: the vest / quarter-zip silhouettes, the zipper
@@ -40,7 +41,7 @@ test('the profiles directory has the expected blanks', () => {
 // before its template exists.
 for (const f of files) {
   test(`profile ${f} handles all resolve to a template on disk`, () => {
-    const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
+    const profile = resolvedProfile(f);
     for (const handle of profile.handles ?? []) {
       const rel = path.join('templates', `product.${handle}.json`);
       assert.ok(existsSync(path.join(ROOT, rel)), `${f}: handles entry '${handle}' has no ${rel}`);
@@ -113,7 +114,7 @@ for (const f of files) {
 
 for (const f of files) {
   test(`profile ${f} validates and renders`, () => {
-    const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
+    const profile = resolvedProfile(f);
     assert.equal(validateProfile(profile), true);
     const svg = buildSvg(profile);
     assert.match(svg, /^<svg /);

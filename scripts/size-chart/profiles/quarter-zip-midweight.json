@@ -3,8 +3,8 @@
   "display_name": "Midweight Quarter Zip",
   "unit": "in",
   "garment": "quarter-zip",
+  "body": "quarter-zip",
   "garment_noun": "quarter-zip",
-  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],
   "columns": [
     { "role": "size", "heading": "Size", "kind": "label" },
     {
@@ -66,6 +66,5 @@
       { "title": "Pick your size", "detail": "Between two? These run a standard unisex fit: size up for room, or down for a closer fit." }
     ]
   },
-  "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements.",
-  "handles": ["lead-ii-quarter-zip"]
+  "footer": "Measurements are of the garment laid flat. A manufacturing tolerance of ±1 inch applies to all measurements."
 }

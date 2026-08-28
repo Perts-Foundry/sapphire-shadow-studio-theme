@@ -101,7 +101,6 @@ function sources(over = {}) {
       'templates/product.gift-card.json',
     ],
     appliqueHandle: 'a-crew',
-    sizeChartHandles: ['a-crew', 'b-vest'],
     docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC },
     ...over,
   };
@@ -125,8 +124,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 12);
-  assert.equal(CHECKS.length, 12);
+  assert.equal(COHESION_CHECK_COUNT, 11);
+  assert.equal(CHECKS.length, 11);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -220,16 +219,6 @@ test('an applique handle that is undeclared, or is not a garment, both REFUSE', 
   assert.match(gift.messages['applique-product-is-a-garment'], /printed on a body/);
 });
 
-test('a size-chart profile naming an unknown handle, or a garment with no profile, both REFUSE', async () => {
-  const unknown = await fired({ sizeChartHandles: ['a-crew', 'b-vest', 'ghost'] });
-  assert.deepEqual(unknown.refusals, ['size-chart-handles-are-products']);
-  assert.match(unknown.messages['size-chart-handles-are-products'], /"ghost"/);
-
-  const uncovered = await fired({ sizeChartHandles: ['a-crew'] });
-  assert.deepEqual(uncovered.refusals, ['size-chart-handles-are-products']);
-  assert.match(uncovered.messages['size-chart-handles-are-products'], /"b-vest"/);
-});
-
 test('a doc marker region that disagrees REFUSES, in either file', async () => {
   const skuMissing = await fired({
     docs: { ...sources().docs, skuScheme: SKU_SCHEME_DOC.replace('| Gift Card | `GIFT` |\n', '') },
@@ -296,7 +285,6 @@ const FORGED_CASES = [
   ['scripts/a11y/paths.json', { a11yProductHandles: [...sources().a11yProductHandles, FORGED] }],
   ['templates/', { templateFiles: [...sources().templateFiles, FORGED] }],
   ['scripts/applique-grid/patterns.json', { appliqueHandle: FORGED }],
-  ['scripts/size-chart/profiles/*.json', { sizeChartHandles: [FORGED] }],
   ['docs/sku-scheme.md', { docs: { skuScheme: SKU_SCHEME_DOC.replace('| A Crew | `ACRW` |', `| ${FORGED.replace(/\n/g, ' ')} | \`X\` |`), altText: ALT_TEXT_DOC } }],
   ['docs/product-media-alt-text.md', { docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC.replace('| A Crew |', `| ${FORGED.replace(/\n/g, ' ')} |`) } }],
 ];

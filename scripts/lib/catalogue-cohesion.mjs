@@ -187,6 +187,12 @@ async function readJson(file, repoRoot) {
  * both-directions BODY_PHOTO_TOKEN test in scripts/lib/photo-naming.test.mjs, which asserts the one
  * thing that is still hand-authored there.
  *
+ * A fifth, over the size-chart profiles' handle lists, retired with the size-chart migration: a
+ * profile declares a catalogue body now and `profile-io.mjs` materialises its handles from the
+ * products on that body, so the list cannot name a product the manifest does not. Its replacement is
+ * the materialisation test in scripts/size-chart/test/profile-io.test.mjs, plus the frozen
+ * byte-stability snapshot in scripts/size-chart/test/pre-migration-bytes.test.mjs.
+ *
  * @type {Array<{id: string, source: string, severity: string, run: (ctx: object) => Promise<string|null>}>}
  */
 export const CHECKS = [
@@ -350,32 +356,6 @@ export const CHECKS = [
     },
   },
 
-  // 13. Every size-chart profile's handle list must resolve to a declared product template. RETIRES
-  // once profiles carry a body and profile-io.mjs materialises the handles from the manifest.
-  {
-    id: 'size-chart-handles-are-products',
-    source: 'scripts/size-chart/profiles/*.json',
-    severity: REFUSE,
-    async run({ manifest, sizeChartHandles }) {
-      const unknown = sizeChartHandles.filter((h) => !manifest.products.has(h));
-      if (unknown.length) {
-        return (
-          `${unknown.length} size-chart profile handle(s) are not declared products: ` +
-          `${nameList(unknown)}. The generator writes an accordion row into ` +
-          `templates/product.<handle>.json, so an unknown handle writes into no file at all.`
-        );
-      }
-      const uncovered = garmentProducts(manifest)
-        .map((p) => p.handle)
-        .filter((h) => !sizeChartHandles.includes(h));
-      return (
-        uncovered.length &&
-        `${uncovered.length} garment product(s) have no size-chart profile: ${nameList(uncovered)}. ` +
-          `Every garment sells by size, so a product with no profile ships a size guide nobody can read.`
-      );
-    },
-  },
-
   // 15-16. The two docs that restate the vocabulary in prose, inside explicit marker regions. These
   // do NOT retire: prose is hand-written by definition, and these regions are exactly the parts of it
   // that make a factual claim about the catalogue.
@@ -499,15 +479,6 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
   // commit rather than needing its own coordination.
   const appliqueHandle = String(appliqueRegistry.handle ?? appliqueRegistry.product?.handle ?? '');
 
-  const profileNames = (await listDir(path.join(repoRoot, 'scripts/size-chart/profiles'))).filter((f) =>
-    f.endsWith('.json')
-  );
-  const sizeChartHandles = [];
-  for (const name of profileNames.sort()) {
-    const profile = await readJson(`scripts/size-chart/profiles/${name}`, repoRoot);
-    for (const h of profile.handles ?? []) sizeChartHandles.push(String(h));
-  }
-
   return {
     manifest,
     settingsSchemaDefaults,
@@ -516,7 +487,6 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
     a11yProductTemplates,
     templateFiles,
     appliqueHandle,
-    sizeChartHandles,
     docs: {
       skuScheme: await readText('docs/sku-scheme.md'),
       altText: await readText('docs/product-media-alt-text.md'),

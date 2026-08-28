@@ -5,9 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSvg, CANVAS } from '../lib/render-svg.mjs';
 import { setupFontconfig } from '../lib/fontconfig.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
+const SEED = resolvedProfile('crewneck-fleece');
 
 // Structural smoke test, not a golden snapshot: pixel output is Pillow/librsvg/FreeType-version
 // bound, so we assert shape + brand background rather than byte-equality (see the plan's test notes).
