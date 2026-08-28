@@ -169,10 +169,12 @@ silently shortening anything.
 
 ## The registry
 
-- `product` is a committed snapshot (handle, GID, Color option values). Networked runs fetch the
-  live values and fail loudly on mismatch. After any snapshot update, the colour guard re-runs
-  over ALL active names; a new conflict re-opens the naming gate and is never resolved by editing
-  the snapshot back.
+- `handle` is the one product fact this file commits: a scalar naming the product these charts are
+  printed on. The GID and the Color option values are read from `catalogue.json` and attached at
+  load, so `registry.product.{handle,gid,colorValues}` reads the same as it always did while the
+  file itself carries no second copy. Networked runs fetch the live values and fail loudly on
+  mismatch. After any change to those values, the colour guard re-runs over ALL active names; a new
+  conflict re-opens the naming gate and is never resolved by editing the manifest back.
 - Pattern `name`s must whole-word-match **zero** Color values under the exact storefront
   semantics (`scripts/lib/photo-naming.mjs`'s `matchedColorValues`, the same function the alt
   guard wraps). Thread words never enter alt text, so a `black` thread is legal while a name
@@ -308,8 +310,8 @@ rendered charts, published record, live media, alts, and gallery order (charts f
 pinned media) all agree, and it records the convergence watermark snapshot retention refuses to
 prune past. It also WARNs (without
 failing) about legacy Huddle photo alts that still say Gray / Navy; that predates this module. The
-repo-side vocabulary is now reconciled (`scripts/lib/photo-naming.mjs` and the alt-text doc record
-`Black` / `Grey Heather` / `Classic Navy`), so the remaining drift is live media alts in Admin, and
+repo-side vocabulary is now reconciled (`catalogue.json` records `Black` / `Grey Heather` /
+`Classic Navy`, and every other repo-side surface derives from it), so the remaining drift is live media alts in Admin, and
 it is fixed there rather than in the repo.
 
 **The audit has no scheduled trigger.** It is an operator-run backstop; a green test suite says

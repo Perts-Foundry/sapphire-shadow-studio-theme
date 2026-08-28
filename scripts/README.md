@@ -9,8 +9,12 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   via the Admin API (the live-write step; gated, one product at a time).
 - `contact-sheet.mjs` (below): render labeled thumbnail grids from a folder of photos, so a review
   round reads one composite per couple dozen frames instead of every frame full-size.
-- `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour maps, read
-  by the pipeline scripts and by the applique-grid naming guard. One source of truth.
+- `lib/photo-naming.mjs`: the machine-readable naming convention plus the product / colour lookups,
+  read by the pipeline scripts and by the applique-grid naming guard. The vocabulary itself (lines,
+  colour tokens, and the product census with every title, GID and colour list) is DERIVED from
+  `catalogue.json` via `createNaming(manifest)`; the one table still hand-authored here is
+  `BODY_PHOTO_TOKEN`, the body-id to filename-token map, because filename tokens are already printed
+  on files on disk and cannot follow a manifest rename.
 - `lib/catalogue-manifest.mjs`: the schema, the validators and the derived accessors for the root
   `catalogue.json`. It lives here rather than under `blank-inventory/lib/` because seven areas read
   it, and leaving it there gave all of them a load-time dependency on the blank-inventory planner,
@@ -125,7 +129,7 @@ internally, the shot carrying a `-<index>`):
 group shot:  <line>_<garment>_group_<shot>-<index>.jpg
 ```
 
-| Field | Values (closed sets are extensible in `lib/photo-naming.mjs`) |
+| Field | Values (the closed sets are derived from `catalogue.json`; extend it, not this table) |
 | --- | --- |
 | line | `huddle`, `lead2`, `shift-fuel` |
 | garment | `crew-sweater`, `quarter-zip`, `vest` |
@@ -285,7 +289,7 @@ cautious.
   images are read from the manifest's own directory, so a relocated manifest and its images stay
   together.
 - **Preflight without a manifest.** `--check-products` is a standalone read-only mode: it resolves
-  every product recorded in `lib/photo-naming.mjs` against the live store and reports per-product
+  every garment product `catalogue.json` declares against the live store and reports per-product
   `ok` (with the live Color values) or the GID / Color-option drift that would hard-fail an upload,
   labelling an auth/scope failure (`AUTH`) distinctly from drift (`DRIFT`). It refuses to combine
   with `--product`, `--all`, `--dry-run`, or `--manifest`, and exits non-zero on any product error.

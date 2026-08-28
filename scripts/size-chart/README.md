@@ -19,7 +19,6 @@ stored measurements are in **inches**.
   "unit": "in",
   "garment": "quarter-zip",                // crewneck | quarter-zip | vest | null (no diagram)
   "garment_noun": "quarter-zip",           // how a shopper says it; substituted into copy.md's prose
-  "sizes": ["XS", "S", "M", "L", "XL", "2XL"],   // up to 6
   "columns": [                             // up to 6, in table order
     { "role": "size", "heading": "Size", "kind": "label" },
     { "role": "chest_laid_flat", "heading": "Chest (laid flat)", "kind": "measure",
@@ -39,12 +38,18 @@ stored measurements are in **inches**.
   "footer": "Measurements are of the garment laid flat. ...",
   "canvas_height": 2280,                   // optional override; omit to auto-size (height derived from
                                            // content + a fixed margin). If pinned, buildSvg throws on overflow.
-  "handles": ["huddle-crewneck"]           // alternate-template suffixes, NOT Shopify product handles:
-                                           // each one is interpolated into templates/product.<suffix>.json.
-                                           // Empty until that template exists. A suffix with no matching
-                                           // template is skipped, and the run still exits 0.
+  "body": "crewneck"                       // the catalogue.json garment body this blank is cut as.
+                                           // REQUIRED, and the only catalogue fact a profile states.
 }
 ```
+
+**`sizes` and `handles` are derived, not declared.** A profile states its catalogue `body` and
+`lib/profile-io.mjs` materialises both from `catalogue.json` before validation: `sizes` is that
+body's declared Admin size values, and `handles` is the `template` suffix of every product cut from
+it. So they are still alternate-template suffixes interpolated into `templates/product.<suffix>.json`
+and still NOT Shopify product handles; they are now read from the field that states the distinction
+rather than typed in alongside it. A profile that still carries either array is refused rather than
+having its copy silently overwritten.
 
 - **Column `kind`**: `label` (the size column; renders `sizes`), `measure` (a number, shown dual-unit
   `<inch>" / <cm> cm`), `range` (a `[lo, hi]` pair, shown `lo-hi"`, e.g. a body-chest fit range), and
@@ -110,7 +115,7 @@ npx shopify theme check
 ```
 
 Upserts `accordion_row_sc001` (a `text` block + the `table` block) into each product template listed
-in the profile's `handles`, just after the Product Details row. The table's `column_count`, headings,
+in the profile's materialised `handles`, just after the Product Details row. The table's `column_count`, headings,
 and cells all come from the profile's `columns`. The write is **byte-stable** (a full parse +
 `JSON.stringify(obj, null, 2)` round-trip reproduces Shopify's exact on-disk format, so the diff is
 only the added row) and **idempotent** (re-running changes nothing). Before touching a file it runs

@@ -44,9 +44,17 @@ information and costs four characters out of the readable band.
 
 ## Code tables
 
-The tables live in `scripts/sku/tables.json`, are committed to git, and are the source of truth. A
-SKU is always **derived** from a variant's own option values through those tables; it is never typed
-in and never stored anywhere else.
+The tables live in `scripts/sku/tables.json`, are committed to git, and are the source of truth for
+every **code**. A SKU is always **derived** from a variant's own option values through those tables;
+it is never typed in and never stored anywhere else.
+
+The tables hold codes and nothing else. The **vocabulary** those codes map (each product's title, the
+Admin name of every option axis, the colour ids, and each product's declared size range) comes from
+`catalogue.json`, and `scripts/sku/lib/tables.mjs` merges the two at load. So a colour key here is a
+catalogue colour **id** (`grey heather`), not its Admin display spelling, and a product entry carries
+no `title` and a segment no `option` name; leaving either in the file is refused rather than ignored.
+The census and the colour vocabulary are checked in both directions against the manifest on every
+command and by `npm run sku:tables`, so the two files cannot drift apart.
 
 <!-- catalogue:begin colors -->
 **Colours** (store-wide): `BLK` Black, `GRH` Grey Heather, `NVY` Classic Navy.
@@ -117,13 +125,18 @@ it.
    scripts/sku/tables.json`. Append-only means the git history is the authority, not the current
    file.
 3. **Edit `scripts/sku/tables.json`.** A new product also needs its `segments` array and, if it has
-   a design axis, its `designNamespace`.
+   a design axis, its `designNamespace`. A new product or a new colour must be declared in
+   `catalogue.json` FIRST: the tables are validated against it in both directions, so a code for a
+   product the manifest has never heard of, or a declared colour with no code, reds the lint.
 4. **`npm run sku:tables`** locally. It is the same lint CI runs.
 5. **Open a PR.** Table changes go through review like any other change; there is no live-write path
    that edits them.
 6. **Re-run `sku audit` after merge.** A tables change voids every plan artifact and every approval
    that preceded it: the artifact embeds the tables hash and `sku apply` refuses on a mismatch.
-   Start the pipeline again from `audit`.
+   Start the pipeline again from `audit`. The hash covers the MERGED tables, so a `catalogue.json`
+   edit that changes what a SKU derives to (an option axis renamed, a body's size range changed)
+   voids approvals the same way. One that cannot change a SKU (a title fix, a corrected GID) does
+   not.
 
 New **option values on an existing product** are the real ongoing cost, not new products. One new
 colour on `lead-ii-crewneck` creates 48 variants (8 designs x 6 sizes) and needs exactly one new

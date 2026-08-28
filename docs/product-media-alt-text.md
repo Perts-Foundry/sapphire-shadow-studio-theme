@@ -186,7 +186,8 @@ and the human-gated pipeline around them, are driven by the `product-images` ski
 
 **The reserved colour value is script-owned, but you compose the alt: copy `admin_color` verbatim.**
 The manifest's `admin_color` column already holds the exact Admin Color value for each photo (from
-`scripts/lib/photo-naming.mjs`, honouring the vest's `Black`-only divergence). No code concatenates
+`scripts/lib/photo-naming.mjs`, which reads it from `catalogue.json`, honouring the vest's
+`Black`-only divergence). No code concatenates
 it for you: the alt you write must contain that value verbatim, plus your description. Take the
 colour word from `admin_color`, never re-derive it from the filename. This is the filenames-lie trap
 made mechanical: the colour comes from `admin_color`, never from the file's own colour token. The
@@ -219,7 +220,8 @@ Nothing warns you. The gallery just renders differently.
 **A processed batch's manifest can drift from the live Admin option value, and the hero attach then
 skips that colour silently.** The manifest is gitignored, so this note is the only durable record of
 it. The 2026-07-18 batch was written when the option values were `Navy` and `Gray`; both were later
-renamed in Admin to `Classic Navy` and `Grey Heather`, and `scripts/lib/photo-naming.mjs` was updated
+renamed in Admin to `Classic Navy` and `Grey Heather`, and the colour vocabulary (today in
+`catalogue.json`) was updated
 to match, but the already-processed manifest was not. Two independent failures follow, and fixing
 only the first leaves the second armed:
 
