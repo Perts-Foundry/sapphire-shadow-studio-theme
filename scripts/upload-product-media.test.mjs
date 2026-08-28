@@ -4,7 +4,9 @@ import {
   parseArgs, gidDriftProblem, colorDriftProblem, checkProducts, classifyResolveError,
   fetchAllConnection,
 } from './upload-product-media.mjs';
-import { PRODUCTS, recognizedColorValues } from './lib/photo-naming.mjs';
+import { allProducts, recognizedColorValues } from './lib/photo-naming.mjs';
+
+const PRODUCTS = allProducts();
 
 // No test here touches the network: the drift predicates are pure, and checkProducts takes an
 // injected resolver. Importing the module must not run main() (the entrypoint guard).

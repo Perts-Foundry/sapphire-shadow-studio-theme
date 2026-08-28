@@ -1,7 +1,7 @@
 // Canonical naming convention for Sapphire Shadow Studio product photos, plus the
-// product / colour mappings the upload pipeline needs. Pure and dependency-free so both
-// process-product-images.mjs (naming + output) and upload-product-media.mjs (resolution)
-// read one source of truth. No side effects, no I/O.
+// product / colour mappings the upload pipeline needs. Pure: no side effects and no I/O below
+// `defaultNaming`, so both process-product-images.mjs (naming + output) and
+// upload-product-media.mjs (resolution) read one source of truth.
 //
 // Convention:
 //   <line>_<garment>_<colorway>[_<design>]_<shot>-<index>.jpg
@@ -15,105 +15,178 @@
 // name trivially re-parseable; the internal hyphens of a multi-word field are preserved.
 //
 // line / garment / colorway / shot are closed sets (an unknown token warns). design is an
-// open kebab token (any profession/design; never warns on content). Keep new products on the
-// established vocab unless there is a reason not to, and extend the tables here when one ships.
+// open kebab token (any profession/design; never warns on content).
+//
+// THE VOCABULARY COMES FROM catalogue.json. Lines, the product census with every title, GID and
+// colour list, and the colour tokens themselves were all restated here as literals; they are the
+// manifest's to state, and the copies drifted (this module spelled the three garment bodies
+// `crew-sweater`/`quarter-zip`/`vest` while the manifest spelled them
+// `crewneck`/`quarter-zip`/`vest-womens`, with nothing reconciling the two). `createNaming(manifest)`
+// builds the whole vocabulary from a manifest and is what the tests drive; every export below is a
+// thin delegate over `defaultNaming()`, which reads the committed file once.
+//
+// The one thing that is NOT derived is BODY_PHOTO_TOKEN, the body id -> filename token map. A photo
+// filename is a public-ish artifact typed by hand and already printed on hundreds of files, so its
+// tokens cannot follow a manifest rename; they are their own vocabulary. A cohesion test asserts the
+// map covers every declared body and names no body that is not declared, in both directions, which
+// is what stops it going stale silently.
 
-export const LINES = ['huddle', 'lead2', 'shift-fuel'];
-export const GARMENTS = ['crew-sweater', 'quarter-zip', 'vest'];
-// 'group' is not a colour; it is the group-shot marker that occupies the colorway slot.
-export const COLORWAYS = ['black', 'classic-navy', 'grey-heather', 'group'];
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  parseCatalogue,
+  garmentProducts,
+  colorValuesFor,
+  colorDisplay,
+  colorSlug,
+  linesOf,
+  CATALOGUE_PATH,
+} from './catalogue-manifest.mjs';
+
 export const SHOTS = ['angled', 'closeup', 'flat', 'styled'];
 
-// Multi-word vocab tokens, longest first, used only by the hyphen-fallback parser to repair
-// all-hyphen source names (where the field separators were typed as '-' instead of '_').
-const MULTIWORD_TOKENS = ['shift-fuel', 'crew-sweater', 'quarter-zip', 'classic-navy', 'grey-heather'];
+/** The group-shot marker. Not a colour: it occupies the colorway slot and binds to nothing. */
+export const GROUP_MARKER = 'group';
+
+/**
+ * Garment body id (catalogue.json) -> the token that appears in a photo filename.
+ *
+ * Hand-authored on purpose, and checked in both directions by photo-naming.test.mjs against the
+ * committed manifest. Renaming a body in the manifest must NOT silently rename the filename token:
+ * every already-shot file on disk and every already-uploaded Shopify filename carries the old one.
+ */
+const BODY_PHOTO_TOKEN = new Map([
+  ['crewneck', 'crew-sweater'],
+  ['quarter-zip', 'quarter-zip'],
+  ['vest-womens', 'vest'],
+]);
 
 // Known field-value typos we silently repair (kebab, per field). Extend as real ones surface.
 const FIELD_TYPOS = new Map([
   ['quarterzip', 'quarter-zip'], // garment written without the internal hyphen
 ]);
 
-// Colorway token (as it appears in the filename) -> the Admin Color option value that the
-// storefront gallery filter matches alt text against. 'group' and any shared shot map to null
-// (no value -> shared across every colour). This is the general map; per-product recognized
-// values live in PRODUCTS below (the women's vest ships in Black only).
-const COLORWAY_TO_ADMIN = new Map([
-  ['black', 'Black'],
-  ['classic-navy', 'Classic Navy'],
-  ['grey-heather', 'Grey Heather'],
-  ['group', null],
-]);
+/** @param {string} bodyId @returns {string} the filename token for a declared body */
+export function bodyPhotoToken(bodyId) {
+  const token = BODY_PHOTO_TOKEN.get(bodyId);
+  if (!token) {
+    throw new Error(
+      `No photo filename token for body ${JSON.stringify(bodyId)}. Add it to BODY_PHOTO_TOKEN in ` +
+        `scripts/lib/photo-naming.mjs: filename tokens are their own vocabulary and cannot be ` +
+        `derived from a body id, because renaming one would orphan every file already shot.`
+    );
+  }
+  return token;
+}
 
-// Resolved product targets, keyed '<line>/<garment>'. handle is the resolution key for the
-// Admin API; gid is the recorded product GID (verified against the handle lookup at upload
-// time, never trusted blind, never resolved by display title). colorValues is the set of
-// Admin Color option values reserved on that product; it is what the alt-colour guard checks
-// a non-group alt string against. These value sets are provisional: the uploader re-reads the
-// live option values and fails loudly on any drift before writing. Public data (product IDs
-// and handles render on the storefront).
-export const PRODUCTS = {
-  'lead2/crew-sweater': {
-    line: 'lead2', garment: 'crew-sweater',
-    title: 'Lead II Crewneck', handle: 'lead-ii-crewneck',
-    gid: 'gid://shopify/Product/10209039483180',
-    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
-  },
-  'lead2/quarter-zip': {
-    line: 'lead2', garment: 'quarter-zip',
-    title: 'Lead II Quarter-Zip', handle: 'lead-ii-quarter-zip',
-    gid: 'gid://shopify/Product/10401392263468',
-    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
-  },
-  'lead2/vest': {
-    line: 'lead2', garment: 'vest',
-    title: "Lead II Vest - Women's", handle: 'lead-ii-vest-womens',
-    gid: 'gid://shopify/Product/10401393377580',
-    colorValues: ['Black'], // deliberate divergence: sold in Black only
-  },
-  'shift-fuel/crew-sweater': {
-    line: 'shift-fuel', garment: 'crew-sweater',
-    title: 'Shift Fuel Crewneck', handle: 'shift-fuel-crewneck',
-    gid: 'gid://shopify/Product/10231499882796',
-    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
-  },
-  'huddle/crew-sweater': {
-    line: 'huddle', garment: 'crew-sweater',
-    title: 'Huddle Crewneck', handle: 'huddle-crewneck',
-    gid: 'gid://shopify/Product/10231493787948',
-    colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
-  },
-};
+/** The body ids BODY_PHOTO_TOKEN covers, for the both-directions cohesion test. */
+export function photoTokenBodies() {
+  return [...BODY_PHOTO_TOKEN.keys()];
+}
+
+/**
+ * Build the whole naming vocabulary from a manifest.
+ *
+ * Pure: it reads nothing and caches nothing. Every test drives this with a hand-authored manifest,
+ * so no assertion here is a statement about today's catalogue.
+ *
+ * @param {ReturnType<typeof parseCatalogue>} manifest
+ * @returns {object} the vocabulary and the lookups over it
+ */
+export function createNaming(manifest) {
+  const lines = linesOf(manifest);
+
+  const products = {};
+  for (const product of garmentProducts(manifest)) {
+    const garment = bodyPhotoToken(product.body);
+    products[`${product.line}/${garment}`] = {
+      line: product.line,
+      garment,
+      title: product.title,
+      handle: product.handle,
+      gid: product.gid,
+      colorValues: colorValuesFor(manifest, product.handle),
+    };
+  }
+
+  const garments = [];
+  for (const p of Object.values(products)) if (!garments.includes(p.garment)) garments.push(p.garment);
+
+  // Colorway token -> the Admin Color option value the storefront gallery filter matches alt text
+  // against. The token is the manifest's own colour slug, so the third casing of every colour is
+  // gone. `group` maps to null: no value means shared across every colour.
+  const colorwayToAdmin = new Map();
+  for (const id of manifest.colors.keys()) colorwayToAdmin.set(colorSlug(manifest, id), colorDisplay(manifest, id));
+  colorwayToAdmin.set(GROUP_MARKER, null);
+
+  const colorways = [...colorwayToAdmin.keys()];
+
+  // Multi-word vocab tokens, longest first, used only by the hyphen-fallback parser to repair
+  // all-hyphen source names (where the field separators were typed as '-' instead of '_').
+  const multiword = [...new Set([...lines, ...garments, ...colorways].filter((t) => t.includes('-')))].sort(
+    (a, b) => b.length - a.length || a.localeCompare(b)
+  );
+
+  return {
+    LINES: lines,
+    GARMENTS: garments,
+    COLORWAYS: colorways,
+    SHOTS,
+    PRODUCTS: products,
+    MULTIWORD_TOKENS: multiword,
+    colorwayToAdminValue: (colorway, productKey) => resolveColorway(products, colorwayToAdmin, colorway, productKey),
+    productForLineGarment: (line, garment) => products[`${line}/${garment}`] || null,
+    productForHandle: (handle) => findByHandle(products, handle),
+    recognizedColorValues: (productKey) => (products[productKey] ? [...products[productKey].colorValues] : []),
+    altColorProblem: (alt, expected, productKey) =>
+      checkAltColor(alt, expected, productKey, (k) => (products[k] ? [...products[k].colorValues] : [])),
+    parseName: (filename) => parseWithVocab(filename, { lines, garments, colorways, multiword }),
+    normalizeName: (filename) => normalizeWithVocab(filename, { lines, garments, colorways, multiword }),
+  };
+}
+
+/**
+ * The vocabulary built from the committed catalogue.json, read once.
+ *
+ * This is the ONLY I/O in the module, and it is synchronous on purpose: every export below it is a
+ * plain function that callers already use synchronously. A missing manifest is a broken checkout,
+ * not a workflow state, so it throws rather than falling back to an empty census, which would read
+ * as "this product is not recorded" on every guard that consults it.
+ */
+let cached = null;
+export function defaultNaming() {
+  if (!cached) {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    cached = createNaming(parseCatalogue(readFileSync(path.join(root, CATALOGUE_PATH), 'utf8')));
+  }
+  return cached;
+}
 
 // --- lookups -----------------------------------------------------------------------------
+//
+// Each takes its census explicitly so `createNaming` can bind a hand-authored one; the exported
+// delegates at the bottom of the file bind the committed manifest's.
 
 // The Admin Color value for a colorway token, or null for group/shared. Pass a productKey to
 // honour a per-product divergence (a value not reserved on that product resolves to null, so
 // the photo is treated as shared there rather than bound to a colour the product does not sell).
-export function colorwayToAdminValue(colorway, productKey) {
-  const value = COLORWAY_TO_ADMIN.has(colorway) ? COLORWAY_TO_ADMIN.get(colorway) : null;
+function resolveColorway(products, colorwayToAdmin, colorway, productKey) {
+  const value = colorwayToAdmin.has(colorway) ? colorwayToAdmin.get(colorway) : null;
   if (value === null) return null;
-  if (productKey && PRODUCTS[productKey] && !PRODUCTS[productKey].colorValues.includes(value)) {
+  if (productKey && products[productKey] && !products[productKey].colorValues.includes(value)) {
     return null;
   }
   return value;
 }
 
-// The product record for a line+garment pair, or null if the pair is not a known product.
-export function productForLineGarment(line, garment) {
-  return PRODUCTS[`${line}/${garment}`] || null;
-}
-
 // Reverse lookup: the product entry for an Admin handle, as { key, record }, or null when no
 // recorded product uses that handle. The uploader resolves manifest rows by handle, and the
 // shared-asset alt guard needs the product key back from a row that carries only the handle.
-export function productForHandle(handle) {
-  const found = Object.entries(PRODUCTS).find(([, p]) => p.handle === handle);
+function findByHandle(products, handle) {
+  const found = Object.entries(products).find(([, p]) => p.handle === handle);
   return found ? { key: found[0], record: found[1] } : null;
-}
-
-// The recognized Admin Color values for a product key (used by the alt-colour guard).
-export function recognizedColorValues(productKey) {
-  return PRODUCTS[productKey] ? [...PRODUCTS[productKey].colorValues] : [];
 }
 
 // Separator characters the storefront gallery filter normalizes to a space on BOTH sides of the
@@ -189,9 +262,9 @@ export function matchedColorValues(alt, values) {
  * group/shared photo. Returns null when the alt is acceptable, or an error string describing the
  * violation. Empty alt is skipped (not yet authored) and returns null.
  */
-export function altColorProblem(alt, expected, productKey) {
+function checkAltColor(alt, expected, productKey, valuesFor) {
   if (!alt || !alt.trim()) return null;
-  const matched = matchedColorValues(alt, recognizedColorValues(productKey));
+  const matched = matchedColorValues(alt, valuesFor(productKey));
   if (expected === null) {
     return matched.length === 0
       ? null
@@ -214,12 +287,12 @@ function repairToken(token) {
 
 // Try to recover fields from an all-hyphen (or mixed) base name by greedily consuming known
 // multi-word vocab tokens, then single tokens. Returns an array of field tokens or null.
-function fieldsFromHyphenated(base) {
+function fieldsFromHyphenated(base, multiword) {
   let rest = base.toLowerCase();
   const fields = [];
   while (rest.length) {
     let matched = null;
-    for (const token of MULTIWORD_TOKENS) {
+    for (const token of multiword) {
       if (rest === token || rest.startsWith(`${token}-`)) { matched = token; break; }
     }
     if (matched) {
@@ -249,7 +322,8 @@ function fieldsFromHyphenated(base) {
  * it is NOT set by confident repairs (separator misuse, a known typo), which are safe to apply
  * to a source file. `--rename-originals` renames only when `ok && !uncertain`.
  */
-export function parseName(filename) {
+function parseWithVocab(filename, vocab) {
+  const { lines, garments, colorways, multiword } = vocab;
   const warnings = [];
   let uncertain = false;
   const dot = filename.lastIndexOf('.');
@@ -259,7 +333,7 @@ export function parseName(filename) {
   // structure (the all-hyphen separator-misuse case). A hyphen repair is confident, not uncertain.
   let rawFields = base.split('_').filter((f) => f.length);
   if (rawFields.length < 4) {
-    const recovered = fieldsFromHyphenated(base);
+    const recovered = fieldsFromHyphenated(base, multiword);
     if (recovered && recovered.length >= 4) {
       warnings.push('field separators were hyphens; expected underscores between fields');
       rawFields = recovered;
@@ -282,11 +356,11 @@ export function parseName(filename) {
   if (m) { shot = m[1]; index = Number(m[2]); }
   else { warnings.push(`shot field "${shotField}" has no -<index> suffix`); uncertain = true; }
 
-  if (!LINES.includes(line)) { warnings.push(`unknown line "${line}"`); uncertain = true; }
-  if (!GARMENTS.includes(garment)) { warnings.push(`unknown garment "${garment}"`); uncertain = true; }
-  if (!COLORWAYS.includes(colorway)) { warnings.push(`unknown colorway "${colorway}"`); uncertain = true; }
+  if (!lines.includes(line)) { warnings.push(`unknown line "${line}"`); uncertain = true; }
+  if (!garments.includes(garment)) { warnings.push(`unknown garment "${garment}"`); uncertain = true; }
+  if (!colorways.includes(colorway)) { warnings.push(`unknown colorway "${colorway}"`); uncertain = true; }
   if (shot && !SHOTS.includes(shot)) { warnings.push(`unknown shot "${shot}"`); uncertain = true; }
-  if (colorway === 'group' && design !== null) {
+  if (colorway === GROUP_MARKER && design !== null) {
     warnings.push('group shot should not carry a design field'); uncertain = true;
   }
 
@@ -304,8 +378,8 @@ export function parseName(filename) {
  * name (there are no fields to separate) so processing still produces a stable output; such a file
  * is `uncertain` and is never auto-renamed.
  */
-export function normalizeName(filename) {
-  const parsed = parseName(filename);
+function normalizeWithVocab(filename, vocab) {
+  const parsed = parseWithVocab(filename, vocab);
   if (!parsed.ok) {
     const dot = filename.lastIndexOf('.');
     const base = dot === -1 ? filename : filename.slice(0, dot);
@@ -319,4 +393,50 @@ export function normalizeName(filename) {
     uncertain: parsed.uncertain,
     parsed,
   };
+}
+
+// --- committed-manifest delegates ---------------------------------------------------------
+//
+// The public surface, unchanged in shape and signature: each one binds `defaultNaming()`. A caller
+// that needs a different census (a test, or a tool that has already loaded the manifest) calls
+// `createNaming(manifest)` and uses the object it returns instead.
+
+/** Every recorded product, keyed '<line>/<garment>'. */
+export function allProducts() {
+  return defaultNaming().PRODUCTS;
+}
+
+/** @param {string} colorway @param {string} [productKey] @returns {string|null} */
+export function colorwayToAdminValue(colorway, productKey) {
+  return defaultNaming().colorwayToAdminValue(colorway, productKey);
+}
+
+/** @param {string} line @param {string} garment @returns {object|null} */
+export function productForLineGarment(line, garment) {
+  return defaultNaming().productForLineGarment(line, garment);
+}
+
+/** @param {string} handle @returns {{key: string, record: object}|null} */
+export function productForHandle(handle) {
+  return defaultNaming().productForHandle(handle);
+}
+
+/** @param {string} productKey @returns {string[]} */
+export function recognizedColorValues(productKey) {
+  return defaultNaming().recognizedColorValues(productKey);
+}
+
+/** @param {string} alt @param {string|null} expected @param {string} productKey @returns {string|null} */
+export function altColorProblem(alt, expected, productKey) {
+  return defaultNaming().altColorProblem(alt, expected, productKey);
+}
+
+/** @param {string} filename @returns {object} */
+export function parseName(filename) {
+  return defaultNaming().parseName(filename);
+}
+
+/** @param {string} filename @returns {object} */
+export function normalizeName(filename) {
+  return defaultNaming().normalizeName(filename);
 }

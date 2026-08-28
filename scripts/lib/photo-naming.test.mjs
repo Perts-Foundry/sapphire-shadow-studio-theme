@@ -1,9 +1,127 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
-  colorwayToAdminValue, productForLineGarment, productForHandle, recognizedColorValues,
-  matchedColorValues, altColorProblem, parseName, normalizeName,
+  createNaming, defaultNaming, matchedColorValues, bodyPhotoToken, photoTokenBodies,
 } from './photo-naming.mjs';
+import { parseCatalogue, loadCatalogue, garmentProducts } from './catalogue-manifest.mjs';
+
+const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// A HAND-AUTHORED manifest, not the committed one. The naming vocabulary is derived now, so feeding
+// these tests the live file would turn every assertion below into a statement about today's
+// catalogue, and would rewrite itself the next time a product shipped. It mirrors the live SHAPE
+// (three bodies, three colours, a Black-only women's vest, a gift card that is not a garment and
+// therefore has no photo key) with synthetic GIDs.
+const MANIFEST = parseCatalogue(
+  JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: {
+      black: { display: 'Black', slug: 'black' },
+      'grey heather': { display: 'Grey Heather', slug: 'grey-heather' },
+      'classic navy': { display: 'Classic Navy', slug: 'classic-navy' },
+    },
+    sizes: { s: { display: 'S' }, m: { display: 'M' } },
+    bodies: {
+      crewneck: { colors: ['black', 'grey heather', 'classic navy'], sizes: ['s', 'm'] },
+      'quarter-zip': { colors: ['black', 'grey heather', 'classic navy'], sizes: ['s', 'm'] },
+      'vest-womens': { colors: ['black'], sizes: ['s', 'm'] },
+    },
+    products: {
+      'huddle-crewneck': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck', title: 'Huddle Crewneck', gid: 'gid://shopify/Product/1' },
+      'lead-ii-crewneck': { line: 'lead2', body: 'crewneck', template: 'lead-ii-crewneck', title: 'Lead II Crewneck', gid: 'gid://shopify/Product/2' },
+      'lead-ii-quarter-zip': { line: 'lead2', body: 'quarter-zip', template: 'lead-ii-quarter-zip', title: 'Lead II Quarter-Zip', gid: 'gid://shopify/Product/3' },
+      'lead-ii-vest-womens': { line: 'lead2', body: 'vest-womens', template: 'lead-ii-vest-womens', title: "Lead II Vest - Women's", gid: 'gid://shopify/Product/4' },
+      'shift-fuel-crewneck': { line: 'shift-fuel', body: 'crewneck', template: 'shift-fuel-crewneck', title: 'Shift Fuel Crewneck', gid: 'gid://shopify/Product/5' },
+      'the-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/6' },
+    },
+  })
+);
+
+const {
+  colorwayToAdminValue, productForLineGarment, productForHandle, recognizedColorValues,
+  altColorProblem, parseName, normalizeName,
+} = createNaming(MANIFEST);
+
+// --- the derivation ------------------------------------------------------------------------
+
+test('createNaming derives every closed set from the manifest', () => {
+  const n = createNaming(MANIFEST);
+  assert.deepEqual(n.LINES, ['huddle', 'lead2', 'shift-fuel'], 'lines in product declaration order');
+  assert.deepEqual(n.GARMENTS, ['crew-sweater', 'quarter-zip', 'vest'], 'filename tokens, not body ids');
+  assert.deepEqual(n.COLORWAYS, ['black', 'grey-heather', 'classic-navy', 'group']);
+  assert.deepEqual(Object.keys(n.PRODUCTS), [
+    'huddle/crew-sweater',
+    'lead2/crew-sweater',
+    'lead2/quarter-zip',
+    'lead2/vest',
+    'shift-fuel/crew-sweater',
+  ]);
+  // The gift card has no body, so it has no photo key at all.
+  assert.equal(n.productForHandle('the-gift-card'), null);
+  // The hyphen-recovery vocabulary is every multi-word token, longest first.
+  assert.deepEqual(n.MULTIWORD_TOKENS, ['classic-navy', 'crew-sweater', 'grey-heather', 'quarter-zip', 'shift-fuel']);
+});
+
+test('a colour added to the manifest becomes a colorway token with no edit here', () => {
+  const withSand = createNaming(
+    parseCatalogue(
+      JSON.stringify({
+        version: 2,
+        options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+        colors: { black: { display: 'Black', slug: 'black' }, 'desert sand': { display: 'Desert Sand', slug: 'desert-sand' } },
+        sizes: { s: { display: 'S' } },
+        bodies: { crewneck: { colors: ['black', 'desert sand'], sizes: ['s'] } },
+        products: {
+          'huddle-crewneck': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck', title: 'Huddle Crewneck', gid: 'gid://shopify/Product/1' },
+        },
+      })
+    )
+  );
+  assert.equal(withSand.colorwayToAdminValue('desert-sand'), 'Desert Sand');
+  assert.equal(withSand.parseName('huddle_crew-sweater_desert-sand_flat-1.jpg').uncertain, false);
+  assert.ok(withSand.MULTIWORD_TOKENS.includes('desert-sand'), 'the hyphen parser learns it too');
+});
+
+test('a body with no filename token refuses loudly rather than naming a product after a body id', () => {
+  const scarf = JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' } },
+    sizes: { s: { display: 'S' } },
+    bodies: { scarf: { colors: ['black'], sizes: ['s'] } },
+    products: {
+      'lead-ii-scarf': { line: 'lead2', body: 'scarf', template: 'lead-ii-scarf', title: 'Lead II Scarf', gid: 'gid://shopify/Product/1' },
+    },
+  });
+  assert.throws(() => createNaming(parseCatalogue(scarf)), /No photo filename token for body "scarf"/);
+});
+
+// --- BODY_PHOTO_TOKEN, both directions, against the committed manifest -----------------------
+
+test('MATCHES PRODUCTION: the filename-token map covers every declared body and invents none', async () => {
+  // The one hand-authored table left in this module. A photo filename is typed by hand and already
+  // printed on files on disk and on uploaded Shopify filenames, so its tokens cannot follow a
+  // manifest rename; this is what stops the map going stale in either direction instead.
+  const manifest = await loadCatalogue({ read: (f) => readFile(path.join(repoRoot, f), 'utf8') });
+  const declared = [...manifest.bodies.keys()];
+  assert.deepEqual([...photoTokenBodies()].sort(), [...declared].sort());
+  for (const body of declared) assert.ok(bodyPhotoToken(body), `${body} has a filename token`);
+});
+
+test('MATCHES PRODUCTION: defaultNaming records every garment product and no other', async () => {
+  const manifest = await loadCatalogue({ read: (f) => readFile(path.join(repoRoot, f), 'utf8') });
+  const n = defaultNaming();
+  assert.deepEqual(
+    Object.values(n.PRODUCTS).map((p) => p.handle).sort(),
+    garmentProducts(manifest).map((p) => p.handle).sort()
+  );
+  assert.equal(n, defaultNaming(), 'the committed manifest is read once and memoised');
+});
 
 // --- colorwayToAdminValue ------------------------------------------------------------------
 test('colorwayToAdminValue maps the general colorway tokens', () => {

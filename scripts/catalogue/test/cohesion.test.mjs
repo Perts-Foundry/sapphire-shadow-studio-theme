@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url';
 
 import { CHECKS, COHESION_CHECK_COUNT, runCohesion, collectSources, REFUSE, WARN } from '../../lib/catalogue-cohesion.mjs';
 import { parseCatalogue, loadCatalogue } from '../../lib/catalogue-manifest.mjs';
-import { PRODUCTS as PHOTO_NAMING_PRODUCTS } from '../../lib/photo-naming.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -103,10 +102,6 @@ function sources(over = {}) {
     ],
     appliqueHandle: 'a-crew',
     sizeChartHandles: ['a-crew', 'b-vest'],
-    photoProducts: [
-      { handle: 'a-crew', title: 'A Crew', gid: 'gid://shopify/Product/1', colorValues: ['Black', 'Grey Heather'] },
-      { handle: 'b-vest', title: 'B Vest', gid: 'gid://shopify/Product/2', colorValues: ['Black'] },
-    ],
     docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC },
     ...over,
   };
@@ -130,8 +125,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 13);
-  assert.equal(CHECKS.length, 13);
+  assert.equal(COHESION_CHECK_COUNT, 12);
+  assert.equal(CHECKS.length, 12);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -235,27 +230,6 @@ test('a size-chart profile naming an unknown handle, or a garment with no profil
   assert.match(uncovered.messages['size-chart-handles-are-products'], /"b-vest"/);
 });
 
-test('the photo-naming census check catches a stale title, GID, colour list or missing product', async () => {
-  const base = sources().photoProducts;
-  for (const [over, needle] of [
-    [[{ ...base[0], title: 'Renamed' }, base[1]], /title/],
-    [[{ ...base[0], gid: 'gid://shopify/Product/999' }, base[1]], /gid/],
-    [[{ ...base[0], colorValues: ['Black'] }, base[1]], /colour values/],
-    [[base[0]], /missing from PRODUCTS/],
-  ]) {
-    const out = await fired({ photoProducts: over });
-    assert.deepEqual(out.refusals, ['photo-naming-census-matches']);
-    assert.match(out.messages['photo-naming-census-matches'], needle);
-  }
-});
-
-test('the photo-naming colour list is compared in ORDER, not as a set', async () => {
-  // The order is the body's declaration order and it is what the uploader offers as a colour list.
-  const base = sources().photoProducts;
-  const out = await fired({ photoProducts: [{ ...base[0], colorValues: ['Grey Heather', 'Black'] }, base[1]] });
-  assert.deepEqual(out.refusals, ['photo-naming-census-matches']);
-});
-
 test('a doc marker region that disagrees REFUSES, in either file', async () => {
   const skuMissing = await fired({
     docs: { ...sources().docs, skuScheme: SKU_SCHEME_DOC.replace('| Gift Card | `GIFT` |\n', '') },
@@ -323,7 +297,6 @@ const FORGED_CASES = [
   ['templates/', { templateFiles: [...sources().templateFiles, FORGED] }],
   ['scripts/applique-grid/patterns.json', { appliqueHandle: FORGED }],
   ['scripts/size-chart/profiles/*.json', { sizeChartHandles: [FORGED] }],
-  ['scripts/lib/photo-naming.mjs', { photoProducts: [{ handle: FORGED, title: FORGED, gid: FORGED, colorValues: [FORGED] }] }],
   ['docs/sku-scheme.md', { docs: { skuScheme: SKU_SCHEME_DOC.replace('| A Crew | `ACRW` |', `| ${FORGED.replace(/\n/g, ' ')} | \`X\` |`), altText: ALT_TEXT_DOC } }],
   ['docs/product-media-alt-text.md', { docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC.replace('| A Crew |', `| ${FORGED.replace(/\n/g, ' ')} |`) } }],
 ];
@@ -359,7 +332,6 @@ test('MATCHES PRODUCTION: the real repo passes every check', async () => {
     repoRoot,
     manifest: m,
     listDir: (dir) => readdir(dir),
-    photoNamingProducts: PHOTO_NAMING_PRODUCTS,
   });
   const out = await runCohesion(real);
   assert.deepEqual(out.refusals.map((r) => `${r.id}: ${r.message}`), []);
@@ -378,7 +350,6 @@ test('MATCHES PRODUCTION: the real collector tolerates the block comment Shopify
     repoRoot,
     manifest: m,
     listDir: (dir) => readdir(dir),
-    photoNamingProducts: PHOTO_NAMING_PRODUCTS,
   });
   assert.equal(real.settingsDataValues.get('color_option_name'), m.options.get('color'));
 });

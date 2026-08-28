@@ -17,9 +17,9 @@
 // here rather than restated, so a manifest that passes CI is exactly a manifest the reorder review
 // will accept.
 //
-// READ-ONLY BY CONSTRUCTION. This file imports node builtins, the schema module, the cohesion module
-// and scripts/lib/photo-naming.mjs, and nothing else. A transitive-closure test asserts that nothing
-// in that graph can reach lib/mutations.mjs or lib/admin.mjs.
+// READ-ONLY BY CONSTRUCTION. This file imports node builtins, the schema module and the cohesion
+// module, and nothing else. A transitive-closure test asserts that nothing in that graph can reach
+// lib/mutations.mjs or lib/admin.mjs.
 
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -27,7 +27,6 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 
 import { loadCatalogue, reconcileCatalogue, assessCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
 import { collectSources, runCohesion, COHESION_CHECK_COUNT } from '../lib/catalogue-cohesion.mjs';
-import { PRODUCTS as PHOTO_NAMING_PRODUCTS } from '../lib/photo-naming.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -97,7 +96,6 @@ export async function checkCatalogue({
     repoRoot,
     manifest,
     listDir: (dir) => readdir(dir),
-    photoNamingProducts: PHOTO_NAMING_PRODUCTS,
   });
   const cohesion = await runCohesion(sources);
 

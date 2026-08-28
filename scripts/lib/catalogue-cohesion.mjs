@@ -181,6 +181,12 @@ async function readJson(file, repoRoot) {
  * place to update. The replacements are derivation tests in the owning suite, in
  * scripts/sku/test/tables.test.mjs.
  *
+ * A fourth, over scripts/lib/photo-naming.mjs's product census (handle, title, GID and colour
+ * values), retired the same way: that module now builds the census with `createNaming(manifest)`, so
+ * the check compared the manifest against a list derived from it. Its replacement is the
+ * both-directions BODY_PHOTO_TOKEN test in scripts/lib/photo-naming.test.mjs, which asserts the one
+ * thing that is still hand-authored there.
+ *
  * @type {Array<{id: string, source: string, severity: string, run: (ctx: object) => Promise<string|null>}>}
  */
 export const CHECKS = [
@@ -370,44 +376,6 @@ export const CHECKS = [
     },
   },
 
-  // 14. The photo-naming census: handle, title, GID and colour values, per product. Compared on those
-  // four things and deliberately NOT on body ids, whose five spellings genuinely disagree today and
-  // are not what this check asserts. RETIRES once photo-naming derives PRODUCTS from the manifest.
-  {
-    id: 'photo-naming-census-matches',
-    source: 'scripts/lib/photo-naming.mjs',
-    severity: REFUSE,
-    async run({ manifest, photoProducts }) {
-      const problems = [];
-      const declared = new Set(garmentProducts(manifest).map((p) => p.handle));
-      const seen = new Set();
-      for (const record of photoProducts) {
-        seen.add(record.handle);
-        const product = manifest.products.get(record.handle);
-        if (!product) {
-          problems.push(`${record.handle} (not declared)`);
-          continue;
-        }
-        if (record.title !== product.title) problems.push(`${record.handle} (title)`);
-        if (record.gid !== product.gid) problems.push(`${record.handle} (gid)`);
-        const expected = product.body === null ? [] : colorValuesFor(manifest, record.handle);
-        if (JSON.stringify(record.colorValues) !== JSON.stringify(expected)) {
-          problems.push(`${record.handle} (colour values)`);
-        }
-      }
-      const missing = [...declared].filter((h) => !seen.has(h));
-      if (missing.length) problems.push(...missing.map((h) => `${h} (missing from PRODUCTS)`));
-      return (
-        problems.length &&
-        `scripts/lib/photo-naming.mjs's product census disagrees with catalogue.json on ` +
-          `${problems.length} point(s): ${nameList(problems)}. The uploader resolves a photo's target ` +
-          `product and its reserved colour vocabulary from that table, so a stale GID writes media ` +
-          `onto the wrong product and a stale colour list binds a photo to a colour the product does ` +
-          `not sell.`
-      );
-    },
-  },
-
   // 15-16. The two docs that restate the vocabulary in prose, inside explicit marker regions. These
   // do NOT retire: prose is hand-written by definition, and these regions are exactly the parts of it
   // that make a factual claim about the catalogue.
@@ -493,14 +461,9 @@ export const COHESION_CHECK_COUNT = CHECKS.length;
  * @param {string} params.repoRoot
  * @param {object} params.manifest
  * @param {(dir: string) => Promise<string[]>} params.listDir - injected so the template scan is testable
- * @param {Record<string, {handle: string, title: string, gid: string, colorValues: string[]}>} params.photoNamingProducts
- *   `PRODUCTS` from scripts/lib/photo-naming.mjs, passed IN rather than imported here. A dynamic
- *   import would put a specifier the read-only closure guard cannot follow inside the lint's own
- *   closure, and parsing the module's source with a regex would silently return an empty census the
- *   moment its formatting changed, which reads as "everything agrees". Retires with check 14.
  * @returns {Promise<object>}
  */
-export async function collectSources({ repoRoot, manifest, listDir, photoNamingProducts }) {
+export async function collectSources({ repoRoot, manifest, listDir }) {
   const readText = async (file) => {
     try {
       return await readFile(path.join(repoRoot, file), 'utf8');
@@ -545,13 +508,6 @@ export async function collectSources({ repoRoot, manifest, listDir, photoNamingP
     for (const h of profile.handles ?? []) sizeChartHandles.push(String(h));
   }
 
-  const photoProducts = Object.values(photoNamingProducts ?? {}).map((p) => ({
-    handle: p.handle,
-    title: p.title,
-    gid: p.gid,
-    colorValues: [...(p.colorValues ?? [])],
-  }));
-
   return {
     manifest,
     settingsSchemaDefaults,
@@ -561,7 +517,6 @@ export async function collectSources({ repoRoot, manifest, listDir, photoNamingP
     templateFiles,
     appliqueHandle,
     sizeChartHandles,
-    photoProducts,
     docs: {
       skuScheme: await readText('docs/sku-scheme.md'),
       altText: await readText('docs/product-media-alt-text.md'),

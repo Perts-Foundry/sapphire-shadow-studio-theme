@@ -597,7 +597,6 @@ test('the manifest module cannot reach a mutation, and neither can the lint that
     'node:url',
     '../lib/catalogue-manifest.mjs',
     '../lib/catalogue-cohesion.mjs',
-    '../lib/photo-naming.mjs',
   ]);
 
   // And the transitive closure of both, which is what the exact lists above cannot prove.
