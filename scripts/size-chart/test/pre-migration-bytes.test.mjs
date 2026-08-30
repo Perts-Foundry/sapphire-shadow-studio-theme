@@ -20,6 +20,7 @@ import { buildSvg } from '../lib/render-svg.mjs';
 import { buildAccordionRow } from '../lib/table-block.mjs';
 import { accordionHtmlOf } from './accordion-html-fixture.mjs';
 import { resolvedProfile } from './profile-fixture.mjs';
+import { sha256Hex } from '../../catalogue/test/capture-baseline.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
@@ -36,8 +37,9 @@ const PROFILE_FOR_TEMPLATE = {
 };
 
 test('the seed chart still renders the pre-migration SVG, byte for byte', () => {
+  // The baseline stores sha256 digests of the goldens, so hash the fresh bytes before comparing.
   const key = 'scripts/size-chart/test/fixtures/crewneck-fleece.svg';
-  assert.equal(buildSvg(resolvedProfile('crewneck-fleece')), BASELINE.sizeChartGoldens[key]);
+  assert.equal(sha256Hex(buildSvg(resolvedProfile('crewneck-fleece'))), BASELINE.sizeChartGoldens[key]);
 });
 
 test('every generated accordion row still serialises to its pre-migration bytes', () => {
@@ -56,7 +58,7 @@ test('the accordion prose fixtures still match their pre-migration bytes', () =>
   for (const [key, expected] of Object.entries(BASELINE.sizeChartGoldens)) {
     if (!key.includes('accordion-html/')) continue;
     const blankId = path.basename(key, '.html');
-    assert.equal(readFileSync(path.join(REPO_ROOT, key), 'utf8'), expected, key);
+    assert.equal(sha256Hex(readFileSync(path.join(REPO_ROOT, key), 'utf8')), expected, key);
     // And the generator still produces what the fixture pins, so the pair cannot drift together.
     assert.ok(accordionHtmlOf(buildAccordionRow(resolvedProfile(blankId))).length, blankId);
   }

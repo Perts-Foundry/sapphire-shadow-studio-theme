@@ -20,8 +20,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-/** Every static `import ... from '<spec>'` specifier in a source file, multi-line forms included. */
-const IMPORT_RE = /^import[\s\S]*?from\s*['"]([^'"]+)['"];?\s*$/gm;
+/**
+ * Every static import specifier in a source file, multi-line forms included. The `from` clause is
+ * optional so a side-effect import (`import './x.mjs';`) is a real edge the walker follows, not a
+ * form it silently skips: a module loaded for its side effects is loaded all the same.
+ */
+const IMPORT_RE = /^import\s*(?:[\s\S]*?\bfrom\s*)?['"]([^'"]+)['"];?\s*$/gm;
 
 /** `export ... from '<spec>'`, which re-exports and therefore loads, but which the walker refuses. */
 const EXPORT_FROM_RE = /^export[\s\S]*?from\s*['"]([^'"]+)['"];?\s*$/gm;
@@ -97,13 +101,17 @@ export async function importClosure(entry) {
       );
     }
 
-    if (DYNAMIC_IMPORT_RE.test(withoutComments(source))) {
+    // All three scans run on the comment-stripped source: an import statement quoted inside a
+    // block comment loads nothing, and following it would either throw on a path that does not
+    // exist or pull a real file into the closure that the runtime never touches.
+    const code = withoutComments(source);
+    if (DYNAMIC_IMPORT_RE.test(code)) {
       throw new Error(
         `import closure: ${file} uses a dynamic import call, which a static walk cannot follow. Any ` +
           `occurrence inside a guarded closure is itself a failure rather than a silent pass.`
       );
     }
-    const reexports = exportFromsOf(source);
+    const reexports = exportFromsOf(code);
     if (reexports.length) {
       throw new Error(
         `import closure: ${file} uses "export ... from" (${reexports.join(', ')}), which loads a ` +
@@ -112,7 +120,7 @@ export async function importClosure(entry) {
       );
     }
 
-    for (const spec of importsOf(source)) {
+    for (const spec of importsOf(code)) {
       if (spec.startsWith('node:')) continue;
       if (!spec.startsWith('.')) {
         bare.push({ from: file, spec });

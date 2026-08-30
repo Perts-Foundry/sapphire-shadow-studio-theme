@@ -213,6 +213,16 @@ test('a doc marker region that disagrees REFUSES, in either file', async () => {
   assert.deepEqual(colourWrong.refusals, ['docs-sku-scheme-markers']);
   assert.match(colourWrong.messages['docs-sku-scheme-markers'], /colour line/);
 
+  // A colour the doc names but the catalogue never declared must fire the "in the doc" direction,
+  // not be filtered out of the comparison before it can. This is an ADDED entry, not a swap, so
+  // only that direction distinguishes it.
+  const colourExtra = await fired({
+    docs: { ...sources().docs, skuScheme: SKU_SCHEME_DOC.replace('`GRH` Grey Heather.', '`GRH` Grey Heather, `NVY` Classic Navy.') },
+  });
+  assert.deepEqual(colourExtra.refusals, ['docs-sku-scheme-markers']);
+  assert.match(colourExtra.messages['docs-sku-scheme-markers'], /classic navy/);
+  assert.match(colourExtra.messages['docs-sku-scheme-markers'], /in the doc/);
+
   const altWrong = await fired({
     docs: { ...sources().docs, altText: ALT_TEXT_DOC.replace('**`Black` only**', '**`Grey Heather` only**') },
   });

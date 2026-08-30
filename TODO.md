@@ -26,6 +26,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   involved, so there is nothing to unwind there.
 - [ ] Review the "you may also like" section in the cart, looks to have the old product card format where each restates the shipping policy. Match the style on the collections page and elsewhere on the site for consistency. 
 - [ ] Add a free shipping visual to the cart for easier understanding on where the customer is at in getting the free shipping tier. See if this is available as an existing setting today.
+- [ ] Fix contact footer link vs contact nav link, also contact us button is darkened, text isn't white?
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against

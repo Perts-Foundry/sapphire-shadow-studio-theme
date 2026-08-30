@@ -374,13 +374,15 @@ export const CHECKS = [
       if (productDiff) problems.push(`product table: ${productDiff}`);
 
       const colorRegion = markerRegion(docs.skuScheme, 'colors', 'docs/sku-scheme.md');
-      // The colour line reads "`BLK` Black, `GRH` Grey Heather, ...": the codes are backticked and the
-      // display names are the prose between them, so the display names are what is compared.
-      const named = colorRegion
-        .replace(/`[^`]*`/g, ' ')
-        .split(/[,.:;\n|]/)
-        .map((s) => s.trim())
-        .filter((s) => s && manifest.colors.has(normaliseAxis(s, 'Color')))
+      // The colour line reads "`BLK` Black, `GRH` Grey Heather, ...": each backticked code is
+      // followed by its display name, so the name after each code is what is compared. Extracting
+      // by position, not by declaredness: filtering the tokens through `manifest.colors.has` first
+      // would make the "in the doc but not declared" direction unreachable by construction, and a
+      // doc that names a colour the catalogue dropped must fail, not be quietly skipped. Leading
+      // prose (the "**Colours** (store-wide):" label) precedes the first code and is never captured.
+      const named = [...colorRegion.matchAll(/`[^`]+`\s*([^,.:;\n|`]+)/g)]
+        .map((m) => m[1].trim())
+        .filter(Boolean)
         .map((s) => normaliseAxis(s, 'Color'));
       const colorDiff = setDiff(named, [...manifest.colors.keys()], 'in the doc', 'declared in catalogue.json');
       if (colorDiff) problems.push(`colour line: ${colorDiff}`);
