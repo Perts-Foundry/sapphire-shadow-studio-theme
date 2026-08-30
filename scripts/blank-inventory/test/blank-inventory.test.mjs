@@ -414,7 +414,7 @@ test('a version 1 manifest refuses with a message naming the migrator, and never
   );
   const [refusal] = seen[0].assessment.refusals;
   assert.equal(refusal.code, 'catalogue-invalid');
-  assert.match(refusal.message, /migrate-catalogue\.mjs/);
+  assert.match(refusal.message, /hand-corrected in a reviewed PR/);
   assert.match(refusal.message, /never auto-migrated/);
 });
 

@@ -87,14 +87,13 @@ test('the tool understands version 2 only', () => {
   assert.throws(() => parseCatalogue(JSON.stringify({ bodies: {} })), /understands 2 only/);
 });
 
-test('a version 1 document refuses with a message naming the migrator, and is never auto-migrated', () => {
+test('a version 1 document refuses, and is never auto-migrated', () => {
   // Auto-migrating would mean inventing the Admin display spellings and the product census, which
   // are exactly what a v1 document does not contain.
   assert.throws(
     () => parseCatalogue(JSON.stringify({ version: 1, bodies: { crewneck: { colors: ['black'], sizes: ['m'] } } })),
     (err) => {
-      assert.match(err.message, /migrate-catalogue\.mjs/);
-      assert.match(err.message, /SKELETON/);
+      assert.match(err.message, /hand-corrected in a reviewed PR/);
       assert.match(err.message, /never auto-migrated/);
       return true;
     }
