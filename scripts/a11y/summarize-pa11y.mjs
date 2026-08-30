@@ -196,9 +196,9 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
 
   const lines = [];
   // The audited-standard claim is qualified by what the baseline actually
-  // gates. `target-size` is requested explicitly (CLAUDE.md's 44x44 project
-  // rule), so saying "plus target-size" while it sits in the baseline was the
-  // exact over-claim this disclosure exists to stop.
+  // gates. `target-size` is requested explicitly (the 44x44 project rule in
+  // `docs/accessibility-patterns.md`), so saying "plus target-size" while it
+  // sits in the baseline was the exact over-claim this disclosure exists to stop.
   const targetSizeBaselined = baselined.has('target-size');
   lines.push(targetSizeBaselined
     ? `**${total} URL(s) audited** against WCAG 2.1 AA (axe runner). \`target-size\` is enabled but baselined, so 44x44 touch targets are measured and listed below, not gated.`

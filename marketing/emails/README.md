@@ -50,8 +50,8 @@ text, which is the headline, and that is an acceptable failure.
 
 Whatever is in Shopify Email's editor is a copy. If you tweak a template inside the editor while
 testing, **copy the change back into the repo file in the same sitting**, or the two silently
-diverge. This is the same drift pattern as the social links and shipping copy documented in the
-repo's `CLAUDE.md`, and nothing reconciles it: no test, no CI check, no script can see inside the
+diverge. This is the same drift pattern as the social links and shipping copy documented in
+`docs/theme-settings-contracts.md`, and nothing reconciles it: no test, no CI check, no script can see inside the
 Shopify Email editor.
 
 Reversal is a plain `git revert` plus a re-paste. Nothing here deploys automatically.
@@ -416,7 +416,7 @@ campaign to the list, not an edit here.
 
 Shipping rates, thresholds, and turnaround times already have four sources of truth (theme settings,
 inline template JSON, announcement slides, and the Admin rate names plus the shop policy pages, all
-covered in the repo's `CLAUDE.md`). An email is a fifth that nothing reconciles **and that cannot be
+covered in `docs/theme-settings-contracts.md`). An email is a fifth that nothing reconciles **and that cannot be
 corrected after it is sent**. Link to the shipping policy or the FAQ page instead of restating a
 number. `welcome.liquid` deliberately contains no shipping figures.
 
