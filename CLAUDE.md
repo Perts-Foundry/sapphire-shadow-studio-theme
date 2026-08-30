@@ -59,6 +59,7 @@ Browser-driven testing of the storefront or a PR preview theme uses the chrome-d
 
 - **Password-protected storefront.** The storefront (custom domain and `*.myshopify.com`) is password-protected, so anonymous requests (WebFetch, curl, a plain `?preview_theme_id=` link) get a 401 or the password page. To view a PR preview theme, open the store's admin themes page (`https://admin.shopify.com/store/sapphire-shadow-studio/themes`), open the draft theme's "more theme actions" menu, and use its **Preview** link. That link carries a `key=` param that sets the password-bypass cookie for the whole browser session; curl does not pick the bypass up.
 - **hCaptcha blocks automated form submits.** Shopify's invisible hCaptcha will not complete for storefront form submissions from the automation-flagged MCP browser, so full contact-form round trips must be verified manually.
+- **Check for a screenshot before troubleshooting.** When the user references one, and proactively when troubleshooting any issue, look for the newest file in their screenshots directory; ask for that directory the first time it comes up in a session. **Never commit a literal local-machine path** (see Sensitive Content above).
 - **Shopify admin login loops in the MCP browser.** accounts.shopify.com silently rejects the chrome-devtools MCP's automation-flagged Chrome, looping "Continue with email" forever. Workaround: kill the MCP-launched Chrome, relaunch the same binary manually with the same `--user-data-dir` (`~/.cache/chrome-devtools-mcp/chrome-profile`) but no automation flags, log in there, then close it; the next MCP call relaunches the browser and the session cookies carry over until the profile's login expires.
 
 ## Workflow
@@ -115,7 +116,7 @@ The global gate supplies general code review (the headless `/code-review`) and `
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
 - **test-engineer**: theme Liquid has no test framework, so skip it for theme changes. Run it when the code behind any `node --test` suite changes: `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/catalogue/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs`. `blank-inventory/` writes live inventory and `upload-product-media.mjs` writes live product media, so those two are higher-risk.
-- **prompt-reviewer**: run when this `CLAUDE.md`, `docs/accessibility-patterns.md`, agent definitions, or `.claude/` content change.
+- **prompt-reviewer**: run when this `CLAUDE.md`, any of the four reference docs it points at (`docs/theme-conventions.md`, `docs/structured-data.md`, `docs/theme-settings-contracts.md`, `docs/accessibility-patterns.md`), agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
@@ -177,7 +178,7 @@ One rule that lives outside any widget: **the homepage `<h1>` is the hero lockup
 
 ## Theme settings
 
-**Before changing any social, navigation, vacation-mode, shipping-copy, or variant-fieldset setting or the logic behind it, read `docs/theme-settings-contracts.md`.** Every item below fails silently, and nothing in CI checks any of them:
+**Before changing any social, navigation, vacation-mode or shipping-copy setting, or the fieldset-indexing logic in `snippets/variant-main-picker.liquid` / `assets/variant-picker.js`, read `docs/theme-settings-contracts.md`.** Every item below fails silently, and nothing in CI checks any of them:
 
 1. **Adding a social platform means editing two hardcoded lists**, `social_platforms` in `snippets/social-links.liquid` and `social_keys` in `snippets/structured-data-organization.liquid`, or `sameAs` silently drifts from the storefront links. The one source of truth is `settings.social_*_link`, rendered only by `snippets/social-links.liquid`; `blocks/social-links.liquid`, `blocks/_social-link.liquid` and `blocks/_footer-social-icons.liquid` are dead upstream leftovers, so never edit them or place one.
 2. **The main menu's collections dropdown is generated, not authored.** A top-level `catalog_link` / `collections_link` with no children builds its own submenu; giving that link even one child in Admin silently turns the generated list off, and a second catalog link silently gets a second dropdown.
@@ -185,5 +186,7 @@ One rule that lives outside any widget: **the homepage `<h1>` is the hero lockup
 4. **Vacation mode is one toggle, four surfaces, four sync traps.** Four independently dated settings (popup body, checkbox terms, shipping note, `vacation_processing_date`) must be updated together before each enable; nothing reconciles them, and `vacation_processing_date` is the record of what each customer agreed to.
 5. **Shipping copy has four sources of truth and only one is greppable.** Two sit outside the repo entirely (the Admin shipping-rate names and the `/policies/shipping-policy` shop policy), so an audit that only runs `git grep` misses half of it.
 6. **`data-fieldset-index` counts rendered fieldsets, not options.** An option collapsed by `settings.variant_dropdown_threshold` emits no fieldset, so numbering by `forloop.index0` in `snippets/variant-main-picker.liquid` silently no-ops or mutates the wrong fieldset when the collapsed option is not last.
+
+**The FAQ page is its own silent-failure surface, and the two triggers above do not name it.** Before editing `sections/faq.liquid` or `templates/page.faq.json`, read the `FAQPage` rules in `docs/structured-data.md` (a new block type defining a `question` starts appearing in the markup with no other change, and rewording a question rewrites its `handleize`d anchor, breaking every shared link) and the vacation-mode entry in `docs/theme-settings-contracts.md` (the announcement slide, popup body and checkbox terms all deep-link to `/pages/faq#away-from-studio`, which resolves only while `faq_item_vacation` keeps `custom_anchor: "away-from-studio"`; nothing checks the link).
 
 **Product media alt text drives the gallery.** `snippets/product-media-gallery-content.liquid` filters media by matching alt text against the values of that product's option named by `settings.color_option_name`, so those values are reserved words in alt text. The data lives in Admin, no test reaches it, and every failure is silent. Read `docs/product-media-alt-text.md` before authoring alt text or changing the filter.

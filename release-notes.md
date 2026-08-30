@@ -50,6 +50,24 @@ would have trusted.**
    `seo-review:test` runs the unit suite only, so the `jsonld-parse`, `jsonld-entity-home` and
    `jsonld-entity-leak` checks run when an operator invokes the `seo-review` skill and never in CI.
 
+A `prompt-reviewer` pass on the result caught two gaps the extraction created and one label that
+would not have fired. The **FAQ page** is a silent-failure surface that neither the structured-data
+trigger (scoped to `snippets/structured-data*.liquid`) nor the theme-settings trigger named, yet
+both docs carry a rule about it: the `FAQPage` block-exclusion and anchor rules, and the
+vacation-mode deep link to `/pages/faq#away-from-studio`. Editing `templates/page.faq.json` for FAQ
+reasons is exactly the task that trips both, so it now has its own trigger. The **Screenshots**
+section had been dropped as duplicated by the global profile, but the profile only says where
+screenshots land; the repo-specific "check proactively when troubleshooting, not only when the user
+mentions one" directive had no successor, and is now a bullet under Browser testing. And
+"variant-fieldset setting" was an invented category label matching no file or setting name, so the
+trigger names `snippets/variant-main-picker.liquid` and `assets/variant-picker.js` instead.
+
+That is the general lesson for the next restructure of this kind: converting always-loaded prose
+into trigger-conditioned pointers only works if every plausible editing entry point is named by
+some trigger. A rule can be faithfully preserved in a doc and still become unreachable, because the
+trigger meant to surface it names the file the rule is *about* rather than the file where the
+mistake is actually made.
+
 **On the size target.** The plan called for 15,000-18,000 characters. The result is about 25,600,
 and the gap is arithmetic rather than under-delivery: the plan budgeted roughly 1,800 characters of
 residue for pointers that, written to carry trigger plus failure mode plus file name as the same
