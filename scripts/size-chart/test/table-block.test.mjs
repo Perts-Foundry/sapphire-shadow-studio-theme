@@ -11,6 +11,7 @@ import {
   prettyHtml,
 } from './accordion-html-fixture.mjs';
 import { fileForSuffix, findAccordionOrNull, readShippedTemplate } from './shipped-template.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
@@ -29,7 +30,7 @@ function shippedRow(suffix) {
 // row against a rebuild from its own profile catches it, and the same comparison catches a profile
 // edited without re-running apply-size-chart.mjs, which is the same bug arriving later.
 for (const f of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
-  const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8'));
+  const profile = resolvedProfile(f);
   for (const suffix of profile.handles ?? []) {
     test(`${f} -> product.${suffix}.json: shipped row deep-equals a rebuild from the profile`, () => {
       assert.deepStrictEqual(shippedRow(suffix), buildAccordionRow(profile));
@@ -59,7 +60,7 @@ for (const f of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
 
 const profiles = readdirSync(PROFILES_DIR)
   .filter((f) => f.endsWith('.json'))
-  .map((f) => JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8')));
+  .map((f) => resolvedProfile(f));
 
 test('every shipped profile has a pinned accordion-html fixture', () => {
   const pinned = readdirSync(ACCORDION_HTML_DIR).filter((f) => f.endsWith('.html')).sort();

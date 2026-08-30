@@ -37,6 +37,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAccordionRow } from '../lib/table-block.mjs';
 import { ROOT, productTemplateFiles, readShippedTemplate, findAccordionOrNull } from './shipped-template.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 // Deliberately not imported from table-block.mjs. See the header.
 const ANCHOR = 'SizeChart';
@@ -46,7 +47,7 @@ const PROFILES_DIR = path.join(HERE, '..', 'profiles');
 
 const profiles = readdirSync(PROFILES_DIR)
   .filter((f) => f.endsWith('.json'))
-  .map((f) => JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8')));
+  .map((f) => resolvedProfile(f));
 
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 

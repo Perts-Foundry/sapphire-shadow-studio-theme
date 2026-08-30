@@ -5,10 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { upsertSizeChart, applyToTemplateObject } from '../lib/template-writer.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
-const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
+const SEED = resolvedProfile('crewneck-fleece');
 const ORIG_PATH = path.join(ROOT, 'templates', 'product.lead-ii-crewneck.json');
 const ORIG = readFileSync(ORIG_PATH, 'utf8');
 

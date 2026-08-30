@@ -260,6 +260,12 @@ The count line grew from three numbers to six:
 catalogue OK: 3 bodies, 3 colour values, 6 size values, 6 products, 4 option names, 16 cohesion checks.
 ```
 
+Seven of those sixteen retired with the consumer migration, so the shipped line reads 9:
+
+```
+catalogue OK: 3 bodies, 3 colour values, 6 size values, 6 products, 4 option names, 9 cohesion checks.
+```
+
 The cohesion figure is the count of checks that RAN, not the count declared, so a module that failed to
 load reads 0 and reds the build rather than reading as "all clear". The workflow's `sed` output is
 captured once and all six `cut` extractions read that variable; the lint is never re-invoked per
@@ -287,17 +293,145 @@ criterion, not a violation of it, and it is deliberately not captured in the fro
 
 ### Migration
 
-`CATALOGUE_VERSION` went 1 -> 2. A v1 document refuses with a message naming
-`scripts/catalogue/migrate-catalogue.mjs`, which is a read-only one-shot that PRINTS a v2 **skeleton**
-and writes nothing: the manifest is hand-edited in a reviewed PR, and that rule does not get an
-exception for the command that changes its shape.
+`CATALOGUE_VERSION` went 1 -> 2. A v1 document refuses. It shipped with
+`scripts/catalogue/migrate-catalogue.mjs`, a read-only one-shot that PRINTED a v2 **skeleton** and
+wrote nothing: the manifest is hand-edited in a reviewed PR, and that rule does not get an exception
+for the command that changes its shape.
 
 It is a skeleton rather than a migration because two of the four new sections cannot be derived from a
 v1 document. The Admin display spellings are not in it (`xs` title-cases to `Xs` and the live value is
-`XS`, so every size guess it prints is wrong by construction and the notes say so), and the product
-census is not in it at all. Its output deliberately does not validate: the schema refuses every
-placeholder it emits, so an unfinished migration cannot merge looking done. The migrator is deleted once
-the migration lands, rather than left as cruft that reads like a supported path.
+`XS`, so every size guess it printed was wrong by construction and its notes said so), and the product
+census is not in it at all. Its output deliberately did not validate: the schema refuses every
+placeholder it emitted, so an unfinished migration could not merge looking done. It was deleted once
+the migration landed rather than left as cruft that reads like a supported path, and the v1 refusal now
+says the correction is a hand edit in a reviewed PR. It is recoverable from git history if a v1
+document ever turns up.
+
+## Every consumer derives its vocabulary from catalogue.json (unreleased)
+
+The manifest, its schema, its lint and the authority reversal shipped first; this is the other half,
+migrating all seven consumers onto it. What follows is only what the migration itself taught. The
+design rationale is in the entry above.
+
+### A latent bug the work surfaced: a skip that had never fired
+
+`scripts/seo-review/admin.mjs` allowlisted products where a blank `custom.breadcrumb_collection` is
+correct, as the literal `new Set(['gift-card'])`, and compared it against the product handle the Admin
+API returns, which is `sapphire-shadow-studio-gift-card`. The two never matched. The skip had not fired
+once since the check shipped, so the gift card produced a `product-breadcrumb-collection-missing` WARN
+on every run and the check could never reach the zero findings it was designed to reach.
+
+`gift-card` is the TEMPLATE suffix, not the handle. That is the same distinction the size-chart template
+list and the accessibility label rule turn on, and it is most of why the manifest carries `template` at
+all: this bug is what a repo looks like when the two are conflated in a literal nobody re-reads. The set
+now derives as every product declared with `"body": null`, under **both** spellings. A non-garment is
+exactly the class with no parent collection to name, so the manifest already knew the answer.
+
+It is tested against a hand-authored manifest with two non-garment products, one whose handle and
+template differ, because the live census has exactly one non-garment shape and would leave the flatMap
+and the dedup unexercised for any other.
+
+### Materialisation, and why a stale copy is refused rather than overwritten
+
+Three consumers took the same shape: the committed file states the one fact that is genuinely its own,
+and the loader attaches the rest from the manifest before validation, so nothing downstream changed
+signature. A size-chart profile declares a `body` and `profile-io.mjs` materialises its `sizes` and
+`handles`; the applique registry declares a scalar `handle` and `registry.mjs` materialises the
+`product` block the whole tool already read; the SKU tables hold codes and `tables.mjs` merges back the
+titles, option names and per-product size ranges.
+
+In all three, a committed file still carrying the derived field is **REFUSED, not overwritten**. Silently
+replacing a stale literal leaves it sitting in the file where nobody reads it and nobody corrects it,
+which is the failure this whole migration removes. In the applique case it is stronger than tidiness:
+the block held a GID and a colour snapshot the audit compares against the live store, so overwriting it
+would hide the very drift that comparison exists to find.
+
+`serialize()` in the applique registry drops a materialised `product` block rather than writing it back,
+so no save can reintroduce one. That is enforced at the one function every write goes through, not at
+each call site.
+
+### The SKU hash: what it covers, and the two controls that pin both directions
+
+SKUs freeze onto order lines, so this is the highest-consequence change in the set. `hashTables` now
+covers a **derivation-inputs projection of the merged tables**, manifest contribution included. Hashing
+only the committed file would let a manifest edit silently change every derived SKU while
+`assertTablesUnchanged` went on passing an old approved plan.
+
+The projection is load-bearing in the other direction too. Hashing the merged whole indiscriminately
+would invalidate every approved plan store-wide on a title typo fix, and nothing in the tool would
+notice it had. So there are two named tests, not one: a **positive control** (an option axis renamed, a
+body's size range narrowed, a colour renamed in the coupled way validation requires) and a **negative
+control** (a title fix, a corrected GID, a display spelling changed without its id, a manifest product
+with no codes).
+
+One derivation ordering changed with it, and it closes a real hole: `derive.mjs` validates a size
+against the product's declared size range **before** the passthrough shape test. The old order accepted
+any uppercase alphanumeric token, so a Size option that had drifted in Admin to something the product
+does not sell produced a plausible-looking SKU on a field nothing downstream would question.
+
+### One table stayed hand-authored, deliberately
+
+`BODY_PHOTO_TOKEN` in `scripts/lib/photo-naming.mjs` maps a manifest body id to the token that appears
+in a photo filename (`crewneck` -> `crew-sweater`, `vest-womens` -> `vest`). It is not derived, because a
+photo filename is already printed on files on disk and on filenames already uploaded to Shopify: a body
+renamed in the manifest must not silently rename them. A both-directions test asserts the map covers
+every declared body and names none that is not declared, which is what keeps it from going stale.
+
+The same reasoning left `scripts/size-chart/lib/garments.mjs` untouched. Silhouette geometry is drawing,
+not vocabulary, and it is byte-pinned by the render golden.
+
+### The a11y product block: a marker, not an append
+
+`build-pa11yci.mjs` expands a single `{ "marker": "catalogue:products" }` entry in `paths.json` into one
+audited path per declared product. A marker rather than appending the block, because the block's
+POSITION in the audit list is that file's to choose. A `paths.json` with no marker **throws**: without
+that, the audit would quietly run over every page except the products and still report a clean WCAG
+pass. `productOverrides` ships empty so a product later needing a pa11y `ignore` has somewhere to put it
+rather than that becoming a follow-up item.
+
+The label rule is `product (${template.replace(/-/g, ' ')})`, and it reproduces all six shipped labels
+byte for byte. Deriving from the handle instead gives `product (sapphire shadow studio gift card)`.
+
+### Check retirements, and the count that came out of it
+
+The plan projected the cohesion count dropping 16 -> 8. It is **9**. The projection counted the
+`sku/tables.json` census rows 9 and 10 as one row in the table it was read off; seven checks retired,
+not eight, and 16 - 7 = 9. The number is pinned by a test either way, so the arithmetic slip was caught
+by the pin rather than by review.
+
+Retired, each replaced by a derivation test in the owning suite: the a11y coverage pair, the SKU census
+pair, the SKU title and colour checks, the size-chart handle check, and the photo-naming census. A check
+whose non-manifest side became manifest-derived is comparing the manifest against itself; a tautology in
+a lint reads as coverage while asserting nothing, so those are deleted rather than kept green. The
+retirement reasoning is recorded in `catalogue-cohesion.mjs`'s own header, next to the checks that
+remain, so the next reader finds it where the decision applies.
+
+Retiring the photo-naming check also removed the lint's only import of `photo-naming.mjs`, which shrank
+`check-catalogue.mjs`'s read-only import closure. The pinned closure test moved with it.
+
+### EMPTY_SENTINEL, the one declared exception
+
+The applique registry's bootstrap sentinel is a byte-equality check over `serialize(emptyRegistry())`.
+The schema changed, so its bytes changed. Its own unit test updates in the same commit and now pins the
+new opening bytes and asserts no `gid://` survives in it. This was declared as an exception in advance,
+which is why it is not in the frozen snapshot.
+
+Separately verified and now asserted structurally: `published[].specHash` cannot churn. `chartSpec()`
+carries the style version, the grid params, the page numbers and each pattern's id, name, thread, hero
+digest and crop, and none of the product facts. Asserting that structurally rather than against the
+capture matters here, because the capture holds zero published charts and would have passed by saying
+nothing.
+
+### The byte-stability snapshot did its job
+
+The frozen `pre-migration-baseline.json` is compared from the owning suites: the size-chart seed SVG,
+all five generated accordion rows and the prose fixtures; the applique dropdown text and the pattern
+list; the six accessibility entries. Every one matched on the first run, which is the outcome the
+snapshot exists to be able to claim rather than assume.
+
+One thing to know about the capture itself: `captureBaseline` reads the a11y product entries through
+`resolvedPaths()` now, not off the raw `paths.json`. Reading the raw file after the migration would
+return an empty list and the comparison would have quietly become vacuous.
 
 ## blank-inventory's vocabulary comes from catalogue.json (unreleased)
 

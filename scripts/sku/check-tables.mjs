@@ -11,11 +11,14 @@ import { loadTables, allCodes, TABLES_PATH } from './lib/tables.mjs';
 
 /**
  * @param {string} [filePath]
+ * @param {object} [manifest] - injected in tests; loaded from catalogue.json otherwise
  * @returns {Promise<{codes: number, products: number}>}
  * @throws when the tables are invalid or vacuous
  */
-export async function checkTables(filePath = TABLES_PATH) {
-  const tables = await loadTables(filePath);
+export async function checkTables(filePath = TABLES_PATH, manifest = null) {
+  // The tables are validated AGAINST the manifest, both directions, so a product declared in one and
+  // absent from the other reds this lint rather than surfacing as a derive-time miss on a live run.
+  const tables = await loadTables({ filePath, manifest });
   const codes = allCodes(tables);
   const products = Object.keys(tables.products ?? {}).length;
   if (!codes.length || !products) {

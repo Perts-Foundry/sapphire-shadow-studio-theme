@@ -18,14 +18,19 @@ import {
   atomicWrite, defaultBranchNames, parseArgs, treeProblem, writeRefusal,
   CONVENTIONAL_DEFAULTS, HELP, UNTOUCHABLE_KEYS,
 } from '../draft.mjs';
-import { serialize, validate, REGISTRY_PATH } from '../lib/registry.mjs';
+import { materialise, serialize, validate, REGISTRY_PATH } from '../lib/registry.mjs';
+import { readCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 import { unifiedDiff } from '../lib/text-diff.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
 const committedRaw = readFileSync(REGISTRY_PATH, 'utf8');
-const committed = JSON.parse(committedRaw);
-const fixture = () => JSON.parse(readFileSync(path.join(FIXTURES, 'registry.fixture.json'), 'utf8'));
+// Materialised the way every mode of draft.mjs loads it, so validate sees the product block.
+const committed = materialise(JSON.parse(committedRaw), readCommittedCatalogue());
+const fixture = () => materialise(
+  JSON.parse(readFileSync(path.join(FIXTURES, 'registry.fixture.json'), 'utf8')),
+  readCommittedCatalogue()
+);
 
 // The shape `--init-from-registry` writes, kept here so the round trip proves the CLI's mapping.
 const draftFromRegistry = (reg) => ({
@@ -43,6 +48,20 @@ const draftFromRegistry = (reg) => ({
   })),
 });
 
+test('the write path refuses a pattern named after a real Color value', () => {
+  // Regression: modeWrite validated the candidate against the bare committed parse, whose absent
+  // product block handed nameColorProblem an empty colorValues list, so a colour-named pattern
+  // wrote cleanly. The existing registry is materialised now, so the guard checks real values.
+  const draft = draftFromRegistry(fixture());
+  const [firstColor] = fixture().product.colorValues;
+  draft.patterns[0].name = firstColor;
+  const problems = validationProblems(draft, fixture());
+  assert.ok(
+    problems.some((p) => p.includes('whole-word-matches Color value')),
+    `expected the colour-name refusal for ${JSON.stringify(firstColor)}, got:\n${problems.join('\n')}`
+  );
+});
+
 const twoPattern = () => {
   const d = draftFromRegistry(fixture());
   d.patterns = d.patterns.slice(0, 2);
@@ -58,7 +77,7 @@ const twoPattern = () => {
 test('the committed registry survives a draft round trip byte-identically', () => {
   const back = serialize(candidateRegistry(draftFromRegistry(committed), committed));
   assert.equal(back, committedRaw, 'key order, indentation, and the trailing newline must all survive');
-  assert.deepEqual(validate(JSON.parse(back)), []);
+  assert.deepEqual(validate(materialise(JSON.parse(back), readCommittedCatalogue())), []);
 });
 
 test('published, chart, and product pass through a merge untouched', () => {

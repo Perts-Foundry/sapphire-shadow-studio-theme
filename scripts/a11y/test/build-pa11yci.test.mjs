@@ -4,10 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildConfig, CHROME_PATH, PATHS_FILE } from '../build-pa11yci.mjs';
+import { buildConfig, CHROME_PATH, PATHS_FILE, resolvePaths, resolvedPaths, PRODUCTS_MARKER } from '../build-pa11yci.mjs';
+import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8'));
+const paths = resolvedPaths();
 const base = { baseUrl: 'https://shop.example', themeId: '12345' };
 
 test('every URL carries the preview theme pin', () => {
@@ -171,4 +172,92 @@ test('per-path ignore is a different thing and still reaches pa11y', () => {
   // summariser; it is scoped to one URL, not to the whole audit.
   const config = buildConfig({ ...base, paths: { paths: [{ path: '/', ignore: ['frame-title'] }] } });
   assert.deepEqual(config.urls[0].ignore, ['frame-title']);
+});
+
+// ── The derived product block ─────────────────────────────────────────────────
+//
+// Two DISTINCT tests, deliberately kept apart. The first drives the derivation against a
+// HAND-AUTHORED manifest and states what the rule is. The second is a MATCHES-PRODUCTION check that
+// today's committed files agree; on its own it would be the derived list compared against the
+// manifest it came from, which is self-consistency dressed as correctness.
+
+const TEST_MANIFEST = parseCatalogue(
+  JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' } },
+    sizes: { s: { display: 'S' } },
+    bodies: { crewneck: { colors: ['black'], sizes: ['s'] } },
+    products: {
+      'zeta-crewneck': { line: 'zeta', body: 'crewneck', template: 'zeta-crewneck', title: 'Zeta Crewneck', gid: 'gid://shopify/Product/1' },
+      'alpha-crewneck': { line: 'alpha', body: 'crewneck', template: 'alpha-crewneck', title: 'Alpha Crewneck', gid: 'gid://shopify/Product/2' },
+      'the-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/3' },
+    },
+  })
+);
+
+const RAW = () => ({
+  productOverrides: {},
+  paths: [
+    { path: '/', label: 'index', template: 'templates/index.json' },
+    { marker: PRODUCTS_MARKER },
+    { path: '/cart', label: 'cart', template: 'templates/cart.json' },
+  ],
+});
+
+test('LOGIC: the marker expands to one entry per product, in manifest order, in place', () => {
+  const out = resolvePaths(RAW(), TEST_MANIFEST);
+  assert.deepEqual(out.map((e) => e.path), [
+    '/',
+    '/products/zeta-crewneck',
+    '/products/alpha-crewneck',
+    '/products/the-gift-card',
+    '/cart',
+  ], 'declaration order, not alphabetical, and spliced where the marker sat');
+});
+
+test('LOGIC: the label derives from the TEMPLATE, never from the handle', () => {
+  const out = resolvePaths(RAW(), TEST_MANIFEST);
+  const gift = out.find((e) => e.path === '/products/the-gift-card');
+  assert.equal(gift.label, 'product (gift card)');
+  assert.notEqual(gift.label, 'product (the gift card)', 'deriving from the handle would say this');
+  assert.equal(gift.template, 'templates/product.gift-card.json');
+});
+
+test('LOGIC: productOverrides merge onto the derived entry, keyed by handle', () => {
+  const raw = RAW();
+  raw.productOverrides = { 'zeta-crewneck': { ignore: ['video-caption'], hideElements: '#embed' } };
+  const zeta = resolvePaths(raw, TEST_MANIFEST).find((e) => e.path === '/products/zeta-crewneck');
+  assert.deepEqual(zeta.ignore, ['video-caption']);
+  assert.equal(zeta.hideElements, '#embed');
+  // And an override for a product that does not exist is a typo, not a silent no-op.
+  raw.productOverrides = { ghost: { ignore: ['x'] } };
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /does not declare/);
+});
+
+test('FAIL CLOSED: a paths.json with no products marker throws rather than auditing no product', () => {
+  const raw = RAW();
+  raw.paths = raw.paths.filter((e) => e.marker !== PRODUCTS_MARKER);
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /no product page would be audited/);
+});
+
+test('FAIL CLOSED: an unrecognised marker throws rather than passing through as a "/undefined" URL', () => {
+  const raw = RAW();
+  raw.paths = [...raw.paths, { marker: 'catalogue:prodcuts' }];
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /unrecognised marker "catalogue:prodcuts"/);
+});
+
+test('FAIL CLOSED: a plain entry with no path throws rather than auditing "/undefined"', () => {
+  const raw = RAW();
+  raw.paths = [...raw.paths, { label: 'lost', template: 'templates/lost.json' }];
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /neither a "path" nor a recognised "marker"/);
+});
+
+test('MATCHES PRODUCTION: the resolved product entries equal the six the file used to spell out', () => {
+  // Byte-compared against the frozen pre-migration capture, so "derived" had to mean "identical".
+  const baseline = JSON.parse(
+    readFileSync(join(REPO_ROOT, 'scripts/catalogue/test/fixtures/pre-migration-baseline.json'), 'utf8')
+  ).a11yProductEntries;
+  const derived = resolvedPaths().paths.filter((e) => e.path.startsWith('/products/'));
+  assert.equal(JSON.stringify(derived), JSON.stringify(baseline));
 });

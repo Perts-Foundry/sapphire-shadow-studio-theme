@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isEffectivelyEmpty, breadcrumbCollectionFindings } from '../admin.mjs';
+import { isEffectivelyEmpty, breadcrumbCollectionFindings, breadcrumbBlankOkHandles } from '../admin.mjs';
+import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
 import { WARN } from '../lib/checks.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
@@ -41,16 +42,62 @@ test('every nil cause of an unset breadcrumb metafield reads the same', () => {
   assert.ok(f.every((x) => x.severity === WARN));
 });
 
+// A hand-authored manifest with TWO non-garment products, one whose handle and template suffix are
+// different strings. The set is compared against Admin HANDLES only, so the template suffix must
+// stay out of it; the handle/template distinction is the whole reason the old literal never matched
+// anything.
+const MANIFEST = parseCatalogue(
+  JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' } },
+    sizes: { s: { display: 'S' } },
+    bodies: { crewneck: { colors: ['black'], sizes: ['s'] } },
+    products: {
+      'lead-ii-crewneck': { line: 'lead2', body: 'crewneck', template: 'lead-ii-crewneck', title: 'Lead II Crewneck', gid: 'gid://shopify/Product/1' },
+      'sapphire-shadow-studio-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/2' },
+      'studio-consultation': { line: null, body: null, template: 'studio-consultation', title: 'Studio Consultation', gid: 'gid://shopify/Product/3' },
+    },
+  })
+);
+
+test('the intentionally-blank set is every non-garment HANDLE, and never a template suffix', () => {
+  assert.deepEqual([...breadcrumbBlankOkHandles(MANIFEST)].sort(), [
+    'sapphire-shadow-studio-gift-card',
+    'studio-consultation',
+  ]);
+  // The set is only ever tested against Admin handles, so the template suffix would be a dead
+  // entry that could only ever mask a future product whose HANDLE happened to equal it.
+  assert.equal(breadcrumbBlankOkHandles(MANIFEST).has('gift-card'), false);
+  // A garment is never in it: every garment has a parent collection to name.
+  assert.equal(breadcrumbBlankOkHandles(MANIFEST).has('lead-ii-crewneck'), false);
+});
+
 test('a documented intentionally-blank product produces no missing finding', () => {
-  // docs/breadcrumb-collection-metafield.md says gift-card stays blank, so the
-  // missing WARN must not fire for it; a catch-all value on it still would.
-  assert.deepEqual(
-    breadcrumbCollectionFindings([{ handle: 'gift-card', breadcrumbCollection: null }]),
-    [],
-  );
+  // docs/breadcrumb-collection-metafield.md says the gift card stays blank, so the missing WARN
+  // must not fire for it; a catch-all value on it still would.
+  for (const handle of ['sapphire-shadow-studio-gift-card', 'studio-consultation']) {
+    assert.deepEqual(
+      breadcrumbCollectionFindings([{ handle, breadcrumbCollection: null }], { manifest: MANIFEST }),
+      [],
+      handle,
+    );
+  }
   assert.equal(
-    breadcrumbCollectionFindings([{ handle: 'gift-card', breadcrumbCollection: mf('all') }])[0].check,
+    breadcrumbCollectionFindings([{ handle: 'gift-card', breadcrumbCollection: mf('all') }], { manifest: MANIFEST })[0].check,
     'product-breadcrumb-collection-catchall',
+  );
+});
+
+test('REGRESSION: the live gift-card HANDLE is skipped, which the old literal never managed', () => {
+  // The set was ['gift-card'] and the Admin API returns the handle
+  // sapphire-shadow-studio-gift-card, so this exact call used to produce a WARN on every run.
+  assert.deepEqual(
+    breadcrumbCollectionFindings([
+      { handle: 'sapphire-shadow-studio-gift-card', breadcrumbCollection: null },
+    ]),
+    [],
+    'against the COMMITTED manifest, not the fixture',
   );
 });
 

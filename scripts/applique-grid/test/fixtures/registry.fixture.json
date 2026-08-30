@@ -1,10 +1,6 @@
 {
   "version": 1,
-  "product": {
-    "handle": "huddle-crewneck",
-    "gid": "gid://shopify/Product/10231493787948",
-    "colorValues": ["Black", "Grey Heather", "Classic Navy"]
-  },
+  "handle": "huddle-crewneck",
   "threads": ["white", "black", "grey", "blue", "pink"],
   "chart": {
     "columns": 3,

@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { buildSvg } from '../lib/render-svg.mjs';
 import { drawGarment } from '../lib/garments.mjs';
 import { altText } from '../render-size-chart.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SEED = JSON.parse(readFileSync(path.join(HERE, '..', 'profiles', 'crewneck-fleece.json'), 'utf8'));
+const SEED = resolvedProfile('crewneck-fleece');
 
 test('altText lists the crewneck measured columns and sizes', () => {
   assert.equal(

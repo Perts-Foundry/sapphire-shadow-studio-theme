@@ -19,6 +19,7 @@
 //   Requires MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
 
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
+import { readCommittedCatalogue, nonGarmentProducts } from '../lib/catalogue-manifest.mjs';
 import {
   ERROR, WARN, TITLE_MAX, DESC_MIN, DESC_MAX,
   BREADCRUMB_EXCLUDED_HANDLES, BREADCRUMB_PREFERRED_HANDLES,
@@ -110,8 +111,23 @@ export function isEffectivelyEmpty(text) {
  * two-item "Home > Gift Card" trail needs no parent). The missing-value WARN
  * skips these so the check can reach zero findings once every other product
  * is set.
+ *
+ * DERIVED, and this fixed a real bug. The set was the literal `['gift-card']`,
+ * compared against `p.handle`, which the Admin API returns as
+ * `sapphire-shadow-studio-gift-card`. The two never matched, so the skip had
+ * never once fired and the gift card had been WARNing since the check shipped.
+ * A non-garment is exactly the product with no parent collection to name, so
+ * the manifest already knows which products belong here. HANDLES ONLY: the set
+ * is compared against `p.handle` and nothing else, and `gift-card` (the
+ * TEMPLATE suffix) in the set was exactly the handle/template confusion the
+ * old literal shipped with.
+ *
+ * @param {object} [manifest]
+ * @returns {Set<string>}
  */
-export const BREADCRUMB_BLANK_OK_HANDLES = new Set(['gift-card']);
+export function breadcrumbBlankOkHandles(manifest = readCommittedCatalogue()) {
+  return new Set(nonGarmentProducts(manifest).map((p) => p.handle));
+}
 
 /**
  * Findings for the per-product `custom.breadcrumb_collection` metafield that
@@ -123,7 +139,8 @@ export const BREADCRUMB_BLANK_OK_HANDLES = new Set(['gift-card']);
  * @param {Array<{handle:string, breadcrumbCollection:?{value:?string, reference:?{handle:string}}}>} products
  * @returns {Array<{check:string, severity:string, url:string, detail:string}>}
  */
-export function breadcrumbCollectionFindings(products) {
+export function breadcrumbCollectionFindings(products, { manifest } = {}) {
+  const blankOk = breadcrumbBlankOkHandles(manifest ?? readCommittedCatalogue());
   const findings = [];
   for (const p of products) {
     const url = `admin:product/${p.handle}`;
@@ -133,7 +150,7 @@ export function breadcrumbCollectionFindings(products) {
     // so neither does this check.
     const handle = mf && mf.reference ? mf.reference.handle : null;
     if (!handle) {
-      if (BREADCRUMB_BLANK_OK_HANDLES.has(p.handle)) continue;
+      if (blankOk.has(p.handle)) continue;
       findings.push({
         check: 'product-breadcrumb-collection-missing', severity: WARN, url,
         detail: `no custom.breadcrumb_collection reference; the breadcrumb parent falls back to the theme's preferred-handle list (${BREADCRUMB_PREFERRED_HANDLES.join(', ')})`,

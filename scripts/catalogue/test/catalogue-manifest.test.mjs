@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseCatalogue,
   loadCatalogue,
+  loadCommittedCatalogue,
   reconcileCatalogue,
   assessCatalogue,
   colorDisplay,
@@ -87,14 +88,13 @@ test('the tool understands version 2 only', () => {
   assert.throws(() => parseCatalogue(JSON.stringify({ bodies: {} })), /understands 2 only/);
 });
 
-test('a version 1 document refuses with a message naming the migrator, and is never auto-migrated', () => {
+test('a version 1 document refuses, and is never auto-migrated', () => {
   // Auto-migrating would mean inventing the Admin display spellings and the product census, which
   // are exactly what a v1 document does not contain.
   assert.throws(
     () => parseCatalogue(JSON.stringify({ version: 1, bodies: { crewneck: { colors: ['black'], sizes: ['m'] } } })),
     (err) => {
-      assert.match(err.message, /migrate-catalogue\.mjs/);
-      assert.match(err.message, /SKELETON/);
+      assert.match(err.message, /hand-corrected in a reviewed PR/);
       assert.match(err.message, /never auto-migrated/);
       return true;
     }
@@ -612,7 +612,14 @@ test('the manifest module cannot reach a mutation, and neither can the lint that
   // to say it must never import it, and a naive grep cannot tell the prohibition from the violation.
   const libPath = path.join(repoRoot, 'scripts/lib/catalogue-manifest.mjs');
   const lib = await readFile(libPath, 'utf8');
-  assert.deepEqual(importsOf(lib), ['./vocab.mjs', './json-keys.mjs']);
+  assert.deepEqual(importsOf(lib), [
+    'node:fs',
+    'node:fs/promises',
+    'node:path',
+    'node:url',
+    './vocab.mjs',
+    './json-keys.mjs',
+  ]);
   assert.doesNotMatch(lib, /setQuantity\(|adjustQuantity\(|metafieldsSet/);
 
   const lintPath = path.join(repoRoot, 'scripts/catalogue/check-catalogue.mjs');
@@ -623,7 +630,6 @@ test('the manifest module cannot reach a mutation, and neither can the lint that
     'node:url',
     '../lib/catalogue-manifest.mjs',
     '../lib/catalogue-cohesion.mjs',
-    '../lib/photo-naming.mjs',
   ]);
 
   // And the transitive closure of both, which is what the exact lists above cannot prove.
@@ -648,16 +654,18 @@ test('vocab.mjs and json-keys.mjs are zero-import leaves', async () => {
   }
 });
 
-test('the ID and GID regexes copied into the schema module are byte-identical to the originals', async () => {
-  // COPIED, not moved: the applique registry still owns its own copy until its migration lands, and
-  // deleting it there in this change would break trunk in the window between the two PRs. This is
-  // what stops the two drifting apart for as long as both exist. It is deleted with the copy.
+test('the ID and GID regexes have exactly one definition, and applique-grid reads it', async () => {
+  // They were COPIED here when this module was written, with the originals left in
+  // scripts/applique-grid/lib/registry.mjs so trunk stayed green in the window between the two PRs,
+  // and a test asserted the two copies were byte-identical. The applique migration deleted the
+  // originals: PRODUCT_GID_RE has no caller left there at all (the GID comes from the manifest now),
+  // and ID_RE is imported from here. This is what stops a second copy reappearing.
   const registry = await readFile(path.join(repoRoot, 'scripts/applique-grid/lib/registry.mjs'), 'utf8');
-  const idSource = registry.match(/^const ID_RE = (.+);$/m)?.[1];
-  const gidSource = registry.match(/^const PRODUCT_GID_RE = (.+);$/m)?.[1];
-  assert.ok(idSource && gidSource, 'both originals are still readable from registry.mjs');
-  assert.equal(String(ID_RE), idSource);
-  assert.equal(String(PRODUCT_GID_RE), gidSource);
+  assert.doesNotMatch(registry, /^const ID_RE = /m, 'ID_RE is imported, not redeclared');
+  assert.doesNotMatch(registry, /PRODUCT_GID_RE\s*=/, 'PRODUCT_GID_RE has no second definition');
+  assert.match(registry, /ID_RE,/, 'ID_RE comes from the schema module');
+  assert.equal(String(ID_RE), '/^[a-z0-9]+(?:-[a-z0-9]+)*$/');
+  assert.equal(String(PRODUCT_GID_RE), '/^gid:\\/\\/shopify\\/Product\\/\\d+$/');
 });
 
 // ---------------------------------------------------------------------------
@@ -669,7 +677,7 @@ test('the ID and GID regexes copied into the schema module are byte-identical to
 // ---------------------------------------------------------------------------
 
 test('MATCHES PRODUCTION: the committed manifest parses under these rules', async () => {
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   assert.equal(m.version, CATALOGUE_VERSION);
   assert.ok(m.bodies.size >= 1);
   assert.ok(m.products.size >= 1);

@@ -173,6 +173,35 @@ async function readJson(file, repoRoot) {
  *   `severity` REFUSE for everything except the two settings_data.json checks, which WARN;
  *   `run`      returns a problem string, or null.
  *
+ * RETIRED CHECKS ARE DELETED, NOT KEPT GREEN. Three checks over scripts/sku/tables.json (its product
+ * census in both directions, its titles, and its colour vocabulary) lived here while that file still
+ * restated the manifest. It no longer does: `scripts/sku/lib/tables.mjs` validates the codes AGAINST
+ * the manifest at load, on every command and in `npm run sku:tables`, and refuses a leftover title
+ * outright. Asserting the same thing twice from two files is not defence in depth; it is a second
+ * place to update. The replacements are derivation tests in the owning suite, in
+ * scripts/sku/test/tables.test.mjs.
+ *
+ * A fourth, over scripts/lib/photo-naming.mjs's product census (handle, title, GID and colour
+ * values), retired the same way: that module now builds the census with `createNaming(manifest)`, so
+ * the check compared the manifest against a list derived from it. Its replacement is the
+ * both-directions BODY_PHOTO_TOKEN test in scripts/lib/photo-naming.test.mjs, which asserts the one
+ * thing that is still hand-authored there.
+ *
+ * A fifth, over the size-chart profiles' handle lists, retired with the size-chart migration: a
+ * profile declares a catalogue body now and `profile-io.mjs` materialises its handles from the
+ * products on that body, so the list cannot name a product the manifest does not. Its replacement is
+ * the materialisation test in scripts/size-chart/test/profile-io.test.mjs, plus the frozen
+ * byte-stability snapshot in scripts/size-chart/test/pre-migration-bytes.test.mjs. Only that
+ * DIRECTION retired, though: nothing derives the profiles directory itself, so "every declared body
+ * has a size-chart profile" is still a fact two files can disagree about, and it stays below as
+ * `size-chart-profile-per-body` (the old pre-migration check 13, re-keyed on bodies).
+ *
+ * The last two, over the accessibility audit's product coverage in both directions, retired with the
+ * a11y migration: `build-pa11yci.mjs` expands a marker in paths.json into one entry per manifest
+ * product, so the audited list cannot miss a product or name one that is not declared. Their
+ * replacements are the labelled LOGIC and MATCHES PRODUCTION tests in
+ * scripts/a11y/test/build-pa11yci.test.mjs.
+ *
  * @type {Array<{id: string, source: string, severity: string, run: (ctx: object) => Promise<string|null>}>}
  */
 export const CHECKS = [
@@ -247,36 +276,6 @@ export const CHECKS = [
     },
   },
 
-  // 5-6. The accessibility audit's product coverage, both directions. RETIRES once build-pa11yci.mjs
-  // derives the product block from the manifest: at that point this compares the manifest with a
-  // list built from it.
-  {
-    id: 'a11y-covers-every-product',
-    source: 'scripts/a11y/paths.json',
-    severity: REFUSE,
-    async run({ manifest, a11yProductHandles }) {
-      const diff = setDiff(
-        a11yProductHandles,
-        [...manifest.products.keys()],
-        'audited',
-        'declared in catalogue.json'
-      );
-      return diff && `scripts/a11y/paths.json product coverage disagrees with the manifest. ${diff}`;
-    },
-  },
-  {
-    id: 'a11y-audits-no-unknown-product',
-    source: 'scripts/a11y/paths.json',
-    severity: REFUSE,
-    async run({ manifest, a11yProductTemplates }) {
-      const declared = [...manifest.products.values()].map((p) => templateFileFor(manifest, p.handle));
-      const diff = setDiff(a11yProductTemplates, declared, 'audited', 'declared in catalogue.json');
-      return (
-        diff && `scripts/a11y/paths.json product TEMPLATE coverage disagrees with the manifest. ${diff}`
-      );
-    },
-  },
-
   // 7-8. Theme template coverage, both directions, read from the filesystem. These do NOT retire:
   // the templates directory is not derived from anything, and a product whose template file is
   // missing renders the default product template with none of its content.
@@ -312,69 +311,8 @@ export const CHECKS = [
     },
   },
 
-  // 9-10. The SKU tables' product census, both directions. RETIRES once scripts/sku/ reads the
-  // census from the manifest.
-  {
-    id: 'sku-tables-cover-every-product',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const diff = setDiff(
-        Object.keys(skuTables.products ?? {}),
-        [...manifest.products.keys()],
-        'in scripts/sku/tables.json',
-        'declared in catalogue.json'
-      );
-      return diff && `scripts/sku/tables.json product census disagrees with the manifest. ${diff}`;
-    },
-  },
-  {
-    id: 'sku-tables-titles-match',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const wrong = [];
-      for (const [handle, entry] of Object.entries(skuTables.products ?? {})) {
-        const declared = manifest.products.get(handle);
-        if (!declared) continue; // the census check above owns that failure
-        if (entry.title !== declared.title) wrong.push(handle);
-      }
-      return (
-        wrong.length &&
-        `${wrong.length} product title(s) in scripts/sku/tables.json differ from catalogue.json: ` +
-          `${nameList(wrong)}. The title is printed on the SKU plan the operator approves, so the two ` +
-          `must name the same product in the same words.`
-      );
-    },
-  },
-
-  // 11. The SKU colour vocabulary. COMPARED AFTER normaliseAxis, which is what lets this pass against
-  // the unmigrated tables.json: it keys colours by their display spelling (`Grey Heather`) and the
-  // manifest keys them by identity (`grey heather`). The check asserts the same VALUES, not the same
-  // spelling. RETIRES once tables.json is re-keyed to manifest ids.
-  {
-    id: 'sku-tables-colors-match',
-    source: 'scripts/sku/tables.json',
-    severity: REFUSE,
-    async run({ manifest, skuTables }) {
-      const actual = Object.keys(skuTables.colors ?? {}).map((c) => normaliseAxis(c, 'Color'));
-      const diff = setDiff(
-        actual,
-        [...manifest.colors.keys()],
-        'in scripts/sku/tables.json',
-        'declared in catalogue.json'
-      );
-      return (
-        diff &&
-        `scripts/sku/tables.json colour vocabulary disagrees with the manifest (compared after ` +
-          `normalisation, so a casing difference is not what this is reporting). ${diff}`
-      );
-    },
-  },
-
   // 12. The applique registry names one product, and it must be a declared GARMENT: the pattern
-  // charts are printed on a body. Read at `product.handle` today; the path moves to a top-level
-  // `handle` in the same commit that migrates applique-grid, and this reader moves with it.
+  // charts are printed on a body. Read at the registry's top-level `handle`.
   {
     id: 'applique-product-is-a-garment',
     source: 'scripts/applique-grid/patterns.json',
@@ -396,71 +334,23 @@ export const CHECKS = [
     },
   },
 
-  // 13. Every size-chart profile's handle list must resolve to a declared product template. RETIRES
-  // once profiles carry a body and profile-io.mjs materialises the handles from the manifest.
+  // 13. Every declared garment body has a size-chart profile. The profiles directory is
+  // hand-authored (a new blank means authoring a spec), so this cannot retire as derived: a body
+  // declared in the manifest with no profile means every product cut from it ships with no size
+  // chart, and nothing else notices. The other direction (a profile naming a body the manifest does
+  // not declare) is refused by profile-io.mjs's materialisation at every load.
   {
-    id: 'size-chart-handles-are-products',
-    source: 'scripts/size-chart/profiles/*.json',
+    id: 'size-chart-profile-per-body',
+    source: 'scripts/size-chart/profiles/',
     severity: REFUSE,
-    async run({ manifest, sizeChartHandles }) {
-      // The entries are TEMPLATE suffixes, not product handles: the generator interpolates each one
-      // into templates/product.<entry>.json, and the gift card is the standing proof that a
-      // template suffix and a handle are not the same string. Validating against the handle
-      // namespace would red a profile that correctly names a diverging template.
-      const templates = new Set([...manifest.products.values()].map((p) => p.template));
-      const unknown = sizeChartHandles.filter((h) => !templates.has(h));
-      if (unknown.length) {
-        return (
-          `${unknown.length} size-chart profile handle(s) are not declared product templates: ` +
-          `${nameList(unknown)}. The generator writes an accordion row into ` +
-          `templates/product.<handle>.json, so an unknown entry writes into no file at all.`
-        );
-      }
-      const uncovered = garmentProducts(manifest)
-        .filter((p) => !sizeChartHandles.includes(p.template))
-        .map((p) => p.handle);
+    async run({ manifest, sizeChartProfileBodies }) {
+      const missing = [...manifest.bodies.keys()].filter((b) => !sizeChartProfileBodies.has(b));
       return (
-        uncovered.length &&
-        `${uncovered.length} garment product(s) have no size-chart profile: ${nameList(uncovered)}. ` +
-          `Every garment sells by size, so a product with no profile ships a size guide nobody can read.`
-      );
-    },
-  },
-
-  // 14. The photo-naming census: handle, title, GID and colour values, per product. Compared on those
-  // four things and deliberately NOT on body ids, whose five spellings genuinely disagree today and
-  // are not what this check asserts. RETIRES once photo-naming derives PRODUCTS from the manifest.
-  {
-    id: 'photo-naming-census-matches',
-    source: 'scripts/lib/photo-naming.mjs',
-    severity: REFUSE,
-    async run({ manifest, photoProducts }) {
-      const problems = [];
-      const declared = new Set(garmentProducts(manifest).map((p) => p.handle));
-      const seen = new Set();
-      for (const record of photoProducts) {
-        seen.add(record.handle);
-        const product = manifest.products.get(record.handle);
-        if (!product) {
-          problems.push(`${record.handle} (not declared)`);
-          continue;
-        }
-        if (record.title !== product.title) problems.push(`${record.handle} (title)`);
-        if (record.gid !== product.gid) problems.push(`${record.handle} (gid)`);
-        const expected = product.body === null ? [] : colorValuesFor(manifest, record.handle);
-        if (JSON.stringify(record.colorValues) !== JSON.stringify(expected)) {
-          problems.push(`${record.handle} (colour values)`);
-        }
-      }
-      const missing = [...declared].filter((h) => !seen.has(h));
-      if (missing.length) problems.push(...missing.map((h) => `${h} (missing from PRODUCTS)`));
-      return (
-        problems.length &&
-        `scripts/lib/photo-naming.mjs's product census disagrees with catalogue.json on ` +
-          `${problems.length} point(s): ${nameList(problems)}. The uploader resolves a photo's target ` +
-          `product and its reserved colour vocabulary from that table, so a stale GID writes media ` +
-          `onto the wrong product and a stale colour list binds a photo to a colour the product does ` +
-          `not sell.`
+        missing.length &&
+        `${missing.length} declared garment body/bodies have no size-chart profile: ` +
+          `${nameList(missing)}. Every product on such a body ships with no size chart and nothing ` +
+          `else notices. Author scripts/size-chart/profiles/<blank_id>.json declaring that "body" ` +
+          `(the size-chart skill walks through it), or remove the body from catalogue.json.`
       );
     },
   },
@@ -552,14 +442,9 @@ export const COHESION_CHECK_COUNT = CHECKS.length;
  * @param {string} params.repoRoot
  * @param {object} params.manifest
  * @param {(dir: string) => Promise<string[]>} params.listDir - injected so the template scan is testable
- * @param {Record<string, {handle: string, title: string, gid: string, colorValues: string[]}>} params.photoNamingProducts
- *   `PRODUCTS` from scripts/lib/photo-naming.mjs, passed IN rather than imported here. A dynamic
- *   import would put a specifier the read-only closure guard cannot follow inside the lint's own
- *   closure, and parsing the module's source with a regex would silently return an empty census the
- *   moment its formatting changed, which reads as "everything agrees". Retires with check 14.
  * @returns {Promise<object>}
  */
-export async function collectSources({ repoRoot, manifest, listDir, photoNamingProducts }) {
+export async function collectSources({ repoRoot, manifest, listDir }) {
   const readText = async (file) => {
     try {
       return await readFile(path.join(repoRoot, file), 'utf8');
@@ -579,51 +464,36 @@ export async function collectSources({ repoRoot, manifest, listDir, photoNamingP
   const settingsData = await readJson('config/settings_data.json', repoRoot);
   const settingsDataValues = new Map(Object.entries(settingsData?.current ?? settingsData ?? {}));
 
-  const a11yPaths = await readJson('scripts/a11y/paths.json', repoRoot);
-  const a11yProductEntries = (a11yPaths.paths ?? []).filter((e) => String(e.path).startsWith('/products/'));
-  const a11yProductHandles = a11yProductEntries.map((e) => String(e.path).replace('/products/', ''));
-  const a11yProductTemplates = a11yProductEntries.map((e) => e.template);
-
   const templateFiles = (await listDir(path.join(repoRoot, 'templates')))
     .filter((f) => /^product\..+\.json$/.test(f))
     .map((f) => `templates/${f}`)
     .sort();
 
-  const skuTables = await readJson('scripts/sku/tables.json', repoRoot);
-
-  const appliqueRegistry = await readJson('scripts/applique-grid/patterns.json', repoRoot);
-  // The path this reads MOVES in the commit that migrates applique-grid: `product.handle` becomes a
-  // top-level `handle`. Both are accepted here so the check reads the same fact either side of that
-  // commit rather than needing its own coordination.
-  const appliqueHandle = String(appliqueRegistry.handle ?? appliqueRegistry.product?.handle ?? '');
-
-  const profileNames = (await listDir(path.join(repoRoot, 'scripts/size-chart/profiles'))).filter((f) =>
-    f.endsWith('.json')
-  );
-  const sizeChartHandles = [];
-  for (const name of profileNames.sort()) {
-    const profile = await readJson(`scripts/size-chart/profiles/${name}`, repoRoot);
-    for (const h of profile.handles ?? []) sizeChartHandles.push(String(h));
+  // Which bodies the size-chart profiles cover: body id -> the first profile file declaring it.
+  const profileFiles = (await listDir(path.join(repoRoot, 'scripts/size-chart/profiles')))
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  const sizeChartProfileBodies = new Map();
+  for (const f of profileFiles) {
+    const profile = await readJson(`scripts/size-chart/profiles/${f}`, repoRoot);
+    if (typeof profile.body === 'string' && !sizeChartProfileBodies.has(profile.body)) {
+      sizeChartProfileBodies.set(profile.body, f);
+    }
   }
 
-  const photoProducts = Object.values(photoNamingProducts ?? {}).map((p) => ({
-    handle: p.handle,
-    title: p.title,
-    gid: p.gid,
-    colorValues: [...(p.colorValues ?? [])],
-  }));
+  const appliqueRegistry = await readJson('scripts/applique-grid/patterns.json', repoRoot);
+  // Top-level now. It was nested under a `product` block until applique-grid was migrated; that
+  // block is gone from the committed file and `registry.mjs` refuses one, so there is no fallback to
+  // keep here.
+  const appliqueHandle = String(appliqueRegistry.handle ?? '');
 
   return {
     manifest,
     settingsSchemaDefaults,
     settingsDataValues,
-    a11yProductHandles,
-    a11yProductTemplates,
     templateFiles,
-    skuTables,
+    sizeChartProfileBodies,
     appliqueHandle,
-    sizeChartHandles,
-    photoProducts,
     docs: {
       skuScheme: await readText('docs/sku-scheme.md'),
       altText: await readText('docs/product-media-alt-text.md'),

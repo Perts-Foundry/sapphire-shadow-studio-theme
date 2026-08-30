@@ -4,11 +4,13 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PATHS_FILE } from '../build-pa11yci.mjs';
+import { PATHS_FILE, resolvePaths } from '../build-pa11yci.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8'));
-const entries = paths.paths;
+// Resolved, not raw: the per-product entries are derived from catalogue.json now, so the raw file
+// carries a marker where they belong. Every assertion below is about the audited list.
+const entries = resolvePaths(paths);
 
 test('every product template has an audited path', () => {
   // THE coverage assertion. Adding templates/product.new-thing.json without an

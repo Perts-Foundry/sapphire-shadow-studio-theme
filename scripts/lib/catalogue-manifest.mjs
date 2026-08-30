@@ -34,6 +34,11 @@
 // identity it hangs off; an option name, a title and a GID are checked on shape and uniqueness only,
 // and are never case-folded.
 
+import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { normaliseAxis } from './vocab.mjs';
 import { findDuplicateKeys } from './json-keys.mjs';
 
@@ -64,14 +69,13 @@ const OPTION_KEYS = ['color', 'size', 'design', 'denomination'];
 /**
  * Kebab-case identifier shape, for handles, template suffixes and colour slugs.
  *
- * COPIED, not moved, from scripts/applique-grid/lib/registry.mjs. The applique registry still owns
- * its own copy until its migration lands; deleting it there in the same change that adds it here
- * would break trunk in the window between the two. A test asserts the two copies are identical for
- * as long as both exist.
+ * THE ONE DEFINITION. It was copied here from scripts/applique-grid/lib/registry.mjs rather than
+ * moved, so trunk stayed green in the window before that module was migrated; the original is gone
+ * now and registry.mjs imports this one. A test asserts there is no second declaration.
  */
 export const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** Product GID shape. Copied from the same place, under the same rule. */
+/** Product GID shape. Same history, and the only definition left. */
 export const PRODUCT_GID_RE = /^gid:\/\/shopify\/Product\/\d+$/;
 
 const cmpString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -537,12 +541,15 @@ export function parseCatalogue(text) {
   }
 
   if (doc.version !== CATALOGUE_VERSION) {
+    // The v1 skeleton printer shipped alongside the schema and was deleted once every consumer had
+    // migrated: there is no v1 document left anywhere to convert, and a one-shot kept for a
+    // conversion that can no longer happen is cruft that still has to be maintained. It is
+    // recoverable from git history if a v1 file ever turns up.
     const migrator =
       doc.version === 1
-        ? ` A version 1 document is migrated by "node scripts/catalogue/migrate-catalogue.mjs", which ` +
-          `prints a v2 SKELETON for you to hand-correct: the Admin display spellings and the product ` +
-          `census are exactly what a v1 document does not contain, so nothing can derive them. This ` +
-          `file is never auto-migrated in place.`
+        ? ` A version 1 document predates the manifest's Admin display spellings and its product ` +
+          `census, which is exactly what nothing can derive, so it is hand-corrected in a reviewed ` +
+          `PR. This file is never auto-migrated in place.`
         : '';
     throw new Error(
       `${CATALOGUE_PATH} declares version ${JSON.stringify(doc.version)}; this tool understands ` +
@@ -630,6 +637,40 @@ export async function loadCatalogue({ read, path = CATALOGUE_PATH }) {
     throw err;
   }
   return parseCatalogue(text);
+}
+
+/** The repo root, resolved from this module (scripts/lib/) rather than from cwd. */
+const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * Load and parse the committed manifest from the repo root.
+ *
+ * The one place that knows where the committed file lives relative to this module. Seven areas
+ * used to carry a private copy of this read (each with its own REPO_ROOT arithmetic), and a copy
+ * that resolved one `..` short would have read a different repo's manifest without noticing.
+ *
+ * @returns {Promise<ReturnType<typeof parseCatalogue>>}
+ */
+export async function loadCommittedCatalogue() {
+  return loadCatalogue({ read: (p) => readFile(path.join(REPO_ROOT, p), 'utf8') });
+}
+
+let committedCache = null;
+
+/**
+ * The committed manifest, read synchronously and memoised.
+ *
+ * For the callers whose whole surface is synchronous (photo naming, the SEO and a11y builders).
+ * The cache is process-lifetime, which is what those callers already did individually: the
+ * committed file does not change under a running process.
+ *
+ * @returns {ReturnType<typeof parseCatalogue>}
+ */
+export function readCommittedCatalogue() {
+  if (!committedCache) {
+    committedCache = parseCatalogue(readFileSync(path.join(REPO_ROOT, CATALOGUE_PATH), 'utf8'));
+  }
+  return committedCache;
 }
 
 // ---------------------------------------------------------------------------

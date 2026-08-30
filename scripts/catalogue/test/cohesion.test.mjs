@@ -19,8 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CHECKS, COHESION_CHECK_COUNT, runCohesion, collectSources, REFUSE, WARN } from '../../lib/catalogue-cohesion.mjs';
-import { parseCatalogue, loadCatalogue } from '../../lib/catalogue-manifest.mjs';
-import { PRODUCTS as PHOTO_NAMING_PRODUCTS } from '../../lib/photo-naming.mjs';
+import { parseCatalogue, loadCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -90,31 +89,16 @@ function sources(over = {}) {
       ['color_option_name', 'Color'],
       ['size_option_name', 'Size'],
     ]),
-    a11yProductHandles: ['a-crew', 'b-vest', 'the-gift-card'],
-    a11yProductTemplates: [
-      'templates/product.a-crew.json',
-      'templates/product.b-vest.json',
-      'templates/product.gift-card.json',
-    ],
     templateFiles: [
       'templates/product.a-crew.json',
       'templates/product.b-vest.json',
       'templates/product.gift-card.json',
     ],
-    skuTables: {
-      colors: { Black: 'BLK', 'Grey Heather': 'GRH' },
-      products: {
-        'a-crew': { title: 'A Crew' },
-        'b-vest': { title: 'B Vest' },
-        'the-gift-card': { title: 'Gift Card' },
-      },
-    },
+    sizeChartProfileBodies: new Map([
+      ['crewneck', 'crewneck-fleece.json'],
+      ['vest', 'vest-micro.json'],
+    ]),
     appliqueHandle: 'a-crew',
-    sizeChartHandles: ['a-crew', 'b-vest'],
-    photoProducts: [
-      { handle: 'a-crew', title: 'A Crew', gid: 'gid://shopify/Product/1', colorValues: ['Black', 'Grey Heather'] },
-      { handle: 'b-vest', title: 'B Vest', gid: 'gid://shopify/Product/2', colorValues: ['Black'] },
-    ],
     docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC },
     ...over,
   };
@@ -138,8 +122,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 16);
-  assert.equal(CHECKS.length, 16);
+  assert.equal(COHESION_CHECK_COUNT, 10);
+  assert.equal(CHECKS.length, 10);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -187,30 +171,6 @@ test('a settings_data value that does not equal the manifest axis name WARNS, an
   assert.match(out.messages['settings-data-color-option'], /Admin-editable/);
 });
 
-test('a product with no audited path, and an audited path for no product, both REFUSE', async () => {
-  const missing = await fired({ a11yProductHandles: ['a-crew', 'b-vest'] });
-  assert.ok(missing.refusals.includes('a11y-covers-every-product'));
-  assert.match(missing.messages['a11y-covers-every-product'], /"the-gift-card"/);
-
-  const extra = await fired({ a11yProductHandles: [...sources().a11yProductHandles, 'ghost'] });
-  assert.ok(extra.refusals.includes('a11y-covers-every-product'));
-  assert.match(extra.messages['a11y-covers-every-product'], /"ghost"/);
-});
-
-test('the a11y TEMPLATE check reads the template suffix, not the handle', async () => {
-  // The gift card is the case that separates the two: its handle is "the-gift-card" and its
-  // template is "gift-card". A check that built the path from the handle would fail on a correct
-  // repo, which is the defect the template field exists to end.
-  const out = await fired({
-    a11yProductTemplates: [
-      'templates/product.a-crew.json',
-      'templates/product.b-vest.json',
-      'templates/product.the-gift-card.json',
-    ],
-  });
-  assert.ok(out.refusals.includes('a11y-audits-no-unknown-product'));
-});
-
 test('a missing product template REFUSES, and names the fallback that hides it', async () => {
   const out = await fired({ templateFiles: ['templates/product.a-crew.json', 'templates/product.b-vest.json'] });
   assert.ok(out.refusals.includes('template-exists-per-product'));
@@ -223,35 +183,6 @@ test('a product template belonging to no declared product REFUSES', async () => 
   assert.match(out.messages['no-unclaimed-product-template'], /"templates\/product\.orphan\.json"/);
 });
 
-test('a SKU tables census that disagrees REFUSES in both directions', async () => {
-  const short = await fired({ skuTables: { ...sources().skuTables, products: { 'a-crew': { title: 'A Crew' } } } });
-  assert.ok(short.refusals.includes('sku-tables-cover-every-product'));
-
-  const long = await fired({
-    skuTables: { ...sources().skuTables, products: { ...sources().skuTables.products, ghost: { title: 'Ghost' } } },
-  });
-  assert.ok(long.refusals.includes('sku-tables-cover-every-product'));
-});
-
-test('a SKU tables title that differs from the manifest REFUSES', async () => {
-  const out = await fired({
-    skuTables: { ...sources().skuTables, products: { ...sources().skuTables.products, 'a-crew': { title: 'A Crewneck' } } },
-  });
-  assert.deepEqual(out.refusals, ['sku-tables-titles-match']);
-  assert.match(out.messages['sku-tables-titles-match'], /"a-crew"/);
-});
-
-test('the SKU colour check compares VALUES, not spellings, which is what lets it pass unmigrated', async () => {
-  // tables.json keys colours by their display spelling; the manifest keys them by identity. The
-  // check normalises both sides first, so a casing difference is not a finding.
-  const cased = await fired({ skuTables: { ...sources().skuTables, colors: { BLACK: 'BLK', 'grey heather': 'GRH' } } });
-  assert.deepEqual(cased.refusals, [], 'casing alone is not a disagreement');
-
-  const wrong = await fired({ skuTables: { ...sources().skuTables, colors: { Black: 'BLK', Navy: 'NVY' } } });
-  assert.deepEqual(wrong.refusals, ['sku-tables-colors-match']);
-  assert.match(wrong.messages['sku-tables-colors-match'], /compared after normalisation/);
-});
-
 test('an applique handle that is undeclared, or is not a garment, both REFUSE', async () => {
   const unknown = await fired({ appliqueHandle: 'ghost' });
   assert.deepEqual(unknown.refusals, ['applique-product-is-a-garment']);
@@ -262,67 +193,11 @@ test('an applique handle that is undeclared, or is not a garment, both REFUSE', 
   assert.match(gift.messages['applique-product-is-a-garment'], /printed on a body/);
 });
 
-test('a size-chart profile naming an unknown handle, or a garment with no profile, both REFUSE', async () => {
-  const unknown = await fired({ sizeChartHandles: ['a-crew', 'b-vest', 'ghost'] });
-  assert.deepEqual(unknown.refusals, ['size-chart-handles-are-products']);
-  assert.match(unknown.messages['size-chart-handles-are-products'], /"ghost"/);
-
-  const uncovered = await fired({ sizeChartHandles: ['a-crew'] });
-  assert.deepEqual(uncovered.refusals, ['size-chart-handles-are-products']);
-  assert.match(uncovered.messages['size-chart-handles-are-products'], /"b-vest"/);
-});
-
-test('size-chart entries are TEMPLATE suffixes, so a diverging template passes and the handle fails', async () => {
-  // The generator interpolates each entry into templates/product.<entry>.json, and a product's
-  // template can differ from its handle (the gift card already does). Validating against the
-  // handle namespace would red the correct profile and pass the broken one.
-  const diverged = parseCatalogue(JSON.stringify({
-    ...MANIFEST_DOC,
-    products: {
-      ...MANIFEST_DOC.products,
-      'a-crew': { ...MANIFEST_DOC.products['a-crew'], template: 'a-crew-alt' },
-    },
-  }));
-  const templateFiles = [
-    'templates/product.a-crew-alt.json',
-    'templates/product.b-vest.json',
-    'templates/product.gift-card.json',
-  ];
-  const a11yProductTemplates = templateFiles;
-
-  const correct = await fired({
-    manifest: diverged, templateFiles, a11yProductTemplates,
-    sizeChartHandles: ['a-crew-alt', 'b-vest'],
-  });
-  assert.deepEqual(correct.refusals, [], 'the template suffix is the right namespace');
-
-  const wrongNamespace = await fired({
-    manifest: diverged, templateFiles, a11yProductTemplates,
-    sizeChartHandles: ['a-crew', 'b-vest'],
-  });
-  assert.deepEqual(wrongNamespace.refusals, ['size-chart-handles-are-products']);
-  assert.match(wrongNamespace.messages['size-chart-handles-are-products'], /"a-crew"/);
-});
-
-test('the photo-naming census check catches a stale title, GID, colour list or missing product', async () => {
-  const base = sources().photoProducts;
-  for (const [over, needle] of [
-    [[{ ...base[0], title: 'Renamed' }, base[1]], /title/],
-    [[{ ...base[0], gid: 'gid://shopify/Product/999' }, base[1]], /gid/],
-    [[{ ...base[0], colorValues: ['Black'] }, base[1]], /colour values/],
-    [[base[0]], /missing from PRODUCTS/],
-  ]) {
-    const out = await fired({ photoProducts: over });
-    assert.deepEqual(out.refusals, ['photo-naming-census-matches']);
-    assert.match(out.messages['photo-naming-census-matches'], needle);
-  }
-});
-
-test('the photo-naming colour list is compared in ORDER, not as a set', async () => {
-  // The order is the body's declaration order and it is what the uploader offers as a colour list.
-  const base = sources().photoProducts;
-  const out = await fired({ photoProducts: [{ ...base[0], colorValues: ['Grey Heather', 'Black'] }, base[1]] });
-  assert.deepEqual(out.refusals, ['photo-naming-census-matches']);
+test('a declared body with no size-chart profile REFUSES, and names the body', async () => {
+  const out = await fired({ sizeChartProfileBodies: new Map([['crewneck', 'crewneck-fleece.json']]) });
+  assert.deepEqual(out.refusals, ['size-chart-profile-per-body']);
+  assert.match(out.messages['size-chart-profile-per-body'], /"vest"/);
+  assert.match(out.messages['size-chart-profile-per-body'], /no size chart/);
 });
 
 test('a doc marker region that disagrees REFUSES, in either file', async () => {
@@ -374,10 +249,10 @@ test('a DELETED marker is a refusal, not an empty region that silently retires t
 });
 
 test('a check that THROWS is a failed check, never a skipped one, and the run count still counts it', async () => {
-  const out = await runCohesion(sources({ skuTables: null }));
+  const out = await runCohesion(sources({ templateFiles: null }));
   assert.equal(out.run, COHESION_CHECK_COUNT, 'a throwing check is still a check that ran');
-  assert.ok(out.refusals.some((r) => r.id === 'sku-tables-cover-every-product'));
-  assert.match(out.refusals.find((r) => r.id === 'sku-tables-cover-every-product').message, /could not run/);
+  assert.ok(out.refusals.some((r) => r.id === 'no-unclaimed-product-template'));
+  assert.match(out.refusals.find((r) => r.id === 'no-unclaimed-product-template').message, /could not run/);
 });
 
 // ---------------------------------------------------------------------------
@@ -398,12 +273,8 @@ async function messagesFor(over) {
 const FORGED_CASES = [
   ['config/settings_schema.json', { settingsSchemaDefaults: new Map([['color_option_name', FORGED], ['size_option_name', 'Size']]) }],
   ['config/settings_data.json', { settingsDataValues: new Map([['color_option_name', FORGED], ['size_option_name', 'Size']]) }],
-  ['scripts/a11y/paths.json', { a11yProductHandles: [...sources().a11yProductHandles, FORGED] }],
   ['templates/', { templateFiles: [...sources().templateFiles, FORGED] }],
-  ['scripts/sku/tables.json', { skuTables: { colors: { [FORGED]: 'X' }, products: { [FORGED]: { title: FORGED } } } }],
   ['scripts/applique-grid/patterns.json', { appliqueHandle: FORGED }],
-  ['scripts/size-chart/profiles/*.json', { sizeChartHandles: [FORGED] }],
-  ['scripts/lib/photo-naming.mjs', { photoProducts: [{ handle: FORGED, title: FORGED, gid: FORGED, colorValues: [FORGED] }] }],
   ['docs/sku-scheme.md', { docs: { skuScheme: SKU_SCHEME_DOC.replace('| A Crew | `ACRW` |', `| ${FORGED.replace(/\n/g, ' ')} | \`X\` |`), altText: ALT_TEXT_DOC } }],
   ['docs/product-media-alt-text.md', { docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC.replace('| A Crew |', `| ${FORGED.replace(/\n/g, ' ')} |`) } }],
 ];
@@ -434,12 +305,11 @@ test('a set difference is bounded, so a PR-inflated list cannot produce an unrea
 test('MATCHES PRODUCTION: the real repo passes every check', async () => {
   // Weaker than everything above, and labelled so. It says today's files agree, not what the rules
   // are. It is here because the whole point of the lint is to be true of this repo.
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   const real = await collectSources({
     repoRoot,
     manifest: m,
     listDir: (dir) => readdir(dir),
-    photoNamingProducts: PHOTO_NAMING_PRODUCTS,
   });
   const out = await runCohesion(real);
   assert.deepEqual(out.refusals.map((r) => `${r.id}: ${r.message}`), []);
@@ -453,12 +323,11 @@ test('MATCHES PRODUCTION: the real collector tolerates the block comment Shopify
   // needs to warn about.
   const raw = await readFile(path.join(repoRoot, 'config/settings_data.json'), 'utf8');
   assert.match(raw, /^\/\*/, 'the banner is still there, so this test is still testing something');
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   const real = await collectSources({
     repoRoot,
     manifest: m,
     listDir: (dir) => readdir(dir),
-    photoNamingProducts: PHOTO_NAMING_PRODUCTS,
   });
   assert.equal(real.settingsDataValues.get('color_option_name'), m.options.get('color'));
 });

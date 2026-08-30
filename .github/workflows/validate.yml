@@ -558,7 +558,7 @@ jobs:
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-          # Sixteen cohesion checks collapse into ONE row in the PR comment, so
+          # Every cohesion check collapses into ONE row in the PR comment, so
           # without this a failure is only diagnosable by opening the raw job
           # log. check-catalogue.mjs prints a single fixed-shape line naming the
           # failing check ids; this lifts it into its own output field, which the

@@ -8,13 +8,21 @@
 // strings are copied out of Admin verbatim, so a near miss means the value genuinely changed.
 
 import { productEntry } from './tables.mjs';
+import { normaliseAxis } from '../../lib/vocab.mjs';
 
 export const MISS_UNKNOWN_PRODUCT = 'unknown-product';
 export const MISS_UNMAPPED_VALUE = 'unmapped-value';
 export const MISS_MISSING_OPTION = 'missing-option';
 export const MISS_INVALID_VALUE = 'invalid-value';
 
-/** Sizes pass through rather than living in a table; they are already short uppercase tokens. */
+/**
+ * Sizes pass through rather than living in a table; they are already short uppercase tokens.
+ *
+ * IT IS NOT THE FIRST CHECK ANY MORE, and that ordering is the fix. On its own this accepts ANY
+ * uppercase alphanumeric token, so a variant whose Size option had drifted to something the product
+ * does not sell still produced a plausible-looking SKU. The declared size range from catalogue.json
+ * is checked first; this now only catches a declared size that could not be spelled inside a SKU.
+ */
 const PASSTHROUGH_RE = /^[A-Z0-9]+$/;
 
 /**
@@ -42,8 +50,20 @@ const PASSTHROUGH_RE = /^[A-Z0-9]+$/;
 function lookupSegment(tables, entry, seg, value) {
   switch (seg.kind) {
     case 'color': {
-      const code = tables.colors?.[value];
-      return code ? { code } : { miss: MISS_UNMAPPED_VALUE, message: `colors: add "${value}"` };
+      // Resolved through the manifest's normalisation, not by exact string match. The table is keyed
+      // by catalogue.json colour IDS, and the value here is the live Admin spelling; comparing them
+      // raw is what produced three casings of one colour across this repo. Normalisation can only
+      // merge two spellings of one value, never split one into two, so it is the safe direction.
+      const id = normaliseAxis(value, 'Color');
+      const code = tables.colors?.[id];
+      return code
+        ? { code }
+        : {
+            miss: MISS_UNMAPPED_VALUE,
+            message:
+              `colors: "${value}" normalises to "${id}", which catalogue.json does not declare. ` +
+              `Declare the colour there first, then give it a code in tables.json`,
+          };
     }
     case 'design': {
       const ns = entry.designNamespace;
@@ -55,6 +75,30 @@ function lookupSegment(tables, entry, seg, value) {
       return code ? { code } : { miss: MISS_UNMAPPED_VALUE, message: `denominations: add "${value}"` };
     }
     case 'size': {
+      // Validated against the product's DECLARED size range before it passes through. Without this
+      // the passthrough below accepted any uppercase token, so a Size option that had drifted in
+      // Admin to a value the product does not sell produced a plausible-looking SKU that nothing
+      // downstream could question, on a field that then freezes onto order lines.
+      //
+      // `sizes` is null on a non-garment, which is a different thing from an empty list: a product
+      // with no declared body has no size range, and a size segment on one is a tables error rather
+      // than a value error.
+      if (entry.sizes === null || entry.sizes === undefined) {
+        return {
+          miss: MISS_INVALID_VALUE,
+          message:
+            `has a size segment but catalogue.json declares no body for it, so it has no size ` +
+            `range. Either give it a body there, or drop the size segment from tables.json`,
+        };
+      }
+      if (!entry.sizes.includes(value)) {
+        return {
+          miss: MISS_UNMAPPED_VALUE,
+          message:
+            `catalogue.json declares the sizes [${entry.sizes.join(', ')}] for this product's body, ` +
+            `and "${value}" is not one of them`,
+        };
+      }
       const code = value.trim().toUpperCase();
       if (!PASSTHROUGH_RE.test(code)) {
         return {
@@ -87,8 +131,9 @@ export function deriveSku(tables, variant) {
       option: '',
       value: variant.productHandle ?? null,
       message:
-        `product "${variant.productHandle}" is not in tables.json. Add it with a code and a ` +
-        `segments array before any SKU can be derived for it.`,
+        `product "${variant.productHandle}" is not in tables.json. Declare it in catalogue.json, ` +
+        `then give it a code and a segments array in tables.json, before any SKU can be derived ` +
+        `for it. Both are refused by \`npm run sku:tables\` until they agree.`,
     };
   }
 

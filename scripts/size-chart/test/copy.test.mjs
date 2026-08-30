@@ -5,12 +5,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readCopy, KNOWN_TOKENS } from '../lib/copy.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
 const profiles = readdirSync(PROFILES_DIR)
   .filter((f) => f.endsWith('.json'))
-  .map((f) => JSON.parse(readFileSync(path.join(PROFILES_DIR, f), 'utf8')));
+  .map((f) => resolvedProfile(f));
 
 const shipped = readCopy();
 const sharedRegions = [shipped.accordionIntroHtml, shipped.accordionChoosingHtml];

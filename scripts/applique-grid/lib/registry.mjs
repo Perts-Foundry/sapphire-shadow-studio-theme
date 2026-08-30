@@ -10,6 +10,13 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  ID_RE,
+  loadCommittedCatalogue,
+  productByHandle,
+  colorValuesFor,
+  CATALOGUE_PATH,
+} from '../../lib/catalogue-manifest.mjs';
 import { atomicWrite } from './atomic-write.mjs';
 import { charsetProblem, nameColorProblem } from './naming.mjs';
 import { nameCharCeiling } from './layout.mjs';
@@ -22,8 +29,10 @@ export const REGISTRY_PATH = path.join(HERE, '..', 'patterns.json');
 
 export const STATUSES = ['active', 'discontinued'];
 
-const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const PRODUCT_GID_RE = /^gid:\/\/shopify\/Product\/\d+$/;
+// ID_RE and PRODUCT_GID_RE used to be declared here and were COPIED into the schema module when it
+// was written, with a test asserting the two copies stayed byte-identical. The copies are gone:
+// PRODUCT_GID_RE has no caller left here (the GID comes from the manifest, which already checked
+// its shape), and ID_RE, which still guards pattern ids, is imported from the one definition.
 export const MEDIA_GID_RE = /^gid:\/\/shopify\/MediaImage\/\d+$/;
 const SPEC_HASH_RE = /^[0-9a-f]{64}$/;
 // Manifests and the registry hold photo BASENAMES only; a path separator means someone recorded a
@@ -34,8 +43,9 @@ const BASENAME_RE = /^[^/\\]+\.(heic|heif)$/i;
 // ignored: a misspelled `pin_after_chart` that silently does nothing would let the next publish
 // move the operator's pinned media and undo an Admin fix, with the registry looking correct.
 const KNOWN_KEYS = {
-  '': ['version', 'product', 'threads', 'chart', 'gallery', 'patterns', 'published'],
-  product: ['handle', 'gid', 'colorValues'],
+  // `product` is the DERIVED block `materialise` attaches, never a committed key: a committed one
+  // is refused there by name before validation ever runs.
+  '': ['version', 'handle', 'product', 'threads', 'chart', 'gallery', 'patterns', 'published'],
   chart: ['columns', 'rows', 'cell_aspect', 'cell_fit', 'title', 'width_units', 'scale', 'styleVersion'],
   gallery: ['pin_after_charts'],
   pattern: ['id', 'name', 'thread', 'status', 'sources', 'hero', 'crop', 'position'],
@@ -76,11 +86,7 @@ export function deriveId(name) {
 export function emptyRegistry() {
   return {
     version: 1,
-    product: {
-      handle: 'huddle-crewneck',
-      gid: 'gid://shopify/Product/10231493787948',
-      colorValues: ['Black', 'Grey Heather', 'Classic Navy'],
-    },
+    handle: 'huddle-crewneck',
     threads: [],
     chart: {
       columns: 3,
@@ -101,9 +107,17 @@ export function emptyRegistry() {
   };
 }
 
-/** Byte-stable serialization: the same shape template writes use, plus the trailing newline. */
+/**
+ * Byte-stable serialization: the same shape template writes use, plus the trailing newline.
+ *
+ * `product` is DROPPED. It is materialised onto a loaded registry from catalogue.json (see
+ * `materialise`), so writing it back would put the GID and the colour list into the committed file
+ * again, which is exactly the duplication this removed. Dropping it here rather than at each call
+ * site means a caller cannot forget: every write goes through this function.
+ */
 export function serialize(reg) {
-  return `${JSON.stringify(reg, null, 2)}\n`;
+  const { product, ...rest } = reg;
+  return `${JSON.stringify(rest, null, 2)}\n`;
 }
 
 /** The exact bytes of the shipped bootstrap sentinel. */
@@ -127,19 +141,22 @@ export function validate(reg) {
   if (reg.version !== 1) push(`version must be 1, got ${JSON.stringify(reg.version)}`);
   pushUnknownKeys(reg, '', 'registry', push);
 
-  // product
-  const product = reg.product;
-  if (!product || typeof product !== 'object') {
-    push('product is missing');
-  } else {
-    pushUnknownKeys(product, 'product', 'product', push);
-    if (!ID_RE.test(product.handle ?? '')) push(`product.handle must be kebab-case, got ${JSON.stringify(product.handle)}`);
-    if (!PRODUCT_GID_RE.test(product.gid ?? '')) push(`product.gid must look like gid://shopify/Product/<id>, got ${JSON.stringify(product.gid)}`);
-    if (!Array.isArray(product.colorValues) || !product.colorValues.length || product.colorValues.some((v) => typeof v !== 'string' || !v.trim())) {
-      push('product.colorValues must be a non-empty array of non-blank strings');
-    }
+  // The product this registry charts. A scalar handle in the committed file; the GID and the Color
+  // option values are catalogue.json's to state, and `materialise` attaches them. Shape checks on
+  // the handle string are gone with them: `productByHandle` refuses an undeclared handle by name,
+  // which is a stronger statement than "looks kebab-case" and cannot pass on a plausible typo.
+  if (typeof reg.handle !== 'string' || !reg.handle) push('handle is missing');
+  // REFUSED when absent and there is a pattern to check, never defaulted to []: an empty list here
+  // silently disarms the colour-name guard, which is exactly how a pattern named after a real Color
+  // value could slip onto the chart. `materialise` attaches the block, so a missing one means a
+  // caller validated a raw committed registry without materialising it first.
+  const colorValues = Array.isArray(reg.product?.colorValues) ? reg.product.colorValues : null;
+  if (colorValues === null && Array.isArray(reg.patterns) && reg.patterns.length) {
+    push(
+      'product.colorValues is missing; validate a MATERIALISED registry (load(), or materialise() ' +
+        'against catalogue.json), or the pattern-name colour guard checks against nothing'
+    );
   }
-  const colorValues = Array.isArray(product?.colorValues) ? product.colorValues : [];
   // Derived from the chart geometry these patterns will actually render at, so a denser grid
   // tightens it. Only computable when the chart params themselves are sane.
   const ceiling = Number.isInteger(reg.chart?.columns) && reg.chart.columns > 0
@@ -232,7 +249,7 @@ export function validate(reg) {
       const derived = deriveId(p.name);
       if (derivedIds.has(derived)) push(`${label}: name "${p.name}" derives the same id as pattern "${derivedIds.get(derived)}"`);
       else derivedIds.set(derived, p.id ?? `#${i}`);
-      const colorProblem = nameColorProblem(p.name, colorValues);
+      const colorProblem = nameColorProblem(p.name, colorValues ?? []);
       if (colorProblem) push(`${label}: ${colorProblem}`);
       if (ceiling !== null && String(p.name).length > ceiling) {
         push(`${label}: name "${p.name}" is ${String(p.name).length} characters; the ${reg.chart.columns}-column chart carries at most ${ceiling}`);
@@ -303,9 +320,49 @@ export function assertValid(reg) {
  * @param {string} [registryPath]
  * @returns {Promise<object>}
  */
-export async function load(registryPath = REGISTRY_PATH) {
+export async function load(registryPath = REGISTRY_PATH, { manifest = null } = {}) {
   const raw = await readFile(registryPath, 'utf8');
-  return assertValid(JSON.parse(raw));
+  const resolved = manifest ?? (await loadCommittedCatalogue());
+  return assertValid(materialise(JSON.parse(raw), resolved));
+}
+
+/**
+ * Attach the product facts catalogue.json owns, from the registry's scalar `handle`.
+ *
+ * Pure: the manifest is passed in, so every derivation test drives a hand-authored one. The shape
+ * it produces is the shape the whole tool already reads (`registry.product.handle` / `.gid` /
+ * `.colorValues`), so publish, audit, draft and apply-options are untouched by this.
+ *
+ * A registry still carrying its own `product` block is REFUSED rather than overwritten: the block
+ * held a GID and a colour snapshot that the audit compares against the live store, and silently
+ * replacing a stale copy would hide the very drift that comparison exists to find.
+ *
+ * @param {object} raw
+ * @param {object} manifest
+ * @returns {object}
+ */
+export function materialise(raw, manifest) {
+  if (raw && raw.product !== undefined) {
+    throw new Error(
+      `patterns.json carries a "product" block. Its handle, GID and Color option values come from ` +
+        `${CATALOGUE_PATH} now: keep the top-level "handle" and delete the block.`
+    );
+  }
+  const product = productByHandle(manifest, raw.handle);
+  if (product.body === null) {
+    throw new Error(
+      `patterns.json charts "${raw.handle}", which ${CATALOGUE_PATH} declares with "body": null. ` +
+        `Applique patterns are printed on a garment body.`
+    );
+  }
+  return {
+    ...raw,
+    product: {
+      handle: product.handle,
+      gid: product.gid,
+      colorValues: colorValuesFor(manifest, product.handle),
+    },
+  };
 }
 
 /**

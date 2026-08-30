@@ -17,8 +17,96 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { readCommittedCatalogue, templateFileFor, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PATHS_FILE = join(HERE, 'paths.json');
+
+/**
+ * The placeholder paths.json puts where the per-product entries belong.
+ *
+ * The product entries are DERIVED, but their POSITION in the audit list is not: they sit between
+ * the collection pages and the cart, and that reads as a deliberate ordering rather than an
+ * accident. A marker keeps the position in the file that owns the list, instead of putting a
+ * splice-here rule into this module.
+ */
+export const PRODUCTS_MARKER = 'catalogue:products';
+
+/** The committed paths.json with its products marker expanded. */
+export function resolvedPaths() {
+  const raw = JSON.parse(readFileSync(PATHS_FILE, 'utf8'));
+  return { ...raw, paths: resolvePaths(raw) };
+}
+
+/**
+ * Expand the products marker into one audited path per declared product, in manifest order.
+ *
+ * THE LABEL RULE IS BYTE-EXACT AND DERIVES FROM THE TEMPLATE, never from the handle. All six labels
+ * this replaced are reproduced exactly by `product (${template.replace(/-/g, ' ')})`; deriving from
+ * the handle instead would rename the gift card's label to
+ * "product (sapphire shadow studio gift card)". That is the same distinction the size-chart handles
+ * turn on, and it is the reason the manifest carries `template` at all.
+ *
+ * Per-product pa11y options live in paths.json's `productOverrides`, keyed by handle, and are
+ * merged onto the derived entry. It ships empty: a product later needing an `ignore` has somewhere
+ * to put it without this becoming a follow-up item.
+ *
+ * @param {object} paths - the parsed paths.json
+ * @param {object} manifest
+ * @returns {Array<object>} the resolved entry list
+ */
+export function resolvePaths(paths, manifest = readCommittedCatalogue()) {
+  const entries = paths?.paths;
+  if (!Array.isArray(entries)) return [];
+  const overrides = paths.productOverrides ?? {};
+  for (const handle of Object.keys(overrides)) {
+    if (!manifest.products.has(handle)) {
+      throw new Error(
+        `paths.json productOverrides names "${handle}", which ${CATALOGUE_PATH} does not declare. ` +
+          `An override for a product that does not exist silences nothing and hides a typo.`
+      );
+    }
+  }
+  let expanded = false;
+  const out = [];
+  for (const entry of entries) {
+    if (entry?.marker === undefined) {
+      // A plain entry must actually name a path, or the URL builder later turns it into a
+      // "/undefined" request that audits a 404 as if it were a page.
+      if (typeof entry?.path !== 'string' || !entry.path) {
+        throw new Error(
+          `paths.json entry ${JSON.stringify(entry)} has neither a "path" nor a recognised "marker", ` +
+            `so it would be audited as "/undefined"`
+        );
+      }
+      out.push(entry);
+      continue;
+    }
+    if (entry.marker !== PRODUCTS_MARKER) {
+      // Fail closed: an unrecognised marker is a typo for the one marker this module knows, and
+      // passing it through would both drop the product expansion and audit a "/undefined" URL.
+      throw new Error(
+        `paths.json entry has unrecognised marker ${JSON.stringify(entry.marker)}; the only marker ` +
+          `this builder expands is "${PRODUCTS_MARKER}"`
+      );
+    }
+    expanded = true;
+    for (const product of manifest.products.values()) {
+      out.push({
+        path: `/products/${product.handle}`,
+        label: `product (${product.template.replace(/-/g, ' ')})`,
+        template: templateFileFor(manifest, product.handle),
+        ...(overrides[product.handle] ?? {}),
+      });
+    }
+  }
+  if (!expanded) {
+    // Fail closed, like the empty-list guard below: without the marker the audit would quietly run
+    // over every page EXCEPT the products, and still report a clean WCAG pass.
+    throw new Error(`paths.json has no { "marker": "${PRODUCTS_MARKER}" } entry, so no product page would be audited`);
+  }
+  return out;
+}
 
 // Chrome comes from the RUNNER, not from puppeteer. `npm ci --ignore-scripts`
 // (setup-shopify-cli) blocks puppeteer's install script, so the bundled
@@ -45,7 +133,10 @@ export function buildConfig({
   baseUrl,
   themeId,
   cookie = '',
-  paths = JSON.parse(readFileSync(PATHS_FILE, 'utf8')),
+  // The committed file with its products marker already expanded. A caller may inject an
+  // already-resolved object instead; `resolvePaths` is exported so a test can drive the derivation
+  // on its own, against a hand-authored manifest, without going through this.
+  paths = resolvedPaths(),
   // Generous per-URL timeout: these are authenticated remote requests to a
   // storefront behind bot management, not localhost.
   timeout = 60000,

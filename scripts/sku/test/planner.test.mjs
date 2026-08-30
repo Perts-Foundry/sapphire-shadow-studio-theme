@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { auditCatalogue } from '../lib/audit.mjs';
 import { buildPlan, PlanRefused } from '../lib/planner.mjs';
 import { MODE_NULLS, MODE_NULLS_AND_MISMATCHES } from '../lib/artifact.mjs';
-import { TABLES, catalogue, variant } from './fixtures.mjs';
+import { EFFECTIVE as TABLES, catalogue, variant } from './fixtures.mjs';
 
 const planOf = (tables, rows, opts) => buildPlan(auditCatalogue(tables, rows), opts);
 
@@ -38,7 +38,7 @@ test('an unmapped value refuses the whole plan, naming what to add', () => {
     (err) => {
       assert.ok(err instanceof PlanRefused);
       assert.match(err.message, /unmapped value\(s\)/);
-      assert.match(err.message, /colors: add "Forest Green"/);
+      assert.match(err.message, /which catalogue\.json does not declare/);
       assert.match(err.message, /tables\.json first/);
       return true;
     }
@@ -46,11 +46,14 @@ test('an unmapped value refuses the whole plan, naming what to add', () => {
 });
 
 test('a duplicate expected SKU refuses the plan', () => {
+  // Two huddle designs sharing one code, so both variants derive HDCN-NRS-BLK-M.
+  const collided = JSON.parse(JSON.stringify(TABLES));
+  collided.designs.huddle['Vet Tech'] = collided.designs.huddle.Nurse;
   const rows = [
-    variant('shift-fuel-crewneck', { Color: 'Black', Size: 'M' }, { id: 'v1' }),
-    variant('shift-fuel-crewneck', { Color: 'Black', Size: 'm' }, { id: 'v2' }),
+    variant('huddle-crewneck', { Design: 'Nurse', Color: 'Black', Size: 'M' }, { id: 'v1' }),
+    variant('huddle-crewneck', { Design: 'Vet Tech', Color: 'Black', Size: 'M' }, { id: 'v2' }),
   ];
-  assert.throws(() => planOf(TABLES, rows), /is derived by 2 variants/);
+  assert.throws(() => planOf(collided, rows), /is derived by 2 variants/);
 });
 
 test('a collision with a live SKU on another variant refuses the plan', () => {

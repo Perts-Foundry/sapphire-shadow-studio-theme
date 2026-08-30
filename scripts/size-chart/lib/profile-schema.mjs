@@ -10,7 +10,7 @@
 import { KNOWN_GARMENTS, ROLE_ANCHOR, garmentAnchors } from './garments.mjs';
 
 const TOP_LEVEL = new Set([
-  'blank_id', 'display_name', 'unit', 'garment', 'garment_noun', 'sizes', 'columns', 'how_to',
+  'blank_id', 'display_name', 'unit', 'garment', 'body', 'garment_noun', 'sizes', 'columns', 'how_to',
   'footer', 'canvas_height', 'handles',
 ]);
 const COLUMN_KEYS = new Set([
@@ -108,6 +108,12 @@ export function validateProfile(profile) {
     if (sizes.length > MAX_SIZES) errs.push(`sizes length ${sizes.length} exceeds the ${MAX_SIZES} rows the chart supports`);
     sizes.forEach((s, i) => { if (!isNonEmptyString(s)) errs.push(`sizes[${i}] must be a non-empty string`); });
   }
+
+  // The catalogue body this blank is cut as. Required, and the committed profiles no longer carry
+  // `sizes` or `handles` at all: `materialiseProfile` fills both in from the manifest before this
+  // runs, so what is validated here is always the resolved profile. See profile-io.mjs.
+  if (!isNonEmptyString(profile.body)) errs.push('body must be a non-empty string naming a catalogue.json body');
+  else if (!/^[a-z0-9-]+$/.test(profile.body)) errs.push(`body must be kebab-case [a-z0-9-] (got '${profile.body}')`);
 
   if (profile.handles !== undefined) {
     if (!Array.isArray(profile.handles)) errs.push('handles must be an array');

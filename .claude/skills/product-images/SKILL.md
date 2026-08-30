@@ -32,8 +32,10 @@ Files follow, underscore-separated, multi-word values hyphenated internally, the
 group shot:  <line>_<garment>_group_<shot>-<index>.jpg
 ```
 
-The machine-readable vocab, the colorway-to-Admin-colour map, and the product resolution all live in
-`scripts/lib/photo-naming.mjs`; that module is the source of truth, this list is the human summary.
+The machine-readable vocab, the colorway-to-Admin-colour map, and the product resolution all come
+from `scripts/lib/photo-naming.mjs`, which derives them from the root `catalogue.json`; that pair is
+the source of truth and this list is the human summary. A new product, colour, or line is declared in
+`catalogue.json`, never added here.
 `line` huddle / lead2 / shift-fuel. `garment` crew-sweater / quarter-zip / vest. `colorway` black /
 classic-navy / grey-heather / group. `design` an open profession token (rn, cna, emt, ...), optional.
 `shot` angled / closeup / flat / styled. One scheme runs end to end: the processed output and the
@@ -116,8 +118,8 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
 
    - **Frames in scope:** all frames, or a best-of selection (see "Selecting and reviewing frames")?
    - **Target products:** which products this batch serves. When asking, enumerate every product
-     `scripts/lib/photo-naming.mjs` resolves, by name; never a guessed subset and never a hardcoded
-     count.
+     `scripts/lib/photo-naming.mjs` resolves (every garment product `catalogue.json` declares), by
+     name; never a guessed subset and never a hardcoded count.
    - **Shared assets:** **product-bound is the default.** The required answer is the (possibly empty)
      list of shared assets by filename; anything not on that list is product-bound (see "Shared
      assets" above). Ask per batch, not per frame.

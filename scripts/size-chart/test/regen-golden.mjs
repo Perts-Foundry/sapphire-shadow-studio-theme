@@ -20,18 +20,19 @@ import { fileURLToPath } from 'node:url';
 import { buildSvg } from '../lib/render-svg.mjs';
 import { buildAccordionRow } from '../lib/table-block.mjs';
 import { prettyHtml, ACCORDION_HTML_DIR, accordionHtmlOf } from './accordion-html-fixture.mjs';
+import { resolvedProfile } from './profile-fixture.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
 
-const seed = JSON.parse(readFileSync(path.join(PROFILES_DIR, 'crewneck-fleece.json'), 'utf8'));
+const seed = resolvedProfile('crewneck-fleece.json');
 const svgOut = path.join(HERE, 'fixtures', 'crewneck-fleece.svg');
 writeFileSync(svgOut, buildSvg(seed));
 console.log(`Regenerated ${svgOut}`);
 
 mkdirSync(ACCORDION_HTML_DIR, { recursive: true });
 for (const file of readdirSync(PROFILES_DIR).filter((n) => n.endsWith('.json'))) {
-  const profile = JSON.parse(readFileSync(path.join(PROFILES_DIR, file), 'utf8'));
+  const profile = resolvedProfile(file);
   const out = path.join(ACCORDION_HTML_DIR, `${profile.blank_id}.html`);
   writeFileSync(out, prettyHtml(accordionHtmlOf(buildAccordionRow(profile))));
   console.log(`Regenerated ${out}`);

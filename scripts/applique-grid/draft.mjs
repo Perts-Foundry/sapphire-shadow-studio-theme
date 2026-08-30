@@ -35,7 +35,8 @@ import {
 } from './lib/draft.mjs';
 import { nameCharCeiling } from './lib/layout.mjs';
 import { MAX_OPTION_LINE } from './lib/options-writer.mjs';
-import { load as loadRegistry, serialize, REGISTRY_PATH } from './lib/registry.mjs';
+import { load as loadRegistry, materialise, serialize, REGISTRY_PATH } from './lib/registry.mjs';
+import { loadCommittedCatalogue } from '../lib/catalogue-manifest.mjs';
 import { unifiedDiff } from './lib/text-diff.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -315,12 +316,16 @@ async function modeWrite({ outDir, confirm, allowPatternSetChange }) {
   const raw = await readFile(REGISTRY_PATH, 'utf8').catch(() => {
     throw new Error(`${REGISTRY_PATH} is missing; --write merges into an existing registry, it does not create one`);
   });
-  let existing;
+  let parsed;
   try {
-    existing = JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch (e) {
     throw new Error(`${REGISTRY_PATH} does not parse (${e.message}); fix it before writing`);
   }
+  // MATERIALISED, the way every other mode loads it. The committed file carries only the scalar
+  // `handle`, so validating the candidate against the bare parse would hand the colour-name guard
+  // an empty colorValues list and a pattern named after a real Color value would write cleanly.
+  const existing = materialise(parsed, await loadCommittedCatalogue());
 
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
   const tree = treeProblem({

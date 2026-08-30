@@ -28,7 +28,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PRODUCTS, productForHandle, recognizedColorValues, altColorProblem } from './lib/photo-naming.mjs';
+import { allProducts, productForHandle, recognizedColorValues, altColorProblem } from './lib/photo-naming.mjs';
 import { paginate } from './blank-inventory/lib/catalogue.mjs';
 
 const API_VERSION = '2026-07';
@@ -281,25 +281,25 @@ async function pollMediaReady(domain, token, productId, mediaId, redact) {
 }
 
 // Pure drift predicates, exported for unit tests. Each returns an error string or null; the key
-// is a PRODUCTS key ('<line>/<garment>'). An unknown/null key returns null (nothing recorded to
+// is a product key ('<line>/<garment>'). An unknown/null key returns null (nothing recorded to
 // drift from; resolveProduct only reaches these with a known key anyway).
 export function gidDriftProblem(liveId, key) {
-  const record = PRODUCTS[key];
+  const record = allProducts()[key];
   if (!record) return null;
   if (liveId !== record.gid) {
-    return `product GID drift for "${record.handle}": live ${liveId} != recorded ${record.gid}. Update scripts/lib/photo-naming.mjs after confirming.`;
+    return `product GID drift for "${record.handle}": live ${liveId} != recorded ${record.gid}. Update catalogue.json after confirming.`;
   }
   return null;
 }
 
 export function colorDriftProblem(liveValues, key) {
-  const record = PRODUCTS[key];
+  const record = allProducts()[key];
   if (!record) return null;
   const expected = recognizedColorValues(key);
   const missing = expected.filter((v) => !liveValues.includes(v));
   const extra = liveValues.filter((v) => !expected.includes(v));
   if (missing.length || extra.length) {
-    return `Color option drift for "${record.handle}": live [${liveValues.join(', ')}] vs recorded [${expected.join(', ')}]. Reconcile scripts/lib/photo-naming.mjs before uploading (alt bindings depend on it).`;
+    return `Color option drift for "${record.handle}": live [${liveValues.join(', ')}] vs recorded [${expected.join(', ')}]. Reconcile catalogue.json before uploading (alt bindings depend on it).`;
   }
   return null;
 }
@@ -444,8 +444,9 @@ async function main() {
     if (missingScopes.length) {
       throw new Error(`Missing required scope(s): ${missingScopes.join(', ')}. The app must grant ${REQUIRED_SCOPES.join(' + ')}; until then upload manually in Admin.`);
     }
-    const { ok, lines } = await checkProducts(PRODUCTS, (handle) => resolveProduct(domain, token, handle, redactTok));
-    console.log(`check-products: ${Object.keys(PRODUCTS).length} recorded product(s), scope OK (${REQUIRED_SCOPES.join(', ')})`);
+    const products = allProducts();
+    const { ok, lines } = await checkProducts(products, (handle) => resolveProduct(domain, token, handle, redactTok));
+    console.log(`check-products: ${Object.keys(products).length} recorded product(s), scope OK (${REQUIRED_SCOPES.join(', ')})`);
     for (const l of lines) console.log(`  ${l}`);
     if (!ok) {
       console.error('\nOne or more products failed the preflight; uploads to them will hard-fail until reconciled.');
@@ -516,7 +517,7 @@ async function main() {
       // upload unguarded: the file header promises the guard passes for EVERY row, and shared-asset
       // rows carry a hand-authored handle, which is exactly where a typo lands.
       if (!key) {
-        problems.push(`${row.new_name}: product "${handle}" is not recorded in scripts/lib/photo-naming.mjs, so the colour-drift and alt-colour guards cannot run; add the product there before uploading to it`);
+        problems.push(`${row.new_name}: product "${handle}" is not declared as a garment in catalogue.json, so the colour-drift and alt-colour guards cannot run; declare it there before uploading to it`);
         skipped++;
         continue;
       }
