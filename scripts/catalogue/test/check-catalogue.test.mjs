@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { checkCatalogue, formatCounts } from '../check-catalogue.mjs';
+import { checkCatalogue, formatCounts, formatFailingChecks } from '../check-catalogue.mjs';
 import { COHESION_CHECK_COUNT } from '../../lib/catalogue-cohesion.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -125,6 +125,29 @@ test("CI's pipeline extracts NOTHING from a reworded line, so the floor fails cl
     env: { ...process.env, LINE: 'catalogue OK: 3 bodies, 7 colours, 18 sizes.', SED_EXPR: sedExpr },
   });
   assert.equal(stdout.trim(), '', 'an unrecognised line yields no counts, which reds the build');
+});
+
+test("CI's failing-checks sed, run against the lint's REAL failure line, extracts the ids", async () => {
+  // The lint prints the line through its `ERROR: ${err.message}` wrapper, so the workflow's anchor
+  // must tolerate that prefix. This runs the workflow's actual expression against the line exactly
+  // as main() emits it, so neither the wrapper nor the anchor can drift without failing here.
+  const workflow = await readFile(path.join(repoRoot, '.github/workflows/validate.yml'), 'utf8');
+  const sedExpr = workflow.match(/sed -nE '(s\/\^\(ERROR: \)\?catalogue FAILING CHECKS.*?)' \| tail -1/s)?.[1];
+  assert.ok(sedExpr, 'the anchored failing-checks sed expression is still findable in validate.yml');
+
+  const line = `ERROR: ${formatFailingChecks(['a-check', 'b-check'])}`;
+  const { stdout } = await execFileAsync('bash', [
+    '-c',
+    'printf "%s\\n" "$LINE" | sed -nE "$SED_EXPR" | tail -1',
+  ], { env: { ...process.env, LINE: line, SED_EXPR: sedExpr } });
+  assert.equal(stdout.trim(), '2 checks: a-check, b-check');
+
+  // And the bare line (no wrapper) still parses, so the prefix group stays optional.
+  const bare = await execFileAsync('bash', [
+    '-c',
+    'printf "%s\\n" "$LINE" | sed -nE "$SED_EXPR" | tail -1',
+  ], { env: { ...process.env, LINE: formatFailingChecks(['a-check']), SED_EXPR: sedExpr } });
+  assert.equal(bare.stdout.trim(), '1 checks: a-check');
 });
 
 test('the workflow asserts all SIX counts against its -lt 1 floor, not the original three', async () => {

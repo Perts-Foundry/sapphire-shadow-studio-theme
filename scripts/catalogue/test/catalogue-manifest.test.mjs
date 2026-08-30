@@ -531,6 +531,32 @@ test('the import-list matcher sees a multi-line import, which a single-line one 
   assert.deepEqual(importsOf(`import x from "./a.mjs"\n`), ['./a.mjs']);
 });
 
+test('a side-effect import is a real edge, not a form the matcher silently skips', () => {
+  // `import './x.mjs';` has no `from` clause but loads the module all the same; a matcher that
+  // required `from` would leave it neither followed nor refused.
+  assert.deepEqual(importsOf(`import './side-effect.mjs';\n`), ['./side-effect.mjs']);
+  assert.deepEqual(importsOf(`import "./side-effect.mjs"\n`), ['./side-effect.mjs']);
+});
+
+test('the closure walker follows a side-effect import and ignores an import quoted in a comment', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const os = await import('node:os');
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'closure-forms-'));
+  try {
+    await writeFile(path.join(dir, 'effect.mjs'), 'globalThis.touched = true;\n');
+    await writeFile(
+      path.join(dir, 'entry.mjs'),
+      "/* A quoted statement loads nothing:\n * import { x } from './does-not-exist.mjs';\n */\n" +
+        "import './effect.mjs';\nexport const z = 1;\n"
+    );
+    const { files } = await importClosure(path.join(dir, 'entry.mjs'));
+    assert.ok(files.includes(path.join(dir, 'effect.mjs')), 'the side-effect edge is in the closure');
+    assert.equal(files.length, 2, 'the commented specifier is not followed (it would throw: no such file)');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the closure walker follows a DEPTH-2 edge, which the direct-import check could not', async ({ mock }) => {
   // The control that matters most. A bug collapsing the closure to depth 1 passes every other
   // assertion in this file and silently degrades the guard back into the check it replaced, so this

@@ -22,6 +22,7 @@
 // the opposite of what this file is for.
 
 import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
@@ -29,6 +30,16 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
 /** Where the frozen bytes live. */
 export const BASELINE_PATH = 'scripts/catalogue/test/fixtures/pre-migration-baseline.json';
+
+/**
+ * The digest the golden entries are stored as, shared with the tests that compare fresh bytes
+ * against them.
+ * @param {string} text
+ * @returns {string}
+ */
+export function sha256Hex(text) {
+  return createHash('sha256').update(text).digest('hex');
+}
 
 /** The accordion row the size-chart generator writes, found by its block type and heading. */
 const SIZE_CHART_HEADING = 'Size Chart';
@@ -67,16 +78,17 @@ export async function captureBaseline(repoRoot = REPO_ROOT) {
 
   // 1. The size-chart render golden, and the accordion HTML fixtures beside it. Hashed rather than
   //    copied: they are already committed fixtures, and a second copy of a golden is a second thing
-  //    to keep in step. What is frozen here is that THOSE files have not moved.
+  //    to keep in step. What is frozen here is that THOSE files have not moved. Consumers hash
+  //    fresh bytes with `sha256Hex` before comparing.
   const goldenDir = 'scripts/size-chart/test/fixtures';
   const goldens = {};
   for (const name of (await readdir(path.join(repoRoot, goldenDir))).sort()) {
     if (!name.endsWith('.svg')) continue;
-    goldens[`${goldenDir}/${name}`] = await readText(`${goldenDir}/${name}`);
+    goldens[`${goldenDir}/${name}`] = sha256Hex(await readText(`${goldenDir}/${name}`));
   }
   const accordionDir = `${goldenDir}/accordion-html`;
   for (const name of (await readdir(path.join(repoRoot, accordionDir))).sort()) {
-    goldens[`${accordionDir}/${name}`] = await readText(`${accordionDir}/${name}`);
+    goldens[`${accordionDir}/${name}`] = sha256Hex(await readText(`${accordionDir}/${name}`));
   }
 
   // 2. The generated size-chart accordion rows, as they are SHIPPED in the product templates. This

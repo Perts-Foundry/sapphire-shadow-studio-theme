@@ -272,6 +272,38 @@ test('a size-chart profile naming an unknown handle, or a garment with no profil
   assert.match(uncovered.messages['size-chart-handles-are-products'], /"b-vest"/);
 });
 
+test('size-chart entries are TEMPLATE suffixes, so a diverging template passes and the handle fails', async () => {
+  // The generator interpolates each entry into templates/product.<entry>.json, and a product's
+  // template can differ from its handle (the gift card already does). Validating against the
+  // handle namespace would red the correct profile and pass the broken one.
+  const diverged = parseCatalogue(JSON.stringify({
+    ...MANIFEST_DOC,
+    products: {
+      ...MANIFEST_DOC.products,
+      'a-crew': { ...MANIFEST_DOC.products['a-crew'], template: 'a-crew-alt' },
+    },
+  }));
+  const templateFiles = [
+    'templates/product.a-crew-alt.json',
+    'templates/product.b-vest.json',
+    'templates/product.gift-card.json',
+  ];
+  const a11yProductTemplates = templateFiles;
+
+  const correct = await fired({
+    manifest: diverged, templateFiles, a11yProductTemplates,
+    sizeChartHandles: ['a-crew-alt', 'b-vest'],
+  });
+  assert.deepEqual(correct.refusals, [], 'the template suffix is the right namespace');
+
+  const wrongNamespace = await fired({
+    manifest: diverged, templateFiles, a11yProductTemplates,
+    sizeChartHandles: ['a-crew', 'b-vest'],
+  });
+  assert.deepEqual(wrongNamespace.refusals, ['size-chart-handles-are-products']);
+  assert.match(wrongNamespace.messages['size-chart-handles-are-products'], /"a-crew"/);
+});
+
 test('the photo-naming census check catches a stale title, GID, colour list or missing product', async () => {
   const base = sources().photoProducts;
   for (const [over, needle] of [
@@ -305,6 +337,16 @@ test('a doc marker region that disagrees REFUSES, in either file', async () => {
   });
   assert.deepEqual(colourWrong.refusals, ['docs-sku-scheme-markers']);
   assert.match(colourWrong.messages['docs-sku-scheme-markers'], /colour line/);
+
+  // A colour the doc names but the catalogue never declared must fire the "in the doc" direction,
+  // not be filtered out of the comparison before it can. This is an ADDED entry, not a swap, so
+  // only that direction distinguishes it.
+  const colourExtra = await fired({
+    docs: { ...sources().docs, skuScheme: SKU_SCHEME_DOC.replace('`GRH` Grey Heather.', '`GRH` Grey Heather, `NVY` Classic Navy.') },
+  });
+  assert.deepEqual(colourExtra.refusals, ['docs-sku-scheme-markers']);
+  assert.match(colourExtra.messages['docs-sku-scheme-markers'], /classic navy/);
+  assert.match(colourExtra.messages['docs-sku-scheme-markers'], /in the doc/);
 
   const altWrong = await fired({
     docs: { ...sources().docs, altText: ALT_TEXT_DOC.replace('**`Black` only**', '**`Grey Heather` only**') },

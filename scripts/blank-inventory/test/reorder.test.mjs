@@ -123,6 +123,13 @@ test('findDuplicateKeys names the path and ignores repeats in sibling objects', 
   assert.deepEqual(findDuplicateKeys(dirty), [{ path: 'cells.x', key: 'x' }]);
 });
 
+test('findDuplicateKeys decodes escapes, so "\\u006d" cannot evade a duplicate "m"', () => {
+  // JSON.parse sees `"m"` and `"m"` as the same key and last-wins them silently, which is
+  // exactly the merge artifact this check refuses; comparing raw key text would miss it.
+  const escaped = `{"cells": {"m": 1, "\\u006d": 2}}`;
+  assert.deepEqual(findDuplicateKeys(escaped), [{ path: 'cells.m', key: 'm' }]);
+});
+
 test('parseThresholds refuses a budget key that is not a normalised garment body', () => {
   // The budget axis is the body alone: the colour split is derived from a curve, so a per-colour
   // budget would be a second source of truth for the same number.

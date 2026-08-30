@@ -36,7 +36,16 @@ export function findDuplicateKeys(text) {
         s += text[j];
         j++;
       }
-      toks.push({ t: 'string', v: s });
+      // Decode escapes before comparing: `"m"` and `"m"` are the same key to JSON.parse, so
+      // comparing raw text would let an escaped duplicate evade the last-wins check this exists
+      // for. A malformed escape keeps the raw text; the real parse refuses that document anyway.
+      let v = s;
+      try {
+        v = JSON.parse(`"${s}"`);
+      } catch {
+        // fall through with the raw text
+      }
+      toks.push({ t: 'string', v });
       i = j;
     } else if ('{}[]:,'.includes(c)) {
       toks.push({ t: c });

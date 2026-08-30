@@ -403,17 +403,22 @@ export const CHECKS = [
     source: 'scripts/size-chart/profiles/*.json',
     severity: REFUSE,
     async run({ manifest, sizeChartHandles }) {
-      const unknown = sizeChartHandles.filter((h) => !manifest.products.has(h));
+      // The entries are TEMPLATE suffixes, not product handles: the generator interpolates each one
+      // into templates/product.<entry>.json, and the gift card is the standing proof that a
+      // template suffix and a handle are not the same string. Validating against the handle
+      // namespace would red a profile that correctly names a diverging template.
+      const templates = new Set([...manifest.products.values()].map((p) => p.template));
+      const unknown = sizeChartHandles.filter((h) => !templates.has(h));
       if (unknown.length) {
         return (
-          `${unknown.length} size-chart profile handle(s) are not declared products: ` +
+          `${unknown.length} size-chart profile handle(s) are not declared product templates: ` +
           `${nameList(unknown)}. The generator writes an accordion row into ` +
-          `templates/product.<handle>.json, so an unknown handle writes into no file at all.`
+          `templates/product.<handle>.json, so an unknown entry writes into no file at all.`
         );
       }
       const uncovered = garmentProducts(manifest)
-        .map((p) => p.handle)
-        .filter((h) => !sizeChartHandles.includes(h));
+        .filter((p) => !sizeChartHandles.includes(p.template))
+        .map((p) => p.handle);
       return (
         uncovered.length &&
         `${uncovered.length} garment product(s) have no size-chart profile: ${nameList(uncovered)}. ` +
@@ -479,13 +484,15 @@ export const CHECKS = [
       if (productDiff) problems.push(`product table: ${productDiff}`);
 
       const colorRegion = markerRegion(docs.skuScheme, 'colors', 'docs/sku-scheme.md');
-      // The colour line reads "`BLK` Black, `GRH` Grey Heather, ...": the codes are backticked and the
-      // display names are the prose between them, so the display names are what is compared.
-      const named = colorRegion
-        .replace(/`[^`]*`/g, ' ')
-        .split(/[,.:;\n|]/)
-        .map((s) => s.trim())
-        .filter((s) => s && manifest.colors.has(normaliseAxis(s, 'Color')))
+      // The colour line reads "`BLK` Black, `GRH` Grey Heather, ...": each backticked code is
+      // followed by its display name, so the name after each code is what is compared. Extracting
+      // by position, not by declaredness: filtering the tokens through `manifest.colors.has` first
+      // would make the "in the doc but not declared" direction unreachable by construction, and a
+      // doc that names a colour the catalogue dropped must fail, not be quietly skipped. Leading
+      // prose (the "**Colours** (store-wide):" label) precedes the first code and is never captured.
+      const named = [...colorRegion.matchAll(/`[^`]+`\s*([^,.:;\n|`]+)/g)]
+        .map((m) => m[1].trim())
+        .filter(Boolean)
         .map((s) => normaliseAxis(s, 'Color'));
       const colorDiff = setDiff(named, [...manifest.colors.keys()], 'in the doc', 'declared in catalogue.json');
       if (colorDiff) problems.push(`colour line: ${colorDiff}`);
