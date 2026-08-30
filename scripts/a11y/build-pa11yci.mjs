@@ -197,7 +197,7 @@ export function buildConfig({
       standard: 'WCAG2AA',
       runners: ['axe'],
       // `target-size` is an axe rule outside the default WCAG2AA set. It is
-      // included because CLAUDE.md makes 44x44 touch targets a project rule,
+      // included because `docs/accessibility-patterns.md` makes 44x44 touch targets a project rule,
       // and a footer-link touch-target fix has already shipped once (PR #99).
       rules: ['target-size'],
       // axe returns two result sets: `violations` (a measured failure) and

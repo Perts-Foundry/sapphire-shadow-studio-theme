@@ -1,6 +1,20 @@
 # Accessibility patterns for component widgets
 
-This file documents the exact role / attribute / keyboard-interaction set required when implementing or modifying common widget components in this theme. **Global accessibility rules** (skip link, viewport, contrast, landmarks, motion preferences, form-error patterns, etc.) live in `CLAUDE.md` under "Coding standards > Accessibility (global rules)"; this file covers the specific widget patterns only.
+This file documents both the **global accessibility rules** for this theme and the exact role / attribute / keyboard-interaction set required when implementing or modifying common widget components. CLAUDE.md names the widget list and points here; the globals below are the full text, not a summary of anything in CLAUDE.md.
+
+## Global rules
+
+- **Skip link** at page top; the element at `href="#main"` must have `tabindex="-1"` to receive focus. Hide with sr-only / clip-path, never `display: none`.
+- **Form error / success summaries**: heading gets `tabindex="-1"`; on submit, use `requestAnimationFrame` to ensure the heading is visible before `.focus()` and `.scrollIntoView()`.
+- **Auto-updating regions**: `aria-live="polite"` (or `role="log"` for chronological history); pair with a visible pause control. Notifications combine sound + visual badge + title-bar change + `aria-live`.
+- **Time limits**: warn 20s before expiry and offer extend / disable; minimum interaction window 20 hours for non-critical flows.
+- `title` attribute: **only** on `<iframe>` (redundant tooltips and inconsistent SR output elsewhere).
+- Touch targets: at least 44×44 CSS pixels.
+- All `<img>` need `alt`; `alt=""` for decorative.
+- Standard WCAG (contrast, focus-visible, lang on html, viewport zoom, prefers-reduced-motion, flash limits, landmark hygiene) applies; don't restate here.
+- **The homepage `<h1>` is the hero lockup**, in `templates/index.json` under section `hero_jVaWmY`, block `headline_lockup`. `sections/header.liquid` deliberately emits no heading; it used to carry an `index`-guarded visually-hidden `<h1>`, which gave the homepage two. Nothing in CI checks heading structure, so verify exactly one `<h1>` per page type by hand after any header or hero change.
+
+## Widget patterns
 
 Match the role / attribute set exactly when implementing one of these widgets. Anything not covered here is governed by the global rules plus WCAG.
 

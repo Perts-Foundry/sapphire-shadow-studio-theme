@@ -56,7 +56,7 @@ Standard Shopify theme structure. There is no bundler or transpiler; the directo
 | `config/` | `settings_schema.json` and `settings_data.json` |
 | `marketing/emails/` | Shopify Email campaign templates. **Not shipped**: pasted by hand into the Shopify Email editor, ignored by `theme-check`. See [`marketing/emails/README.md`](marketing/emails/README.md) |
 
-Theme conventions (component framework, BEM/CSS rules, block development, accessibility) live in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md).
+Theme conventions (component framework, BEM/CSS rules, block development) live in [`docs/theme-conventions.md`](docs/theme-conventions.md); accessibility rules and widget patterns in [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). [`CLAUDE.md`](CLAUDE.md) carries the condensed directives and points at both.
 
 ## How shipping works
 
@@ -196,15 +196,18 @@ SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint
 
 `.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). It also ignores two paths: `node_modules/**`, and `marketing/**`, whose Shopify Email templates are not theme code and use objects (`unsubscribe_url`, `open_tracking_block`, `email.*`) that no theme defines. Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
 
-Before opening a PR, run `theme dev` and `theme check` locally, and follow the conventions and accessibility patterns in [`CLAUDE.md`](CLAUDE.md) and [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). House style is enforced as a hard rule: no em dashes anywhere in the repo.
+Before opening a PR, run `theme dev` and `theme check` locally, and follow the conventions in [`docs/theme-conventions.md`](docs/theme-conventions.md) and the accessibility rules and widget patterns in [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md). House style is enforced as a hard rule: no em dashes anywhere in the repo.
 
 ## Deeper docs and license
 
 | Doc | Covers |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Theme conventions, component framework, accessibility, and the deploy-gate trust delta summary |
+| [`CLAUDE.md`](CLAUDE.md) | Always-loaded policy layer: the rules that fail silently, plus the pointer into each reference below |
 | [`release-notes.md`](release-notes.md) | Full CI/CD design rationale (attack surface, mitigations) and history |
-| [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md) | Component-specific accessibility patterns used across the theme |
+| [`docs/theme-conventions.md`](docs/theme-conventions.md) | Component framework, theme-editor integration, block file structure, Liquid/CSS/HTML/JS standards |
+| [`docs/structured-data.md`](docs/structured-data.md) | Hand-authored JSON-LD: what each snippet emits and the rules that silently invalidate it |
+| [`docs/theme-settings-contracts.md`](docs/theme-settings-contracts.md) | Social links, the generated collections dropdown, vacation mode, shipping copy, `data-fieldset-index` |
+| [`docs/accessibility-patterns.md`](docs/accessibility-patterns.md) | Global accessibility rules plus the component-specific widget patterns used across the theme |
 | [`docs/deploy-gate-reference.md`](docs/deploy-gate-reference.md) | Full mechanical breakdown of the four auto-deploy gates in `deploy.yml` |
 | [`docs/smoke-test-reference.md`](docs/smoke-test-reference.md) | Full post-deploy smoke-test behavioral contract (HARD-FAIL/SOFT-WARN, locked-vs-public) |
 | [`docs/shopify-mcp-notes.md`](docs/shopify-mcp-notes.md) | Known gaps in the Shopify MCP servers (scopes, media upload, `templateSuffix`, Flow) |

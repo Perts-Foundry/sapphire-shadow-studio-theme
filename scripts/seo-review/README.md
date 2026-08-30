@@ -43,7 +43,7 @@ Crawl-mode checks and why each exists:
   single highest-value check in the module.
 - `jsonld-entity-home` / `jsonld-entity-leak`: Organization and WebSite exactly once on the
   homepage, never elsewhere. Emitting them per page is the defect `snippets/structured-data.liquid`
-  replaced (see CLAUDE.md, Structured data).
+  replaced (see `docs/structured-data.md`).
 - `jsonld-breadcrumb-missing` / `breadcrumb-missing` / `breadcrumb-unexpected`: visible trail and
   `BreadcrumbList` follow the allow-list in `snippets/breadcrumbs.liquid` (`product`, `collection`,
   `page`, `article`, `blog`, `list-collections`; `policy` deliberately absent). The constant in

@@ -1,5 +1,63 @@
 # Release Notes
 
+## CLAUDE.md becomes a policy-and-trigger layer (unreleased)
+
+`CLAUDE.md` had reached 39,844 characters, 99% of the 40,000-char hard limit, because every merge
+since the July 2026 consolidation appended a paragraph. The deep reference prose is now in three
+new `docs/` files and one existing one, and `CLAUDE.md` keeps the always-loaded policy layer plus a
+trigger-conditioned pointer at each of them.
+
+**The governing test for what stayed inline was not length, it was signal at the moment of the
+mistake.** A rule whose violation fails silently, with no CI check and no error, stays in
+`CLAUDE.md` even when its rationale moves out; a rule the tooling would catch anyway, or that a
+model can reconstruct (BEM, logical properties, container queries, typed inputs, view transitions),
+was collapsed or dropped. That is why the moves are not symmetric: the theme-editor event names
+moved rather than being deleted, because an exact-string API surface misspells silently, while the
+generic CSS concepts around them did not survive at all.
+
+Where the material went:
+
+- `docs/theme-conventions.md`: component framework, theme-editor integration, the block / snippet /
+  section split, block file structure, and the Liquid / CSS / HTML / JavaScript standards.
+- `docs/structured-data.md`: what each `structured-data*` snippet emits, and the full set of rules
+  that silently invalidate a node.
+- `docs/theme-settings-contracts.md`: social links, the generated collections dropdown, the absent
+  `social_twitter_link`, vacation mode, shipping copy (including the Admin shop-policy read
+  snippet), and `data-fieldset-index`.
+- `docs/accessibility-patterns.md` absorbed the global accessibility rules. That file used to
+  delegate globals back to `CLAUDE.md`; the direction is now inverted, so one file holds both the
+  globals and the widget patterns.
+
+Sections that already had a fuller authority elsewhere (the four deploy gates, the smoke test, dev
+commands, repo layout, the secrets-vs-variables policy) collapsed to the directive plus the
+citation. Everything cited in the pointers is a live path: `README.md`'s "Deeper docs and license"
+table lists the three new files, and the inbound references in `marketing/emails/README.md`,
+`scripts/seo-review/README.md`, `.claude/skills/seo-review/SKILL.md`, `scripts/a11y/`,
+`blocks/_accordion-row.liquid`, `snippets/policy-page.liquid`,
+`snippets/structured-data-organization.liquid` and `snippets/size-guide-link.liquid` were repointed
+in the same change.
+
+**Two corrections the consolidation surfaced, recorded because both were wrong in a way a reader
+would have trusted.**
+
+1. The Pre-PR review section named a "standard agent set" of `code-reviewer`,
+   `architecture-reviewer` and `security-auditor`. **None of those three agents exists.** The
+   installed set is `doc-sync-checker`, `infra-reviewer`, `prompt-reviewer` and `test-engineer`;
+   general code review comes from the headless `/code-review` gate plus `/security-review`. The
+   section now says so.
+2. The structured-data rules were introduced as having "no CI check behind them". The accurate
+   statement is *no automatic check*: `package.json` has no top-level `test` script, and
+   `seo-review:test` runs the unit suite only, so the `jsonld-parse`, `jsonld-entity-home` and
+   `jsonld-entity-leak` checks run when an operator invokes the `seo-review` skill and never in CI.
+
+**On the size target.** The plan called for 15,000-18,000 characters. The result is about 25,600,
+and the gap is arithmetic rather than under-delivery: the plan budgeted roughly 1,800 characters of
+residue for pointers that, written to carry trigger plus failure mode plus file name as the same
+plan required, cost about 7,000. Cutting to 18,000 from here would mean deleting triggers the
+governing test says to keep, or abridging Sensitive Content, which stays whole. 25,600 is a 36%
+reduction, 64% of the hard limit, and below the 32,000 warn threshold with real headroom. The next
+consolidation should treat "what fails silently" as the budget, not a character count.
+
 ## Smoke: the policy pages get a markup assertion (unreleased)
 
 The post-deploy smoke probed `/policies/refund-policy` for HTTP 200, the right host and the right
