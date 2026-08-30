@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ID_RE,
-  loadCatalogue,
+  loadCommittedCatalogue,
   productByHandle,
   colorValuesFor,
   CATALOGUE_PATH,
@@ -23,7 +23,6 @@ import { nameCharCeiling } from './layout.mjs';
 import { MAX_OPTION_LINE } from './options-writer.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.join(HERE, '..', '..', '..');
 
 /** The committed registry path. */
 export const REGISTRY_PATH = path.join(HERE, '..', 'patterns.json');
@@ -147,7 +146,17 @@ export function validate(reg) {
   // the handle string are gone with them: `productByHandle` refuses an undeclared handle by name,
   // which is a stronger statement than "looks kebab-case" and cannot pass on a plausible typo.
   if (typeof reg.handle !== 'string' || !reg.handle) push('handle is missing');
-  const colorValues = Array.isArray(reg.product?.colorValues) ? reg.product.colorValues : [];
+  // REFUSED when absent and there is a pattern to check, never defaulted to []: an empty list here
+  // silently disarms the colour-name guard, which is exactly how a pattern named after a real Color
+  // value could slip onto the chart. `materialise` attaches the block, so a missing one means a
+  // caller validated a raw committed registry without materialising it first.
+  const colorValues = Array.isArray(reg.product?.colorValues) ? reg.product.colorValues : null;
+  if (colorValues === null && Array.isArray(reg.patterns) && reg.patterns.length) {
+    push(
+      'product.colorValues is missing; validate a MATERIALISED registry (load(), or materialise() ' +
+        'against catalogue.json), or the pattern-name colour guard checks against nothing'
+    );
+  }
   // Derived from the chart geometry these patterns will actually render at, so a denser grid
   // tightens it. Only computable when the chart params themselves are sane.
   const ceiling = Number.isInteger(reg.chart?.columns) && reg.chart.columns > 0
@@ -240,7 +249,7 @@ export function validate(reg) {
       const derived = deriveId(p.name);
       if (derivedIds.has(derived)) push(`${label}: name "${p.name}" derives the same id as pattern "${derivedIds.get(derived)}"`);
       else derivedIds.set(derived, p.id ?? `#${i}`);
-      const colorProblem = nameColorProblem(p.name, colorValues);
+      const colorProblem = nameColorProblem(p.name, colorValues ?? []);
       if (colorProblem) push(`${label}: ${colorProblem}`);
       if (ceiling !== null && String(p.name).length > ceiling) {
         push(`${label}: name "${p.name}" is ${String(p.name).length} characters; the ${reg.chart.columns}-column chart carries at most ${ceiling}`);
@@ -313,7 +322,7 @@ export function assertValid(reg) {
  */
 export async function load(registryPath = REGISTRY_PATH, { manifest = null } = {}) {
   const raw = await readFile(registryPath, 'utf8');
-  const resolved = manifest ?? (await loadCatalogue({ read: (f) => readFile(path.join(REPO_ROOT, f), 'utf8') }));
+  const resolved = manifest ?? (await loadCommittedCatalogue());
   return assertValid(materialise(JSON.parse(raw), resolved));
 }
 

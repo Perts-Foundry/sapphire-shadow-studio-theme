@@ -17,11 +17,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { parseCatalogue, templateFileFor, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+import { readCommittedCatalogue, templateFileFor, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PATHS_FILE = join(HERE, 'paths.json');
-const REPO_ROOT = join(HERE, '..', '..');
 
 /**
  * The placeholder paths.json puts where the per-product entries belong.
@@ -32,13 +31,6 @@ const REPO_ROOT = join(HERE, '..', '..');
  * splice-here rule into this module.
  */
 export const PRODUCTS_MARKER = 'catalogue:products';
-
-/** The committed catalogue manifest, read once. */
-let cachedManifest = null;
-function committedManifest() {
-  if (!cachedManifest) cachedManifest = parseCatalogue(readFileSync(join(REPO_ROOT, CATALOGUE_PATH), 'utf8'));
-  return cachedManifest;
-}
 
 /** The committed paths.json with its products marker expanded. */
 export function resolvedPaths() {
@@ -63,7 +55,7 @@ export function resolvedPaths() {
  * @param {object} manifest
  * @returns {Array<object>} the resolved entry list
  */
-export function resolvePaths(paths, manifest = committedManifest()) {
+export function resolvePaths(paths, manifest = readCommittedCatalogue()) {
   const entries = paths?.paths;
   if (!Array.isArray(entries)) return [];
   const overrides = paths.productOverrides ?? {};
@@ -78,9 +70,25 @@ export function resolvePaths(paths, manifest = committedManifest()) {
   let expanded = false;
   const out = [];
   for (const entry of entries) {
-    if (entry?.marker !== PRODUCTS_MARKER) {
+    if (entry?.marker === undefined) {
+      // A plain entry must actually name a path, or the URL builder later turns it into a
+      // "/undefined" request that audits a 404 as if it were a page.
+      if (typeof entry?.path !== 'string' || !entry.path) {
+        throw new Error(
+          `paths.json entry ${JSON.stringify(entry)} has neither a "path" nor a recognised "marker", ` +
+            `so it would be audited as "/undefined"`
+        );
+      }
       out.push(entry);
       continue;
+    }
+    if (entry.marker !== PRODUCTS_MARKER) {
+      // Fail closed: an unrecognised marker is a typo for the one marker this module knows, and
+      // passing it through would both drop the product expansion and audit a "/undefined" URL.
+      throw new Error(
+        `paths.json entry has unrecognised marker ${JSON.stringify(entry.marker)}; the only marker ` +
+          `this builder expands is "${PRODUCTS_MARKER}"`
+      );
     }
     expanded = true;
     for (const product of manifest.products.values()) {

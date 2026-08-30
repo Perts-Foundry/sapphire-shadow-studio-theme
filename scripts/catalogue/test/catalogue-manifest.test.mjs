@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseCatalogue,
   loadCatalogue,
+  loadCommittedCatalogue,
   reconcileCatalogue,
   assessCatalogue,
   colorDisplay,
@@ -585,7 +586,14 @@ test('the manifest module cannot reach a mutation, and neither can the lint that
   // to say it must never import it, and a naive grep cannot tell the prohibition from the violation.
   const libPath = path.join(repoRoot, 'scripts/lib/catalogue-manifest.mjs');
   const lib = await readFile(libPath, 'utf8');
-  assert.deepEqual(importsOf(lib), ['./vocab.mjs', './json-keys.mjs']);
+  assert.deepEqual(importsOf(lib), [
+    'node:fs',
+    'node:fs/promises',
+    'node:path',
+    'node:url',
+    './vocab.mjs',
+    './json-keys.mjs',
+  ]);
   assert.doesNotMatch(lib, /setQuantity\(|adjustQuantity\(|metafieldsSet/);
 
   const lintPath = path.join(repoRoot, 'scripts/catalogue/check-catalogue.mjs');
@@ -643,7 +651,7 @@ test('the ID and GID regexes have exactly one definition, and applique-grid read
 // ---------------------------------------------------------------------------
 
 test('MATCHES PRODUCTION: the committed manifest parses under these rules', async () => {
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   assert.equal(m.version, CATALOGUE_VERSION);
   assert.ok(m.bodies.size >= 1);
   assert.ok(m.products.size >= 1);

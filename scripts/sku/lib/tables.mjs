@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normaliseAxis } from '../../lib/vocab.mjs';
-import { optionName, sizeValuesFor, loadCatalogue, CATALOGUE_PATH } from '../../lib/catalogue-manifest.mjs';
+import { optionName, sizeValuesFor, loadCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 export const TABLES_VERSION = 2;
 
@@ -184,6 +184,19 @@ export function validateTables(tables, manifest) {
           `duplication this migration removed.`
       );
     }
+    if ('sizes' in entry) {
+      problems.push(
+        `${where} carries a "sizes" list. Size ranges come from catalogue.json now; a second copy ` +
+          `here is the duplication this migration removed, and effectiveTables would silently ` +
+          `overwrite it anyway.`
+      );
+    }
+    if ('body' in entry) {
+      problems.push(
+        `${where} carries a "body". Garment bodies come from catalogue.json now; a second copy here ` +
+          `is the duplication this migration removed.`
+      );
+    }
     if (!Array.isArray(entry.segments) || !entry.segments.length) {
       problems.push(`${where} has no segments array.`);
       continue;
@@ -225,10 +238,13 @@ export function validateTables(tables, manifest) {
  *
  * The merged shape is deliberately the SHAPE THE TABLES USED TO HAVE, so `derive.mjs`, `audit.mjs`
  * and the planner keep their signatures: a product entry carries `title` and each segment carries
- * `option`, they are just no longer restated in the committed file. Two things are new and only used
+ * `option`, they are just no longer restated in the committed file. One thing is new and only used
  * downstream: `sizes`, the product's declared Admin size values, which is what lets `derive.mjs`
- * refuse a size the product does not sell rather than passing any uppercase token through; and
- * `body`, so a caller can tell a garment from a gift card without reaching back into the manifest.
+ * refuse a size the product does not sell rather than passing any uppercase token through (`null`
+ * on a non-garment is also how a caller tells a garment from a gift card).
+ *
+ * Called only on tables `validateTables` has passed (see `parseTables`), so every handle here is
+ * declared in the manifest; there is deliberately no fallback for a missing `declared`.
  *
  * @param {object} tables - the RAW committed tables
  * @param {object} manifest
@@ -240,12 +256,11 @@ export function effectiveTables(tables, manifest) {
     const declared = manifest.products.get(handle);
     products[handle] = {
       ...entry,
-      title: declared?.title ?? null,
-      body: declared?.body ?? null,
+      title: declared.title,
       // A non-garment has no body and therefore no declared size range. `null` and not `[]`: an
       // empty list would read as "sells no sizes", and `derive.mjs` has to tell that apart from
       // "this axis does not apply here".
-      sizes: declared && declared.body !== null ? sizeValuesFor(manifest, handle) : null,
+      sizes: declared.body !== null ? sizeValuesFor(manifest, handle) : null,
       segments: (entry.segments ?? []).map((seg) => ({
         ...seg,
         option: manifest.options.has(seg.kind) ? optionName(manifest, seg.kind) : undefined,
@@ -349,20 +364,11 @@ export function parseTables(text, { manifest, source = 'tables.json' }) {
  * @returns {Promise<object>} the effective tables
  */
 export async function loadTables({ filePath = TABLES_PATH, manifest = null } = {}) {
-  const resolved = manifest ?? (await loadManifest());
+  // `loadCommittedCatalogue` is a static import: `scripts/lib/import-closure.mjs` refuses any
+  // specifier a static walk cannot follow inside a guarded closure, and there is no reason for this
+  // one to be the exception.
+  const resolved = manifest ?? (await loadCommittedCatalogue());
   return parseTables(await readFile(filePath, 'utf8'), { manifest: resolved, source: filePath });
-}
-
-/**
- * The committed catalogue manifest, read from the repo root.
- *
- * A static import and a plain `readFile`, not a dynamic import: `scripts/lib/import-closure.mjs`
- * refuses any specifier a static walk cannot follow inside a guarded closure, and there is no reason
- * for this one to be the exception.
- */
-async function loadManifest() {
-  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-  return loadCatalogue({ read: (p) => readFile(path.join(root, p), 'utf8'), path: CATALOGUE_PATH });
 }
 
 /**

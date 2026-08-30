@@ -70,7 +70,13 @@ async function main() {
 
   const handles = opts.handles.length ? opts.handles : (profile.handles || []);
   if (handles.length === 0) {
-    throw new Error('No handles to apply to. Pass --handle <h> or add a "handles" array to the profile.');
+    // Near-unreachable post-materialise: loadProfile derives `handles` from the products on the
+    // profile's `body`, and a body with no product refuses earlier. A committed "handles" array is
+    // itself refused, so never advise adding one.
+    throw new Error(
+      'No handles to apply to. Pass --handle <h>, or check that catalogue.json declares products ' +
+        'on this profile\'s "body" (the template list is derived from them).'
+    );
   }
 
   let anyChanged = false;

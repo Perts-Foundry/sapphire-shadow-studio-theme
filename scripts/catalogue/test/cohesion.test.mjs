@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CHECKS, COHESION_CHECK_COUNT, runCohesion, collectSources, REFUSE, WARN } from '../../lib/catalogue-cohesion.mjs';
-import { parseCatalogue, loadCatalogue } from '../../lib/catalogue-manifest.mjs';
+import { parseCatalogue, loadCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -94,6 +94,10 @@ function sources(over = {}) {
       'templates/product.b-vest.json',
       'templates/product.gift-card.json',
     ],
+    sizeChartProfileBodies: new Map([
+      ['crewneck', 'crewneck-fleece.json'],
+      ['vest', 'vest-micro.json'],
+    ]),
     appliqueHandle: 'a-crew',
     docs: { skuScheme: SKU_SCHEME_DOC, altText: ALT_TEXT_DOC },
     ...over,
@@ -118,8 +122,8 @@ async function fired(over = {}) {
 test('the check count is pinned, and every check declares an id, a source and a severity', () => {
   // The lint reports the count of checks RUN and the workflow greps it, so a check quietly leaving
   // the set has to be a deliberate edit here as well as there.
-  assert.equal(COHESION_CHECK_COUNT, 9);
-  assert.equal(CHECKS.length, 9);
+  assert.equal(COHESION_CHECK_COUNT, 10);
+  assert.equal(CHECKS.length, 10);
   const ids = CHECKS.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
   for (const check of CHECKS) {
@@ -187,6 +191,13 @@ test('an applique handle that is undeclared, or is not a garment, both REFUSE', 
   const gift = await fired({ appliqueHandle: 'the-gift-card' });
   assert.deepEqual(gift.refusals, ['applique-product-is-a-garment']);
   assert.match(gift.messages['applique-product-is-a-garment'], /printed on a body/);
+});
+
+test('a declared body with no size-chart profile REFUSES, and names the body', async () => {
+  const out = await fired({ sizeChartProfileBodies: new Map([['crewneck', 'crewneck-fleece.json']]) });
+  assert.deepEqual(out.refusals, ['size-chart-profile-per-body']);
+  assert.match(out.messages['size-chart-profile-per-body'], /"vest"/);
+  assert.match(out.messages['size-chart-profile-per-body'], /no size chart/);
 });
 
 test('a doc marker region that disagrees REFUSES, in either file', async () => {
@@ -284,7 +295,7 @@ test('a set difference is bounded, so a PR-inflated list cannot produce an unrea
 test('MATCHES PRODUCTION: the real repo passes every check', async () => {
   // Weaker than everything above, and labelled so. It says today's files agree, not what the rules
   // are. It is here because the whole point of the lint is to be true of this repo.
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   const real = await collectSources({
     repoRoot,
     manifest: m,
@@ -302,7 +313,7 @@ test('MATCHES PRODUCTION: the real collector tolerates the block comment Shopify
   // needs to warn about.
   const raw = await readFile(path.join(repoRoot, 'config/settings_data.json'), 'utf8');
   assert.match(raw, /^\/\*/, 'the banner is still there, so this test is still testing something');
-  const m = await loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+  const m = await loadCommittedCatalogue();
   const real = await collectSources({
     repoRoot,
     manifest: m,

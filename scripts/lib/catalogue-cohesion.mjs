@@ -191,7 +191,10 @@ async function readJson(file, repoRoot) {
  * profile declares a catalogue body now and `profile-io.mjs` materialises its handles from the
  * products on that body, so the list cannot name a product the manifest does not. Its replacement is
  * the materialisation test in scripts/size-chart/test/profile-io.test.mjs, plus the frozen
- * byte-stability snapshot in scripts/size-chart/test/pre-migration-bytes.test.mjs.
+ * byte-stability snapshot in scripts/size-chart/test/pre-migration-bytes.test.mjs. Only that
+ * DIRECTION retired, though: nothing derives the profiles directory itself, so "every declared body
+ * has a size-chart profile" is still a fact two files can disagree about, and it stays below as
+ * `size-chart-profile-per-body` (the old pre-migration check 13, re-keyed on bodies).
  *
  * The last two, over the accessibility audit's product coverage in both directions, retired with the
  * a11y migration: `build-pa11yci.mjs` expands a marker in paths.json into one entry per manifest
@@ -331,6 +334,27 @@ export const CHECKS = [
     },
   },
 
+  // 13. Every declared garment body has a size-chart profile. The profiles directory is
+  // hand-authored (a new blank means authoring a spec), so this cannot retire as derived: a body
+  // declared in the manifest with no profile means every product cut from it ships with no size
+  // chart, and nothing else notices. The other direction (a profile naming a body the manifest does
+  // not declare) is refused by profile-io.mjs's materialisation at every load.
+  {
+    id: 'size-chart-profile-per-body',
+    source: 'scripts/size-chart/profiles/',
+    severity: REFUSE,
+    async run({ manifest, sizeChartProfileBodies }) {
+      const missing = [...manifest.bodies.keys()].filter((b) => !sizeChartProfileBodies.has(b));
+      return (
+        missing.length &&
+        `${missing.length} declared garment body/bodies have no size-chart profile: ` +
+          `${nameList(missing)}. Every product on such a body ships with no size chart and nothing ` +
+          `else notices. Author scripts/size-chart/profiles/<blank_id>.json declaring that "body" ` +
+          `(the size-chart skill walks through it), or remove the body from catalogue.json.`
+      );
+    },
+  },
+
   // 15-16. The two docs that restate the vocabulary in prose, inside explicit marker regions. These
   // do NOT retire: prose is hand-written by definition, and these regions are exactly the parts of it
   // that make a factual claim about the catalogue.
@@ -443,6 +467,18 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
     .map((f) => `templates/${f}`)
     .sort();
 
+  // Which bodies the size-chart profiles cover: body id -> the first profile file declaring it.
+  const profileFiles = (await listDir(path.join(repoRoot, 'scripts/size-chart/profiles')))
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  const sizeChartProfileBodies = new Map();
+  for (const f of profileFiles) {
+    const profile = await readJson(`scripts/size-chart/profiles/${f}`, repoRoot);
+    if (typeof profile.body === 'string' && !sizeChartProfileBodies.has(profile.body)) {
+      sizeChartProfileBodies.set(profile.body, f);
+    }
+  }
+
   const appliqueRegistry = await readJson('scripts/applique-grid/patterns.json', repoRoot);
   // Top-level now. It was nested under a `product` block until applique-grid was migrated; that
   // block is gone from the committed file and `registry.mjs` refuses one, so there is no fallback to
@@ -454,6 +490,7 @@ export async function collectSources({ repoRoot, manifest, listDir }) {
     settingsSchemaDefaults,
     settingsDataValues,
     templateFiles,
+    sizeChartProfileBodies,
     appliqueHandle,
     docs: {
       skuScheme: await readText('docs/sku-scheme.md'),

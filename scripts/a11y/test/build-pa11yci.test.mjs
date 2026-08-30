@@ -241,6 +241,18 @@ test('FAIL CLOSED: a paths.json with no products marker throws rather than audit
   assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /no product page would be audited/);
 });
 
+test('FAIL CLOSED: an unrecognised marker throws rather than passing through as a "/undefined" URL', () => {
+  const raw = RAW();
+  raw.paths = [...raw.paths, { marker: 'catalogue:prodcuts' }];
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /unrecognised marker "catalogue:prodcuts"/);
+});
+
+test('FAIL CLOSED: a plain entry with no path throws rather than auditing "/undefined"', () => {
+  const raw = RAW();
+  raw.paths = [...raw.paths, { label: 'lost', template: 'templates/lost.json' }];
+  assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /neither a "path" nor a recognised "marker"/);
+});
+
 test('MATCHES PRODUCTION: the resolved product entries equal the six the file used to spell out', () => {
   // Byte-compared against the frozen pre-migration capture, so "derived" had to mean "identical".
   const baseline = JSON.parse(

@@ -34,6 +34,11 @@
 // identity it hangs off; an option name, a title and a GID are checked on shape and uniqueness only,
 // and are never case-folded.
 
+import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { normaliseAxis } from './vocab.mjs';
 import { findDuplicateKeys } from './json-keys.mjs';
 
@@ -632,6 +637,40 @@ export async function loadCatalogue({ read, path = CATALOGUE_PATH }) {
     throw err;
   }
   return parseCatalogue(text);
+}
+
+/** The repo root, resolved from this module (scripts/lib/) rather than from cwd. */
+const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * Load and parse the committed manifest from the repo root.
+ *
+ * The one place that knows where the committed file lives relative to this module. Seven areas
+ * used to carry a private copy of this read (each with its own REPO_ROOT arithmetic), and a copy
+ * that resolved one `..` short would have read a different repo's manifest without noticing.
+ *
+ * @returns {Promise<ReturnType<typeof parseCatalogue>>}
+ */
+export async function loadCommittedCatalogue() {
+  return loadCatalogue({ read: (p) => readFile(path.join(REPO_ROOT, p), 'utf8') });
+}
+
+let committedCache = null;
+
+/**
+ * The committed manifest, read synchronously and memoised.
+ *
+ * For the callers whose whole surface is synchronous (photo naming, the SEO and a11y builders).
+ * The cache is process-lifetime, which is what those callers already did individually: the
+ * committed file does not change under a running process.
+ *
+ * @returns {ReturnType<typeof parseCatalogue>}
+ */
+export function readCommittedCatalogue() {
+  if (!committedCache) {
+    committedCache = parseCatalogue(readFileSync(path.join(REPO_ROOT, CATALOGUE_PATH), 'utf8'));
+  }
+  return committedCache;
 }
 
 // ---------------------------------------------------------------------------

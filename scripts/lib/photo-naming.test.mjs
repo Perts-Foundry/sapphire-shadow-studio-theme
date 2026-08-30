@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   createNaming, defaultNaming, matchedColorValues, bodyPhotoToken, photoTokenBodies,
 } from './photo-naming.mjs';
-import { parseCatalogue, loadCatalogue, garmentProducts } from './catalogue-manifest.mjs';
+import { parseCatalogue, garmentProducts, loadCommittedCatalogue } from './catalogue-manifest.mjs';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -87,6 +87,24 @@ test('a colour added to the manifest becomes a colorway token with no edit here'
   assert.ok(withSand.MULTIWORD_TOKENS.includes('desert-sand'), 'the hyphen parser learns it too');
 });
 
+test('two products sharing a line and a body refuse loudly rather than silently overwriting a census key', () => {
+  const clash = JSON.stringify({
+    version: 2,
+    options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+    colors: { black: { display: 'Black', slug: 'black' } },
+    sizes: { s: { display: 'S' } },
+    bodies: { crewneck: { colors: ['black'], sizes: ['s'] } },
+    products: {
+      'huddle-crewneck': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck', title: 'Huddle Crewneck', gid: 'gid://shopify/Product/1' },
+      'huddle-crewneck-ii': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck-ii', title: 'Huddle Crewneck II', gid: 'gid://shopify/Product/2' },
+    },
+  });
+  assert.throws(
+    () => createNaming(parseCatalogue(clash)),
+    /"huddle-crewneck" and "huddle-crewneck-ii" both resolve to photo census key "huddle\/crew-sweater"/
+  );
+});
+
 test('a body with no filename token refuses loudly rather than naming a product after a body id', () => {
   const scarf = JSON.stringify({
     version: 2,
@@ -107,14 +125,14 @@ test('MATCHES PRODUCTION: the filename-token map covers every declared body and 
   // The one hand-authored table left in this module. A photo filename is typed by hand and already
   // printed on files on disk and on uploaded Shopify filenames, so its tokens cannot follow a
   // manifest rename; this is what stops the map going stale in either direction instead.
-  const manifest = await loadCatalogue({ read: (f) => readFile(path.join(repoRoot, f), 'utf8') });
+  const manifest = await loadCommittedCatalogue();
   const declared = [...manifest.bodies.keys()];
   assert.deepEqual([...photoTokenBodies()].sort(), [...declared].sort());
   for (const body of declared) assert.ok(bodyPhotoToken(body), `${body} has a filename token`);
 });
 
 test('MATCHES PRODUCTION: defaultNaming records every garment product and no other', async () => {
-  const manifest = await loadCatalogue({ read: (f) => readFile(path.join(repoRoot, f), 'utf8') });
+  const manifest = await loadCommittedCatalogue();
   const n = defaultNaming();
   assert.deepEqual(
     Object.values(n.PRODUCTS).map((p) => p.handle).sort(),

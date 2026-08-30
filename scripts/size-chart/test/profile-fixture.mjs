@@ -11,19 +11,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseCatalogue, CATALOGUE_PATH } from '../../lib/catalogue-manifest.mjs';
+import { readCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 import { materialiseProfile } from '../lib/profile-io.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_DIR = path.join(HERE, '..', 'profiles');
-const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
 
-let manifest = null;
-
-/** The committed catalogue manifest, parsed once. */
+/** The committed catalogue manifest, parsed once (memoised by the shared loader). */
 export function committedManifest() {
-  if (!manifest) manifest = parseCatalogue(readFileSync(path.join(REPO_ROOT, CATALOGUE_PATH), 'utf8'));
-  return manifest;
+  return readCommittedCatalogue();
 }
 
 /**

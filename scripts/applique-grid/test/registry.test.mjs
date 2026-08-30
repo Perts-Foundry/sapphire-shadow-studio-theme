@@ -10,7 +10,10 @@ import {
 import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const fixture = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'registry.fixture.json'), 'utf8'));
+const committedFixture = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'registry.fixture.json'), 'utf8'));
+// The fixture is in COMMITTED shape (scalar handle, no product block); tests run it through
+// `materialise` exactly the way `load()` does, so `validate` sees the derived product block.
+const fixture = () => materialise(committedFixture(), MANIFEST);
 
 // Hand-authored, so the materialisation assertions state what the derivation does rather than what
 // today's catalogue happens to contain.
@@ -30,6 +33,16 @@ const MANIFEST = parseCatalogue(
 
 test('fixture registry validates clean', () => {
   assert.deepEqual(validate(fixture()), []);
+});
+
+test('a pattern-carrying registry with no product block REFUSES instead of skipping the colour guard', () => {
+  // Regression: validate() used to default colorValues to [] when the product block was absent, so
+  // validating a raw committed registry (as --write once did) checked pattern names against nothing.
+  const problems = validate(committedFixture());
+  assert.ok(
+    problems.some((p) => p.includes('product.colorValues is missing')),
+    `expected the missing-product refusal, got:\n${problems.join('\n')}`
+  );
 });
 
 test('empty bootstrap registry validates clean', () => {
@@ -138,7 +151,7 @@ test('out-of-charset name rejected', () => {
 
 test('name whole-word-matching a Color value rejected', () => {
   expectProblem((r) => { r.patterns[0].name = 'Black Forest'; }, 'whole-word-matches Color value');
-  expectProblem((r) => { r.patterns[0].name = 'Classic Navy'; }, 'whole-word-matches Color value');
+  expectProblem((r) => { r.patterns[0].name = 'Grey Heather'; }, 'whole-word-matches Color value');
 });
 
 test('a black THREAD is legal (thread words never enter alt text)', () => {

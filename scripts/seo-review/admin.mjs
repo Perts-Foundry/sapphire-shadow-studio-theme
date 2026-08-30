@@ -18,12 +18,8 @@
 // USAGE: node scripts/seo-review/admin.mjs [--full] [--no-save]
 //   Requires MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
 
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { createAdminClient } from '../blank-inventory/lib/admin.mjs';
-import { parseCatalogue, nonGarmentProducts, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+import { readCommittedCatalogue, nonGarmentProducts } from '../lib/catalogue-manifest.mjs';
 import {
   ERROR, WARN, TITLE_MAX, DESC_MIN, DESC_MAX,
   BREADCRUMB_EXCLUDED_HANDLES, BREADCRUMB_PREFERRED_HANDLES,
@@ -109,15 +105,6 @@ export function isEffectivelyEmpty(text) {
   return (text || '').replace(/<[^>]*>|&nbsp;/gi, ' ').trim().length === 0;
 }
 
-const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-let cachedManifest = null;
-
-/** The committed catalogue manifest, read once. */
-function committedManifest() {
-  if (!cachedManifest) cachedManifest = parseCatalogue(readFileSync(path.join(REPO_ROOT, CATALOGUE_PATH), 'utf8'));
-  return cachedManifest;
-}
-
 /**
  * Products where a blank `custom.breadcrumb_collection` is the correct
  * configuration (docs/breadcrumb-collection-metafield.md: the gift card's
@@ -130,15 +117,16 @@ function committedManifest() {
  * `sapphire-shadow-studio-gift-card`. The two never matched, so the skip had
  * never once fired and the gift card had been WARNing since the check shipped.
  * A non-garment is exactly the product with no parent collection to name, so
- * the manifest already knows which products belong here; both spellings go in
- * because `gift-card` is the TEMPLATE suffix and the handle is a different
- * string, which is what the old literal had silently confused.
+ * the manifest already knows which products belong here. HANDLES ONLY: the set
+ * is compared against `p.handle` and nothing else, and `gift-card` (the
+ * TEMPLATE suffix) in the set was exactly the handle/template confusion the
+ * old literal shipped with.
  *
  * @param {object} [manifest]
  * @returns {Set<string>}
  */
-export function breadcrumbBlankOkHandles(manifest = committedManifest()) {
-  return new Set(nonGarmentProducts(manifest).flatMap((p) => [p.handle, p.template]));
+export function breadcrumbBlankOkHandles(manifest = readCommittedCatalogue()) {
+  return new Set(nonGarmentProducts(manifest).map((p) => p.handle));
 }
 
 /**
@@ -152,7 +140,7 @@ export function breadcrumbBlankOkHandles(manifest = committedManifest()) {
  * @returns {Array<{check:string, severity:string, url:string, detail:string}>}
  */
 export function breadcrumbCollectionFindings(products, { manifest } = {}) {
-  const blankOk = breadcrumbBlankOkHandles(manifest ?? committedManifest());
+  const blankOk = breadcrumbBlankOkHandles(manifest ?? readCommittedCatalogue());
   const findings = [];
   for (const p of products) {
     const url = `admin:product/${p.handle}`;

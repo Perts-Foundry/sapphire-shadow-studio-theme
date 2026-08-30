@@ -43,9 +43,9 @@ test('every nil cause of an unset breadcrumb metafield reads the same', () => {
 });
 
 // A hand-authored manifest with TWO non-garment products, one whose handle and template suffix are
-// different strings. The live census has exactly one non-garment shape, so without this the flatMap
-// and the dedup are untested for any other, and the handle/template distinction is the whole reason
-// the old literal never matched anything.
+// different strings. The set is compared against Admin HANDLES only, so the template suffix must
+// stay out of it; the handle/template distinction is the whole reason the old literal never matched
+// anything.
 const MANIFEST = parseCatalogue(
   JSON.stringify({
     version: 2,
@@ -61,12 +61,14 @@ const MANIFEST = parseCatalogue(
   })
 );
 
-test('the intentionally-blank set is every non-garment, under both its spellings', () => {
+test('the intentionally-blank set is every non-garment HANDLE, and never a template suffix', () => {
   assert.deepEqual([...breadcrumbBlankOkHandles(MANIFEST)].sort(), [
-    'gift-card',
     'sapphire-shadow-studio-gift-card',
     'studio-consultation',
-  ], 'both spellings for the product whose two differ, deduped for the one whose two agree');
+  ]);
+  // The set is only ever tested against Admin handles, so the template suffix would be a dead
+  // entry that could only ever mask a future product whose HANDLE happened to equal it.
+  assert.equal(breadcrumbBlankOkHandles(MANIFEST).has('gift-card'), false);
   // A garment is never in it: every garment has a parent collection to name.
   assert.equal(breadcrumbBlankOkHandles(MANIFEST).has('lead-ii-crewneck'), false);
 });
@@ -74,7 +76,7 @@ test('the intentionally-blank set is every non-garment, under both its spellings
 test('a documented intentionally-blank product produces no missing finding', () => {
   // docs/breadcrumb-collection-metafield.md says the gift card stays blank, so the missing WARN
   // must not fire for it; a catch-all value on it still would.
-  for (const handle of ['gift-card', 'sapphire-shadow-studio-gift-card', 'studio-consultation']) {
+  for (const handle of ['sapphire-shadow-studio-gift-card', 'studio-consultation']) {
     assert.deepEqual(
       breadcrumbCollectionFindings([{ handle, breadcrumbCollection: null }], { manifest: MANIFEST }),
       [],

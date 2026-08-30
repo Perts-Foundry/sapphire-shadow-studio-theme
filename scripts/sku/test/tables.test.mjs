@@ -32,7 +32,7 @@ import {
   TABLES_PATH,
   TABLES_VERSION,
 } from '../lib/tables.mjs';
-import { parseCatalogue, loadCatalogue } from '../../lib/catalogue-manifest.mjs';
+import { parseCatalogue, loadCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 import { MANIFEST, TABLES, EFFECTIVE } from './fixtures.mjs';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -41,7 +41,7 @@ const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '
 const clone = (over = {}) => JSON.parse(JSON.stringify({ ...TABLES, ...over }));
 
 /** The committed manifest, re-parsed from the repo root. */
-const realManifest = () => loadCatalogue({ read: (p) => readFile(path.join(repoRoot, p), 'utf8') });
+const realManifest = () => loadCommittedCatalogue();
 
 /** A clone of the fixture manifest's source document, mutated then re-parsed. */
 function manifestWith(mutate) {
@@ -197,12 +197,20 @@ test('the product census is checked in both directions against the manifest', ()
   assert.match(problems(missing), /product "huddle-crewneck" is declared in catalogue\.json but has no entry here/);
 });
 
-test('a title or a segment option name left in the tables is refused, not ignored', () => {
-  // Both are now the manifest's to state. Silently ignoring a stale copy is how two sources of truth
+test('a title, sizes list, body, or segment option name left in the tables is refused, not ignored', () => {
+  // All of them are now the manifest's to state. Silently ignoring a stale copy is how two sources of truth
   // drift apart, so the leftover has to red the lint.
   const titled = clone();
   titled.products['huddle-crewneck'].title = 'Huddle Crewneck';
   assert.match(problems(titled), /carries a "title"\. Titles come from catalogue\.json now/);
+
+  const sized = clone();
+  sized.products['huddle-crewneck'].sizes = ['S', 'M'];
+  assert.match(problems(sized), /carries a "sizes" list\. Size ranges come from catalogue\.json now/);
+
+  const bodied = clone();
+  bodied.products['huddle-crewneck'].body = 'crewneck';
+  assert.match(problems(bodied), /carries a "body"\. Garment bodies come from catalogue\.json now/);
 
   const optioned = clone();
   optioned.products['huddle-crewneck'].segments[1].option = 'Color';
@@ -251,7 +259,6 @@ test('a design segment without a namespace, and a namespace that does not exist,
 test('effectiveTables restores the shape downstream modules were always handed', () => {
   const entry = EFFECTIVE.products['shift-fuel-crewneck'];
   assert.equal(entry.title, 'Shift Fuel Crewneck');
-  assert.equal(entry.body, 'crewneck');
   assert.deepEqual(entry.sizes, ['XS', 'S', 'M', 'L', 'XL', '2XL']);
   assert.deepEqual(entry.segments, [
     { kind: 'color', option: 'Color' },
@@ -266,7 +273,6 @@ test('a non-garment merges to a null size range, never an empty one', () => {
   // `[]` would read as "sells no sizes"; `null` is "this axis does not apply", which is what
   // derive.mjs has to tell apart to refuse a size segment on a gift card as a tables error.
   const gift = EFFECTIVE.products['sapphire-shadow-studio-gift-card'];
-  assert.equal(gift.body, null);
   assert.equal(gift.sizes, null);
 });
 

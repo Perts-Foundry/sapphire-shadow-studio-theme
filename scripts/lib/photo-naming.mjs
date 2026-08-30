@@ -31,18 +31,14 @@
 // map covers every declared body and names no body that is not declared, in both directions, which
 // is what stops it going stale silently.
 
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import {
   parseCatalogue,
+  readCommittedCatalogue,
   garmentProducts,
   colorValuesFor,
   colorDisplay,
   colorSlug,
   linesOf,
-  CATALOGUE_PATH,
 } from './catalogue-manifest.mjs';
 
 export const SHOTS = ['angled', 'closeup', 'flat', 'styled'];
@@ -101,7 +97,16 @@ export function createNaming(manifest) {
   const products = {};
   for (const product of garmentProducts(manifest)) {
     const garment = bodyPhotoToken(product.body);
-    products[`${product.line}/${garment}`] = {
+    const key = `${product.line}/${garment}`;
+    if (products[key]) {
+      throw new Error(
+        `Products ${JSON.stringify(products[key].handle)} and ${JSON.stringify(product.handle)} both ` +
+          `resolve to photo census key "${key}". A photo filename carries only line and garment, so ` +
+          `two products sharing both cannot be told apart; the second would silently overwrite the ` +
+          `first and every one of its photos would upload to the wrong product.`
+      );
+    }
+    products[key] = {
       line: product.line,
       garment,
       title: product.title,
@@ -123,6 +128,9 @@ export function createNaming(manifest) {
 
   const colorways = [...colorwayToAdmin.keys()];
 
+  // Bound once: recognizedColorValues and the alt guard must consult the same list.
+  const valuesFor = (productKey) => (products[productKey] ? [...products[productKey].colorValues] : []);
+
   // Multi-word vocab tokens, longest first, used only by the hyphen-fallback parser to repair
   // all-hyphen source names (where the field separators were typed as '-' instead of '_').
   const multiword = [...new Set([...lines, ...garments, ...colorways].filter((t) => t.includes('-')))].sort(
@@ -139,9 +147,8 @@ export function createNaming(manifest) {
     colorwayToAdminValue: (colorway, productKey) => resolveColorway(products, colorwayToAdmin, colorway, productKey),
     productForLineGarment: (line, garment) => products[`${line}/${garment}`] || null,
     productForHandle: (handle) => findByHandle(products, handle),
-    recognizedColorValues: (productKey) => (products[productKey] ? [...products[productKey].colorValues] : []),
-    altColorProblem: (alt, expected, productKey) =>
-      checkAltColor(alt, expected, productKey, (k) => (products[k] ? [...products[k].colorValues] : [])),
+    recognizedColorValues: valuesFor,
+    altColorProblem: (alt, expected, productKey) => checkAltColor(alt, expected, productKey, valuesFor),
     parseName: (filename) => parseWithVocab(filename, { lines, garments, colorways, multiword }),
     normalizeName: (filename) => normalizeWithVocab(filename, { lines, garments, colorways, multiword }),
   };
@@ -157,10 +164,7 @@ export function createNaming(manifest) {
  */
 let cached = null;
 export function defaultNaming() {
-  if (!cached) {
-    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-    cached = createNaming(parseCatalogue(readFileSync(path.join(root, CATALOGUE_PATH), 'utf8')));
-  }
+  if (!cached) cached = createNaming(readCommittedCatalogue());
   return cached;
 }
 

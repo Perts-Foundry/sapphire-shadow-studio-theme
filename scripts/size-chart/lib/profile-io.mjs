@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateProfile } from './profile-schema.mjs';
 import {
-  loadCatalogue,
+  loadCommittedCatalogue,
   productsOnBody,
   sizeValuesFor,
   CATALOGUE_PATH,
@@ -27,7 +27,6 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PROFILES_DIR = path.join(HERE, '..', 'profiles');
-const REPO_ROOT = path.join(HERE, '..', '..', '..');
 
 /**
  * Fill in the fields catalogue.json owns, from the profile's declared `body`.
@@ -90,7 +89,7 @@ export async function loadProfile(ref, { manifest = null } = {}) {
   } catch (e) {
     throw new Error(`Cannot read profile '${ref}' (${p}): ${e.message}`);
   }
-  const resolved = manifest ?? (await loadCatalogue({ read: (f) => readFile(path.join(REPO_ROOT, f), 'utf8') }));
+  const resolved = manifest ?? (await loadCommittedCatalogue());
   const profile = materialiseProfile(json, resolved);
   validateProfile(profile);
   return profile;

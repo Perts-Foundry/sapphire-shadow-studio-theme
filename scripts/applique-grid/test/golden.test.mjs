@@ -6,14 +6,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validate, activePatterns, dropdownText } from '../lib/registry.mjs';
+import { validate, activePatterns, dropdownText, materialise } from '../lib/registry.mjs';
+import { readCommittedCatalogue } from '../../lib/catalogue-manifest.mjs';
 import { balancedPages, pageLayout } from '../lib/layout.mjs';
 import { buildChartSvg } from '../lib/chart-svg.mjs';
 import { buildChartAlt } from '../lib/naming.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
-const fixture = JSON.parse(readFileSync(path.join(FIXTURES, 'registry.fixture.json'), 'utf8'));
+const fixture = materialise(
+  JSON.parse(readFileSync(path.join(FIXTURES, 'registry.fixture.json'), 'utf8')),
+  readCommittedCatalogue()
+);
 
 test('fixture registry validates and has a discontinued pattern interleaved', () => {
   assert.deepEqual(validate(fixture), []);
