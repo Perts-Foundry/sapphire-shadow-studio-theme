@@ -1,176 +1,144 @@
-// The garment body axis: inference, the approval artifact, and refusal behaviour.
+// The garment body axis, after the authority reversal.
 //
-// The load-bearing property under test is that inference is confined to PROPOSAL time. Nothing here
-// may resolve a body at write time from a signal the operator has not approved.
+// WHAT THIS SUITE USED TO TEST, and no longer can: keyword inference, the proposal, the approval
+// artifact and its content hash. All of it is deleted. catalogue.json declares each product's body,
+// so there is nothing to infer and nothing to approve.
+//
+// The load-bearing property under test now is the one that survived the reversal unchanged: a
+// product the manifest does not declare is NEVER guessed. `bodyOf` refuses, `attachBodies` yields
+// `body: null` rather than a fallback, and `unmappedHandles` names it. That is what makes a newly
+// added product loud instead of silently absorbed into whichever pool its colour and size match.
+//
+// Every manifest here is HAND-AUTHORED. Reading the committed one would make these assertions
+// statements about today's catalogue rather than about the module's decisions, and they would
+// rewrite themselves the next time a product ships.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  inferBody,
-  proposeBodies,
-  createBodiesArtifact,
-  verifyBodiesArtifact,
-  hashBodies,
-  bodyIndex,
-  bodyOf,
-  unmappedHandles,
-  HIGH,
-  LOW,
-  NONE,
-} from '../lib/bodies.mjs';
+import { bodyIndex, bodyOf, attachBodies, unmappedHandles } from '../lib/bodies.mjs';
+import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
 
-const product = (handle, title = '') => ({ handle, title });
-const tracked = (productHandle) => ({ productHandle, tracked: true });
-
-// --- inference ------------------------------------------------------------
-
-test('a garment keyword in the handle infers a body at high confidence', () => {
-  const r = inferBody(product('lead-ii-crewneck'));
-  assert.equal(r.bodyId, 'crewneck');
-  assert.equal(r.confidence, HIGH);
-  assert.match(r.signal, /handle contains "crewneck"/);
-});
-
-test('the longest keyword wins, so quarter-zip is not shadowed by a shorter match', () => {
-  assert.equal(inferBody(product('lead-ii-quarter-zip')).bodyId, 'quarter-zip');
-});
-
-test('a fit qualifier distinguishes a womens cut as its own body', () => {
-  // A women's vest is a different physical blank from a unisex vest; sharing a pool would oversell.
-  const r = inferBody(product('lead-ii-vest-womens'));
-  assert.equal(r.bodyId, 'vest-womens');
-  assert.equal(r.confidence, HIGH);
-});
-
-test('all three crewneck products infer the SAME body, so they keep sharing one pool', () => {
-  const bodies = ['lead-ii-crewneck', 'huddle-crewneck', 'shift-fuel-crewneck'].map(
-    (h) => inferBody(product(h)).bodyId
+/**
+ * A hand-authored manifest: two garment bodies, three garment products, one non-garment.
+ * @param {object} [over] - replaces the `products` block wholesale when given
+ */
+function manifest(over = {}) {
+  return parseCatalogue(
+    JSON.stringify({
+      version: 2,
+      options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+      colors: { black: { display: 'Black', slug: 'black' } },
+      sizes: { m: { display: 'M' } },
+      bodies: {
+        crewneck: { colors: ['black'], sizes: ['m'] },
+        vest: { colors: ['black'], sizes: ['m'] },
+      },
+      products: {
+        'a-crew': { line: 'a', body: 'crewneck', template: 'a-crew', title: 'A Crew', gid: 'gid://shopify/Product/1' },
+        'b-crew': { line: 'b', body: 'crewneck', template: 'b-crew', title: 'B Crew', gid: 'gid://shopify/Product/2' },
+        'b-vest': { line: 'b', body: 'vest', template: 'b-vest', title: 'B Vest', gid: 'gid://shopify/Product/3' },
+        'gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/4' },
+      },
+      ...over,
+    })
   );
-  assert.deepEqual(bodies, ['crewneck', 'crewneck', 'crewneck']);
+}
+
+const variant = (productHandle, extra = {}) => ({ productHandle, tracked: true, ...extra });
+
+// --- the index ---------------------------------------------------------------
+
+test('bodyIndex maps every garment product to its declared body, in declaration order', () => {
+  const index = bodyIndex(manifest());
+  assert.deepEqual(
+    [...index.entries()],
+    [
+      ['a-crew', 'crewneck'],
+      ['b-crew', 'crewneck'],
+      ['b-vest', 'vest'],
+    ]
+  );
 });
 
-test('a title-only match is inferred at LOW confidence, not high', () => {
-  const r = inferBody(product('lead-ii-classic', 'The Lead II Hoodie'));
-  assert.equal(r.bodyId, 'hoodie');
-  assert.equal(r.confidence, LOW);
-  assert.match(r.signal, /^title contains/);
+test('a non-garment product is EXCLUDED from the index rather than given a body', () => {
+  // The exclusion used to be inferred from "has no tracked variants". It is declared now: the gift
+  // card carries "body": null, which is a decision an omitted key would not have been.
+  const index = bodyIndex(manifest());
+  assert.equal(index.has('gift-card'), false);
+  assert.equal(index.size, 3);
 });
 
-test('a handle naming two different garments is ambiguous, never resolved to the first', () => {
-  const r = inferBody(product('crewneck-and-hoodie-bundle'));
-  assert.equal(r.bodyId, null);
-  assert.equal(r.confidence, NONE);
-  assert.match(r.signal, /matches 2 garments/);
-});
+// --- refusal, which is the whole point ---------------------------------------
 
-test('an unrecognised product yields no body rather than a default', () => {
-  const r = inferBody(product('mystery-garment', 'Mystery Garment'));
-  assert.equal(r.bodyId, null);
-  assert.equal(r.confidence, NONE);
-});
-
-test('inference is deterministic over the same input', () => {
-  // Re-guessing per run would be worse than a hardcoded map, because it would be worse AND silent.
-  const a = inferBody(product('lead-ii-quarter-zip'));
-  const b = inferBody(product('lead-ii-quarter-zip'));
-  assert.deepEqual(a, b);
-});
-
-test('existing blank ids are not an inference signal', () => {
-  // They currently all name one family, which is the state being corrected.
-  const withBlank = { handle: 'lead-ii-vest-womens', title: '', blankId: 'BLACK_ACME_FLEECE_M' };
-  assert.equal(inferBody(withBlank).bodyId, 'vest-womens');
-});
-
-// --- proposal -------------------------------------------------------------
-
-test('proposeBodies excludes products with no tracked variants', () => {
-  const { rows, excluded } = proposeBodies({
-    products: [product('lead-ii-crewneck'), product('a-gift-card')],
-    variants: [tracked('lead-ii-crewneck'), { productHandle: 'a-gift-card', tracked: false }],
-  });
-  assert.deepEqual(rows.map((r) => r.productHandle), ['lead-ii-crewneck']);
-  assert.deepEqual(excluded, [{ productHandle: 'a-gift-card', reason: 'no tracked variants' }]);
-});
-
-test('proposeBodies surfaces an un-inferrable product as a row with a null body, not a silent drop', () => {
-  const { rows } = proposeBodies({
-    products: [product('mystery-garment')],
-    variants: [tracked('mystery-garment')],
-  });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].bodyId, null);
-});
-
-// --- artifact -------------------------------------------------------------
-
-test('an artifact cannot be approved while any product is unnamed', () => {
+test('bodyOf refuses an undeclared product rather than guessing from its handle', () => {
+  // "shift-fuel-crewneck" contains the word "crewneck". The deleted inference layer would have
+  // resolved it with high confidence; nothing here does, because the handle is not a declaration.
+  const index = bodyIndex(manifest());
   assert.throws(
-    () => createBodiesArtifact({ rows: [{ productHandle: 'mystery', bodyId: null }] }),
-    /Cannot approve a body proposal with 1 unnamed product/
+    () => bodyOf(index, { productHandle: 'shift-fuel-crewneck' }),
+    /No declared body for product "shift-fuel-crewneck"/
   );
 });
 
-test('a created artifact verifies, and a hand-edit is refused', () => {
-  const artifact = createBodiesArtifact({
-    rows: [{ productHandle: 'lead-ii-crewneck', bodyId: 'crewneck' }],
+test("bodyOf's refusal points at catalogue.json and at a reviewed PR, not at a command", () => {
+  const index = bodyIndex(manifest());
+  assert.throws(() => bodyOf(index, { productHandle: 'nope' }), (err) => {
+    assert.match(err.message, /catalogue\.json/);
+    assert.match(err.message, /reviewed PR/);
+    assert.doesNotMatch(err.message, /--stage/, 'the propose/approve workflow no longer exists');
+    return true;
   });
-  assert.equal(verifyBodiesArtifact(artifact), artifact);
-
-  artifact.bodies[0].bodyId = 'quarter-zip';
-  assert.throws(() => verifyBodiesArtifact(artifact), /hash mismatch/);
 });
 
-test('an artifact from an unsupported version is refused rather than interpreted', () => {
-  assert.throws(() => verifyBodiesArtifact({ version: 999 }), /Unsupported body artifact/);
+test('bodyOf resolves a declared product', () => {
+  assert.equal(bodyOf(bodyIndex(manifest()), { productHandle: 'b-vest' }), 'vest');
 });
 
-test('the hash ignores row order, so a reordered but identical approval still verifies', () => {
-  const rows = [
-    { productHandle: 'b-crewneck', bodyId: 'crewneck' },
-    { productHandle: 'a-vest', bodyId: 'vest' },
-  ];
-  const forward = createBodiesArtifact({ rows, proposalId: 'fixed', createdAt: 'fixed' });
-  const reversed = createBodiesArtifact({ rows: [...rows].reverse(), proposalId: 'fixed', createdAt: 'fixed' });
-  assert.equal(hashBodies(forward), hashBodies(reversed));
+// --- attachBodies ------------------------------------------------------------
+
+test('attachBodies gives an undeclared product body: null, never a fallback body', () => {
+  const out = attachBodies(bodyIndex(manifest()), [variant('a-crew'), variant('unknown')]);
+  assert.deepEqual(out.map((v) => v.body), ['crewneck', null]);
 });
 
-test('the hash covers the body assignment, so changing one product changes it', () => {
-  const base = createBodiesArtifact({ rows: [{ productHandle: 'a', bodyId: 'vest' }], proposalId: 'x', createdAt: 'y' });
-  const other = createBodiesArtifact({ rows: [{ productHandle: 'a', bodyId: 'tee' }], proposalId: 'x', createdAt: 'y' });
-  assert.notEqual(hashBodies(base), hashBodies(other));
+test('attachBodies returns copies and does not mutate its input', () => {
+  const input = [variant('a-crew')];
+  const out = attachBodies(bodyIndex(manifest()), input);
+  assert.equal(input[0].body, undefined);
+  assert.notEqual(out[0], input[0]);
 });
 
-// --- resolution -----------------------------------------------------------
-
-test('bodyOf resolves an approved product', () => {
-  const index = bodyIndex(createBodiesArtifact({ rows: [{ productHandle: 'lead-ii-crewneck', bodyId: 'crewneck' }] }));
-  assert.equal(bodyOf(index, { productHandle: 'lead-ii-crewneck' }), 'crewneck');
+test('attachBodies tolerates a null index, so a caller cannot crash before the refusal fires', () => {
+  assert.deepEqual(attachBodies(null, [variant('a-crew')]).map((v) => v.body), [null]);
 });
 
-test('bodyOf REFUSES an unapproved product rather than inferring at write time', () => {
-  // The whole safety property. Inference belongs at proposal time, behind a gate.
-  const index = bodyIndex(createBodiesArtifact({ rows: [{ productHandle: 'known', bodyId: 'crewneck' }] }));
-  assert.throws(
-    () => bodyOf(index, { productHandle: 'brand-new-crewneck' }),
-    /No approved body for product "brand-new-crewneck"/
-  );
+// --- unmappedHandles ---------------------------------------------------------
+
+test('unmappedHandles names every undeclared product exactly once, sorted', () => {
+  const out = unmappedHandles(bodyIndex(manifest()), [
+    variant('zeta'),
+    variant('alpha'),
+    variant('zeta'),
+    variant('a-crew'),
+  ]);
+  assert.deepEqual(out, ['alpha', 'zeta']);
 });
 
-test('bodyOf refuses even when the handle would infer cleanly', () => {
-  // A handle that inferBody would resolve at high confidence must still be refused at write time.
-  assert.equal(inferBody(product('brand-new-crewneck')).confidence, HIGH);
-  const index = bodyIndex(createBodiesArtifact({ rows: [{ productHandle: 'known', bodyId: 'crewneck' }] }));
-  assert.throws(() => bodyOf(index, { productHandle: 'brand-new-crewneck' }), /never infers a body at write time/);
+test('unmappedHandles ignores untracked variants', () => {
+  // Nothing untracked joins a blank group, so an untracked product with no declared body is not the
+  // loud case this exists to surface.
+  const out = unmappedHandles(bodyIndex(manifest()), [
+    { productHandle: 'gift-card', tracked: false },
+    variant('a-crew'),
+  ]);
+  assert.deepEqual(out, []);
 });
 
-test('unmappedHandles lists tracked products the artifact does not cover, ignoring untracked ones', () => {
-  const index = bodyIndex(createBodiesArtifact({ rows: [{ productHandle: 'known', bodyId: 'crewneck' }] }));
-  const variants = [
-    tracked('known'),
-    tracked('newcomer'),
-    tracked('newcomer'),
-    { productHandle: 'a-gift-card', tracked: false },
-  ];
-  assert.deepEqual(unmappedHandles(index, variants), ['newcomer']);
+// --- the reversal itself -----------------------------------------------------
+
+test('bodies.mjs exports nothing from the deleted infer-then-approve workflow', async () => {
+  // A stale export would let a caller keep inferring after the authority moved, which is the exact
+  // two-authorities state the reversal exists to end.
+  const mod = await import('../lib/bodies.mjs');
+  assert.deepEqual(Object.keys(mod).sort(), ['attachBodies', 'bodyIndex', 'bodyOf', 'unmappedHandles']);
 });

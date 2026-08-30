@@ -14,7 +14,7 @@ import { defaultWorkDir, resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } 
 import {
   findSuspectTokens, sizeAlternation, segmentsFromManifest, LEGACY_SIZE_TOKENS, ALLOWED_SEGMENTS,
 } from '../check-no-real-blank-ids.mjs';
-import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
+import { parseCatalogue, CATALOGUE_PATH } from '../../lib/catalogue-manifest.mjs';
 
 const MANIFEST = parseCatalogue(readFileSync(new URL(`../../../${CATALOGUE_PATH}`, import.meta.url), 'utf8'));
 

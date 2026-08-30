@@ -28,6 +28,7 @@ denomination instead. The longest SKU the current catalogue produces is 16 chara
 (`L2VW-CNA-BLK-2XL`), at the top of the 8 to 16 band that stays readable on a packing slip and
 scannable later.
 
+<!-- catalogue:begin products -->
 | Product | Code | Shape | Example |
 |---|---|---|---|
 | Lead II Crewneck | `L2CN` | P-D-C-S | `L2CN-RN-BLK-M` |
@@ -36,6 +37,7 @@ scannable later.
 | Huddle Crewneck | `HDCN` | P-D-C-S | `HDCN-NRS-GRH-S` |
 | Shift Fuel Crewneck | `SFCN` | P-C-S | `SFCN-BLK-M` |
 | Sapphire Shadow Studio Gift Card | `GIFT` | P-DENOM | `GIFT-050` |
+<!-- catalogue:end products -->
 
 There is deliberately **no brand prefix**. An `SSS-` on every SKU in a single-brand store carries no
 information and costs four characters out of the readable band.
@@ -46,7 +48,9 @@ The tables live in `scripts/sku/tables.json`, are committed to git, and are the 
 SKU is always **derived** from a variant's own option values through those tables; it is never typed
 in and never stored anywhere else.
 
+<!-- catalogue:begin colors -->
 **Colours** (store-wide): `BLK` Black, `GRH` Grey Heather, `NVY` Classic Navy.
+<!-- catalogue:end colors -->
 
 **Designs** are namespaced per product family, because the two families' design sets are different
 vocabularies that happen to overlap:

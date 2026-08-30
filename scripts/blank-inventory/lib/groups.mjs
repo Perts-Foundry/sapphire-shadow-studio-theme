@@ -8,41 +8,19 @@
 // Pure module: no network, no client. Feed it normalised variants from catalogue.mjs.
 
 import { compareIds } from './planner.mjs';
+import { normaliseAxis, SEP } from '../../lib/vocab.mjs';
+
+// PERMANENT COMPATIBILITY RE-EXPORT, not a shim awaiting removal. `normaliseAxis` moved to
+// scripts/lib/vocab.mjs so seven areas outside blank-inventory could reach it without importing the
+// planner; every caller inside blank-inventory still imports it from here, and that is fine. (The
+// "no shim" rule recorded in release-notes.md applies to the DELETED blank-inventory copy of
+// catalogue-manifest.mjs, not to this line.)
+export { normaliseAxis };
 
 /** A group state that looks like drift but is expected and harmless. */
 export const AWAITING_SEED = 'awaiting-seed';
 export const CONVERGED = 'converged';
 export const DRIFT = 'drift';
-
-/**
- * The vocabulary key separator. A token containing it is refused rather than escaped: two axes
- * bleeding into one key resolves the wrong blank id, and a silent collision here moves real stock.
- */
-const SEP = '|';
-
-/**
- * Normalise one axis value for keying.
- *
- * All three axes get the SAME rules, which is the point: body was added last and must not acquire
- * its own casing or whitespace behaviour. Normalisation can only MERGE keys, never split them, and a
- * merged key holding two different blank ids surfaces as a conflict (refused) rather than as a
- * silent pick. That is the safe direction.
- *
- * @param {string|null|undefined} value
- * @param {string} axis - for the error message
- * @returns {string}
- */
-export function normaliseAxis(value, axis) {
-  const raw = String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
-  if (raw.includes(SEP)) {
-    throw new Error(
-      `${axis} value ${JSON.stringify(raw)} contains the key separator "${SEP}". This tool refuses ` +
-        `to escape it: a key collision between two axes would resolve a variant to the wrong blank ` +
-        `and move stock on the wrong garment. Rename the option value in Admin.`
-    );
-  }
-  return raw.toLowerCase();
-}
 
 /**
  * Key a variant by the physical blank it should draw from: garment body, colour and size.
@@ -61,7 +39,7 @@ export function vocabKey(v) {
     throw new Error(
       `Cannot key a variant with no garment body. Body is never defaulted: two products on ` +
         `different bodies do not share stock, and treating them as one pool is what this axis ` +
-        `exists to prevent. Run "bodies --stage propose".`
+        `exists to prevent. Declare the product's body in catalogue.json.`
     );
   }
   return [body, normaliseAxis(v.color, 'Color'), normaliseAxis(v.size, 'Size')].join(SEP);
@@ -93,7 +71,7 @@ export function blankPrefix(blankId, size) {
  * for both. Only two ids for one body+colour+size is a genuine contradiction.
  *
  * A tagged variant with no body is excluded from the vocabulary and reported, rather than throwing:
- * read commands must still be able to produce a report when the body map is missing or stale.
+ * read commands must still be able to produce a report when a product has no declared body.
  *
  * `display` carries the store's own spelling for each normalised axis value ("classic navy" ->
  * "Classic Navy"). Normalisation lowercases, so without it every suggestion and every printed key
@@ -261,7 +239,7 @@ export function resolveBlank(vocab, { body, color, size }, opts = {}) {
  * multi-garment catalogue, since a crewneck and a vest in the same colour draw on different blanks
  * and so legitimately carry different prefixes. A warning that is always on is one nobody reads.
  *
- * Check 3 is the cross-check between the approved body map and what is actually tagged live. Two
+ * Check 3 is the cross-check between the declared body map and what is actually tagged live. Two
  * bodies sharing one blank id means two different physical garments drawing from one stock pool:
  * selling one silently decrements the other. This is the pre-migration state of the store, so it is
  * expected to fire until the re-tagging migration completes.

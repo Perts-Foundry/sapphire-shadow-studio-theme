@@ -17,6 +17,12 @@
 // either: the demand pass is used in aggregate only. See CLAUDE.md and the skill.
 
 import { normaliseAxis, vocabKey, classifyGroup, CONVERGED } from './groups.mjs';
+import { findDuplicateKeys } from '../../lib/json-keys.mjs';
+
+// PERMANENT COMPATIBILITY RE-EXPORT, not a shim awaiting removal. `findDuplicateKeys` moved to
+// scripts/lib/json-keys.mjs so the catalogue manifest module could reach it without importing this
+// 1300-line reorder-policy module; existing callers still import it from here, and that is fine.
+export { findDuplicateKeys };
 
 /** The one schema version this tool understands. A future shape means a bump plus a transform. */
 export const THRESHOLDS_VERSION = 1;
@@ -87,7 +93,7 @@ export function makeSizeComparator(order) {
 /**
  * The axis space the thresholds file must cover.
  *
- * Bodies come from the APPROVED body map (by way of the catalogue manifest, which reconciles against
+ * Bodies come from the DECLARED body map in the catalogue manifest (which reconciles against
  * it exactly), not from what happens to be tagged: a body with nothing tagged yet still needs a
  * minimum, and reading the axis off the tagged population would make the file shrink whenever
  * coverage does.
@@ -148,7 +154,7 @@ export function buildAxes({ bodies, colors, sizes, ranges = null, display = {} }
     if (ranges && !declared) {
       throw new Error(
         `No declared colour and size range for garment body "${body}". The catalogue manifest and ` +
-          `the approved body map must agree exactly, and reconcileCatalogue refuses before this ` +
+          `the live store must agree, and reconcileCatalogue refuses before this ` +
           `point, so reaching here means the two were read from different places.`
       );
     }
@@ -220,77 +226,6 @@ export function cartesianCells(axes) {
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
-
-/**
- * Duplicate object keys anywhere in a JSON document, found in the RAW TEXT.
- *
- * JSON.parse is last-wins and silent, so a bad merge that leaves two `"crewneck|black|m"` entries
- * parses cleanly and quietly takes the wrong minimum. The structure is all this needs, so it walks
- * tokens rather than parsing values.
- *
- * @param {string} text
- * @returns {Array<{path: string, key: string}>}
- */
-export function findDuplicateKeys(text) {
-  /** @type {Array<{t: string, v?: string}>} */
-  const toks = [];
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"') {
-      let j = i + 1;
-      let s = '';
-      while (j < text.length) {
-        if (text[j] === '\\') {
-          s += text[j] + (text[j + 1] ?? '');
-          j += 2;
-          continue;
-        }
-        if (text[j] === '"') break;
-        s += text[j];
-        j++;
-      }
-      toks.push({ t: 'string', v: s });
-      i = j;
-    } else if ('{}[]:,'.includes(c)) {
-      toks.push({ t: c });
-    }
-    // Numbers, literals and whitespace carry no structure this check needs.
-  }
-
-  const dups = [];
-  /** @type {Array<{type: string, keys: Set<string>, path: string[], currentKey: string|null}>} */
-  const stack = [];
-  let lastStr = null;
-  for (const tk of toks) {
-    if (tk.t === 'string') {
-      lastStr = tk.v;
-      continue;
-    }
-    const top = stack[stack.length - 1];
-    if (tk.t === ':') {
-      if (top && top.type === 'object' && lastStr !== null) {
-        if (top.keys.has(lastStr)) dups.push({ path: [...top.path, lastStr].join('.'), key: lastStr });
-        top.keys.add(lastStr);
-        top.currentKey = lastStr;
-      }
-      continue;
-    }
-    if (tk.t === '{' || tk.t === '[') {
-      const path = !top ? [] : top.type === 'object' ? [...top.path, top.currentKey ?? '?'] : [...top.path, '[]'];
-      stack.push({ type: tk.t === '{' ? 'object' : 'array', keys: new Set(), path, currentKey: null });
-      continue;
-    }
-    if (tk.t === '}' || tk.t === ']') {
-      stack.pop();
-      continue;
-    }
-    if (tk.t === ',') {
-      if (top) top.currentKey = null;
-      lastStr = null;
-    }
-  }
-  return dups;
-}
 
 /** A key is valid only if it is ALREADY normalised. Rejected, never normalised: see parseThresholds. */
 function assertNormalisedKey(key, segments, where) {
@@ -508,7 +443,7 @@ export function reconcileThresholds(cells, budgets, axes) {
 /**
  * The loud-failure contract, as data.
  *
- * Mirrors the body map's refusal pattern: a gap in the table is a REFUSAL naming every missing key,
+ * Mirrors the manifest's refusal pattern: a gap in the table is a REFUSAL naming every missing key,
  * because that is how a new body, colour or size surfaces at all. A key the store no longer has is a
  * warning, never a deletion; only the operator removes a row, in a reviewed PR.
  *

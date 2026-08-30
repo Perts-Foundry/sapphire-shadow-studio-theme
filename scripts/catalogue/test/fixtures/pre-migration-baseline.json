@@ -1,0 +1,676 @@
+{
+  "capturedFrom": "the committed repo, before any consumer was migrated onto catalogue.json",
+  "sizeChartGoldens": {
+    "scripts/size-chart/test/fixtures/crewneck-fleece.svg": "b9651d96a75de25983d261fcabda7ae30468a0b36affd6ef1415ae6c16606c92",
+    "scripts/size-chart/test/fixtures/accordion-html/crewneck-fleece.html": "8893e17599d9ab8e78ff9081c3ac777d2f2c56ca454f5ceb8cf49791a8abdd95",
+    "scripts/size-chart/test/fixtures/accordion-html/quarter-zip-midweight.html": "dca68a8b08f3ca2fa4ab17cf805edee654577c6d43ca188bd52b6548a1fe2fab",
+    "scripts/size-chart/test/fixtures/accordion-html/vest-microfleece-womens.html": "a0704885fb15b7a1f7e88f19ac540f9af1488890d24568c1dc568763068a75db"
+  },
+  "sizeChartAccordionRows": {
+    "templates/product.huddle-crewneck.json": [
+      {
+        "type": "_accordion-row",
+        "settings": {
+          "heading": "Size Chart",
+          "open_by_default": false,
+          "icon": "none",
+          "width": 20,
+          "anchor_id": "SizeChart"
+        },
+        "blocks": {
+          "text_sc001": {
+            "type": "text",
+            "settings": {
+              "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a sweatshirt you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Chest (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>Chest (laid flat)</strong> is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a sweatshirt you own, lay it flat and measure straight across at that point. This is exactly half the circumference figure.</p><p><strong>Chest (circumference)</strong> is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge.</p><p><strong>Sleeve length</strong> is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff ribbing. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge.</p><p> </p>",
+              "width": "100%",
+              "max_width": "normal",
+              "alignment": "left",
+              "type_preset": "rte",
+              "font": "var(--font-body--family)",
+              "font_size": "1rem",
+              "line_height": "normal",
+              "letter_spacing": "normal",
+              "case": "none",
+              "wrap": "pretty",
+              "color": "var(--color-foreground)",
+              "background": false,
+              "background_color": "#00000026",
+              "corner_radius": 0,
+              "padding-block-start": 0,
+              "padding-block-end": 0,
+              "padding-inline-start": 0,
+              "padding-inline-end": 0
+            },
+            "blocks": {}
+          },
+          "table_9Nak3q": {
+            "type": "table",
+            "name": "t:names.table",
+            "settings": {
+              "column_count": "5",
+              "show_header": true,
+              "stripe_rows": true,
+              "col1_heading": "Size",
+              "col2_heading": "Chest (laid flat)",
+              "col3_heading": "Chest (circumference)",
+              "col4_heading": "Body Length",
+              "col5_heading": "Sleeve Length",
+              "r1c1": "XS",
+              "r1c2": "19\" / 48.3 cm",
+              "r1c3": "38\" / 96.5 cm",
+              "r1c4": "25\" / 63.5 cm",
+              "r1c5": "34\" / 86.4 cm",
+              "r2c1": "S",
+              "r2c2": "20.5\" / 52.1 cm",
+              "r2c3": "41\" / 104.1 cm",
+              "r2c4": "26.5\" / 67.3 cm",
+              "r2c5": "35\" / 88.9 cm",
+              "r3c1": "M",
+              "r3c2": "22\" / 55.9 cm",
+              "r3c3": "44\" / 111.8 cm",
+              "r3c4": "28\" / 71.1 cm",
+              "r3c5": "36\" / 91.4 cm",
+              "r4c1": "L",
+              "r4c2": "23.5\" / 59.7 cm",
+              "r4c3": "47\" / 119.4 cm",
+              "r4c4": "29.5\" / 74.9 cm",
+              "r4c5": "37\" / 94 cm",
+              "r5c1": "XL",
+              "r5c2": "25\" / 63.5 cm",
+              "r5c3": "50\" / 127 cm",
+              "r5c4": "31\" / 78.7 cm",
+              "r5c5": "38\" / 96.5 cm",
+              "r6c1": "2XL",
+              "r6c2": "26.5\" / 67.3 cm",
+              "r6c3": "53\" / 134.6 cm",
+              "r6c4": "32.5\" / 82.6 cm",
+              "r6c5": "39\" / 99.1 cm",
+              "r7c1": "",
+              "r7c2": "",
+              "r7c3": "",
+              "r7c4": "",
+              "r7c5": "",
+              "r8c1": "",
+              "r8c2": "",
+              "r8c3": "",
+              "r8c4": "",
+              "r8c5": ""
+            },
+            "blocks": {}
+          }
+        },
+        "block_order": [
+          "text_sc001",
+          "table_9Nak3q"
+        ]
+      }
+    ],
+    "templates/product.lead-ii-crewneck.json": [
+      {
+        "type": "_accordion-row",
+        "settings": {
+          "heading": "Size Chart",
+          "open_by_default": false,
+          "icon": "none",
+          "width": 20,
+          "anchor_id": "SizeChart"
+        },
+        "blocks": {
+          "text_sc001": {
+            "type": "text",
+            "settings": {
+              "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a sweatshirt you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Chest (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>Chest (laid flat)</strong> is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a sweatshirt you own, lay it flat and measure straight across at that point. This is exactly half the circumference figure.</p><p><strong>Chest (circumference)</strong> is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge.</p><p><strong>Sleeve length</strong> is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff ribbing. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge.</p><p> </p>",
+              "width": "100%",
+              "max_width": "normal",
+              "alignment": "left",
+              "type_preset": "rte",
+              "font": "var(--font-body--family)",
+              "font_size": "1rem",
+              "line_height": "normal",
+              "letter_spacing": "normal",
+              "case": "none",
+              "wrap": "pretty",
+              "color": "var(--color-foreground)",
+              "background": false,
+              "background_color": "#00000026",
+              "corner_radius": 0,
+              "padding-block-start": 0,
+              "padding-block-end": 0,
+              "padding-inline-start": 0,
+              "padding-inline-end": 0
+            },
+            "blocks": {}
+          },
+          "table_9Nak3q": {
+            "type": "table",
+            "name": "t:names.table",
+            "settings": {
+              "column_count": "5",
+              "show_header": true,
+              "stripe_rows": true,
+              "col1_heading": "Size",
+              "col2_heading": "Chest (laid flat)",
+              "col3_heading": "Chest (circumference)",
+              "col4_heading": "Body Length",
+              "col5_heading": "Sleeve Length",
+              "r1c1": "XS",
+              "r1c2": "19\" / 48.3 cm",
+              "r1c3": "38\" / 96.5 cm",
+              "r1c4": "25\" / 63.5 cm",
+              "r1c5": "34\" / 86.4 cm",
+              "r2c1": "S",
+              "r2c2": "20.5\" / 52.1 cm",
+              "r2c3": "41\" / 104.1 cm",
+              "r2c4": "26.5\" / 67.3 cm",
+              "r2c5": "35\" / 88.9 cm",
+              "r3c1": "M",
+              "r3c2": "22\" / 55.9 cm",
+              "r3c3": "44\" / 111.8 cm",
+              "r3c4": "28\" / 71.1 cm",
+              "r3c5": "36\" / 91.4 cm",
+              "r4c1": "L",
+              "r4c2": "23.5\" / 59.7 cm",
+              "r4c3": "47\" / 119.4 cm",
+              "r4c4": "29.5\" / 74.9 cm",
+              "r4c5": "37\" / 94 cm",
+              "r5c1": "XL",
+              "r5c2": "25\" / 63.5 cm",
+              "r5c3": "50\" / 127 cm",
+              "r5c4": "31\" / 78.7 cm",
+              "r5c5": "38\" / 96.5 cm",
+              "r6c1": "2XL",
+              "r6c2": "26.5\" / 67.3 cm",
+              "r6c3": "53\" / 134.6 cm",
+              "r6c4": "32.5\" / 82.6 cm",
+              "r6c5": "39\" / 99.1 cm",
+              "r7c1": "",
+              "r7c2": "",
+              "r7c3": "",
+              "r7c4": "",
+              "r7c5": "",
+              "r8c1": "",
+              "r8c2": "",
+              "r8c3": "",
+              "r8c4": "",
+              "r8c5": ""
+            },
+            "blocks": {}
+          }
+        },
+        "block_order": [
+          "text_sc001",
+          "table_9Nak3q"
+        ]
+      }
+    ],
+    "templates/product.lead-ii-quarter-zip.json": [
+      {
+        "type": "_accordion-row",
+        "settings": {
+          "heading": "Size Chart",
+          "open_by_default": false,
+          "icon": "none",
+          "width": 20,
+          "anchor_id": "SizeChart"
+        },
+        "blocks": {
+          "text_sc001": {
+            "type": "text",
+            "settings": {
+              "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a quarter-zip you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Chest (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>Chest (laid flat)</strong> is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a quarter-zip you own, lay it flat and measure straight across at that point, with the zip closed. This is exactly half the circumference figure.</p><p><strong>Chest (circumference)</strong> is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge.</p><p><strong>Sleeve length</strong> is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff rib. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge.</p><p><strong>Front zipper</strong> is the length of the front zip placket, from the base of the collar down to where the zipper stops. It does not affect your size; it tells you how far the neck opens, and it is the reason this pulls on over the head rather than opening all the way down.</p><p> </p>",
+              "width": "100%",
+              "max_width": "normal",
+              "alignment": "left",
+              "type_preset": "rte",
+              "font": "var(--font-body--family)",
+              "font_size": "1rem",
+              "line_height": "normal",
+              "letter_spacing": "normal",
+              "case": "none",
+              "wrap": "pretty",
+              "color": "var(--color-foreground)",
+              "background": false,
+              "background_color": "#00000026",
+              "corner_radius": 0,
+              "padding-block-start": 0,
+              "padding-block-end": 0,
+              "padding-inline-start": 0,
+              "padding-inline-end": 0
+            },
+            "blocks": {}
+          },
+          "table_9Nak3q": {
+            "type": "table",
+            "name": "t:names.table",
+            "settings": {
+              "column_count": "6",
+              "show_header": true,
+              "stripe_rows": true,
+              "col1_heading": "Size",
+              "col2_heading": "Chest (laid flat)",
+              "col3_heading": "Chest (circumference)",
+              "col4_heading": "Body Length",
+              "col5_heading": "Sleeve Length",
+              "col6_heading": "Front Zipper",
+              "r1c1": "XS",
+              "r1c2": "19.5\" / 49.5 cm",
+              "r1c3": "39\" / 99.1 cm",
+              "r1c4": "26.5\" / 67.3 cm",
+              "r1c5": "34\" / 86.4 cm",
+              "r1c6": "8\" / 20.3 cm",
+              "r2c1": "S",
+              "r2c2": "20\" / 50.8 cm",
+              "r2c3": "40\" / 101.6 cm",
+              "r2c4": "28\" / 71.1 cm",
+              "r2c5": "35\" / 88.9 cm",
+              "r2c6": "8\" / 20.3 cm",
+              "r3c1": "M",
+              "r3c2": "22\" / 55.9 cm",
+              "r3c3": "44\" / 111.8 cm",
+              "r3c4": "29\" / 73.7 cm",
+              "r3c5": "36\" / 91.4 cm",
+              "r3c6": "8\" / 20.3 cm",
+              "r4c1": "L",
+              "r4c2": "23.5\" / 59.7 cm",
+              "r4c3": "47\" / 119.4 cm",
+              "r4c4": "30\" / 76.2 cm",
+              "r4c5": "37\" / 94 cm",
+              "r4c6": "8\" / 20.3 cm",
+              "r5c1": "XL",
+              "r5c2": "25.5\" / 64.8 cm",
+              "r5c3": "51\" / 129.5 cm",
+              "r5c4": "31\" / 78.7 cm",
+              "r5c5": "38\" / 96.5 cm",
+              "r5c6": "8\" / 20.3 cm",
+              "r6c1": "2XL",
+              "r6c2": "26.5\" / 67.3 cm",
+              "r6c3": "53\" / 134.6 cm",
+              "r6c4": "32\" / 81.3 cm",
+              "r6c5": "39\" / 99.1 cm",
+              "r6c6": "8.5\" / 21.6 cm",
+              "r7c1": "",
+              "r7c2": "",
+              "r7c3": "",
+              "r7c4": "",
+              "r7c5": "",
+              "r7c6": "",
+              "r8c1": "",
+              "r8c2": "",
+              "r8c3": "",
+              "r8c4": "",
+              "r8c5": "",
+              "r8c6": ""
+            },
+            "blocks": {}
+          }
+        },
+        "block_order": [
+          "text_sc001",
+          "table_9Nak3q"
+        ]
+      }
+    ],
+    "templates/product.lead-ii-vest-womens.json": [
+      {
+        "type": "_accordion-row",
+        "settings": {
+          "heading": "Size Chart",
+          "open_by_default": false,
+          "icon": "none",
+          "width": 20,
+          "anchor_id": "SizeChart"
+        },
+        "blocks": {
+          "text_sc001": {
+            "type": "text",
+            "settings": {
+              "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a vest you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Bust (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>US Size</strong> is the US dress size each letter size corresponds to on this blank. It is a guide to the cut, not a measurement of the garment. If it disagrees with the bust column, trust the bust column.</p><p><strong>Bust (laid flat)</strong> is the garment's width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a vest you own, lay it flat and measure straight across at that point, with the zip closed. This is a contoured women's cut, so it is shaped through the waist below this point.</p><p><strong>Fits Chest</strong> is your own body measurement, not the garment. Wrap a soft tape around the fullest part of your chest, parallel to the floor, snug but not tight. If your chest falls inside a size's range, that size fits with room to layer over a base layer.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder straight down to the finished hem at the back. To replicate, lay the garment flat and measure vertically from that shoulder point to the lowest edge of the hem.</p><p> </p>",
+              "width": "100%",
+              "max_width": "normal",
+              "alignment": "left",
+              "type_preset": "rte",
+              "font": "var(--font-body--family)",
+              "font_size": "1rem",
+              "line_height": "normal",
+              "letter_spacing": "normal",
+              "case": "none",
+              "wrap": "pretty",
+              "color": "var(--color-foreground)",
+              "background": false,
+              "background_color": "#00000026",
+              "corner_radius": 0,
+              "padding-block-start": 0,
+              "padding-block-end": 0,
+              "padding-inline-start": 0,
+              "padding-inline-end": 0
+            },
+            "blocks": {}
+          },
+          "table_9Nak3q": {
+            "type": "table",
+            "name": "t:names.table",
+            "settings": {
+              "column_count": "5",
+              "show_header": true,
+              "stripe_rows": true,
+              "col1_heading": "Size",
+              "col2_heading": "US Size",
+              "col3_heading": "Bust (laid flat)",
+              "col4_heading": "Fits Chest",
+              "col5_heading": "Body Length",
+              "r1c1": "XS",
+              "r1c2": "2",
+              "r1c3": "17.25\" / 43.8 cm",
+              "r1c4": "30-32\"",
+              "r1c5": "26.25\" / 66.7 cm",
+              "r2c1": "S",
+              "r2c2": "4/6",
+              "r2c3": "18.25\" / 46.4 cm",
+              "r2c4": "32-34\"",
+              "r2c5": "26.75\" / 67.9 cm",
+              "r3c1": "M",
+              "r3c2": "8/10",
+              "r3c3": "19.25\" / 48.9 cm",
+              "r3c4": "34-37\"",
+              "r3c5": "27.25\" / 69.2 cm",
+              "r4c1": "L",
+              "r4c2": "12/14",
+              "r4c3": "20.75\" / 52.7 cm",
+              "r4c4": "37-40\"",
+              "r4c5": "27.75\" / 70.5 cm",
+              "r5c1": "XL",
+              "r5c2": "16/18",
+              "r5c3": "22.25\" / 56.5 cm",
+              "r5c4": "40-43\"",
+              "r5c5": "28.25\" / 71.8 cm",
+              "r6c1": "2XL",
+              "r6c2": "20/22",
+              "r6c3": "23.75\" / 60.3 cm",
+              "r6c4": "43-46\"",
+              "r6c5": "28.75\" / 73 cm",
+              "r7c1": "",
+              "r7c2": "",
+              "r7c3": "",
+              "r7c4": "",
+              "r7c5": "",
+              "r8c1": "",
+              "r8c2": "",
+              "r8c3": "",
+              "r8c4": "",
+              "r8c5": ""
+            },
+            "blocks": {}
+          }
+        },
+        "block_order": [
+          "text_sc001",
+          "table_9Nak3q"
+        ]
+      }
+    ],
+    "templates/product.shift-fuel-crewneck.json": [
+      {
+        "type": "_accordion-row",
+        "settings": {
+          "heading": "Size Chart",
+          "open_by_default": false,
+          "icon": "none",
+          "width": 20,
+          "anchor_id": "SizeChart"
+        },
+        "blocks": {
+          "text_sc001": {
+            "type": "text",
+            "settings": {
+              "text": "<p>All measurements below are of the actual garment laid flat on a hard surface, not body measurements. The best way to use this chart is to grab a sweatshirt you already own and love the fit of, lay it flat, and compare its measurements to the ones below.</p><p><strong>Choosing your size.</strong> Chest (laid flat) is the measurement that decides your size; the other columns are there to confirm the fit. Between two sizes? Size up for a roomier fit or down for a closer one. Still unsure? Contact us before you order and we'll help you choose.</p><p><strong>Chest (laid flat)</strong> is the garment's chest width measured across the front only, from one side seam to the other, about an inch below the armhole. To replicate on a sweatshirt you own, lay it flat and measure straight across at that point. This is exactly half the circumference figure.</p><p><strong>Chest (circumference)</strong> is the full around-the-body measurement taken just below the armpit, where the sleeve seams end and the body begins. To measure yourself, wrap a soft tape around your body at that point, parallel to the floor and snug but not tight. This column gives the maximum chest the garment comfortably fits.</p><p><strong>Body length</strong> is measured from the highest point of the shoulder, right next to the collar, straight down to the bottom hem. To replicate, lay the garment flat, find the highest point of the shoulder next to the neck, and measure vertically down to the hem edge.</p><p><strong>Sleeve length</strong> is measured from the center of the back of the neck, across the shoulder, and down the outside of the sleeve to the end of the cuff, including the cuff ribbing. To replicate, lay the garment flat and measure from the center back neck out to the cuff edge.</p><p> </p>",
+              "width": "100%",
+              "max_width": "normal",
+              "alignment": "left",
+              "type_preset": "rte",
+              "font": "var(--font-body--family)",
+              "font_size": "1rem",
+              "line_height": "normal",
+              "letter_spacing": "normal",
+              "case": "none",
+              "wrap": "pretty",
+              "color": "var(--color-foreground)",
+              "background": false,
+              "background_color": "#00000026",
+              "corner_radius": 0,
+              "padding-block-start": 0,
+              "padding-block-end": 0,
+              "padding-inline-start": 0,
+              "padding-inline-end": 0
+            },
+            "blocks": {}
+          },
+          "table_9Nak3q": {
+            "type": "table",
+            "name": "t:names.table",
+            "settings": {
+              "column_count": "5",
+              "show_header": true,
+              "stripe_rows": true,
+              "col1_heading": "Size",
+              "col2_heading": "Chest (laid flat)",
+              "col3_heading": "Chest (circumference)",
+              "col4_heading": "Body Length",
+              "col5_heading": "Sleeve Length",
+              "r1c1": "XS",
+              "r1c2": "19\" / 48.3 cm",
+              "r1c3": "38\" / 96.5 cm",
+              "r1c4": "25\" / 63.5 cm",
+              "r1c5": "34\" / 86.4 cm",
+              "r2c1": "S",
+              "r2c2": "20.5\" / 52.1 cm",
+              "r2c3": "41\" / 104.1 cm",
+              "r2c4": "26.5\" / 67.3 cm",
+              "r2c5": "35\" / 88.9 cm",
+              "r3c1": "M",
+              "r3c2": "22\" / 55.9 cm",
+              "r3c3": "44\" / 111.8 cm",
+              "r3c4": "28\" / 71.1 cm",
+              "r3c5": "36\" / 91.4 cm",
+              "r4c1": "L",
+              "r4c2": "23.5\" / 59.7 cm",
+              "r4c3": "47\" / 119.4 cm",
+              "r4c4": "29.5\" / 74.9 cm",
+              "r4c5": "37\" / 94 cm",
+              "r5c1": "XL",
+              "r5c2": "25\" / 63.5 cm",
+              "r5c3": "50\" / 127 cm",
+              "r5c4": "31\" / 78.7 cm",
+              "r5c5": "38\" / 96.5 cm",
+              "r6c1": "2XL",
+              "r6c2": "26.5\" / 67.3 cm",
+              "r6c3": "53\" / 134.6 cm",
+              "r6c4": "32.5\" / 82.6 cm",
+              "r6c5": "39\" / 99.1 cm",
+              "r7c1": "",
+              "r7c2": "",
+              "r7c3": "",
+              "r7c4": "",
+              "r7c5": "",
+              "r8c1": "",
+              "r8c2": "",
+              "r8c3": "",
+              "r8c4": "",
+              "r8c5": ""
+            },
+            "blocks": {}
+          }
+        },
+        "block_order": [
+          "text_sc001",
+          "table_9Nak3q"
+        ]
+      }
+    ]
+  },
+  "appliquePatternsRegistry": {
+    "handle": "huddle-crewneck",
+    "patterns": [
+      {
+        "id": "scattered-paws",
+        "name": "Scattered Paws",
+        "thread": "White",
+        "status": "active",
+        "position": 10
+      },
+      {
+        "id": "busy-bees",
+        "name": "Busy Bees",
+        "thread": "Golden",
+        "status": "active",
+        "position": 20
+      },
+      {
+        "id": "rubber-duckie",
+        "name": "Rubber Duckie",
+        "thread": "Black",
+        "status": "active",
+        "position": 30
+      },
+      {
+        "id": "spring-meadow",
+        "name": "Spring Meadow",
+        "thread": "Sage",
+        "status": "active",
+        "position": 40
+      },
+      {
+        "id": "cottage-garden",
+        "name": "Cottage Garden",
+        "thread": "Burgundy",
+        "status": "active",
+        "position": 50
+      },
+      {
+        "id": "teacup-floral",
+        "name": "Teacup Floral",
+        "thread": "Light Blue",
+        "status": "active",
+        "position": 60
+      },
+      {
+        "id": "lilac-bloom",
+        "name": "Lilac Bloom",
+        "thread": "Light Purple",
+        "status": "active",
+        "position": 70
+      },
+      {
+        "id": "terracotta-blossom",
+        "name": "Terracotta Blossom",
+        "thread": "White",
+        "status": "active",
+        "position": 80
+      },
+      {
+        "id": "midnight-rose",
+        "name": "Midnight Rose",
+        "thread": "Dark Blue",
+        "status": "active",
+        "position": 90
+      },
+      {
+        "id": "echeveria",
+        "name": "Echeveria",
+        "thread": "Sage",
+        "status": "active",
+        "position": 100
+      },
+      {
+        "id": "mini-shamrocks",
+        "name": "Mini Shamrocks",
+        "thread": "Green",
+        "status": "active",
+        "position": 110
+      },
+      {
+        "id": "clover-field",
+        "name": "Clover Field",
+        "thread": "Dark Green",
+        "status": "active",
+        "position": 120
+      },
+      {
+        "id": "sunset-polka",
+        "name": "Sunset Polka",
+        "thread": "Light Orange",
+        "status": "active",
+        "position": 130
+      },
+      {
+        "id": "forever-stripes",
+        "name": "Forever Stripes",
+        "thread": "Navy",
+        "status": "active",
+        "position": 140
+      },
+      {
+        "id": "twinkle-twinkle",
+        "name": "Twinkle Twinkle",
+        "thread": "Blue",
+        "status": "active",
+        "position": 150
+      },
+      {
+        "id": "psychedelic-swirl",
+        "name": "Psychedelic Swirl",
+        "thread": "Teal",
+        "status": "active",
+        "position": 160
+      },
+      {
+        "id": "mardi-gras",
+        "name": "Mardi Gras",
+        "thread": "Purple",
+        "status": "active",
+        "position": 170
+      },
+      {
+        "id": "youll-live",
+        "name": "You'll Live",
+        "thread": "Aqua",
+        "status": "active",
+        "position": 180
+      }
+    ]
+  },
+  "appliqueDropdownInTemplate": [
+    "1. Scattered Paws (White thread)\n2. Busy Bees (Golden thread)\n3. Rubber Duckie (Black thread)\n4. Spring Meadow (Sage thread)\n5. Cottage Garden (Burgundy thread)\n6. Teacup Floral (Light Blue thread)\n7. Lilac Bloom (Light Purple thread)\n8. Terracotta Blossom (White thread)\n9. Midnight Rose (Dark Blue thread)\n10. Echeveria (Sage thread)\n11. Mini Shamrocks (Green thread)\n12. Clover Field (Dark Green thread)\n13. Sunset Polka (Light Orange thread)\n14. Forever Stripes (Navy thread)\n15. Twinkle Twinkle (Blue thread)\n16. Psychedelic Swirl (Teal thread)\n17. Mardi Gras (Purple thread)\n18. You'll Live (Aqua thread)"
+  ],
+  "a11yProductEntries": [
+    {
+      "path": "/products/huddle-crewneck",
+      "label": "product (huddle crewneck)",
+      "template": "templates/product.huddle-crewneck.json"
+    },
+    {
+      "path": "/products/lead-ii-crewneck",
+      "label": "product (lead ii crewneck)",
+      "template": "templates/product.lead-ii-crewneck.json"
+    },
+    {
+      "path": "/products/lead-ii-quarter-zip",
+      "label": "product (lead ii quarter zip)",
+      "template": "templates/product.lead-ii-quarter-zip.json"
+    },
+    {
+      "path": "/products/lead-ii-vest-womens",
+      "label": "product (lead ii vest womens)",
+      "template": "templates/product.lead-ii-vest-womens.json"
+    },
+    {
+      "path": "/products/shift-fuel-crewneck",
+      "label": "product (shift fuel crewneck)",
+      "template": "templates/product.shift-fuel-crewneck.json"
+    },
+    {
+      "path": "/products/sapphire-shadow-studio-gift-card",
+      "label": "product (gift card)",
+      "template": "templates/product.gift-card.json"
+    }
+  ]
+}

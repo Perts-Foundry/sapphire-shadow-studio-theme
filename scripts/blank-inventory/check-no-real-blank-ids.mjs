@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { parseCatalogue, CATALOGUE_PATH } from './lib/catalogue-manifest.mjs';
+import { parseCatalogue, CATALOGUE_PATH } from '../lib/catalogue-manifest.mjs';
 
 // THE MANIFEST WIDENS THIS GUARD; IT NEVER NARROWS IT. Both the size alternation and the allowlist
 // below are the hand-curated list UNIONED with what catalogue.json declares. Deriving either

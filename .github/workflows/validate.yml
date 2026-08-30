@@ -463,10 +463,22 @@ jobs:
 
       # ── catalogue manifest lint + tests ────────────────────────
       # `catalogue.json` at the repo root declares the shape of the offering:
-      # which garment bodies exist and which colours and sizes each is made in.
-      # The blank-inventory reorder review computes its whole cell space from
-      # it, so a malformed or vacuous manifest is a broken report rather than a
-      # broken file. Offline, no credentials.
+      # the option axis names, the colour and size vocabulary with each value's
+      # Admin spelling, which garment bodies exist and what each is made in, and
+      # the complete product census. The blank-inventory reorder review computes
+      # its whole cell space from it, and six other areas derive their copy of
+      # that vocabulary from it, so a malformed or vacuous manifest is a broken
+      # report rather than a broken file. Offline, no credentials.
+      #
+      # The lint also runs the COHESION checks, which compare the manifest
+      # against every repo-side surface that restates any of it (the variant
+      # picker's option-name settings, the a11y path list, the product
+      # templates, the SKU tables, the applique registry, the size-chart
+      # profiles, the photo-naming census, and two marker regions in docs/).
+      # Two of them WARN rather than refuse: config/settings_data.json is
+      # Admin-editable and reconciled onto main by sync.yml, so refusing there
+      # would red a PR nobody in this repo authored. The warning text is in the
+      # captured output, so it reaches the PR comment.
       #
       # The lint and its own suite share one step deliberately: the suite is
       # four cases over the lint CLI, and giving it a second wiring pass through
@@ -491,7 +503,7 @@ jobs:
           STRIP=$'s/\x1b\\[[0-9;]*m//g'
           OUTPUT=$(printf '%s\n\n%s\n' \
             "$(printf '%s\n' "$CATALOGUE_TESTS" | sed -E "$STRIP" | tail -40)" \
-            "$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" | tail -15)")
+            "$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" | tail -60)")
           printf '%s\n\n%s\n' "$CATALOGUE_TESTS" "$CATALOGUE_LINT"
 
           [ "$CATALOGUE_TESTS_RC" -ne 0 ] && EXIT_CODE=1
@@ -515,25 +527,60 @@ jobs:
           # clean exit; a real failure already exits non-zero.
           # ANSI-stripped before matching, like the two checks above: an anchored
           # ^ match against a colourised line finds nothing and would misreport a
-          # purely cosmetic change as "checked nothing". All three counts are
-          # asserted, matching what the lint itself treats as the vacuity triple.
+          # purely cosmetic change as "checked nothing". All SIX counts are
+          # asserted, matching what the lint itself treats as vacuous. The
+          # cohesion count is the number of checks that RAN, so a module that
+          # failed to load reads 0 and reds the build rather than reading as
+          # "all clear".
+          #
+          # The sed output is captured ONCE into $COUNTS and all six cuts read
+          # that same variable; re-invoking the lint per extraction would run it
+          # six times and let two runs disagree.
+          #
+          # scripts/catalogue/test/check-catalogue.test.mjs runs this exact sed
+          # expression against the lint's own count line, so the wording and this
+          # regex cannot drift apart with only a manual check between them.
           if [ "$CATALOGUE_LINT_RC" -eq 0 ]; then
             COUNTS=$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" \
-              | sed -nE 's/^catalogue OK: ([0-9]+) bodies, ([0-9]+) colour values, ([0-9]+) size values\.$/\1 \2 \3/p' | tail -1)
+              | sed -nE 's/^catalogue OK: ([0-9]+) bodies, ([0-9]+) colour values, ([0-9]+) size values, ([0-9]+) products, ([0-9]+) option names, ([0-9]+) cohesion checks\.$/\1 \2 \3 \4 \5 \6/p' | tail -1)
             BODIES=$(echo "$COUNTS" | cut -d' ' -f1)
             COLOURS=$(echo "$COUNTS" | cut -d' ' -f2)
             SIZES=$(echo "$COUNTS" | cut -d' ' -f3)
-            if [ "${BODIES:-0}" -lt 1 ] || [ "${COLOURS:-0}" -lt 1 ] || [ "${SIZES:-0}" -lt 1 ]; then
-              echo "::error::catalogue lint reported ${BODIES:-0} body/bodies, ${COLOURS:-0} colour value(s) and ${SIZES:-0} size value(s). It cannot be trusted to have checked the manifest."
+            PRODUCTS=$(echo "$COUNTS" | cut -d' ' -f4)
+            OPTION_NAMES=$(echo "$COUNTS" | cut -d' ' -f5)
+            COHESION=$(echo "$COUNTS" | cut -d' ' -f6)
+            if [ "${BODIES:-0}" -lt 1 ] || [ "${COLOURS:-0}" -lt 1 ] || [ "${SIZES:-0}" -lt 1 ] \
+              || [ "${PRODUCTS:-0}" -lt 1 ] || [ "${OPTION_NAMES:-0}" -lt 1 ] || [ "${COHESION:-0}" -lt 1 ]; then
+              echo "::error::catalogue lint reported ${BODIES:-0} body/bodies, ${COLOURS:-0} colour value(s), ${SIZES:-0} size value(s), ${PRODUCTS:-0} product(s), ${OPTION_NAMES:-0} option name(s) and ${COHESION:-0} cohesion check(s). It cannot be trusted to have checked the manifest."
               EXIT_CODE=1
             fi
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          # Sixteen cohesion checks collapse into ONE row in the PR comment, so
+          # without this a failure is only diagnosable by opening the raw job
+          # log. check-catalogue.mjs prints a single fixed-shape line naming the
+          # failing check ids; this lifts it into its own output field, which the
+          # comment renders beside the status.
+          #
+          # `tr -d` strips anything outside the id alphabet before the value is
+          # written, and `cut -c` bounds it. The ids themselves are authored in
+          # this repo and finite, so this is belt and braces rather than the
+          # primary guard, but it is what makes a single-line `key=value` write
+          # safe without a heredoc at all: no newline can survive the tr.
+          # The lint prints the line through its ERROR wrapper, so the anchor
+          # tolerates that prefix; the pinning test in check-catalogue.test.mjs
+          # runs this exact expression against the lint's real failure output.
+          FAILING=$(printf '%s\n' "$CATALOGUE_LINT" | sed -E "$STRIP" \
+            | sed -nE 's/^(ERROR: )?catalogue FAILING CHECKS \(([0-9]+)\): (.*)$/\2 checks: \3/p' | tail -1 \
+            | tr -cd 'A-Za-z0-9,:()_. -' | cut -c1-300)
+          echo "failing_checks=$FAILING" >> "$GITHUB_OUTPUT"
+
           # Random heredoc delimiter, not the fixed GHEOF used by most steps
           # above, for the same reason the contrast step uses one: this capture
-          # includes error text quoting keys from catalogue.json, which is
-          # PR-controlled. With a fixed delimiter a key carrying a newline plus
+          # includes error text quoting keys from catalogue.json AND from six
+          # other PR-authored files, all of which is PR-controlled. With a fixed delimiter a key carrying a newline plus
           # a GHEOF line could close the block early and append its own
           # `exit_code=0`, overwriting the honest exit code so a refused lint
           # merged green. The lint now JSON-quotes every key it names, so this
@@ -1128,6 +1175,7 @@ jobs:
           SKU_OUTPUT: ${{ steps.sku.outputs.output }}
           SKU_TABLES_OUTPUT: ${{ steps.sku-tables.outputs.output }}
           CATALOGUE_OUTPUT: ${{ steps.catalogue.outputs.output }}
+          CATALOGUE_FAILING: ${{ steps.catalogue.outputs.failing_checks }}
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
           EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
@@ -1195,6 +1243,10 @@ jobs:
             const skuOut = sanitize(process.env.SKU_OUTPUT) || 'No output';
             const skuTablesOut = sanitize(process.env.SKU_TABLES_OUTPUT) || 'No output';
             const catalogueOut = sanitize(process.env.CATALOGUE_OUTPUT) || 'No output';
+            // Which cohesion check failed, for the summary row. Sanitized like every other
+            // PR-controlled string here, then trimmed to a table cell's worth: it is rendered inside
+            // a Markdown table, where an unescaped pipe would split the row.
+            const catalogueFailing = sanitize(process.env.CATALOGUE_FAILING || '').replace(/\|/g, '/').slice(0, 200);
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
@@ -1275,7 +1327,7 @@ jobs:
               `| **Blank inventory** | \`npm run blank-inventory:test\` | ${status(blankInventory)} |`,
               `| **SKU** | \`npm run sku:test\` | ${status(sku)} |`,
               `| **SKU tables** | \`npm run sku:tables\` | ${status(skuTables)} |`,
-              `| **Catalogue manifest** | \`npm run catalogue:lint\` + tests | ${status(catalogue)} |`,
+              `| **Catalogue manifest** | \`npm run catalogue:lint\` + tests${catalogueFailing ? `; ${catalogueFailing}` : ''} | ${status(catalogue)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,

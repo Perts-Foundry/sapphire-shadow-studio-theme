@@ -72,6 +72,233 @@ The path test is a `/policies/` prefix rather than a hardcoded path, so an overr
 listing a different or an additional policy is covered. Markers are opt-in per call, so the
 sitemap-wide product sweep gains no body reads.
 
+## catalogue.json becomes the repo's single source of truth (unreleased)
+
+`catalogue.json` was added at the repo root to end a real bug: `thresholds.json` was silently the only
+record of the catalogue's body x colour x size shape, inferred as a global cross product, which
+invented twelve women's-vest cells in colours the vest is not made in. The manifest declared the shape
+instead, and the blank-inventory reorder review became its first consumer.
+
+It stayed its only consumer. The same vocabulary was restated across seven other places that nothing
+reconciled: **five spellings of three garment bodies** (`crewneck`/`quarter-zip`/`vest-womens` in the
+manifest, `crew-sweater`/`quarter-zip`/`vest` in `scripts/lib/photo-naming.mjs`,
+`crewneck`/`quarter-zip`/`vest` in `scripts/size-chart/lib/garments.mjs`), **three casings of one
+colour** (`grey heather`, `Grey Heather`, `grey-heather`) with no derivation between them, and **one
+product GID written four times**. This change makes the manifest the authority for all of it and adds
+the lint that stops a copy drifting back in.
+
+### The schema, and the two order contracts
+
+Version 2 adds four sections to the three v1 had: `options` (the Admin option axis names), `colors`
+and `sizes` (every value with its Admin display spelling, and for a colour its kebab slug), and
+`products` (the complete census: handle, product line, body, theme template suffix, title and GID,
+with gift cards included and carrying `"line": null, "body": null` explicitly).
+
+**One rule generates every validator.** An IDENTITY is rejected unless it is already normalised. A
+DISPLAY string is rejected unless it normalises back to the identity it hangs off. An option name, a
+product title and a GID are checked on shape and uniqueness only, and are never case-folded.
+
+The option axes are the one place where a key and its value are *not* two spellings of one thing, and
+that is live data rather than a wart: `options.denomination` is `"Denominations"`, which normalises to
+`denominations` and not to its key. So an option key is an internal axis id from a closed set, and its
+value is the nearby Admin label. Applying the round-trip rule there would refuse the committed file.
+
+`colors[].slug` is a stored, checked projection: it must equal the key with spaces hyphenated. Storing
+it rather than computing it is deliberate, so a reviewer adding a colour sees all three spellings
+adjacent in one diff hunk.
+
+**Two independent order contracts are load-bearing, and the manifest's own `comment` now names both
+side by side** so a future editor cannot discover them one at a time. Product declaration order drives
+the accessibility audit's product block and photo-naming's line list. Colour and size key order must
+equal the first-seen union across `bodies`, which is itself the reorder matrix's row order; a reshuffle
+there silently reorders a printed count sheet, so it refuses rather than sorting.
+
+**Why `template` earns its place.** It settles all three divergent gift-card identifiers at once:
+`templates/product.<template>.json` is the theme file, `<template>` is what the SEO review's
+non-garment allowlist compares against, and `product (<template, hyphens as spaces>)` is the
+accessibility audit label. That last one is byte-verified against all six shipped entries: deriving the
+label from the handle gives `product (sapphire shadow studio gift card)`, which is not what ships;
+deriving it from the template reproduces all six exactly. It also means the size-chart profiles'
+`handles` derive from `template` rather than from the handle, which *preserves*
+`scripts/size-chart/README.md`'s statement that those are alternate template suffixes.
+
+The GID uniqueness check is not tidiness. A shared GID is exactly what would make
+`upload-product-media.mjs` write photos onto the wrong product.
+
+### The authority reversal, and what it cost
+
+`scripts/blank-inventory/lib/bodies.mjs` used to INFER a body per product from keyword matches on the
+handle and title, present the proposal at a `bodies --stage propose|approve` operator gate, and seal
+the approved result in a hash-checked artifact under `~/.local/state/`. All of that is deleted. The
+manifest is the only authority on a product's body, existing and future, and it must be updated for CI
+to pass.
+
+`bodies.mjs`'s own header argued that a hardcoded map "needs a PR per new product" and that inference
+avoids the cost. **That premise was empirically false here, and this backlog section is the evidence.**
+A new product already required a PR in six places: the SKU tables, the photo-naming product table, a
+size-chart profile's handle list, the applique registry, the accessibility path list, and a product
+template. Inference bought no PR-avoidance at all. What it bought was an authority living in
+`~/.local/state/`, uncommitted and invisible to CI, which is precisely why all six of those places grew
+a private copy of the same vocabulary.
+
+**Lost, exactly: the operator gate.** Body assignment was machine-proposed, re-presented in full for
+approval, and sealed in a `contentHash` that refused hand edits. There is now no re-presentation and no
+seal.
+
+**What replaces it:** the manifest changes only in a reviewed PR; the offline lint refuses
+inconsistency; seven consumers derive from it, so a wrong `body` appears in the same diff as a wrong
+size-chart binding and a wrong photo token; and the networked gate gained live title and GID checks it
+did not have. **Genuinely weaker: the hash seal.** A manifest edit is now a signed, reviewed, auditable
+event instead of a silent local file write, which is a different guarantee, not a strictly stronger one.
+
+**The blind spot, recorded because it outlives the task.** Nothing catches a manifest that declares the
+WRONG body for a product that really exists. Nothing offline can know, and the live store carries no
+body field, which is the very observation that motivated inference in the first place. Mitigation is a
+diff, not a check. That is the honest limit of the reversal and it is stated here rather than left for
+someone to rediscover.
+
+A leftover `bodies.json` or `bodies-proposal.json` produces a one-time "this file is inert" notice
+rather than being silently ignored or deleted for the operator: it is the record of what the old gate
+approved.
+
+### `reconcileCatalogue`'s counterparty changes
+
+The two-way body-set check against the approved body map is deleted. The body index is derived FROM the
+manifest now, so that check would compare the manifest against a derivative of itself and could never
+fail for a real reason. The live store replaces it, because it is the only thing that can disagree with
+the manifest about facts. Five refusal codes are new: `catalogue-undeclared-products`,
+`catalogue-stale-products`, `catalogue-title-mismatch`, `catalogue-gid-mismatch` (networked), and
+`catalogue-dangling-body` (offline, and therefore fired by the CI lint).
+
+**Drift coverage, stated honestly.** Offline: every repo-side surface naming an undeclared handle or
+failing to name a declared one, plus every internal manifest rule. Networked, at the reorder gate only:
+a live product absent from the manifest, a declared handle with no live product, a title mismatch, a
+GID mismatch, a tagged variant outside a declared cell. Those five can only *fire* against a real
+store, so a PR can merge green with an internally perfect but factually stale manifest; their decision
+logic is unit-tested offline against hand-authored Admin payloads, which makes this a data-freshness
+exposure rather than an untested-code one. Nothing forces the reorder review to run on a schedule.
+
+### Module location, and why it moved
+
+`catalogue-manifest.mjs` sat under `scripts/blank-inventory/lib/` and imported `groups.mjs` ->
+`planner.mjs` -> `input.mjs`. Seven areas import it now, so leaving it there would have given the SKU
+tooling, photo naming, size charts, applique grids, the accessibility audit and the SEO review a
+load-time dependency on the blank-inventory planner, one module away from `lib/mutations.mjs`.
+
+It is `scripts/lib/catalogue-manifest.mjs` now, importing exactly two zero-import leaves extracted for
+the purpose: `scripts/lib/vocab.mjs` (`normaliseAxis`, `SEP`) and `scripts/lib/json-keys.mjs`
+(`findDuplicateKeys`). `groups.mjs` and `reorder.mjs` re-export both names. **Those two re-exports are a
+permanent compatibility layer, deliberately, and are not shims awaiting removal**; the "no shim" rule
+applies to the deleted blank-inventory copy of `catalogue-manifest.mjs`, and the two statements are not
+in tension.
+
+`ID_RE` and `PRODUCT_GID_RE` are **copied** into the schema module rather than moved. The applique
+registry still owns its copy until its own migration lands, and deleting it there in this change would
+break trunk in the window between the two PRs. A test asserts the two copies are byte-identical for as
+long as both exist, and it is deleted with the copy.
+
+### The read-only guard, strengthened
+
+Three modules carry a header saying they must never import `lib/mutations.mjs`, and each was pinned by
+asserting its own one-line import list. That catches the direct edge and nothing else: a module could
+import a freshly-added neighbour that imports `admin.mjs`, the pinned list would be updated to name the
+neighbour, and the prohibition would be gone with every assertion still green.
+
+`scripts/lib/import-closure.mjs` walks the whole transitive relative-import graph instead. It ships with
+its controls, because a guard is only as good as those: a **depth-2 positive control** over a throwaway
+fixture (without which a bug collapsing the closure to depth 1 passes everything else and silently
+degrades the guard back into the check it replaced), and fail-loud behaviour on every specifier form a
+static walk cannot follow, so an unresolvable path, a dynamic import and an `export ... from` are all
+failures rather than silent leaves.
+
+### The lint, and why it is not a new CI step
+
+`scripts/catalogue/check-catalogue.mjs` grew the cohesion checks rather than gaining a sibling. A new
+step costs four coordinated `validate.yml` edits and buys nothing: the existing `catalogue` step already
+runs the suite and the lint together, offline, with the vacuity floor and the random-delimiter heredoc
+in place.
+
+Sixteen checks live in `scripts/lib/catalogue-cohesion.mjs`. Two of them WARN rather than refuse, and
+that split is the design: `config/settings_data.json` is Admin-editable and is reconciled onto `main` by
+`sync.yml`, so refusing there would let an Admin theme-settings edit red a reconcile PR nobody in this
+repo authored and halt `deploy.yml`'s gate on something unfixable from Admin. The WARN text renders in
+the PR comment, not only the job log, and it says the variant picker stops matching option values until
+one side is corrected. A warning nobody sees is worse than none.
+
+**Half the checks are scheduled to retire, and that is the point.** Each check records the SOURCE it
+reads. Once a consumer derives its list from the manifest, comparing the two is comparing the manifest
+against itself, and a tautology in a lint reads as coverage while asserting nothing. Those checks are
+deleted and replaced by a derivation test in the owning suite.
+
+**Two mechanisms make all sixteen green against unmigrated consumers**, which is what lets this ship
+before the migration. First, **normalise before comparing**: the SKU colour check compares values, not
+spellings, so `Grey Heather` in `tables.json` and `grey heather` in the manifest agree; and the
+photo-naming census is compared on handle, title, GID and colour values, never on body ids, whose five
+spellings genuinely disagree today and are not what that check asserts. Second, a **declared source path
+per check**, so the reader for a source that moves is updated in the same commit that moves it.
+
+### Untrusted input, and the CI output contract
+
+The lint now reads PR-authored content from six new files, and their strings can reach failure text that
+flows into `$GITHUB_OUTPUT`. The existing surface had exactly two guards: the random heredoc delimiter,
+and `nameList()`'s JSON-quoting of manifest keys. Neither covered the new sources, and this repo has
+already had one incident of exactly this bypass class.
+
+Every PR-authored string from all sixteen checks now routes through `nameList()`, which JSON-escapes each
+entry so a newline cannot span lines, **and bounds the list** while still stating the true total, so a
+PR-inflated set difference cannot trip the Actions output limit or produce an unreviewable comment.
+There is a fixture test per source file asserting that a payload carrying a newline plus a delimiter and
+a forged `exit_code=0` cannot escape.
+
+Sixteen checks collapse into one row in the PR comment, so a failure would otherwise be diagnosable only
+from the raw job log. `check-catalogue.mjs` prints a fixed-shape `catalogue FAILING CHECKS (n): ...`
+line, `validate.yml` lifts it into its own step output, and the comment renders it beside the status.
+
+The count line grew from three numbers to six:
+
+```
+catalogue OK: 3 bodies, 3 colour values, 6 size values, 6 products, 4 option names, 16 cohesion checks.
+```
+
+The cohesion figure is the count of checks that RAN, not the count declared, so a module that failed to
+load reads 0 and reds the build rather than reading as "all clear". The workflow's `sed` output is
+captured once and all six `cut` extractions read that variable; the lint is never re-invoked per
+extraction. And because the wording lives in one file and the anchored regex in another, a test now runs
+the workflow's own `sed` and `cut` against the lint's own count line, so the two cannot drift apart with
+only a manual pre-push check between them.
+
+### The byte-stability baseline
+
+Five shipped artifacts are generated from data this work moves under the manifest: the size-chart render
+golden, the generated accordion rows in the five garment product templates, the applique dropdown text,
+the six accessibility labels, and `templates/product.huddle-crewneck.json`'s `pattern_options`.
+
+A manual `git diff` at merge time is not a test. It leaves no regression coverage once the migration has
+merged, and "regenerate and confirm a clean tree" compares the new generator against **its own** output,
+which is the self-referential-golden failure mode: a generator that changed its mind consistently
+passes. So their bytes are frozen into `scripts/catalogue/test/fixtures/pre-migration-baseline.json`
+*before* any migration code exists, and the migration's own tests byte-compare fresh generator output
+against that snapshot from the owning suites.
+
+`EMPTY_SENTINEL` in the applique registry is the one **declared exception**: it is a byte-equality check
+over `serialize(emptyRegistry())`, the registry's schema changes with the migration, so its bytes change
+and its own unit test updates in the same commit. That is an intentional, tested exception to the
+criterion, not a violation of it, and it is deliberately not captured in the frozen snapshot.
+
+### Migration
+
+`CATALOGUE_VERSION` went 1 -> 2. A v1 document refuses with a message naming
+`scripts/catalogue/migrate-catalogue.mjs`, which is a read-only one-shot that PRINTS a v2 **skeleton**
+and writes nothing: the manifest is hand-edited in a reviewed PR, and that rule does not get an
+exception for the command that changes its shape.
+
+It is a skeleton rather than a migration because two of the four new sections cannot be derived from a
+v1 document. The Admin display spellings are not in it (`xs` title-cases to `Xs` and the live value is
+`XS`, so every size guess it prints is wrong by construction and the notes say so), and the product
+census is not in it at all. Its output deliberately does not validate: the schema refuses every
+placeholder it emits, so an unfinished migration cannot merge looking done. The migrator is deleted once
+the migration lands, rather than left as cruft that reads like a supported path.
+
 ## blank-inventory's vocabulary comes from catalogue.json (unreleased)
 
 `catalogue.json` was the single source of truth for the catalogue's shape, and the reorder review
