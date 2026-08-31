@@ -1,6 +1,6 @@
 # Release Notes
 
-## Contact footer link and the submit-button class collision (unreleased)
+## Contact routing, and two button rules that fail silently (unreleased)
 
 The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to
 `shopify://policies/contact-information` while the nav went to `/pages/contact`. **Both now go to
@@ -27,6 +27,23 @@ siblings this branch has no policy object to resolve a `url` and `title` from. T
 schema option labelled "Contact information" used to resolve to a *page*: nobody had a policy object
 to hand. Its default label is now "Contact information" rather than "Contact", matching the policy
 titles the sibling branches inherit; the footer block overrides it to "Contact" for the visible link.
+
+**A link-color rule inside a rich-text container has to carve out `.button`, or it repaints the
+label.** `snippets/policy-page.liquid` styled `.shopify-policy__body .rte a` with no exclusion. A
+policy body is Admin rich text, so an operator can paste `<a class="button">` into it, and the
+Contact information policy ends with exactly that. The two-class selector scores (0,2,1) against
+`.button`'s own `color: var(--button-color)` at (0,1,0), so it won and painted the label
+`--color-primary`, which on scheme-1 is `#000000cf`, over `--color-primary-button-background`, which
+is `#000000`. The result was a solid black box with no readable text. It rendered that way for as
+long as the rule has existed; it only became visible when the nav and footer started pointing at
+that page.
+
+The fix is the carve-out `assets/base.css` already uses for its own `.rte` link rule:
+`a:where(:not(.button, .button-primary, .button-secondary))`. `:where()` keeps the specificity at
+(0,2,1) so ordinary policy links are unchanged. Nothing in CI catches this class of bug and no policy
+page appears in `scripts/a11y/paths.json`, so contrast tooling never saw it either. Contact
+information is currently the only policy body containing a button-classed link; the other four have
+none.
 
 **`blocks/contact-form-submit-button.liquid` emitted both a hardcoded `button` class and the
 selected `style_class`.** With the style set to Secondary the element carried `button` and
