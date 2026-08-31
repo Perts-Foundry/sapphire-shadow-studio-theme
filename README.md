@@ -79,7 +79,7 @@ Four workflows in `.github/workflows/`. All run on `ubuntu-24.04`, pin third-par
 
 | Workflow | Triggers | Purpose |
 |---|---|---|
-| `validate` | PR opened / synchronize / reopened (same-repo heads) | Two jobs. `deploy-preview` (skipped for drafts and Dependabot) creates a per-PR unpublished theme `pr-<n>-preview` and comments the link. `validate` (needs `deploy-preview`, runs even when it is skipped or fails) sequentially runs `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `sku`, `seo-review`, `applique-grid`, `email-icons`, `product-images`, `smoke` deploy smoke-test units, the blank-id guard, the SKU tables lint, the catalogue manifest lint, and the contrast lint), `actionlint`, `zizmor`, `gitleaks`, and a pa11y-ci accessibility audit of the preview theme, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
+| `validate` | PR opened / synchronize / reopened (same-repo heads) | Two jobs. `deploy-preview` (skipped for drafts and Dependabot) creates a per-PR unpublished theme `pr-<n>-preview` and comments the link. `validate` (needs `deploy-preview`, runs even when it is skipped or fails) sequentially runs `theme-check`, `reconcile`, the tooling suites (`size-chart`, `blank-inventory`, `sku`, `seo-review`, `applique-grid`, `email-icons`, `product-images`, `smoke` deploy smoke-test units, the blank-id guard, the SKU tables lint, the catalogue manifest lint, and the contrast lint), `actionlint + shellcheck` (workflow YAML plus the shell inside the composite actions), `zizmor`, `gitleaks`, and a pa11y-ci accessibility audit of the preview theme, plus an aggregator that posts a sticky CI report. The single required check on `main` is `validate / validate`. |
 | `preview` | PR closed | Deletes the PR's `pr-<n>-preview` theme and marks the preview comment deleted. |
 | `sync` | Push to `shopify-sync`; daily 13:00 UTC; manual | Opens or refreshes the single reconcile PR (`head: shopify-sync` into `base: main`) for admin edits. Does not auto-merge; `deploy` takes over after Validate. |
 | `deploy` | (1) comment `deploy` on a PR; (2) `workflow_run` after Validate on `shopify-sync`; (3) `workflow_run` after Validate on `dependabot/**`. Both `workflow_run` paths gate on Validate's `validate` **job**, not the whole run, so a failed `deploy-preview` (a Shopify hiccup, not a code problem) does not block auto-deploy | Three isolated jobs: `gate` (no Shopify token; runs the trigger-conditional access checks), `deploy` (holds the Shopify token; live push + smoke test + squash-merge + preview delete), and `sync` (holds the deploy key, no Shopify token; reconciles `shopify-sync` to the deployed SHA). Live theme ID `181702754604`. |
@@ -193,6 +193,24 @@ To lint the workflow YAML the way CI does (same shellcheck excludes):
 ```bash
 SHELLCHECK_OPTS="-e SC2016 -e SC2317" actionlint
 ```
+
+That covers `.github/workflows/` only. `actionlint` has no composite-action mode: handed a
+`.github/actions/**/action.yml` it parses the file as a workflow and reports `"jobs" section is
+missing` instead of linting the `run:` bodies. CI's `actionlint + shellcheck` step therefore
+extracts those bodies to files first and shellchecks them directly, pinned to shellcheck **0.10.0**
+so a local run and CI agree. The same pass covers any `lib/*.sh` helper a composite action sources.
+To reproduce it:
+
+```bash
+node scripts/lib/composite-shell.mjs /tmp/composite-bodies .github/actions/*/action.yml
+shellcheck --shell=bash -e SC1091 /tmp/composite-bodies/*.sh .github/actions/*/lib/*.sh
+```
+
+The extracted files are left-padded with blank lines, so shellcheck's line numbers are the source
+`action.yml`'s line numbers. The extractor fails closed rather than under-reporting: an unsupported
+`run:` form, zero bodies extracted, or a GitHub expression surviving into a body each exit non-zero.
+`npm run lib:test` runs it over the repo's real composite actions, so drift fails locally before it
+reaches CI.
 
 `.theme-check.yml` extends `theme-check:recommended` with two checks disabled as documented false positives: `JSONMissingBlock` (Judge.me app blocks render at runtime and cannot be resolved statically) and `MatchingTranslations` (Horizon ships a wide locale matrix that legitimately lags `en.default.json` between merges). It also ignores two paths: `node_modules/**`, and `marketing/**`, whose Shopify Email templates are not theme code and use objects (`unsubscribe_url`, `open_tracking_block`, `email.*`) that no theme defines. Triaged findings are tracked in [`THEME_CHECK_NON_ACTIONABLE.md`](THEME_CHECK_NON_ACTIONABLE.md); check it before fixing a theme-check warning.
 

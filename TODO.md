@@ -60,14 +60,3 @@ several of the pass's other findings.
   step; it is `continue-on-error: true` and only fills a comment string, so a blip degrades to
   "unknown" rather than failing the deploy, but it belongs in the same design.
 
-- [ ] **Nothing lints the shell inside `.github/actions/**/action.yml`.** CI's `actionlint` step
-  is commented "workflows + composite actions" but runs the bare binary, which walks
-  `.github/workflows/` only; passing a composite `action.yml` explicitly makes actionlint parse
-  it as a workflow and emit `"jobs" section is missing` instead of linting the `run:` bodies. So
-  the `SHELLCHECK_OPTS` configured next to it never reaches the largest shell script in the repo,
-  and the pre-push `theme list` retry loop shipped with no automated shell check at all (`bash -n`
-  and a hand pass were the substitute). Options: extract each composite `run:` body to a `.sh`
-  and shellcheck it directly, or shellcheck an extracted temp file in CI. Worth landing **before**
-  the three-loop consolidation above, so that refactor has a backstop. At minimum, correct the
-  comment so nobody else assumes coverage that is not there.
-

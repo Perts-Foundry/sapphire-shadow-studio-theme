@@ -207,6 +207,50 @@ person to change either number sees the other. Nothing lints composite-action sh
 (CI's `actionlint` walks `.github/workflows/` only, so its `SHELLCHECK_OPTS` never reaches the
 largest shell script here), which is why that coupling had to be found by reading.
 
+**The composite-action shell is linted now, by extraction.** That last paragraph's parenthesis was
+the backlog item: `actionlint` walks `.github/workflows/` only, and it has no composite-action mode
+to walk anything else with. Handed a `.github/actions/**/action.yml` directly it parses the file as
+a workflow and reports `"jobs" section is missing`, having linted no shell at all, so the step's
+`SHELLCHECK_OPTS` never reached the largest shell script in the repo. The CI step is now
+`actionlint + shellcheck`: `scripts/lib/composite-shell.mjs` pulls each `run: |` body out to its own
+file and shellcheck lints those, plus any `lib/*.sh` a composite action sources.
+
+**Extraction beat committing the shell as `.sh` files**, which was the other option. Moving ~450
+lines of deploy-critical shell out of `action.yml` and into files loaded at runtime is a change to
+how the live push executes, and it was proposed in the same PR that rewrites the retry loops those
+lines contain. Extraction changes nothing about how the action runs; it only reads it. The cost is
+that the extractor is a line scanner rather than a YAML parser (`scripts/lib/` takes no
+dependencies), so the risk it carries is silent under-coverage: a scan that stops matching leaves
+shellcheck linting an empty directory, and a green row looks identical either way.
+
+So it **fails closed three ways**, and each one is the answer to a way this could have been
+worthless. A `run:` key in any form other than `run: |` (`|-`, `|+`, `|2`, `>`, a trailing comment,
+a single-line body) exits non-zero naming the line, with the counting scan deliberately broader than
+the extraction scan so a variant cannot pass by uncounted. Zero extracted bodies is an error, not an
+empty success. And a `${{ }}` surviving into a body is an error: it is not valid bash and would
+spray parse errors across the row that gates auto-deploy. The CLI also prints `extracted N run
+bodies`, because "green" and "green having linted nothing" are otherwise indistinguishable from
+outside, and a unit test runs the extractor over the repo's real `action.yml` files so drift fails
+`npm run lib:test` rather than first appearing as a red CI row.
+
+Two consequences worth recording. `setup-shopify-cli`'s `run: npm ci --ignore-scripts` was the
+repo's only single-line `run:`, and guard 1 refuses that form, so it is block form now; one shape
+everywhere beats a parser that has to guess. And the composite pass gets its **own** options
+variable rather than sharing `SHELLCHECK_OPTS`: extraction structurally forces `SC1091` (the
+runtime-resolved `source` in commit 2 cannot be followed from an extracted file), and a suppression
+that extraction forces must not quietly weaken linting of `.github/workflows/`, which has none of
+the same excuses. shellcheck itself is pinned to 0.10.0 by download, the same pattern the step
+already used for actionlint: a runner-image bump must not be able to flip an auto-deploy gate with
+zero repo changes.
+
+The first run found **nothing** in either composite action, which was not the expectation. Two rules
+that were forecast do not fire: shellcheck does not raise `SC2154` for all-caps names, so the
+composite `env:` variables (`$MODE`, `$LIVE_THEME_ID`, `$PR_NUMBER`) need no annotations, and it
+does not raise `SC2086` for an unquoted variable inside the command substitution of a `for ... in`
+list, so `for i in $(seq 1 $ATTEMPTS)` passed. Both loops are gone in the next commit anyway. A
+clean first run is the weakest possible evidence that a lint works, which is exactly why the body
+count is printed and asserted rather than inferred from the colour of the row.
+
 ## Contact routing, and two button rules that fail silently (unreleased)
 
 The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to

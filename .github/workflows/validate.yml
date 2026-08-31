@@ -819,10 +819,35 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
-      # ── actionlint (workflows + composite actions) ─────────────
-      - name: actionlint
+      # ── actionlint + shellcheck (workflows + composite actions) ─
+      #
+      # Two tools, one row, because they cover two halves of the same surface
+      # and a split row would let half of it go quietly unwatched.
+      #
+      #   actionlint  walks `.github/workflows/` and lints workflow syntax,
+      #               expressions and the shell inside every workflow `run:`
+      #               (it shells out to shellcheck for that last part).
+      #   shellcheck  covers what actionlint structurally cannot: the shell
+      #               inside `.github/actions/**/action.yml`. actionlint has no
+      #               composite-action mode; handed one it parses the file as a
+      #               workflow and reports `"jobs" section is missing` instead
+      #               of linting anything. So the bodies are extracted to files
+      #               first (scripts/lib/composite-shell.mjs), padded so line
+      #               numbers still point at the source action.yml, and linted
+      #               directly. The same pass covers `lib/*.sh` helpers sourced
+      #               by those actions, which are already real shell files.
+      #
+      # Before this, the largest shell script in the repo was unlinted while
+      # this step's comment claimed to cover it.
+      - name: actionlint + shellcheck
         id: actionlint
         env:
+          # Workflow shell only (actionlint's own shellcheck pass). The
+          # composite-action pass gets its own variable below; a suppression
+          # that extraction forces must not silently weaken linting of
+          # `.github/workflows/`, which is a different surface with none of the
+          # same excuses.
+          #
           # SC2016 = "Expressions don't expand in single quotes" - false-
           # positive on `printf 'literal-markdown-with-backticks %s\n' "$x"`
           # in sync.yml.
@@ -831,12 +856,85 @@ jobs:
           # pattern used by every check step in this workflow. shellcheck
           # cannot follow the control flow when subshells set the exit code.
           SHELLCHECK_OPTS: "-e SC2016 -e SC2317"
+          # Pinned rather than taken from the runner image: a runner-image bump
+          # must not be able to flip this row (which gates auto-deploy) with
+          # zero repo changes, and pinning is what makes a local run comparable
+          # to CI. README's Development section names the same version.
+          SHELLCHECK_VERSION: "0.10.0"
         run: |
           set +e
+
+          echo "::group::actionlint"
           bash <(curl --max-time 60 -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 >/dev/null
-          OUTPUT=$(./actionlint -no-color 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
+          ACTIONLINT_OUT=$(./actionlint -no-color 2>&1)
+          ACTIONLINT_EXIT=$?
+          echo "$ACTIONLINT_OUT"
+          echo "::endgroup::"
+
+          echo "::group::shellcheck (composite actions)"
+          curl --max-time 60 -fsSL \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            -o shellcheck.tar.xz
+          tar -xJf shellcheck.tar.xz "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          SHELLCHECK="./shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          "$SHELLCHECK" --version | grep '^version:'
+
+          # The extractor fails closed three ways (an unsupported `run:` form,
+          # zero bodies extracted, and a GitHub expression surviving into a
+          # body), so a scan that has stopped matching reds this row instead of
+          # leaving shellcheck to lint an empty directory. Its
+          # `extracted N run bodies` line is the visible difference between
+          # "green" and "green having linted nothing".
+          rm -rf composite-shell-bodies
+          EXTRACT_OUT=$(node scripts/lib/composite-shell.mjs composite-shell-bodies .github/actions/*/action.yml 2>&1)
+          EXTRACT_EXIT=$?
+          echo "$EXTRACT_OUT"
+
+          SHELLCHECK_OUT=""
+          SHELLCHECK_EXIT=0
+          if [ "$EXTRACT_EXIT" -ne 0 ]; then
+            SHELLCHECK_OUT="composite-shell extraction failed; nothing was linted."
+            SHELLCHECK_EXIT="$EXTRACT_EXIT"
+          else
+            # Own options variable, deliberately NOT the SHELLCHECK_OPTS above.
+            #
+            # SC1091 = "Not following: file was not specified as input" - the
+            # `source "${GITHUB_ACTION_PATH}/lib/retry.sh"` in the Push and List
+            # steps resolves at runtime from a variable the runner sets, which
+            # the linter cannot follow from an extracted body. retry.sh is
+            # linted in the same pass below, so nothing goes unchecked.
+            COMPOSITE_OPTS=(-e SC1091)
+            # `nullglob` so the `lib/*.sh` glob contributes nothing when no
+            # composite action has helper scripts, rather than passing an
+            # unexpanded pattern through as a filename. The extracted bodies
+            # are guaranteed non-empty by the extractor's own zero-body guard,
+            # so the target list can never end up empty.
+            shopt -s nullglob
+            SHELLCHECK_TARGETS=(composite-shell-bodies/*.sh .github/actions/*/lib/*.sh)
+            shopt -u nullglob
+            SHELLCHECK_OUT=$("$SHELLCHECK" --shell=bash --color=never \
+              "${COMPOSITE_OPTS[@]}" "${SHELLCHECK_TARGETS[@]}" 2>&1)
+            SHELLCHECK_EXIT=$?
+            echo "shellcheck linted ${#SHELLCHECK_TARGETS[@]} files"
+          fi
+          echo "$SHELLCHECK_OUT"
+          echo "::endgroup::"
+
+          # Logical OR, not bitwise: either tool going non-zero reds the row,
+          # and a bitwise combination can collapse two failures to zero.
+          EXIT_CODE=0
+          if [ "$ACTIONLINT_EXIT" -ne 0 ] || [ "$SHELLCHECK_EXIT" -ne 0 ]; then
+            EXIT_CODE=1
+          fi
+
+          # Label both tools' text before it reaches the shared capture, so a
+          # red row in the PR comment says which tool failed.
+          OUTPUT=$(
+            printf '[actionlint exit %s]\n%s\n[shellcheck exit %s]\n%s\n%s\n' \
+              "$ACTIONLINT_EXIT" "$ACTIONLINT_OUT" \
+              "$SHELLCHECK_EXIT" "$EXTRACT_OUT" "$SHELLCHECK_OUT"
+          )
+
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
             echo "output<<GHEOF"
@@ -1339,7 +1437,7 @@ jobs:
               '',
               `| Check | Tool | Result |`,
               `|:------|:-----|:------:|`,
-              `| **Lint** | \`actionlint\` | ${status(actionlint)} |`,
+              `| **Lint** | \`actionlint + shellcheck\` | ${status(actionlint)} |`,
               `| **Security audit** | \`zizmor --pedantic\` | ${status(zizmor)} |`,
               '',
               '### Security',
@@ -1374,7 +1472,7 @@ jobs:
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
               { title: 'Deploy smoke', tool: 'npm run smoke:test', out: smokeTestOut, exit: smokeTest },
-              { title: 'Workflow Lint', tool: 'actionlint', out: actionlintOut, exit: actionlint },
+              { title: 'Workflow Lint', tool: 'actionlint + shellcheck', out: actionlintOut, exit: actionlint },
               { title: 'Workflow Security Audit', tool: 'zizmor --pedantic', out: zizmorOut, exit: zizmor },
               { title: 'Secret Scan', tool: 'gitleaks', out: gitleaksOut, exit: gitleaks },
             ];
@@ -1527,7 +1625,7 @@ jobs:
           # preview deploy failed. Empty fails closed like every other check.
           check_exit "a11y" "$A11Y_EXIT"
           check_exit "smoke-test" "$SMOKE_TEST_EXIT"
-          check_exit "actionlint" "$ACTIONLINT_EXIT"
+          check_exit "actionlint + shellcheck" "$ACTIONLINT_EXIT"
           check_exit "zizmor" "$ZIZMOR_EXIT"
           check_exit "gitleaks" "$GITLEAKS_EXIT"
           if [ "$FAILED" -eq 1 ]; then
