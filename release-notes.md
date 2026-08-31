@@ -3,20 +3,26 @@
 ## Contact footer link and the submit-button class collision (unreleased)
 
 The footer's "Contact" link pointed at `shopify://policies/contact-information`, the bare Contact
-Information shop policy, while the nav's Contact item and every in-repo reference
-(`templates/page.faq.json`, `templates/page.custom-orders.json`, `blocks/footer-link.liquid`) point
-at `/pages/contact`, the page that actually carries the contact form. The footer block now uses
-`"policy_type": "contact"`, the branch `blocks/footer-link.liquid` already had, so the two routes
-agree and neither carries a hardcoded URL.
+Information shop policy, while every in-repo reference (`templates/page.faq.json`,
+`templates/page.custom-orders.json`, `blocks/footer-link.liquid`) points at `/pages/contact`, the
+page that actually carries the contact form; the Admin main menu's Contact item, which is not in the
+repo, points there too. The footer block now uses `"policy_type": "contact"`, the branch
+`blocks/footer-link.liquid` already had. The path is still hardcoded, but now in exactly one place
+(`blocks/footer-link.liquid:25`) rather than in a JSON call site per link.
 
 **`blocks/contact-form-submit-button.liquid` emitted both a hardcoded `button` class and the
 selected `style_class`.** With the style set to Secondary the element carried `button` and
 `button-secondary` at once, and because `.button-secondary`'s custom-property block in
 `assets/base.css` comes after `.button`'s, secondary silently won: transparent background, black
 text, on a button the editor still labelled Primary. The block now emits only
-`style_class | default: 'button'`, matching `snippets/button.liquid` and `blocks/add-to-cart.liquid`.
-`.button-secondary` is self-sufficient in `base.css` (the shared geometry selector at the top of the
-Buttons section names both classes), so dropping the hardcoded `button` loses no styling.
+`style_class | default: 'button'`; `snippets/button.liquid` and `blocks/add-to-cart.liquid` follow
+the same "setting alone, no hardcoded `button`" rule, though neither adds a `default` and
+`snippets/button.liquid` also emits a per-block `{{ style_class }}--{{ block.id }}` variant this
+button has no use for. `.button-secondary` is self-sufficient in `base.css` (the shared geometry
+selector at the top of the Buttons section names both classes), so dropping the hardcoded `button`
+loses no applied styling. The only `.button`-only rules left behind are the `[hidden]`, `:disabled`
+and `outline-color` states, and nothing in `blocks/contact-form.liquid` or any JS puts this button
+into them. The general rule is now in `docs/theme-conventions.md` under CSS.
 
 A read-only pull of the live theme (`shopify theme pull --live --nodelete`) found **no drift** in
 `templates/page.contact.json`, `sections/footer-group.json` or `config/settings_data.json`: the live

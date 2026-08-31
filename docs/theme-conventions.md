@@ -111,6 +111,7 @@ and deliberately not part of the standard.
 - **BEM**: `.block__element--modifier`. Single-class selectors where possible. No IDs as selectors. Avoid `!important`. Logical properties (`padding-inline`, `margin-block`, `inset`) for RTL; container queries for responsive components.
 - **CSS variables**: namespace to component (e.g. `--product-card-padding`). Apply per-section / per-block setting values via inline `style="--var: value"`; do not generate per-instance class names.
 - Use `{% stylesheet %}` inside sections / blocks for scoped CSS. Standalone CSS in `assets/` is for shared / global styles. `@layer` order: resets → base → components → utilities.
+- **A block with a `style_class` select emits only `style_class`, never a hardcoded `button` alongside it.** In `assets/base.css` the shared button geometry names `.button` and `.button-secondary` together, then `.button-secondary`'s custom-property block comes *after* `.button`'s, so an element carrying both classes renders as Secondary (transparent background, black text) while the theme editor still labels it Primary. Nothing errors at authoring time and no CI check catches it. `snippets/button.liquid`, `blocks/add-to-cart.liquid` and `blocks/contact-form-submit-button.liquid` all emit the setting alone; keep any new `style_class` consumer on that pattern.
 
 ### HTML
 
