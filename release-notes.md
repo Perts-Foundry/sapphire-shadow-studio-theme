@@ -1,5 +1,23 @@
 # Release Notes
 
+## Go to cart page after adding (unreleased)
+
+A new Cart setting, `redirect_to_cart_on_add` (default off, visible only when `cart_type` is
+`page`, mirroring how `auto_open_cart_drawer` gates to drawer mode), navigates to the cart page
+after a successful add. Two decisions worth keeping:
+
+- **It is an event listener, not a `product-form.js` edit.** Horizon's adds are always AJAX and
+  `assets/product-form.js` is upstream code; a document-level listener in
+  `snippets/cart-redirect-on-add.liquid` (rendered from `layout/theme.liquid` only when the
+  setting is on) keeps upstream merges clean.
+- **The listener filters on `source === 'product-form-component'` and skips `didError`.**
+  `CartAddEvent` dispatches under the shared `cart:update` name, which `CartUpdateEvent`
+  (cart-page quantity edits) and quick-order-list changes also use; without the source filter,
+  editing a quantity on the cart page would reload it, and a failed add would still navigate.
+
+Known and accepted trade-off: every successful add navigates, interrupting multi-item adds from a
+collection. That is the intended "review before checkout" flow, not a bug.
+
 ## Free-shipping progress bar in the cart (unreleased)
 
 `snippets/shipping-info.liquid` now renders a progress bar toward the free-shipping threshold in
