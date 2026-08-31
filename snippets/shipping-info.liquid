@@ -1,6 +1,9 @@
 {% doc %}
   Displays shipping information with dynamic messaging based on cart total.
-  Shows flat rate shipping and free shipping threshold. When vacation mode is
+  Shows flat rate shipping and free shipping threshold. In cart context it also
+  renders a decorative progress bar toward the free-shipping threshold plus a
+  "You're $X away" line; the bar is aria-hidden because the sentence carries the
+  state. When vacation mode is
   enabled (settings.vacation_mode_enabled), appends the vacation shipping note
   (settings.vacation_shipping_message) to the text in both branches.
 
@@ -22,18 +25,17 @@
   if is_gift_card
     assign qualifies_for_free_shipping = true
   else
-    # Convert to number for calculations
-    assign threshold_number = free_shipping_threshold | times: 1.0
+    # One derivation in cents feeds both the text branch and the progress
+    # bar, so they cannot disagree. Prices are already integer cents.
+    assign threshold_cents = free_shipping_threshold | times: 100.0 | round
 
     if cart_context
-      assign current_total = cart.total_price | divided_by: 100.0
-      assign remaining_for_free_shipping = threshold_number | minus: current_total
+      assign remaining_cents = threshold_cents | minus: cart.total_price
     elsif product_price
-      assign product_price_number = product_price | divided_by: 100.0
-      assign remaining_for_free_shipping = threshold_number | minus: product_price_number
+      assign remaining_cents = threshold_cents | minus: product_price
     endif
 
-    if remaining_for_free_shipping <= 0
+    if remaining_cents <= 0
       assign qualifies_for_free_shipping = true
     else
       assign qualifies_for_free_shipping = false
@@ -43,7 +45,28 @@
   if settings.vacation_mode_enabled
     assign vacation_note = settings.vacation_shipping_message | strip
   endif
+
+  # Free-shipping progress bar (cart only). Guard on positive parsed
+  # cents: the setting is free text, so a cleared value or one like
+  # "$75" parses to 0 and must disable the bar, not pin it at 100%
+  # (and 0 cents would divide by zero below).
+  assign show_shipping_progress = false
+  if cart_context and threshold_cents > 0
+    assign show_shipping_progress = true
+    assign progress_percent = cart.total_price | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
+    assign remaining_amount = remaining_cents | money
+  endif
 %}
+
+{% if show_shipping_progress %}
+  <div
+    class="shipping-progress{% if qualifies_for_free_shipping %} shipping-progress--complete{% endif %}"
+    style="--progress: {{ progress_percent }}%"
+    aria-hidden="true"
+  >
+    <span class="shipping-progress__fill"></span>
+  </div>
+{% endif %}
 
 <a href="/policies/shipping-policy" class="shipping-info">
   {% if qualifies_for_free_shipping %}
@@ -52,12 +75,17 @@
       <path d="M11.5 5.5L6.75 10.25L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="shipping-info__text">
-      {% if is_gift_card %}
-        Free shipping
-      {% else %}
-        Free shipping on this order
-      {% endif %}
-      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- if show_shipping_progress -%}
+        <strong class="shipping-info__highlight shipping-info__highlight--success">Free shipping on this order</strong>
+        {%- if vacation_note != blank %}<span class="shipping-info__secondary">{{ vacation_note }}</span>{% endif %}
+      {%- else -%}
+        {% if is_gift_card %}
+          Free shipping
+        {% else %}
+          Free shipping on this order
+        {% endif %}
+        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- endif -%}
     </span>
   {% else %}
     <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -67,8 +95,13 @@
       <circle cx="12.5" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
     </svg>
     <span class="shipping-info__text">
-      ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
-      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- if show_shipping_progress -%}
+        <strong class="shipping-info__highlight">{{ 'content.free_shipping_remaining' | t: amount: remaining_amount }}</strong>
+        <span class="shipping-info__secondary">${{ flat_rate_shipping }} shipping within the USA{% if vacation_note != blank %} • {{ vacation_note }}{% endif %}</span>
+      {%- else -%}
+        ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
+        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- endif -%}
     </span>
   {% endif %}
 </a>
@@ -105,8 +138,14 @@
     transition: color 0.2s ease;
   }
 
+  .shipping-info__icon--success,
+  .shipping-info__highlight--success,
+  .shipping-progress--complete .shipping-progress__fill {
+    --shipping-success-color: #16a34a;
+  }
+
   .shipping-info__icon--success {
-    color: #16a34a;
+    color: var(--shipping-success-color);
   }
 
   .shipping-info:hover .shipping-info__icon--success {
@@ -115,5 +154,56 @@
 
   .shipping-info__text {
     font-weight: 400;
+  }
+
+  /* Cart emphasis: the remaining-amount sentence is the call to action,
+     so it gets full foreground at body size while the flat-rate detail
+     drops to a subdued second line. */
+  .shipping-info__highlight {
+    display: block;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
+
+  .shipping-info__highlight--success {
+    color: var(--shipping-success-color, #16a34a);
+  }
+
+  .shipping-info__secondary {
+    display: block;
+    margin-top: 0.125rem;
+  }
+
+  .shipping-progress {
+    display: block;
+    /* The cart summary wraps this in a flex row, where a block div
+       collapses to zero width; take the full row so the bar sits on
+       its own line above the shipping sentence. */
+    width: 100%;
+    flex: 1 0 100%;
+    margin-top: 0.75rem;
+    height: 0.375rem;
+    border-radius: 999px;
+    background: rgb(var(--color-foreground-rgb) / 0.12);
+    overflow: hidden;
+  }
+
+  .shipping-progress__fill {
+    display: block;
+    height: 100%;
+    width: var(--progress, 0%);
+    border-radius: inherit;
+    background: var(--color-primary);
+  }
+
+  .shipping-progress--complete .shipping-progress__fill {
+    background: var(--shipping-success-color);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .shipping-progress__fill {
+      transition: width 0.3s ease;
+    }
   }
 {% endstylesheet %}

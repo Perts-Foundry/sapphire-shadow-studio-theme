@@ -30,7 +30,7 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   radius 0, gallery `adapt`, title `rte`); the cart card was moved onto the standard shape used by
   `templates/index.json`, `templates/collection.json` and `templates/search.json`, and 404 only had
   its `show_shipping_info` made explicit, not its styling aligned.
-- [ ] Add a free shipping visual to the cart for easier understanding on where the customer is at in getting the free shipping tier. See if this is available as an existing setting today.
+- [ ] Fix contact footer link vs contact nav link, also contact us button is darkened, text isn't white?
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against

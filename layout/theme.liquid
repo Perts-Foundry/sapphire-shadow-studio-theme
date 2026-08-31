@@ -134,5 +134,9 @@
     {% if settings.quick_add or settings.mobile_quick_add %}
       {% render 'quick-add-modal' %}
     {% endif %}
+
+    {% if settings.redirect_to_cart_on_add and settings.cart_type == 'page' %}
+      {% render 'cart-redirect-on-add' %}
+    {% endif %}
   </body>
 </html>

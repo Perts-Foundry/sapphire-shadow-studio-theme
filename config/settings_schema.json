@@ -1729,6 +1729,14 @@
         "visible_if": "{{ settings.cart_type == 'drawer' }}"
       },
       {
+        "type": "checkbox",
+        "id": "redirect_to_cart_on_add",
+        "label": "Go to cart page after adding",
+        "info": "After a product is successfully added, go straight to the cart page.",
+        "default": false,
+        "visible_if": "{{ settings.cart_type == 'page' }}"
+      },
+      {
         "type": "header",
         "content": "t:content.cart_features"
       },

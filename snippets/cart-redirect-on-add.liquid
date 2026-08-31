@@ -1,0 +1,22 @@
+{% doc %}
+  Navigates to the cart page after a product is successfully added to the cart.
+
+  Rendered once from layout/theme.liquid, only when settings.redirect_to_cart_on_add
+  is enabled and settings.cart_type is 'page'. Listens for the theme's bubbling
+  cart-add event instead of modifying assets/product-form.js, so upstream Horizon
+  merges stay clean.
+
+  @example
+  {% render 'cart-redirect-on-add' %}
+{% enddoc %}
+
+<script>
+  // CartAddEvent (assets/events.js) dispatches under the shared 'cart:update'
+  // name, which CartUpdateEvent and quick-order-list edits also use, so filter
+  // to the product-form add source and skip failed adds.
+  document.addEventListener('cart:update', (event) => {
+    const data = event.detail && event.detail.data;
+    if (!data || data.source !== 'product-form-component' || data.didError) return;
+    window.location.assign({{ routes.cart_url | json }});
+  });
+</script>
