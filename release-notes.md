@@ -45,6 +45,15 @@ derive from the same shippable subtotal, so they cannot disagree with each other
 Sequencing: the theme goes conservative first and the `/policies/shipping-policy` edit follows the
 deploy, so the storefront never over-promises relative to policy.
 
+The shipping-copy contract in `docs/theme-settings-contracts.md` names four sources of truth, and
+this change moves two of them (the in-repo copy, and the shop policy in the step above). The third,
+the announcement slides in `sections/header-group.json`, is **deliberately left unqualified**: they
+are two lines of rotating banner ("$8.00 Flat Rate Shipping on Orders under $75.00" and "Free
+Shipping on Orders $75.00 and up"), and a mixed-cart caveat would swamp them. Both slides link
+`shopify://policies/shipping-policy`, which carries the exception, and the gift card's own product
+page states it where a gift card buyer will actually read it. The fourth source, the Admin rate
+names, needs nothing: they are "Economy" and "Expedited", which make no threshold claim.
+
 ## An illustration on the 404 page, and the transparency trap behind it (unreleased)
 
 `templates/404.json` gains an `image` block above the "Page not found" heading: a black line-art cat,
@@ -3539,8 +3548,9 @@ feature from the theme editor on the sync theme with no hand-authored PR:
   degrades to plain "Yes". Added as `vacation_ack_001` to all five garment
   product templates.
 - **Shipping line**: `snippets/shipping-info.liquid` appends the
-  `vacation_shipping_message` note in both branches, which surfaces on the
-  product page and directly above the cart's checkout button.
+  `vacation_shipping_message` note in all three of its output branches (gift
+  card, qualifies-for-free, does-not-qualify), which surfaces on the product
+  page and directly above the cart's checkout button.
 
 ### Operating constraints (the sync traps)
 
@@ -3558,8 +3568,11 @@ feature from the theme editor on the sync theme with no hand-authored PR:
 - **Do not rename `vacation_property_label` mid-vacation**: the value is the
   line-item property key, so renaming splits the acknowledgment across orders.
 - **The gift-card template deliberately has no vacation checkbox**: nothing
-  ships, so there is nothing to delay. The popup, announcement, and gift-card
-  free-shipping line still appear.
+  ships, so there is nothing to delay. The popup, the announcement and the gift
+  card's own delivery line still appear. That line said "Free shipping" when
+  this was written; it now reads "Delivered by email, no shipping", and the
+  vacation note still appends to it. See the gift-card entry at the top of this
+  file.
 - **Settings-group labels are deliberately literal English**, not `t:` keys,
   matching the custom "Shipping Information" settings precedent: operator-only
   UI, and the storefront-visible strings are all operator-editable settings

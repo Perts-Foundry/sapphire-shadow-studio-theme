@@ -39,8 +39,8 @@ several of the pass's other findings.
   table on the General profile prices Expedited at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9),
   and $80 (9+).
   Every variant on all six products reports `0 POUNDS`, so every order of any size buys the $20 tier
-  and the tiering above it is unreachable. Economy is priced on cart total, not weight, so it is
-  unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
+  and the tiering above it is unreachable. Economy is priced on the shippable merchandise subtotal, not
+  weight, so it is unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
 

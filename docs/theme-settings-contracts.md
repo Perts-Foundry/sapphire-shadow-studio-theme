@@ -27,7 +27,7 @@ Global CSS variables in `snippets/theme-styles-variables.liquid`; color schemes 
 
 ## Shipping copy
 
-**Shipping copy has four sources of truth and only one is greppable.** (1) Theme settings `flat_rate_shipping` and `free_shipping_threshold`, read by `snippets/shipping-info.liquid`. (2) Inline HTML in template JSON with no locale keys: the "Shipping & Turnaround" accordion in five product templates plus three answers in `templates/page.faq.json`. (3) The announcement slides in `sections/header-group.json`. (4) Two things outside the repo entirely: the Admin shipping-rate names (Settings > Shipping and delivery) and the Shopify shop policy at `/policies/shipping-policy`. A shipping-copy audit that only runs `git grep` misses the last two, which is how "Expedited" in the theme and "Express" at checkout coexisted. Read the out-of-repo half with:
+**Shipping copy has four sources of truth and only one is greppable.** (1) Theme settings `flat_rate_shipping` and `free_shipping_threshold`, read by `snippets/shipping-info.liquid`. (2) Inline HTML in template JSON with no locale keys: the "Shipping & Turnaround" accordion in the five garment product templates, the **"Delivery" accordion in `templates/product.gift-card.json`** (a sixth threshold claim, under a different heading, so a grep for "Shipping & Turnaround" does not find it), plus three answers in `templates/page.faq.json`. (3) The announcement slides in `sections/header-group.json`. (4) Two things outside the repo entirely: the Admin shipping-rate names (Settings > Shipping and delivery) and the Shopify shop policy at `/policies/shipping-policy`. A shipping-copy audit that only runs `git grep` misses the last two, which is how "Expedited" in the theme and "Express" at checkout coexisted. Read the out-of-repo half with:
 
 ```bash
 node --env-file=.env --input-type=module -e '
@@ -44,10 +44,18 @@ A campaign email would be a fifth source, and the only one that cannot be correc
 
 **The shipping note belongs under a product-page price and never under a product card, and nothing enforces that.** It is a per-block checkbox on `blocks/price.liquid`, so the rule lives entirely in each template's JSON. The six product templates set `show_shipping_info: true` on both their price blocks; `templates/index.json`, `collection.json`, `search.json`, `cart.json` and `404.json` set it to `false`. The schema default is `false`, so an omitted key now fails toward the card behaviour rather than the product-page one.
 
+**Ticking it has three outcomes, not two.** `blocks/price.liquid` derives `is_gift_card` from `product_resource.gift_card?` and forwards it, so a gift card product renders a delivery line ("Delivered by email, no shipping") rather than the flat-rate or free-shipping sentence. That is why `templates/product.gift-card.json` sets the key `true` like the five garment templates but does not show what they show.
+
 Two consequences worth knowing before changing either side:
 
 - **A price block placed fresh from the editor onto a product page needs the checkbox ticked.** Seven presets embed a price block without the key, two of them product-page surfaces (`blocks/_product-details.liquid`, `sections/featured-product-information.liquid`). This is the accepted cost of the default being `false`: a missing shipping line is visible on the page being edited, whereas the old `true` default silently added the line to every new product card.
 - **Do not audit this setting by grepping its name.** That enumerates the templates that opted in; the ones at risk are exactly the templates the name is absent from. Enumerate `"type": "price"` across `templates/` and subtract. Grepping the name is how `templates/404.json` was missed while `templates/cart.json` was being fixed. Rationale: release-notes.md.
+
+### `requires_shipping` is the predicate, and `gift_card?` keeps its question mark
+
+**All shipping math and gating turns on `requires_shipping`, never on `cart.total_price` and never on a gift-card check.** Checkout excludes digital gift card value from its price-based rate conditions: a gift card never enters a shipment, so the tiers evaluate the shippable merchandise subtotal. Verified at live checkout on 2026-08-31 ($65 garment + $50 gift card was charged the flat rate despite the $115 total). So `snippets/shipping-info.liquid` sums `final_line_price` over `requires_shipping` line items, and `snippets/cart-summary.liquid` gates the whole shipping block on the same predicate. Reading `cart.total_price` promises free shipping that checkout will not honour on a mixed cart, and nothing in CI catches it. Use `gift_card?` only where the copy is specifically about gift cards.
+
+**Both bare `gift_card` accessors are nil, and Liquid renders nil as nothing.** On the product drop the property is `gift_card?`, with the question mark; `product.gift_card` is undefined. On a cart line item there is no `product.gift_card` at all. Neither raises, neither warns, and `theme-check` passes, so a condition written either way silently takes the wrong branch forever. Three sites shipped that bug here: `blocks/price.liquid` advertised flat-rate shipping on the gift card page, `snippets/cart-summary.liquid` showed the flat-rate line on a gift-card-only cart, and `snippets/cart-products.liquid` carried a clause that never excluded anything. Rationale: release-notes.md.
 
 ## `data-fieldset-index`
 
