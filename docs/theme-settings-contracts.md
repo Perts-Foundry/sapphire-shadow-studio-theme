@@ -40,6 +40,15 @@ A campaign email would be a fifth source, and the only one that cannot be correc
 
 `write_shipping` is not granted, so rate names are read-only from here and renaming is an operator task in Admin. Also note `blocks/price.liquid`'s `show_shipping_info` setting hardcodes "$8 flat rate shipping and free shipping over $75 threshold" in an editor `info` string, so it goes stale if either theme setting changes.
 
+### `show_shipping_info`: product page yes, product card no
+
+**The shipping note belongs under a product-page price and never under a product card, and nothing enforces that.** It is a per-block checkbox on `blocks/price.liquid`, so the rule lives entirely in each template's JSON. The six product templates set `show_shipping_info: true` on both their price blocks; `templates/index.json`, `collection.json`, `search.json`, `cart.json` and `404.json` set it to `false`. The schema default is `false`, so an omitted key now fails toward the card behaviour rather than the product-page one.
+
+Two consequences worth knowing before changing either side:
+
+- **A price block placed fresh from the editor onto a product page needs the checkbox ticked.** Seven presets embed a price block without the key, two of them product-page surfaces (`blocks/_product-details.liquid`, `sections/featured-product-information.liquid`). This is the accepted cost of the default being `false`: a missing shipping line is visible on the page being edited, whereas the old `true` default silently added the line to every new product card.
+- **Do not audit this setting by grepping its name.** That enumerates the templates that opted in; the ones at risk are exactly the templates the name is absent from. Enumerate `"type": "price"` across `templates/` and subtract. Grepping the name is how `templates/404.json` was missed while `templates/cart.json` was being fixed. Rationale: release-notes.md.
+
 ## `data-fieldset-index`
 
 **`data-fieldset-index` counts rendered fieldsets, not options.** `assets/variant-picker.js` indexes `refs.fieldsets` with it, so `snippets/variant-main-picker.liquid` must keep the numbering dense: an option collapsed by `settings.variant_dropdown_threshold` emits no fieldset. Numbering by `forloop.index0` instead silently no-ops or, when the collapsed option is not last, mutates the wrong fieldset. Nothing in CI checks it; rationale: release-notes.md.

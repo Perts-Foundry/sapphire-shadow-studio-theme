@@ -15,15 +15,31 @@ ratio portrait with radius 8; title on the `custom` preset in the subheading fon
 the heading color; price on the `custom` preset at 0.875rem, with `show_shipping_info` now written
 out explicitly.
 
-**Why the default flip is safe, and what it costs.** Every existing consumer already sets the key
-explicitly: `false` on the collection, index, search and (now) cart cards, `true` on all six product
-templates' own price blocks, both occurrences per template. So no rendering changes anywhere except
-the one card that was the bug. The trade-off is that a price block newly placed from the editor on a
+**The cart was not the only card inheriting the default.** `templates/404.json`'s product card
+(`price_A6DYPt`) omitted the key too, in exactly the same state the cart card was in, so it was
+quietly printing the shipping note as well. It now sets `show_shipping_info: false` explicitly. The
+lesson generalises: auditing a schema default by grepping for the setting name only enumerates the
+templates that opted in, and the ones at risk are precisely the ones that name is absent from.
+Enumerate the block type (`"type": "price"`) and subtract, rather than enumerating the setting.
+
+**Why the default flip is safe, and what it costs.** With those two written out, every consumer now
+sets the key explicitly: `false` on the collection, index, search, 404 and cart cards, `true` on all
+six product templates' own price blocks, both occurrences per template. So the only rendering
+changes are the two cards that were the bug. The trade-off is that a price block newly placed from the editor on a
 product page now needs the checkbox ticked to get the shipping note back. That was accepted
 deliberately: a missing shipping line on a product page is visible on the page the operator is
 editing, whereas the old default failed silently, adding the line to every new product card anyone
 ever placed. The preset in `blocks/price.liquid` carries no settings of its own, so it takes the
 schema default either way.
+
+That cost is not hypothetical, and it is not limited to a hand-placed price block. Seven presets
+embed a price block without the key and so now render without the shipping note: the three in
+`sections/product-list.liquid`, plus `sections/product-recommendations.liquid`,
+`blocks/product-recommendations.liquid`, `blocks/product-card.liquid` (all card surfaces, where the
+new behaviour is the wanted one) and `blocks/_product-details.liquid` plus
+`sections/featured-product-information.liquid` (product-page surfaces, where a newly placed section
+needs the checkbox ticked). The six shipped product templates are unaffected; they carry their own
+explicit `true`.
 
 ## CLAUDE.md becomes a policy-and-trigger layer (unreleased)
 
