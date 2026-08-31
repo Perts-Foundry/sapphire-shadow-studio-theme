@@ -1,5 +1,30 @@
 # Release Notes
 
+## Contact footer link and the submit-button class collision (unreleased)
+
+The footer's "Contact" link pointed at `shopify://policies/contact-information`, the bare Contact
+Information shop policy, while the nav's Contact item and every in-repo reference
+(`templates/page.faq.json`, `templates/page.custom-orders.json`, `blocks/footer-link.liquid`) point
+at `/pages/contact`, the page that actually carries the contact form. The footer block now uses
+`"policy_type": "contact"`, the branch `blocks/footer-link.liquid` already had, so the two routes
+agree and neither carries a hardcoded URL.
+
+**`blocks/contact-form-submit-button.liquid` emitted both a hardcoded `button` class and the
+selected `style_class`.** With the style set to Secondary the element carried `button` and
+`button-secondary` at once, and because `.button-secondary`'s custom-property block in
+`assets/base.css` comes after `.button`'s, secondary silently won: transparent background, black
+text, on a button the editor still labelled Primary. The block now emits only
+`style_class | default: 'button'`, matching `snippets/button.liquid` and `blocks/add-to-cart.liquid`.
+`.button-secondary` is self-sufficient in `base.css` (the shared geometry selector at the top of the
+Buttons section names both classes), so dropping the hardcoded `button` loses no styling.
+
+A read-only pull of the live theme (`shopify theme pull --live --nodelete`) found **no drift** in
+`templates/page.contact.json`, `sections/footer-group.json` or `config/settings_data.json`: the live
+submit button is `style_class: "button"` under `scheme-1`, which is black background and white text.
+So the collision above was latent, not the cause of a current misrender, and any remaining
+appearance complaint about that button is a design question about scheme-1's black primary, not a
+bug in the block.
+
 ## `show_shipping_info` now defaults to false (unreleased)
 
 The cart's "You may also like" cards restated the shipping policy under every price, because the
