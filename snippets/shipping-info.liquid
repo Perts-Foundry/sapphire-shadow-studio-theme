@@ -26,51 +26,58 @@
   assign flat_rate_shipping = settings.flat_rate_shipping | default: '8.00'
   assign free_shipping_threshold = settings.free_shipping_threshold | default: '75.00'
 
-  # One derivation in cents feeds both the text branch and the progress
-  # bar, so they cannot disagree. Prices are already integer cents.
-  assign threshold_cents = free_shipping_threshold | times: 100.0 | round
-
-  if cart_context
-    # Checkout evaluates its price-based rate conditions against the
-    # shippable merchandise only. A gift card never enters a shipment, so
-    # its value does not count toward the free-shipping threshold, and
-    # cart.total_price (which includes it) would promise free shipping that
-    # checkout will not honour on a mixed cart. Verified at checkout on
-    # 2026-08-31: $65 garment + $50 gift card was charged the flat rate.
-    # requires_shipping is the predicate checkout itself uses, so it also
-    # covers any future non-shipping item. final_line_price is quantity- and
-    # discount-aware; see release-notes.md for the discount-basis assumption.
-    assign shippable_total = 0
-    for item in cart.items
-      if item.requires_shipping
-        assign shippable_total = shippable_total | plus: item.final_line_price
-      endif
-    endfor
-    assign remaining_cents = threshold_cents | minus: shippable_total
-  elsif product_price
-    assign remaining_cents = threshold_cents | minus: product_price
-  endif
-
-  if remaining_cents <= 0
-    assign qualifies_for_free_shipping = true
-  else
-    assign qualifies_for_free_shipping = false
-  endif
-
+  # The vacation note appends to every branch, gift card included, so it is
+  # derived before the split below.
   if settings.vacation_mode_enabled
     assign vacation_note = settings.vacation_shipping_message | strip
   endif
 
-  # Free-shipping progress bar (cart only). Guard on positive parsed
-  # cents: the setting is free text, so a cleared value or one like
-  # "$75" parses to 0 and must disable the bar, not pin it at 100%
-  # (and 0 cents would divide by zero below).
-  assign show_shipping_progress = false
-  if cart_context and threshold_cents > 0
-    assign show_shipping_progress = true
-    assign progress_percent = shippable_total | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
-    assign remaining_amount = remaining_cents | money
-  endif
+  # Everything below is threshold work, and a gift card reads none of it: it
+  # renders its own delivery line. Scoping it here keeps a later reader from
+  # having to prove the arithmetic unreachable on that path.
+  unless is_gift_card
+    # One derivation in cents feeds both the text branch and the progress
+    # bar, so they cannot disagree. Prices are already integer cents.
+    assign threshold_cents = free_shipping_threshold | times: 100.0 | round
+
+    if cart_context
+      # Checkout evaluates its price-based rate conditions against the
+      # shippable merchandise only. A gift card never enters a shipment, so
+      # its value does not count toward the free-shipping threshold, and
+      # cart.total_price (which includes it) would promise free shipping that
+      # checkout will not honour on a mixed cart. Verified at checkout on
+      # 2026-08-31: $65 garment + $50 gift card was charged the flat rate.
+      # requires_shipping is the predicate checkout itself uses, so it also
+      # covers any future non-shipping item. final_line_price is quantity- and
+      # discount-aware; see release-notes.md for the discount-basis assumption.
+      assign shippable_total = 0
+      for item in cart.items
+        if item.requires_shipping
+          assign shippable_total = shippable_total | plus: item.final_line_price
+        endif
+      endfor
+      assign remaining_cents = threshold_cents | minus: shippable_total
+    elsif product_price
+      assign remaining_cents = threshold_cents | minus: product_price
+    endif
+
+    if remaining_cents <= 0
+      assign qualifies_for_free_shipping = true
+    else
+      assign qualifies_for_free_shipping = false
+    endif
+
+    # Free-shipping progress bar (cart only). Guard on positive parsed
+    # cents: the setting is free text, so a cleared value or one like
+    # "$75" parses to 0 and must disable the bar, not pin it at 100%
+    # (and 0 cents would divide by zero below).
+    assign show_shipping_progress = false
+    if cart_context and threshold_cents > 0
+      assign show_shipping_progress = true
+      assign progress_percent = shippable_total | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
+      assign remaining_amount = remaining_cents | money
+    endif
+  endunless
 %}
 
 {%- if is_gift_card -%}
