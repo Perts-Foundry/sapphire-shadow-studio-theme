@@ -31,6 +31,11 @@
     justify-content: space-between;
   }
 
+  /* Let the free-shipping progress bar take its own row above the text. */
+  .cart__summary-item.cart__shipping-info {
+    flex-wrap: wrap;
+  }
+
   .cart__summary-item.tax-note small {
     font-size: var(--font-size--2xs);
   }

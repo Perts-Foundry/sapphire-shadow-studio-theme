@@ -148,9 +148,11 @@
 
   .shipping-progress {
     display: block;
-    /* The cart summary wraps this in a flex item, where a block div
-       collapses to zero width without an explicit one. */
+    /* The cart summary wraps this in a flex row, where a block div
+       collapses to zero width; take the full row so the bar sits on
+       its own line above the shipping sentence. */
     width: 100%;
+    flex: 1 0 100%;
     margin-top: 0.75rem;
     height: 0.375rem;
     border-radius: 999px;
