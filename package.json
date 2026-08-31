@@ -33,6 +33,6 @@
     "@shopify/cli": "4.7.0",
     "heic-decode": "2.1.0",
     "pa11y-ci": "4.1.1",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }
