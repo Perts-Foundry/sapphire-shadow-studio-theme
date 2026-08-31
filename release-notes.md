@@ -1,5 +1,39 @@
 # Release Notes
 
+## The 404 card joins the standard, and the real holdouts turn out to be the product pages (unreleased)
+
+`templates/404.json`'s "Discover something new" card was the last template still carrying the
+pre-standard card the theme editor emits by default: gap 4, inheriting the section's colour scheme,
+square corners, an `adapt` gallery and an `rte` title. Its block structure was already right, so this
+is a settings-only edit; the four blocks now match `templates/collection.json` field for field,
+block IDs and order untouched.
+
+Worth recording is what checking the "only remaining copy" claim turned up. It was true as written,
+because it was written about the gap-4 shape, and 404 was the only template with that. It was not
+true of the standard: all six product templates' "You may also like" cards sit on a near-identical
+pre-standard shape that differs only in having gap 8, so a grep for the marker the TODO named missed
+them entirely. `docs/theme-conventions.md` said 404 was the known holdout; that sentence now names
+the product templates instead. They are deliberately left as they are, and the record of the
+divergence lives in that doc rather than in `TODO.md`: it is a styling judgement to make when
+someone next touches those templates, not queued work.
+
+Their `show_shipping_info: true` is not part of that drift. The product-page rule in
+`docs/theme-settings-contracts.md` puts the shipping note on product-page surfaces, so it stays
+whichever way the styling decision goes. The general lesson: a divergence recorded by one of its
+symptoms gets closed when that symptom goes, while the divergence continues elsewhere under a
+different value. Describe the shape the standard requires, not the wrong value one instance had.
+
+The doc now also names where the pre-standard shape comes from, which it never did: the `presets`
+blocks in `sections/product-list.liquid`, `sections/product-recommendations.liquid`,
+`blocks/product-recommendations.liquid` and `blocks/product-card.liquid` all emit
+`product_card_gap: 4` with an `adapt` gallery. Placing a card in the editor and leaving it produces
+the pre-standard shape by default, so the drift is re-seeded on every new template until someone
+copies the standard over it. The holdout list is written out in full there rather than by its most
+visible symptoms, for the same reason the gap-4 marker failed.
+
+Nothing in CI compares one template's card to another's, so the only checks behind this are the
+written table in `docs/theme-conventions.md` and a hand-run field diff at edit time.
+
 ## Go to cart page after adding (unreleased)
 
 A new Cart setting, `redirect_to_cart_on_add` (default off, visible only when `cart_type` is

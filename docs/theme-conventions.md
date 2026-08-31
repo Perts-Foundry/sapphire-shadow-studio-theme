@@ -76,9 +76,15 @@ Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks
 Every `_product-card` block in a JSON template is hand-copied JSON. There is no schema default, no
 preset and nothing in CI that checks one template's card against another's, so the shape below is
 the only definition of "the standard card" and a new template gets whatever the theme editor emitted
-unless someone copies it. It has drifted silently once already: the cart card sat on the pre-standard
-shape and, because its price block omitted `show_shipping_info`, restated the shipping policy under
-every recommendation.
+unless someone copies it. What the editor emits is the `presets` block in `sections/product-list.liquid`
+(three of them), `sections/product-recommendations.liquid`, `blocks/product-recommendations.liquid`
+and `blocks/product-card.liquid`: `product_card_gap: 4` with an `adapt` gallery, the pre-standard
+shape. Placing a card and leaving it is therefore drift by default, not by accident.
+
+It has drifted silently twice so far. The cart card sat on the pre-standard shape and, because its
+price block omitted `show_shipping_info`, restated the shipping policy under every recommendation;
+`templates/404.json` sat on the same shape until it was aligned. Six more cards are still open, see
+below.
 
 Copy these values when placing a product card, or copy the block wholesale out of
 `templates/collection.json`:
@@ -90,9 +96,17 @@ Copy these values when placing a product card, or copy the block wholesale out o
 | `product-title` | `type_preset: "custom"`, `font: "var(--font-subheading--family)"`, `font_size: "1rem"`, `line_height: "tight"`, `color: "var(--color-foreground-heading)"`, `padding-block-start: 4` |
 | `price` | `type_preset: "custom"`, `font: "var(--font-body--family)"`, `font_size: "0.875rem"`, `show_shipping_info: false` |
 
-`templates/index.json`, `templates/collection.json`, `templates/search.json` and `templates/cart.json`
-all match this. `templates/404.json` is the known holdout and is tracked in `TODO.md`; do not treat it
-as a model. Section-level settings (which collection, column count, gaps, headers) are per-template
+`templates/index.json`, `templates/collection.json`, `templates/search.json`, `templates/cart.json`
+and `templates/404.json` all match this. The remaining holdouts are the six product templates'
+"You may also like" cards. The full divergence, not a sample of it: `inherit_color_scheme: true` with
+`color_scheme: ""`, `border_radius: 0`, card paddings `0 / 8 / 0 / 0`, gallery `image_ratio: "adapt"`
+and `border_radius: 0`, title `type_preset: "rte"` in the body font at `line_height: "normal"` with
+`color: "var(--color-foreground)"`, price `type_preset: "h6"` at `font_size: "1rem"`. Only the card
+gap already matches at 8, which is why a grep for the gap-4 marker missed them. Their
+`show_shipping_info: true` is deliberate and stays either way. Whether the rest joins the standard is
+an open judgement rather than queued work, so it is recorded here and not in `TODO.md`: decide it
+when you next touch those templates, and until then do not treat them as a model either way.
+Section-level settings (which collection, column count, gaps, headers) are per-template
 and deliberately not part of the standard.
 
 ## Coding standards
