@@ -18,6 +18,11 @@ after a successful add. Two decisions worth keeping:
 Known and accepted trade-off: every successful add navigates, interrupting multi-item adds from a
 collection. That is the intended "review before checkout" flow, not a bug.
 
+The setting is enabled for this store in `config/settings_data.json`. The schema default stays
+`false` (a checkbox default only applies where settings_data carries no value), so shipping the
+snippet without the settings_data entry rendered nothing; the first preview test failed exactly
+that way.
+
 ## Free-shipping progress bar in the cart (unreleased)
 
 `snippets/shipping-info.liquid` now renders a progress bar toward the free-shipping threshold in

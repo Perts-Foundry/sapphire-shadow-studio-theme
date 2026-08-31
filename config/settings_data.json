@@ -61,6 +61,7 @@
     "cart_type": "page",
     "cart_price_font": "subheading",
     "auto_open_cart_drawer": true,
+    "redirect_to_cart_on_add": true,
     "show_cart_note": false,
     "show_add_discount_code": false,
     "drawer_drop_shadow": true,
