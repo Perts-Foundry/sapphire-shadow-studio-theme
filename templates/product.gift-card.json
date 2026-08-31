@@ -337,7 +337,7 @@
                     "text_del001": {
                       "type": "text",
                       "settings": {
-                        "text": "<p>Gift cards are delivered by email. Choose to send yours right away or schedule it for a later date, and add a personal message if you like. If the recipient does not see it, ask them to check their spam or promotions folder.</p><p>Because gift cards are digital, there is nothing to ship and no shipping cost.</p>",
+                        "text": "<p>Gift cards are delivered by email. Choose to send yours right away or schedule it for a later date, and add a personal message if you like. If the recipient does not see it, ask them to check their spam or promotions folder.</p><p>Because gift cards are digital, there is nothing to ship and no shipping cost. Gift card value does not count toward our free-shipping minimum, though; that minimum is based on the physical items in your order.</p>",
                         "width": "100%",
                         "max_width": "normal",
                         "alignment": "left",
