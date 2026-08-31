@@ -230,6 +230,7 @@
                 "show_sale_price_first": true,
                 "show_installments": false,
                 "show_tax_info": false,
+                "show_shipping_info": false,
                 "type_preset": "h6",
                 "width": "100%",
                 "alignment": "left",

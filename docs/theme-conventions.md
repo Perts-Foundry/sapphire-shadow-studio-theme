@@ -71,6 +71,30 @@ Static vs dynamic `content_for` invocation syntax and schema-targeting (`"blocks
 - **A block cannot read another block's settings.** When two blocks must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`, read by both the variant picker and the acknowledgement block); duplicating the setting on each block gives two sources of truth that drift apart silently.
 - **NEVER edit `{% schema %}` directly** when it's generated from source (e.g. by `scripts/size-chart/`); modify the source and regenerate.
 
+## The site-standard product card
+
+Every `_product-card` block in a JSON template is hand-copied JSON. There is no schema default, no
+preset and nothing in CI that checks one template's card against another's, so the shape below is
+the only definition of "the standard card" and a new template gets whatever the theme editor emitted
+unless someone copies it. It has drifted silently once already: the cart card sat on the pre-standard
+shape and, because its price block omitted `show_shipping_info`, restated the shipping policy under
+every recommendation.
+
+Copy these values when placing a product card, or copy the block wholesale out of
+`templates/collection.json`:
+
+| Level | Settings |
+| --- | --- |
+| `_product-card` | `product_card_gap: 8`, `inherit_color_scheme: false`, `color_scheme: "scheme-1"`, `border_radius: 24`, all four paddings `16` |
+| `_product-card-gallery` | `image_ratio: "portrait"`, `border_radius: 8`, all four paddings `0` |
+| `product-title` | `type_preset: "custom"`, `font: "var(--font-subheading--family)"`, `font_size: "1rem"`, `line_height: "tight"`, `color: "var(--color-foreground-heading)"`, `padding-block-start: 4` |
+| `price` | `type_preset: "custom"`, `font: "var(--font-body--family)"`, `font_size: "0.875rem"`, `show_shipping_info: false` |
+
+`templates/index.json`, `templates/collection.json`, `templates/search.json` and `templates/cart.json`
+all match this. `templates/404.json` is the known holdout and is tracked in `TODO.md`; do not treat it
+as a model. Section-level settings (which collection, column count, gaps, headers) are per-template
+and deliberately not part of the standard.
+
 ## Coding standards
 
 ### Liquid
