@@ -2,13 +2,31 @@
 
 ## Contact footer link and the submit-button class collision (unreleased)
 
-The footer's "Contact" link pointed at `shopify://policies/contact-information`, the bare Contact
-Information shop policy, while every in-repo reference (`templates/page.faq.json`,
-`templates/page.custom-orders.json`, `blocks/footer-link.liquid`) points at `/pages/contact`, the
-page that actually carries the contact form; the Admin main menu's Contact item, which is not in the
-repo, points there too. The footer block now uses `"policy_type": "contact"`, the branch
-`blocks/footer-link.liquid` already had. The path is still hardcoded, but now in exactly one place
-(`blocks/footer-link.liquid:25`) rather than in a JSON call site per link.
+The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to
+`shopify://policies/contact-information` while the nav went to `/pages/contact`. **Both now go to
+the Contact information policy**, `/policies/contact-information`.
+
+That is the opposite of the obvious fix, and the reason is what the policy actually contains. It is
+not a bare legal notice; it carries the phone number, the note that email is the faster route, and a
+link on to the `/pages/contact` form. So it works as the contact landing page, with the form one
+click away, while `/pages/contact` is the form alone and mentions the phone number nowhere. Sending
+both "Contact" entry points there means a customer who would rather call can find the number, and
+one who wants the form is one link from it.
+
+Two things deliberately did **not** change. The twelve inline calls to action in
+`templates/page.faq.json` and `templates/page.custom-orders.json` ("message us", "send it over",
+`/pages/contact?subject=custom-order`) still go straight to the form: those are mid-sentence prompts
+to *do* something, not navigation, and routing them through a policy page would add a hop to an
+action the sentence already committed the reader to. And `/pages/contact` itself stays exactly as it
+is, including its `templates/page.contact.json` template and its `scripts/a11y/paths.json` entry.
+
+**The `contact` branch in `blocks/footer-link.liquid` is the one branch with a hardcoded URL, and it
+has to be.** Liquid's `shop` object exposes `privacy_policy`, `refund_policy`, `terms_of_service`,
+`shipping_policy` and `subscription_policy`, and nothing for Contact information, so unlike its five
+siblings this branch has no policy object to resolve a `url` and `title` from. That is why the
+schema option labelled "Contact information" used to resolve to a *page*: nobody had a policy object
+to hand. Its default label is now "Contact information" rather than "Contact", matching the policy
+titles the sibling branches inherit; the footer block overrides it to "Contact" for the visible link.
 
 **`blocks/contact-form-submit-button.liquid` emitted both a hardcoded `button` class and the
 selected `style_class`.** With the style set to Secondary the element carried `button` and

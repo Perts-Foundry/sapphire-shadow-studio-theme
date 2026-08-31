@@ -22,8 +22,12 @@
       when 'subscription'
         assign policy = shop.subscription_policy
       when 'contact'
-        assign link_url = '/pages/contact'
-        assign link_label = link_label | default: 'Contact'
+        # The only branch with a hardcoded URL. Liquid's `shop` object exposes
+        # privacy_policy / refund_policy / terms_of_service / shipping_policy /
+        # subscription_policy and nothing for Contact information, so there is no
+        # policy object to resolve. The route itself is stable.
+        assign link_url = '/policies/contact-information'
+        assign link_label = link_label | default: 'Contact information'
     endcase
 
     if policy != blank
