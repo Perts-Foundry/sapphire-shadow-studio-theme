@@ -149,6 +149,103 @@ export function classify(o) {
   return { verdict: PASS, reason: 'ok' };
 }
 
+// --- transient-failure retry policy ----------------------------------------
+//
+// One predicate and one run-scoped budget, shared by every request this file
+// makes (content probes, root, /password, both sitemap fetches, and BOTH halves
+// of the auth step: the cookie-seed GET and the password POST), so the auth step
+// and the content probes cannot drift apart again. They did: auth retried any
+// 5xx while the content probes retried 429 only, so the exact transient 503 the
+// auth step is written to absorb HARD-FAILed a deploy that had already gone
+// live. Nothing here may hand-roll a second policy; `authenticateStorefront`
+// creates its own budget only when called outside a run (the a11y helper), so
+// its sleeps are bounded either way.
+//
+// Retryable: 408/429 plus the edge-transient 5xx family, and thrown network
+// errors. NOT retryable: 401/403/404/410 and every other 4xx (including the
+// bot-rejection statuses), which are answers, not weather.
+//
+// 500 is special-cased to a single retry: a broken Liquid template 500s
+// deterministically, so retrying it to the cap only spends the run's budget on
+// a failure that is going to stand.
+export const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+/** True when a status is worth a retry. A thrown request is handled separately. */
+export function isRetryableStatus(status) {
+  return typeof status === 'number' && RETRYABLE_STATUSES.has(status);
+}
+
+/** Retry-After is clamped here: an edge may name a wait longer than the job has. */
+export const RETRY_AFTER_CAP_MS = 30000;
+
+/**
+ * Parse a Retry-After header (delta-seconds or an HTTP-date) into milliseconds.
+ * Returns null when absent or unparseable; never negative.
+ * @param {string|null|undefined} value
+ * @param {number} [nowMs] injectable clock, for the HTTP-date form
+ * @returns {number|null}
+ */
+export function parseRetryAfter(value, nowMs = Date.now()) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (raw === '') return null;
+  if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+  const at = Date.parse(raw);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, at - nowMs);
+}
+
+/**
+ * Run-scoped retry budget. Threaded through every probe so ~200 sequential
+ * product probes cannot each spend the full per-probe backoff and turn a fast
+ * HARD-FAIL into a 15-minute job timeout.
+ * @param {object} [o]
+ * @param {number} [o.maxSleepMs]        total retry sleep allowed across the run
+ * @param {number} [o.maxExhaustedProbes] 5xx/network exhaustions before the breaker trips
+ */
+export function createRetryBudget({ maxSleepMs = 120000, maxExhaustedProbes = 3 } = {}) {
+  return {
+    maxSleepMs, maxExhaustedProbes,
+    sleptMs: 0, retries: 0, exhaustedProbes: 0, tripped: false, budgetSpent: false,
+  };
+}
+
+/**
+ * Delay for the next attempt, or null when the run may not sleep again.
+ * Deterministic (no jitter): probes are sequential, so there is no herd to
+ * spread, and exact delays keep the unit tests' `sleep.delays` assertions sharp.
+ */
+function retryDelayFor({ budget, backoff, attempt, retryAfterMs }) {
+  const remaining = budget.maxSleepMs - budget.sleptMs;
+  if (remaining <= 0) return null;
+  const base = retryAfterMs !== null && retryAfterMs !== undefined
+    ? Math.min(retryAfterMs, RETRY_AFTER_CAP_MS)
+    : backoff[Math.min(attempt, backoff.length - 1)];
+  if (!Number.isFinite(base) || base < 0) return null;
+  return Math.min(base, remaining);
+}
+
+/** Record a probe that used up its retries, and trip the breaker at the cap. */
+function noteExhausted(budget, { hitError, status }) {
+  // 429 is throttling, already classified as a SOFT-WARN; only a server/network
+  // failure counts toward "the edge is degraded, stop paying for retries".
+  if (!hitError && !(typeof status === 'number' && status >= 500)) return;
+  budget.exhaustedProbes += 1;
+  if (budget.exhaustedProbes >= budget.maxExhaustedProbes) budget.tripped = true;
+}
+
+/** One-line retry summary for the report, or null when nothing was retried. */
+export function retrySummaryLine(budget) {
+  if (!budget || (budget.retries === 0 && !budget.tripped && !budget.budgetSpent)) return null;
+  const notes = [];
+  if (budget.budgetSpent) notes.push('sleep budget spent');
+  if (budget.tripped) notes.push('edge degraded (retries disabled)');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  return `retries: ${plural(budget.retries, 'retry', 'retries')}, ${budget.sleptMs}ms slept, `
+    + `${plural(budget.exhaustedProbes, 'probe', 'probes')} exhausted`
+    + `${notes.length ? `; ${notes.join('; ')}` : ''}`;
+}
+
 /**
  * Extract product paths from Shopify sitemap XML (index or child). Tolerant of
  * malformed markup; returns pathnames like `/products/handle`.
@@ -240,14 +337,51 @@ const realSleep = (ms) => new Promise(r => setTimeout(r, ms));
  * @param {Function} o.fetchImpl
  * @param {Function} o.sleep
  * @param {number[]} o.backoff  per-retry delays; its length caps the retries
+ * @param {object} [o.budget]   run-scoped retry budget; one is created when the
+ *   caller has no run to account against (the a11y helper), so the sleeps here
+ *   are always bounded by the same policy the probes use
+ * @param {Function} [o.onRetry] one-line retry diagnostic sink
  * @returns {Promise<'success'|'rejected'|'throttled'|'error'>}
  */
-export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff }) {
-  try { updateJar(jar, await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' })); } catch { /* seed cookie best-effort */ }
+export async function authenticateStorefront({
+  baseUrl, password, jar, fetchImpl, sleep, backoff,
+  budget = createRetryBudget(), onRetry = () => {},
+}) {
+  // Both loops below go through `isRetryableStatus` / `retryDelayFor`, the same
+  // policy the content probes use. That is the whole point of the shared
+  // predicate: the auth step and the probes drifted apart once already.
+  const sleepFor = async (attempt, retryAfterMs, what) => {
+    const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+    if (delay === null) { budget.budgetSpent = true; return false; }
+    onRetry(`retry ${baseUrl}/password (${what}) attempt ${attempt + 1} in ${delay}ms`);
+    budget.retries += 1;
+    budget.sleptMs += delay;
+    await sleep(delay);
+    return true;
+  };
+
+  // Seed the cookie jar. Best-effort as before, but no longer a single silent
+  // swallow: a transient failure here costs the POST its session cookie, so one
+  // retry pass is worth the backoff. Still non-fatal on the second failure.
+  for (let seedAttempt = 0; seedAttempt < 2; seedAttempt += 1) {
+    let seedStatus = null;
+    let seedRetryAfter = null;
+    try {
+      const seedRes = await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' });
+      updateJar(jar, seedRes);
+      seedStatus = seedRes.status;
+      seedRetryAfter = parseRetryAfter(seedRes.headers.get('retry-after'));
+    } catch { /* seed cookie best-effort */ }
+    if (seedStatus !== null && !isRetryableStatus(seedStatus)) break;
+    if (seedAttempt === 0 && !budget.tripped) {
+      if (!await sleepFor(0, seedRetryAfter, seedStatus === null ? 'network error' : seedStatus)) break;
+    }
+  }
   let attempt = 0;
   while (true) {
     let postStatus = null;
     let postLocPath = null;
+    let postRetryAfter = null;
     try {
       const postRes = await fetchImpl(`${baseUrl}/password`, {
         method: 'POST',
@@ -257,15 +391,23 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
       });
       updateJar(jar, postRes);
       postStatus = postRes.status;
+      postRetryAfter = parseRetryAfter(postRes.headers.get('retry-after'));
       const loc = postRes.headers.get('location');
       if (loc) { try { postLocPath = new URL(loc, `${baseUrl}/password`).pathname; } catch { postLocPath = loc; } }
     } catch { postStatus = null; }
-    // Retry a throttled (429) or transient server/edge error (5xx) POST: the
-    // storefront password endpoint intermittently 503s under bot-management.
-    if ((postStatus === 429 || (postStatus !== null && postStatus >= 500)) && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    // Retry a throttled (429), a transient server/edge error, or a thrown
+    // request: the storefront password endpoint intermittently 503s under
+    // bot-management. 500 keeps the probes' single-retry rule.
+    const postRetryable = postStatus === null || isRetryableStatus(postStatus);
+    if (postRetryable && !budget.tripped) {
+      const cap = postStatus === 500 ? Math.min(1, backoff.length) : backoff.length;
+      if (attempt < cap) {
+        if (await sleepFor(attempt, postRetryAfter, postStatus === null ? 'network error' : postStatus)) {
+          attempt += 1;
+          continue;
+        }
+      }
+      noteExhausted(budget, { hitError: postStatus === null, status: postStatus });
     }
     if (postStatus === null) return 'error';
     if (postStatus === 429) return 'throttled';
@@ -278,7 +420,8 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
 
 /**
  * Fetch with a per-request timeout, manual-redirect hop-following (stopping at
- * a /password wall), and retry-on-429 with backoff.
+ * a /password wall), and transient-failure retry with backoff (see
+ * `isRetryableStatus` and `createRetryBudget`).
  *
  * When `markers` is supplied, the body of the FINAL hop is read on a 200 and
  * checked for each marker string. Only the names of the missing markers are
@@ -289,10 +432,13 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
  * @param {string} url
  * @param {object} opts
  * @param {string[]} [opts.markers] fixed marker strings to require in the body
+ * @param {object} [opts.budget] run-scoped retry budget (see createRetryBudget)
+ * @param {Function} [opts.onRetry] stderr sink, one line per retry
  * @returns {Promise<{status:number|null, finalHost:string|null, themeDesc:string|null, redirectPath:string|null, retriesExhausted:boolean, markersMissing:string[]|null, markerReadError:boolean}>}
  */
 async function fetchObservation(url, {
   jar, fetchImpl, sleep, backoff, timeoutMs, maxHops = 5, markers = null,
+  budget = createRetryBudget(), onRetry = () => {},
 }) {
   let attempt = 0;
   while (true) {
@@ -300,7 +446,7 @@ async function fetchObservation(url, {
     let hops = 0;
     let status = null, finalHost = null, themeDesc = null, redirectPath = null;
     let markersMissing = null, markerReadError = false;
-    let hitError = false;
+    let hitError = false, retryAfterMs = null;
     while (true) {
       const headers = { ...BROWSER_HEADERS };
       if (jar && jar.size) headers.cookie = cookieHeader(jar);
@@ -324,6 +470,7 @@ async function fetchObservation(url, {
         }
         if (jar) updateJar(jar, res);
         status = res.status;
+        retryAfterMs = parseRetryAfter(res.headers.get('retry-after'));
         finalHost = hostOf(res.url) || finalHost;
         const loc = res.headers.get('location');
         if (status >= 300 && status < 400 && loc) {
@@ -361,10 +508,25 @@ async function fetchObservation(url, {
       hops += 1;
     }
 
-    if (!hitError && status === 429 && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    // Retry the transient failures (429/408/5xx/network throw); everything else
+    // is an answer and is classified as-is. The breaker and the sleep budget are
+    // run-scoped, so a degraded edge stops costing time after a few probes.
+    if ((hitError || isRetryableStatus(status)) && !budget.tripped) {
+      // A 500 is retried at most once: a broken template 500s deterministically.
+      const cap = status === 500 ? Math.min(1, backoff.length) : backoff.length;
+      if (attempt < cap) {
+        const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+        if (delay !== null) {
+          onRetry(`retry ${url} (${hitError ? 'network error' : status}) attempt ${attempt + 1} in ${delay}ms`);
+          budget.retries += 1;
+          budget.sleptMs += delay;
+          await sleep(delay);
+          attempt += 1;
+          continue;
+        }
+        budget.budgetSpent = true;
+      }
+      noteExhausted(budget, { hitError, status });
     }
     const retriesExhausted = !hitError && status === 429;
     return {
@@ -410,15 +572,22 @@ export async function runSmoke({
   timeoutMs = 30000,
   maxProducts = 200,
   maxSeconds = 240,
+  retryBudgetMs = 120000,
+  retryBreakerProbes = 3,
+  sitemapIndexAttempts = 3,
   log = () => {},
+  logRetry = (line) => process.stderr.write(`smoke: ${line}\n`),
 } = {}) {
   const expectedHost = hostOf(baseUrl);
   const jar = new Map();
   const lines = [];
   const results = [];
   const deadline = Date.now() + maxSeconds * 1000;
+  // One budget for the whole run: ~200 sequential probes must not each be free
+  // to spend the full per-probe backoff (the deploy job's cap is 15 minutes).
+  const budget = createRetryBudget({ maxSleepMs: retryBudgetMs, maxExhaustedProbes: retryBreakerProbes });
 
-  const probeOpts = { jar, fetchImpl, sleep, backoff, timeoutMs };
+  const probeOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
 
   const record = (path, obs, isProduct) => {
     const { verdict, reason } = classify({
@@ -445,6 +614,8 @@ export async function runSmoke({
     results.push({ path: '/', verdict: HARD_FAIL, reason: `server error ${rootObs.status}` });
     lines.push(`/ HARD-FAIL ${rootObs.status} host=${rootObs.finalHost ?? '-'} theme=- (server error ${rootObs.status})`);
     log(lines[lines.length - 1]);
+    const rootRetryLine = retrySummaryLine(budget);
+    if (rootRetryLine) { lines.push(rootRetryLine); log(rootRetryLine); }
     writeGithubOutput(lines.join('\n'), 1);
     return { exitCode: 1, lines, mode };
   }
@@ -458,7 +629,9 @@ export async function runSmoke({
   if (mode === 'LOCKED' && password) {
     // Retry/outcome rules live in authenticateStorefront (shared with the a11y
     // auth helper); only the deploy-facing consequences are decided here.
-    const authResult = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff });
+    const authResult = await authenticateStorefront({
+      baseUrl, password, jar, fetchImpl, sleep, backoff, budget, onRetry: logRetry,
+    });
     maskCookieValues(jar);
     authed = authResult === 'success';
     if (authResult === 'rejected') {
@@ -467,6 +640,11 @@ export async function runSmoke({
       results.push({ path: '/password', verdict: HARD_FAIL, reason: 'auth rejected (password provided but refused; rotated/wrong secret)' });
       lines.push('/password HARD-FAIL - AUTH: password provided but the gate refused it (rotated or wrong secret); content coverage would be lost');
       log(lines[lines.length - 1]);
+      // This is a HARD-FAIL an operator will be diagnosing, and the root probe
+      // and the auth step may both have retried to get here. Report it on this
+      // path too, or the retry evidence vanishes on the branch that needs it.
+      const authRetryLine = retrySummaryLine(budget);
+      if (authRetryLine) { lines.push(authRetryLine); log(authRetryLine); }
       writeGithubOutput(lines.join('\n'), 1);
       return { exitCode: 1, lines, mode };
     }
@@ -500,6 +678,8 @@ export async function runSmoke({
     results.push({ path: '/password', verdict, reason });
     lines.push(`/password ${verdict} ${obs.status ?? '000'} host=${obs.finalHost ?? '-'} theme=${obs.themeDesc ?? '-'} (${reason})`);
     log(lines[lines.length - 1]);
+    const fallbackRetryLine = retrySummaryLine(budget);
+    if (fallbackRetryLine) { lines.push(fallbackRetryLine); log(fallbackRetryLine); }
     // Block only on a broken page; a rendered page greens regardless of the
     // >=1-PASS rule (which governs the content-probe paths, not this fallback).
     const exitCode = verdict === HARD_FAIL ? 1 : 0;
@@ -508,28 +688,95 @@ export async function runSmoke({
   }
 
   // 4b. Enumerate products from the sitemap.
-  const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs };
+  //
+  // A non-positive `maxProducts` would break out of the child loop before the first fetch, leaving
+  // zero paths with no failure recorded, which lands on the empty-catalogue exemption: the whole
+  // zero-coverage rule silently off, and the report asserting the store lists no products. That is
+  // a misconfiguration, not a catalogue, so it is refused here rather than reported as one.
+  // `envConfig`'s `posInt` already rejects a non-positive SMOKE_MAX_PRODUCTS; this covers the
+  // programmatic callers it does not sit in front of.
+  if (!Number.isFinite(maxProducts) || maxProducts < 1) {
+    throw new Error(`maxProducts must be a positive integer (got ${maxProducts})`);
+  }
+  const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
   let productPaths = [];
+  // Separates "the sitemap could not be read" from "the sitemap says there are no products". Those
+  // two used to be the same observation: an error page parses to zero locs exactly like an empty
+  // catalogue does. `fetchWithBody` throws on a spent non-OK status now, which is what makes the
+  // distinction possible at all.
+  // `indexFailed` and `childrenFailed` are tracked separately because they need different
+  // messages: they are reached after different attempt counts, and only one of them is
+  // "the sitemap index was unreachable".
+  let indexFailed = false;
+  let childrenFailed = 0;
+  // Requests, not retries. `fetchWithBody` spends `cap` retries on top of the first attempt, so
+  // the index makes `sitemapIndexAttempts + 1` and a child makes `backoff.length + 1`. Reporting
+  // the retry count as the attempt count undercounts every message by one.
+  const indexRequests = sitemapIndexAttempts + 1;
+  const childRequests = backoff.length + 1;
   try {
-    const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, bodyOpts);
+    const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, { ...bodyOpts, maxAttempts: sitemapIndexAttempts });
     let children = parseProductSitemapChildren(idxObs);
-    if (children.length === 0) children = [`${baseUrl}/sitemap_products_1.xml`];
+    // The fallback is a GUESS, used only when the index parsed and named no product sitemap at all.
+    // That is what an empty catalogue looks like, so the guess failing is not evidence of an
+    // outage; treating it as one would make a legitimately empty store permanently undeployable.
+    const guessedChild = children.length === 0;
+    if (guessedChild) children = [`${baseUrl}/sitemap_products_1.xml`];
     const seen = new Set();
     for (const child of children) {
       if (productPaths.length >= maxProducts) break;
-      const childXml = await fetchWithBody(child, bodyOpts);
+      let childXml;
+      try {
+        childXml = await fetchWithBody(child, bodyOpts);
+      } catch {
+        // One child's failure costs ITS OWN SLICE and no more. Rethrowing here abandoned every
+        // later child, so a single bad shard could zero the coverage of a catalogue that was
+        // otherwise entirely reachable, and hard-fail a deploy over it. Record it and keep going;
+        // the count decides the verdict below.
+        if (!guessedChild) childrenFailed += 1;
+        continue;
+      }
       for (const p of parseProductLocs(childXml)) {
         if (!seen.has(p)) { seen.add(p); productPaths.push(p); }
         if (productPaths.length >= maxProducts) break;
       }
     }
-  } catch { productPaths = []; }
+  } catch {
+    // Only the index fetch and the parse can reach here now; a child failure is handled in the
+    // loop. Keep whatever was already collected: partial coverage is coverage.
+    indexFailed = true;
+  }
+  const enumerationFailed = indexFailed || childrenFailed > 0;
   if (productPaths.length === 0) {
-    lines.push('sitemap SOFT-WARN: product enumeration skipped (sitemap unreachable/empty); probing structural routes only');
-    log(lines[lines.length - 1]);
-    results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'enumeration skipped' });
+    if (enumerationFailed) {
+      // Row 1 of the coverage table: nothing was enumerated AND the sitemap could not be read. The
+      // structural probes alone satisfy the `>= 1 PASS` rule, so without this a deploy greened
+      // having verified no product page at all. Genuine exhaustion, not a first blip: the index
+      // gets its own attempt count and the children get the backoff array, both inside the
+      // run-scoped retry budget.
+      const cause = indexFailed
+        ? `sitemap index unreachable after ${indexRequests} attempt(s)`
+        : `${childrenFailed} product sitemap(s) unreachable after ${childRequests} attempt(s) each`;
+      lines.push(`sitemap HARD-FAIL: product enumeration failed (${cause}); zero product coverage. Likely Shopify-side weather; re-run with a \`deploy\` comment when it clears. The theme is already live on this SHA.`);
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: HARD_FAIL, reason: 'enumeration failed; zero product coverage' });
+    } else {
+      // Row 2: the sitemap was read and lists no products. An empty catalogue is a legitimate
+      // state, and blocking it would make an empty store undeployable.
+      lines.push('sitemap SOFT-WARN: product enumeration skipped (sitemap lists no products); probing structural routes only');
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'enumeration skipped' });
+    }
   } else {
     log(`enumerated ${productPaths.length} product path(s) from sitemap`);
+    if (enumerationFailed) {
+      // Row 4: a child (or the index) failed but other children still yielded paths. Coverage is
+      // partial, not absent, so this warns and the run proceeds normally.
+      const what = indexFailed ? 'the sitemap index' : `${childrenFailed} child sitemap(s)`;
+      lines.push(`sitemap SOFT-WARN: ${what} failed after ${productPaths.length} product path(s) were enumerated; coverage is partial`);
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'partial enumeration' });
+    }
   }
 
   // 5. Probe structural routes, then products, paced. Stop products at deadline.
@@ -560,6 +807,22 @@ export async function runSmoke({
     record(path, obs, true);
     probed += 1;
   }
+  // Row 3 of the coverage table: the catalogue was enumerated and the budget ran out before a
+  // single product was probed. Distinct message from row 1 because the recovery is different: this
+  // one wants a longer SMOKE_MAX_SECONDS or a smaller SMOKE_MAX_PRODUCTS, not a retry.
+  if (productPaths.length > 0 && probed === 0) {
+    lines.push(`products HARD-FAIL: the time budget was exhausted before any of the ${productPaths.length} enumerated product(s) was probed; zero product coverage. Raise SMOKE_MAX_SECONDS or lower SMOKE_MAX_PRODUCTS. The theme is already live on this SHA.`);
+    log(lines[lines.length - 1]);
+    results.push({ path: 'products', verdict: HARD_FAIL, reason: 'zero products probed within the time budget' });
+  }
+
+  // Absorbed transients must stay visible: a run that quietly retried its way
+  // to green should say so in the deploy report, not only on stderr.
+  const retryLine = retrySummaryLine(budget);
+  if (retryLine) {
+    lines.push(retryLine);
+    log(retryLine);
+  }
 
   const { exitCode, hardFails, softWarns, passes } = summarize(results);
   log(`summary: ${passes} pass, ${softWarns} soft-warn, ${hardFails} hard-fail -> exit ${exitCode}`);
@@ -568,26 +831,71 @@ export async function runSmoke({
 }
 
 // Fetch a URL's body text (for sitemap XML), following redirects, with the same
-// 429 backoff/retry the content probes use so a transient throttle on the
-// sitemap does not needlessly collapse the run to structural-only.
-async function fetchWithBody(url, { jar, fetchImpl, sleep, backoff, timeoutMs }) {
+// transient backoff/retry the content probes use so a blip on the sitemap does
+// not needlessly collapse the run to structural-only. A thrown request is
+// retried too and only rethrown once the attempts are spent.
+//
+// It throws rather than returning a body in two cases, and the caller treats
+// both the same way: a request that threw, and a response that is not OK once
+// the attempts are spent. Both mean "the sitemap could not be read", which the
+// caller must be able to tell apart from "the sitemap says there are no
+// products". Exported for direct unit tests, because a throw condition that
+// only covered 503 would pass a single-status mock at the integration level.
+//
+// `maxAttempts` exists for the one blocking call: a failure on the sitemap
+// INDEX zeroes product coverage for the whole run, so it is worth more tries
+// than a child sitemap that costs only its own slice.
+export async function fetchWithBody(url, {
+  jar, fetchImpl, sleep, backoff, timeoutMs,
+  budget = createRetryBudget(), onRetry = () => {}, maxAttempts = null,
+}) {
+  const cap = maxAttempts === null ? backoff.length : maxAttempts;
   let attempt = 0;
   while (true) {
     const headers = { ...BROWSER_HEADERS };
     if (jar && jar.size) headers.cookie = cookieHeader(jar);
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
-    let res;
+    let res = null;
+    let thrown = null;
     try {
       res = await fetchImpl(url, { headers, redirect: 'follow', signal: ctl.signal });
+    } catch (e) {
+      thrown = e;
     } finally {
       clearTimeout(timer);
     }
-    if (jar) updateJar(jar, res);
-    if (res.status === 429 && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    if (res && jar) updateJar(jar, res);
+    const status = res ? res.status : null;
+    if ((thrown || isRetryableStatus(status)) && !budget.tripped) {
+      const attemptCap = status === 500 ? Math.min(1, cap) : cap;
+      if (attempt < attemptCap) {
+        const retryAfterMs = res ? parseRetryAfter(res.headers.get('retry-after')) : null;
+        const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+        if (delay !== null) {
+          onRetry(`retry ${url} (${thrown ? 'network error' : status}) attempt ${attempt + 1} in ${delay}ms`);
+          budget.retries += 1;
+          budget.sleptMs += delay;
+          await sleep(delay);
+          attempt += 1;
+          continue;
+        }
+        budget.budgetSpent = true;
+      }
+      noteExhausted(budget, { hitError: Boolean(thrown), status });
+    }
+    if (thrown) throw thrown;
+    // A non-OK response is NOT a document. Returning `res.text()` here handed the caller a CDN
+    // error page, which parses to zero product locs and is then indistinguishable from an empty
+    // catalogue: the difference between "we could not look" and "there is nothing there", which is
+    // exactly the difference the caller's hard-fail rule turns on. Throwing is what makes that
+    // distinction available. Blast radius is bounded: this function has exactly two call sites,
+    // both inside the enumeration try. Product and structural probes go through
+    // `fetchObservation`, which is untouched.
+    // Tested on `status`, not on `res.ok`: every other decision in this file reads `res.status`,
+    // and redirects are already followed, so this is the final hop's status.
+    if (status === null || status < 200 || status >= 300) {
+      throw new Error(`${url} returned ${status} after ${attempt + 1} attempt(s)`);
     }
     return await res.text();
   }

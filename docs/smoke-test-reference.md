@@ -2,8 +2,9 @@
 
 Full behavioral contract for the post-deploy smoke, `.github/actions/shopify-theme-push/smoke.mjs`
 (unit-tested by `smoke.test.mjs`). Note that the `npm run smoke:test` script gating the required
-`validate` job is broader than this file's subject: it also runs `report-format.test.mjs` and
-`check-push-rejections.test.mjs`, so a red `smoke:test` is not necessarily a smoke-script failure.
+`validate` job is broader than this file's subject: it also runs `report-format.test.mjs`,
+`check-push-rejections.test.mjs` and `retry.test.mjs` (the shared retry engine and its three
+policies, in `lib/retry.sh`), so a red `smoke:test` is not necessarily a smoke-script failure.
 CLAUDE.md's "Smoke test" section carries the condensed, load-bearing "do not do X" directives;
 this file is the detailed reference for when you're actually touching the smoke script or
 diagnosing a deploy failure it reported.
@@ -43,8 +44,48 @@ diagnosing a deploy failure it reported.
   `passes == 0` rule rather than on the marker. A body that cannot be read
   at all (reset mid-stream, decode failure) is a separate SOFT-WARN reason, "markers unknown",
   so a network fault stays diagnosable apart from genuinely absent markup. The body read shares
-  the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or the
-  429 retry path.
+  the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or a
+  retry path.
+- **Transient failures are retried; answers are not.** Every request the script makes (content
+  probes, root mode-detection, `/password` fallback, both sitemap fetches, and both halves of
+  the auth step: the cookie-seed GET and the password POST) shares one predicate,
+  `isRetryableStatus`: `408`, `429`, `502`, `503`, `504` and a thrown
+  network error are retried on the injected `backoff` array; `500` is retried **at most once**
+  (a broken Liquid template `500`s deterministically, so retrying it to the cap only spends the
+  run's budget on a failure that will stand); every other `4xx` (`401`, `403`, `404`, `410`,
+  bot-rejection statuses) is an answer and is never retried. A `Retry-After` header, in either
+  the delta-seconds or the HTTP-date form, wins over the backoff array, clamped to 30s. This
+  exists because the content probes used to retry `429` only, so the identical transient `503`
+  that `authenticateStorefront` is written to absorb HARD-FAILed a deploy that had *already*
+  gone live (`release-notes.md` has the incident).
+  **Exhaustion classification is unchanged and is the point of the whole design**: a `429` that
+  survives its retries is still a SOFT-WARN, a `5xx` that survives is still a HARD-FAIL. A
+  bot-management event that persists past the retries therefore still blocks; that is
+  deliberate, because silently passing an unverifiable deploy is the worse failure.
+- **Retries are bounded run-wide, not just per probe.** Products are probed sequentially and
+  there can be ~200 of them, so a run-scoped budget is threaded through every probe and through
+  the auth step: a total retry-sleep cap (`retryBudgetMs`, default 120s) plus a circuit breaker
+  that stops retrying entirely once `retryBreakerProbes` (default 3) probes have exhausted their
+  retries on a `5xx` or a network error. A `429` exhaustion deliberately does **not** count
+  toward the breaker: throttling is already a SOFT-WARN, and a busy-but-healthy storefront must
+  not disable retries for the rest of the run. Past the trip point the run fails fast rather
+  than paying the backoff ~200 more times.
+  What the budget actually protects is **coverage**, not the job: the product loop has its own
+  240s deadline (`SMOKE_MAX_SECONDS`), and overrunning that soft-warns the unprobed remainder
+  rather than timing out the 15-minute job. Retry sleeps are wall clock against that same
+  deadline, so a degraded edge can spend up to half the product-probing window asleep and green
+  the deploy with `products SOFT-WARN: time budget reached; N product(s) unprobed`. That reduced
+  catalogue coverage, not a job timeout, is the failure mode to look for after an edge incident.
+  Anything absorbed stays visible: one stderr line per retry, and a `retries: ...` summary line
+  in the smoke output (emitted only when something was actually retried, on every exit path)
+  naming the retry count, the total sleep, and whether the budget or the breaker tripped.
+  The sitemap **index** fetch gets one more retry than a content probe (`sitemapIndexAttempts`,
+  default 3 **retries**, against the backoff array's 2), because its failure zeroes product
+  coverage for the whole run rather than costing one path.
+  `retryBudgetMs`, `retryBreakerProbes` and `sitemapIndexAttempts` are `runSmoke` parameters
+  only: unlike `SMOKE_MAX_PRODUCTS` / `SMOKE_MAX_SECONDS` they have no env override and
+  `action.yml` passes none, so CI always runs the defaults. Changing one during an incident
+  means editing the code.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->
@@ -62,8 +103,27 @@ diagnosing a deploy failure it reported.
   skips auth entirely and takes the same `/password` fallback (PASS if that page is
   on-theme). **Delete the secret at public launch**; the smoke auto-detects PUBLIC mode with
   no code change.
+- **Zero product coverage HARD-FAILs.** The structural probes alone satisfy the `>= 1 PASS` rule,
+  so a run that verified no product page at all used to green. One rule, four rows:
+
+  | enumeration | products probed | verdict |
+  |---|---|---|
+  | failed (index or child non-OK / threw after retries) | 0 | **HARD-FAIL** |
+  | succeeded, sitemap lists no products | 0 | SOFT-WARN (empty-catalogue exemption) |
+  | succeeded, products enumerated | 0 (deadline hit first) | **HARD-FAIL** |
+  | failed partway, earlier children yielded paths | >= 1 | normal run + a partial-coverage warn |
+
+  The failure flag never hard-fails on its own; only zero probed products does, so partial coverage
+  is still coverage. The two hard-fail messages differ because their recoveries do: row 1 is
+  usually Shopify-side weather and wants a re-`deploy`, row 3 wants a longer `SMOKE_MAX_SECONDS` or
+  a smaller `SMOKE_MAX_PRODUCTS`. Rows 1 and 2 are only distinguishable because `fetchWithBody`
+  throws on a non-OK status instead of handing back the error page as a document. **Accepted
+  limit:** a CDN error page served with a `200` parses to zero locs and lands in row 2, not row 1;
+  it is not reliably distinguishable from an empty catalogue, and the exemption is what stops a
+  legitimately empty store being permanently undeployable. `smoke.test.mjs` pins all four rows and
+  that limit.
 - **Verdicts.** HARD-FAIL -> exit 1, blocks the deploy (sticky failure, PR stays open).
-  SOFT-WARN (throttle, enumeration skipped, password fallback) -> exit 0, deploy proceeds,
+  SOFT-WARN (throttle, an empty catalogue, partial enumeration, password fallback) -> exit 0, deploy proceeds,
   surfaced in the report. On the content-probe path at least one verified PASS is required to
   exit 0, so a wholesale `429` wall cannot green a deploy blind (the locked no-secret
   `/password` fallback is exempt: a rendered page greens with reduced coverage). Output is

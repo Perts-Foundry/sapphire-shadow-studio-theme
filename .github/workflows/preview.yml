@@ -35,7 +35,13 @@ jobs:
       && github.event.pull_request.user.login != 'dependabot[bot]'
     name: cleanup
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Coupled to the composite action's retry budgets, so re-check it when
+    # either changes: the `theme list` retry can spend ~3.5 minutes before it
+    # succeeds (3 x `timeout 60s` plus 10s + 20s of backoff), and the delete
+    # loop allows `timeout 2m` per theme, on top of checkout and `npm ci`.
+    # Overrunning this cap cancels the job mid-delete, which is exactly the
+    # leak the `cancel-in-progress: false` below is here to prevent.
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write

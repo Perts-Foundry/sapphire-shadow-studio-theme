@@ -45,4 +45,10 @@ runs:
       # `package-lock.json` for `hasInstallScript` after a dependency bump; if
       # something genuinely needs a lifecycle script, install it in a job with no
       # secrets rather than dropping this flag.
-      run: npm ci --ignore-scripts
+      #
+      # Block form (`run: |`) rather than a one-liner because
+      # scripts/lib/composite-shell.mjs only extracts that form for shellcheck,
+      # and fails the lint loudly on any other. One shape everywhere beats a
+      # parser that has to guess.
+      run: |
+        npm ci --ignore-scripts

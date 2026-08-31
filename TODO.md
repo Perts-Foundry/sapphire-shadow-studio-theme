@@ -8,8 +8,9 @@ work left behind reasoning worth keeping (a corrected mistake, a cross-layer con
 why it went that way), write that into `release-notes.md` as part of the same change, then remove the
 item here.
 
-Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas),
-[Deploy and CI](#deploy-and-ci) (workflow and tooling reliability).
+Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas). Add a
+`## Deploy and CI` section back when there is deploy or tooling work outstanding; there is none
+right now, and an empty heading with a live index entry is the residue this file's rule targets.
 
 ## Product and storefront
 
@@ -43,26 +44,3 @@ several of the pass's other findings.
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
-
-## Deploy and CI
-
-- [ ] **Retry 5xx on the smoke test's content probes, the way the auth step already does.** In
-  `.github/actions/shopify-theme-push/smoke.mjs`, `authenticateStorefront` retries on `429` **or any
-  `>= 500`**, with a comment saying the storefront password endpoint "intermittently 503s under bot
-  management". The content probes retry on `429` only (the `status === 429` guards in
-  `fetchObservation` and `fetchWithBody`), so the identical transient 503 that the auth step is
-  written to absorb instead becomes a HARD-FAIL and blocks the deploy. The asymmetry runs one step
-  further: a `429` that exhausts its retries still only SOFT-WARNs (`classify`, asserted twice in
-  `smoke.test.mjs`), while a single 5xx neither retries nor soft-warns. Observed on PR #137: the live
-  push succeeded, then `/policies/refund-policy`, `/products/lead-ii-crewneck` and
-  `/products/lead-ii-quarter-zip` each returned `503` with `theme=-` while
-  `/products/lead-ii-vest-womens` (near-identical template) and six other paths passed; all eleven
-  paths were healthy again minutes later. Three PRs' preview theme pushes were hitting the store in
-  the same minute, which is the likely aggravator. The failure mode is expensive: the theme is
-  already live by the time the smoke runs, so a false HARD-FAIL leaves the live theme serving the new
-  SHA with the PR unmerged and `main` behind, recoverable only by a manual re-`deploy`. Reuse the
-  existing `backoff` array rather than inventing a second policy, keep a 5xx that survives every
-  retry a HARD-FAIL (a genuinely broken page must still block), and extend `smoke.test.mjs`, whose
-  `runSmoke PUBLIC: 429-then-200 retry` case is the shape to copy for a 503. Consider whether a
-  surviving 5xx on a path that passed earlier in the same run deserves a distinct reason string, so a
-  real outage reads differently from a broken template in the deploy report.
