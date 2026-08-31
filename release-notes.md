@@ -1,5 +1,42 @@
 # Release Notes
 
+## An illustration on the 404 page, and the transparency trap behind it (unreleased)
+
+`templates/404.json` gains an `image` block above the "Page not found" heading: a black line-art cat,
+sized to 10% of the content column on desktop and 35% on mobile so the heading and the "Continue
+shopping" button stay above the fold. Settings-only, no new code.
+
+Two things worth keeping from how the asset got there.
+
+**An AI image generator will hand you the transparency checkerboard as pixels.** The first upload
+looked transparent in every preview, but the file was a JPEG with no alpha channel whose background
+was two greys, roughly `#e4e4e4` and `#fafafa`, alternating in squares: the generator had drawn the
+checkerboard that *represents* transparency and then flattened it. On the white 404 page that renders
+as a grey checkered box around the cat. It is invisible in a thumbnail and obvious at full size, so
+check the alpha channel rather than the preview: a file with `channels: 3` and no `hasAlpha` is opaque
+no matter what it looks like. The fix was to rebuild alpha from luminance (opaque at or below 100,
+transparent at or above 200, which keeps the antialiased stroke edges while discarding both checker
+greys and the JPEG ringing beneath them), force the ink to pure black, and trim to the drawing.
+
+The durable lesson is to stop asking a generator for transparency at all. Ask for a solid white
+background, which is what `scheme-1` renders on anyway, and rebuild the alpha locally where the
+result can be measured. The second-pass asset was generated that way and came back clean on every
+check: white ground at 254 to 255, ink at 0, and a maximum RGB channel spread of 5.
+
+**`blocks/image.liquid` calls `image_tag` without an `alt:` parameter**, so for an `image_picker`
+setting the rendered `alt` is whatever alt text the Files asset carries in Admin. (The scoping
+matters: `image_tag` falls back to the resource title for article, collection, line item, product and
+variant images, so the theme's other no-`alt` call sites do not behave this way.) An empty Admin alt
+is the correct outcome here, because the illustration restates "Page not found" and should be skipped
+by a screen reader rather than announced to someone who just hit a dead link.
+
+The consequence is that this block's a11y behaviour is a property of Admin, not of the repo. CI is
+not blind to it: `scripts/a11y/paths.json` lists `/404-intentionally-missing`, so `pa11y-ci` renders
+and audits this page on every PR, and an `<img>` with no `alt` attribute at all fails axe's
+`image-alt`. What CI cannot distinguish is a deliberately empty alt from a filled one, since both
+pass. So leave the alt on `404-image.png` empty on purpose; "fixing" it in Admin would reverse this
+decision silently, with the repo and CI both none the wiser.
+
 ## The 404 card joins the standard, and the real holdouts turn out to be the product pages (unreleased)
 
 `templates/404.json`'s "Discover something new" card was the last template still carrying the

@@ -11,6 +11,7 @@ This file documents both the **global accessibility rules** for this theme and t
 - `title` attribute: **only** on `<iframe>` (redundant tooltips and inconsistent SR output elsewhere).
 - Touch targets: at least 44×44 CSS pixels.
 - All `<img>` need `alt`; `alt=""` for decorative.
+- **A placed `image` block's alt text lives in Admin, not the repo.** `blocks/image.liquid` calls `image_tag` with no `alt:`, so for an `image_picker` setting the rendered `alt` is whatever the Files asset carries in Admin. `pa11y-ci` catches a *missing* attribute but cannot tell a deliberately empty alt from a filled one, so a decorative choice is only as durable as the Admin field. Today's decorative placement is `404-image.png` on `templates/404.json`, whose alt is empty on purpose because the illustration restates the "Page not found" heading; do not fill it in.
 - Standard WCAG (contrast, focus-visible, lang on html, viewport zoom, prefers-reduced-motion, flash limits, landmark hygiene) applies; don't restate here.
 - **The homepage `<h1>` is the hero lockup**, in `templates/index.json` under section `hero_jVaWmY`, block `headline_lockup`. `sections/header.liquid` deliberately emits no heading; it used to carry an `index`-guarded visually-hidden `<h1>`, which gave the homepage two. Nothing in CI checks heading structure, so verify exactly one `<h1>` per page type by hand after any header or hero change.
 
