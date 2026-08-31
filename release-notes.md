@@ -251,6 +251,68 @@ list, so `for i in $(seq 1 $ATTEMPTS)` passed. Both loops are gone in the next c
 clean first run is the weakest possible evidence that a lint works, which is exactly why the body
 count is printed and asserted rather than inferred from the colour of the row.
 
+**The three retry loops are one engine and three named policies now.** The note above says the
+consolidation was backlogged because "the three have genuinely different retry semantics". They do,
+and that turned out to be the design rather than the objection: the differences are exactly three,
+they are all hooks, and each one is a function.
+
+| | live push | preview push | `theme list` |
+|---|---|---|---|
+| run attempt | `run_push_attempt` (audits, synthesises 97) | same, plus theme-ID re-resolution | direct, stderr to `list.err` |
+| classify | `retry_always` | `retry_always` | stop on the auth/permission stderr pattern |
+| before retry | flat 60s, 0s on 97 | flat 30s, 0s on 97, re-resolve the theme ID first | linear `i * 10`s |
+
+**The policies live in `retry.sh` too, not inline in `action.yml`, and that placement is the whole
+point.** The engine is the boring part. What breaks production is exit-97 handling, the preview
+theme-ID re-resolution and the transient-only stderr filter, and those are only unit-testable if
+they are functions in a file a test can source. Leaving them inline would have produced a suite that
+tested a generic loop while the three behaviours that actually cost money stayed uncovered.
+`retry.test.mjs` spawns a real `bash`, stubs `sleep` as a shell function (so it shadows the command
+`retry_sleep` calls, rather than exercising a parallel path), and asserts on the recorded backoff
+arguments, never on wall-clock time.
+
+**A timeout retries; it does not stop.** Exit 124, or 137 after `--kill-after`'s SIGKILL, means no
+answer was received, so no answer can have been classified: the classify hook is skipped entirely
+and the attempt counts normally toward the cap with its usual backoff. Writing that down because
+the other reading of "short-circuit on 124" is "stop retrying", which would quietly reverse the
+widening this whole change is about. There is a test for both halves, including one where the
+partial stderr says `not authorized` and the exit code is 124, which must still retry.
+
+**The engine suite runs twice, once under `bash -eo pipefail`.** That is the composite default shell
+GitHub injects, and an `errexit` interaction is the specific regression this refactor was most
+likely to reintroduce: a failed attempt 1 killing the step before any capture or retry. A non-`-e`
+harness passes straight through that. Two consequences in the helper itself. The hook dispatch is
+`"$run_fn" "$i" || :` (not `cmd || retry`; the attempt's real code is always captured explicitly
+into `RETRY_EXIT` by the hook), and every command whose exit code is wanted is captured in condition
+context (`if cmd; then rc=0; else rc=$?; fi`) rather than by a bare `$?` on the line after. The
+callers' `set +e` stays load-bearing and keeps its comment; sourcing a file does not change shell
+options.
+
+**`scrub()` had drifted into two definitions and is one now.** The List step's copy lacked the
+delimiter neutralisation the Push step's had. Consolidating the function is not by itself the fix,
+because the sinks are separate: `list.err` is a direct-to-file capture on two different failure
+paths, and `require_json`'s dump of a non-JSON report was doing a bare ANSI strip with no token
+redaction at all. All of them route through the one definition now. The `GITHUB_OUTPUT` heredoc
+delimiter is also generated per run instead of the fixed `GHEOF`; the scrub already neutralised a
+forged delimiter line, so this is defence in depth rather than a hole being closed. For the record,
+the reviewer's related worry does not apply: nothing evaluates the captured text as shell, the body
+is written with `cat file | scrub | tail` and never expanded.
+
+**Two smaller things folded in while both steps were open.** The preview loop's in-loop theme-ID
+re-resolution (`npx shopify theme list --json > themes-retry.json`) had no `timeout` and no retry;
+it was the one unbounded CLI call left on the preview path, and it now takes the same per-attempt
+bound as the push. And `deploy.yml`'s `Query live theme` deliberately does **not** adopt the helper,
+with a comment there saying so: it only fills a string in the deploy-report comment, it is
+`continue-on-error: true` so a blip already degrades to "unknown", and adding up to 30s of backoff
+to a live deploy report buys no reliability. The `delete-preview` loop stays unretried for a
+different reason: it is a per-theme loop, not a retry loop, and a delete failure is already
+surfaced through `cleanup_status` and the preview-cleanup warning.
+
+**Residual risk, stated rather than papered over.** `preview.yml`'s preview push is the only real
+traffic this helper sees before merge. The live-push policies are covered by unit tests and by
+nothing else until the next production deploy, so the first post-merge deploy's Push step output is
+worth reading rather than treating CI green as full confidence for that path.
+
 ## Contact routing, and two button rules that fail silently (unreleased)
 
 The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to

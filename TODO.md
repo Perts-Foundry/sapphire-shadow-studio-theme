@@ -46,17 +46,9 @@ several of the pass's other findings.
 
 ## Deploy and CI
 
-- [ ] **Decide whether zero product coverage deserves more than a SOFT-WARN, and fold the three
-  retry loops into one helper.** Two related follow-ups from the transient-retry change.
-  (a) When the sitemap is unreachable past its retries, `smoke.mjs` SOFT-WARNs "enumeration
-  skipped" and probes structural routes only, so a deploy greens having verified no product page
-  at all; the structural passes satisfy the `>= 1 PASS` rule on their own. Changing that
-  classification is a scope call, not a bug fix: it would block deploys on a sitemap outage the
-  theme did not cause. (b) `action.yml` now has three retry loops (live push, preview push, and
-  the pre-push `theme list`) with three shapes. A shared `retry.sh` would be one place to fix a
-  bug, but the three have genuinely different semantics (exit 97 handling, preview theme-ID
-  re-resolution, transient-only stderr filtering), so the consolidation needs a design, not a
-  mechanical merge. A fourth, unretried `theme list` lives at `deploy.yml`'s `Query live theme`
-  step; it is `continue-on-error: true` and only fills a comment string, so a blip degrades to
-  "unknown" rather than failing the deploy, but it belongs in the same design.
+- [ ] **Decide whether zero product coverage deserves more than a SOFT-WARN.** When the sitemap is
+  unreachable past its retries, `smoke.mjs` SOFT-WARNs "enumeration skipped" and probes structural
+  routes only, so a deploy greens having verified no product page at all; the structural passes
+  satisfy the `>= 1 PASS` rule on their own. Changing that classification is a scope call, not a
+  bug fix: it would block deploys on a sitemap outage the theme did not cause.
 

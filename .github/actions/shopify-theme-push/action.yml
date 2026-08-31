@@ -156,51 +156,37 @@ runs:
         set +e
         set -uo pipefail
 
-        # Same ANSI-strip + token redaction the Push step uses, so server-sourced
-        # text can be shown without leaking a token. Capturing stderr to a file
-        # is what stops the CLI printing it, so the failure path has to print it
-        # back or a failed `theme list` becomes undiagnosable from the run log.
-        scrub() {
-          sed 's/\x1b\[[0-9;]*m//g' \
-            | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g'
+        # The shared retry engine, its three policies, and the one `scrub()`.
+        # Sourcing does not change shell options, so the `set +e` above stays
+        # in force. A missing file already fails closed (every function call
+        # after it exits 127), but a named error beats `command not found` for
+        # whoever is triaging a failed deploy.
+        # shellcheck source=lib/retry.sh
+        source "${GITHUB_ACTION_PATH}/lib/retry.sh" || {
+          echo "::error::could not source ${GITHUB_ACTION_PATH}/lib/retry.sh"
+          exit 1
         }
 
         # `theme list` is a read-only GET, so retrying it is idempotent by
         # construction. Three attempts with backoff, because a transient 5xx or
         # a hung connection here fails the whole deploy before the push is even
         # attempted. Transient-only: an auth/permission answer is not weather,
-        # so it fails immediately rather than sleeping the full 30s of backoff
-        # first.
-        ATTEMPTS=3
-        LIST_EXIT=1
-        for ((i = 1; i <= ATTEMPTS; i++)); do
-          # Per-attempt wall-clock bound: a hung CLI must not eat the job's
-          # 15-minute budget. `timeout` is coreutils, present on the Linux
-          # runners this action runs on.
-          timeout --kill-after=10s 60s npx shopify theme list --json > themes.json 2> list.err
-          LIST_EXIT=$?
-          if [ "$LIST_EXIT" -eq 0 ]; then
-            break
-          fi
-          # A timeout (124, or 137 after the kill-after SIGKILL) is by definition
-          # "no answer received", so no answer can have been classified: skip the
-          # pattern match entirely. Otherwise a fragment of partial output could
-          # match below and abandon the retry on the exact hang the timeout is
-          # here to catch.
-          if [ "$LIST_EXIT" -ne 124 ] && [ "$LIST_EXIT" -ne 137 ] \
-            && grep -qiE '(http|status|error)[^0-9]{0,4}(401|403)|unauthoriz|not authoriz|forbidden|access denied|permission denied|invalid (token|password|api key|credentials)|token[^.]{0,20}expired|(theme|store|shop)[^.]{0,20}(not found|no such)|scope' list.err; then
-            echo "::error::theme list failed with a non-transient error (exit ${LIST_EXIT}) after ${i} attempt(s); not retrying."
-            scrub < list.err | tail -20
-            rm -f list.err
-            exit "$LIST_EXIT"
-          fi
-          if [ "$i" -lt "$ATTEMPTS" ]; then
-            echo "::warning::theme list attempt ${i}/${ATTEMPTS} failed (exit ${LIST_EXIT}); retrying in $((i * 10))s"
-            sleep $((i * 10))
-          fi
-        done
+        # so `list_attempt_classify` stops on one rather than sleeping the full
+        # 30s of backoff first. A timeout is never classified, only retried.
+        retry_run "theme list" "$RETRY_LIST_ATTEMPTS" \
+          list_attempt_run list_attempt_classify list_attempt_before_retry
+        LIST_EXIT="$RETRY_EXIT"
+
         if [ "$LIST_EXIT" -ne 0 ]; then
-          echo "::error::theme list failed after ${ATTEMPTS} attempt(s) (exit ${LIST_EXIT})"
+          # `list_attempt_classify` already named the non-transient case, so
+          # only the exhausted case needs its own line here.
+          if [ "$RETRY_STOPPED" -ne 1 ]; then
+            echo "::error::theme list failed after ${RETRY_ATTEMPTS} attempt(s) (exit ${LIST_EXIT})"
+          fi
+          # Capturing stderr to a file is what stops the CLI printing it, so the
+          # failure path has to print it back or a failed `theme list` becomes
+          # undiagnosable from the run log. Through `scrub()` so server-sourced
+          # text cannot leak a token.
           scrub < list.err | tail -20
           rm -f list.err
           exit "$LIST_EXIT"
@@ -240,6 +226,17 @@ runs:
         set +e
         set -uo pipefail
 
+        # The shared retry engine, its three policies, `run_push_attempt` and the
+        # one `scrub()`. Sourcing does not change shell options, so the `set +e`
+        # above stays in force. A missing file already fails closed (every
+        # function call after it exits 127), but a named error beats
+        # `command not found` for whoever is triaging a failed live push.
+        # shellcheck source=lib/retry.sh
+        source "${GITHUB_ACTION_PATH}/lib/retry.sh" || {
+          echo "::error::could not source ${GITHUB_ACTION_PATH}/lib/retry.sh"
+          exit 1
+        }
+
         # Stage outputs default to empty so the parent workflow's failure ladder
         # can distinguish "step never ran" from "step ran and produced N".
         echo "push_exit_code=" >> "$GITHUB_OUTPUT"
@@ -270,23 +267,19 @@ runs:
           if [ ${#existing[@]} -eq 0 ] && [ ! -s "$rejections" ]; then
             return 0
           fi
-          # scrub: ANSI-strip, redact tokens, and neutralise any line that is
-          # exactly the heredoc delimiter, so server-sourced text can never close
-          # the block early and forge additional step outputs.
-          scrub() {
-            sed 's/\x1b\[[0-9;]*m//g' \
-              | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g' \
-              | sed 's/^GHEOF$/GHEOF./'
-          }
+          # `scrub()` and the per-run delimiter both come from lib/retry.sh.
+          # scrub ANSI-strips, redacts tokens, and neutralises any line that is
+          # exactly the delimiter, so server-sourced text can never close the
+          # block early and forge additional step outputs.
           {
-            echo "push_output<<GHEOF"
+            echo "push_output<<${RETRY_OUTPUT_DELIM}"
             if [ ${#existing[@]} -gt 0 ]; then
               cat "${existing[@]}" | scrub | tail -30
             fi
             if [ -n "$rejections" ] && [ -s "$rejections" ]; then
               scrub < "$rejections"
             fi
-            echo "GHEOF"
+            echo "${RETRY_OUTPUT_DELIM}"
           } >> "$GITHUB_OUTPUT"
         }
 
@@ -308,51 +301,19 @@ runs:
           if ! jq empty "$file" 2>/dev/null; then
             echo "::error::${file} is not valid JSON. The Shopify CLI may have changed its --json contract, or stderr leaked into stdout."
             echo "--- ${file} (first 20 lines) ---"
-            head -20 "$file" | sed 's/\x1b\[[0-9;]*m//g'
+            # Through the shared scrub(), not a bare ANSI strip: this dumps
+            # server-sourced bytes into the run log, so it needs the token
+            # redaction too.
+            head -20 "$file" | scrub
             echo "--- end ---"
             return 1
           fi
           return 0
         }
 
-        # Run one `theme push`, then audit the CLI's own JSON report for assets
-        # Shopify refused to store.
-        #
-        # WHY: `theme push` exits 0 even when the server rejected individual
-        # files. Shopify validates a JSON template's settings against the
-        # section schema already stored on the theme and refuses the whole
-        # asset when a value is out of range. The CLI records the per-file
-        # failure in its --json payload, surfaces the sentence only on the
-        # debug/analytics path, and returns normally. That combination froze
-        # templates/index.json on its last valid version across three
-        # consecutive green CI runs, with the smoke test green throughout
-        # because every probed page still rendered from stale content.
-        #
-        # Sets EXIT_CODE: the pushed command's own code, or 97 when the command
-        # exited 0 but the audit found rejected assets. The auditor's own code is
-        # local to this function (0 clean, 1 rejected, 2 report unparseable); no
-        # caller branches on it, they branch on EXIT_CODE.
-        run_push_attempt() {
-          local check_rc
-          rm -f rejections.txt
-          "$@" > push.json 2> push.err
-          EXIT_CODE=$?
-          if [ "$EXIT_CODE" -eq 0 ]; then
-            node "${GITHUB_ACTION_PATH}/check-push-rejections.mjs" push.json > rejections.txt 2>&1
-            check_rc=$?
-            if [ -s rejections.txt ]; then
-              cat rejections.txt
-            fi
-            if [ "$check_rc" -eq 1 ]; then
-              EXIT_CODE=97
-            elif [ "$check_rc" -eq 2 ]; then
-              # The report could not be parsed, so the audit is inconclusive:
-              # leave EXIT_CODE at 0 and let require_json own that diagnosis
-              # (exit 98) rather than masking a contract break as a rejection.
-              echo "::warning::Could not audit this push for rejected assets; the CLI's JSON report was unreadable."
-            fi
-          fi
-        }
+        # `run_push_attempt` (the push + asset-rejection audit that synthesises
+        # exit 97) lives in lib/retry.sh alongside the policies that branch on
+        # its result, so both are unit-tested by retry.test.mjs.
 
         case "$MODE" in
           live)
@@ -369,36 +330,12 @@ runs:
               exit 1
             fi
 
-            ATTEMPTS=3
-            EXIT_CODE=1
-            for i in $(seq 1 $ATTEMPTS); do
-              echo "::group::Live theme push attempt ${i}/${ATTEMPTS}"
-              # 8-minute attempt limit + 10s SIGKILL grace; treat 124 (timeout) as
-              # failure for retry purposes. The whole step is bounded by the
-              # caller's timeout-minutes (15) so 3 x 8min cannot starve the runner.
-              run_push_attempt timeout --kill-after=10s 8m npx shopify theme push --live --allow-live --json
-              echo "::endgroup::"
-              if [ "$EXIT_CODE" -eq 0 ]; then
-                break
-              fi
-              if [ "$i" -lt "$ATTEMPTS" ]; then
-                if [ "$EXIT_CODE" -eq 97 ]; then
-                  # Rejected assets are not a transient network condition, so
-                  # skip the 60s backoff. The retry is worth one immediate pass
-                  # because of the ordering case: a schema change and a JSON
-                  # template that depends on it fail when uploaded together
-                  # (the template is validated against the schema version
-                  # already stored on the theme, not the one in the same
-                  # batch). The schema landed in this attempt, so the template
-                  # validates on the next one. A value that is genuinely out of
-                  # range still fails every attempt and stops the deploy.
-                  echo "::warning::Push attempt ${i} left rejected assets; retrying immediately"
-                  continue
-                fi
-                echo "::warning::Push attempt ${i} failed (exit ${EXIT_CODE}); retrying in 60s"
-                sleep 60
-              fi
-            done
+            # Nothing a live push returns is a permanent answer, so the classify
+            # hook is `retry_always`; a timeout is never classified either way.
+            # The 97-means-no-backoff rule lives in live_push_before_retry.
+            retry_run "Live theme push" "$RETRY_LIVE_ATTEMPTS" \
+              live_push_run retry_always live_push_before_retry
+            EXIT_CODE="$RETRY_EXIT"
 
             capture_push_output --rejections rejections.txt push.json push.err
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
@@ -440,74 +377,22 @@ runs:
               echo "Reusing theme ${TARGET_ID}"
             fi
 
-            # 2-attempt loop with a per-attempt timeout, mirroring live mode's
-            # shape (live gets 3 x 8m; a preview theme is a draft with no
-            # customer exposure and preview.yml's job budget is 15 minutes, so
-            # 2 x 5m is the proportionate version). Before this, a transient
-            # blip or a hung CLI failed the PR outright.
+            # Same engine as live mode, two attempts instead of three (a preview
+            # theme is a draft with no customer exposure, and preview.yml's job
+            # budget is 15 minutes, so 2 x 5m is the proportionate version of
+            # live's 3 x 8m). Before the retry existed, a transient blip or a
+            # hung CLI failed the PR outright.
             #
-            # Every attempt after the theme is known is addressed by ID, never
-            # by `--unpublished`: repeating the create flag would create a
-            # SECOND pr-N-preview theme, which the duplicate-name guard above
-            # then refuses on every later run. A create attempt that dies
-            # mid-flight may still have created the theme, so the ID is
-            # re-resolved from the push report and, failing that, from a fresh
-            # `theme list` before any retry.
-            ATTEMPTS=2
-            EXIT_CODE=1
-            for i in $(seq 1 $ATTEMPTS); do
-              echo "::group::Preview theme push attempt ${i}/${ATTEMPTS}"
-              if [ -n "$TARGET_ID" ]; then
-                run_push_attempt timeout --kill-after=10s 5m npx shopify theme push --theme "$TARGET_ID" --json
-              else
-                # `--unpublished --theme <name>` creates a new unpublished
-                # theme with the given name in one non-interactive step. The
-                # earlier two-step pattern (`--unpublished` then `theme rename`)
-                # fails in CI because plain `--unpublished` prompts for a name,
-                # and the prompt aborts under SHOPIFY_CLI_TTY=0.
-                echo "Creating new unpublished theme: ${THEME_NAME}"
-                run_push_attempt timeout --kill-after=10s 5m npx shopify theme push --unpublished --theme "$THEME_NAME" --json
-              fi
-              echo "::endgroup::"
-
-              if [ -z "$TARGET_ID" ]; then
-                TARGET_ID=$(jq -r '.theme.id // empty' push.json 2>/dev/null)
-              fi
-              if [ "$EXIT_CODE" -eq 0 ]; then
-                break
-              fi
-              if [ "$i" -ge "$ATTEMPTS" ]; then
-                break
-              fi
-
-              if [ -z "$TARGET_ID" ]; then
-                # Re-resolve by name: the failed create may have got far enough
-                # to register the theme, and a second `--unpublished` would
-                # duplicate it.
-                if npx shopify theme list --json > themes-retry.json 2>/dev/null; then
-                  TARGET_ID=$(jq -r --arg n "$THEME_NAME" '[.[] | select(.name==$n)][0].id // empty' themes-retry.json 2>/dev/null)
-                fi
-              fi
-
-              if [ "$EXIT_CODE" -eq 97 ]; then
-                # Rejected assets are not a transient network condition, so no
-                # backoff. The retry is worth one immediate pass because of the
-                # ordering case: a schema change and a JSON template that
-                # depends on it fail when uploaded together (the template is
-                # validated against the schema version already stored on the
-                # theme, not the one in the same batch). The schema landed in
-                # this attempt, so the template validates on the next one.
-                if [ -z "$TARGET_ID" ]; then
-                  echo "::warning::Push left rejected assets and no theme ID could be resolved; not retrying."
-                  break
-                fi
-                echo "::warning::Push attempt ${i} left rejected assets; retrying immediately against theme ${TARGET_ID}"
-                continue
-              fi
-
-              echo "::warning::Preview push attempt ${i} failed (exit ${EXIT_CODE}); retrying in 30s"
-              sleep 30
-            done
+            # `preview_push_run` and `preview_push_before_retry` read and write
+            # TARGET_ID and THEME_NAME in this shell, which is why the engine
+            # calls its hooks in-shell rather than through a subshell. Between
+            # them they own the rule that every attempt after the theme is known
+            # is addressed by ID and never by `--unpublished`, and the
+            # "no ID resolved, do not retry" stop that keeps a second create
+            # from minting a duplicate pr-N-preview theme.
+            retry_run "Preview theme push" "$RETRY_PREVIEW_ATTEMPTS" \
+              preview_push_run retry_always preview_push_before_retry
+            EXIT_CODE="$RETRY_EXIT"
 
             capture_push_output --rejections rejections.txt push.json push.err
             echo "push_exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
