@@ -46,14 +46,6 @@ several of the pass's other findings.
 
 ## Deploy and CI
 
-- [ ] **`scripts/seo-review/lib/http.mjs` still retries `429` only.** Same gap the smoke test had
-  before the transient-retry change (`release-notes.md`): a transient `503` or a thrown network
-  error on a crawl fetch is not retried, so a storefront blip reads as a finding. Out of scope
-  there because the seo-review skill is read-only and advisory, not a deploy gate, so a bad run
-  costs a re-run rather than a stuck deploy. Reuse `smoke.mjs`'s `isRetryableStatus` /
-  `parseRetryAfter` rather than inventing a third policy; the skill already crawls every sitemap
-  URL, so it needs the run-scoped budget too, not just per-request retries.
-
 - [ ] **Decide whether zero product coverage deserves more than a SOFT-WARN, and fold the three
   retry loops into one helper.** Two related follow-ups from the transient-retry change.
   (a) When the sitemap is unreachable past its retries, `smoke.mjs` SOFT-WARNs "enumeration
