@@ -313,6 +313,58 @@ traffic this helper sees before merge. The live-push policies are covered by uni
 nothing else until the next production deploy, so the first post-merge deploy's Push step output is
 worth reading rather than treating CI green as full confidence for that path.
 
+**Zero product coverage now HARD-FAILs, which reverses what this note said two paragraphs up.**
+"The existing 'enumeration skipped' SOFT-WARN path is reached exactly as before" was true when it
+was written and is not the behaviour any more. The reason it had to change: the structural probes
+satisfy the `>= 1 PASS` rule on their own, so a run whose sitemap was unreachable greened having
+verified no product page at all. That is the failure the smoke exists to catch, greening.
+
+One rule, stated as a table so there is no room to implement it two ways:
+
+| enumeration | products probed | verdict |
+|---|---|---|
+| failed (index or child non-OK / threw after retries) | 0 | **HARD-FAIL** |
+| succeeded, sitemap lists no products | 0 | SOFT-WARN (exempt) |
+| succeeded, products enumerated | 0 (deadline hit first) | **HARD-FAIL** |
+| failed partway, earlier children yielded paths | >= 1 | normal run, plus a partial-coverage warn |
+
+**The failure flag never hard-fails on its own; only zero probed products does.** Partial coverage
+is coverage: a run that probed real product pages must not be blocked because a later child sitemap
+failed. The flag exists only to separate row 1 from row 2.
+
+**Separating those two rows needed one fix in `fetchWithBody`.** A non-thrown retryable status that
+exhausted its attempts fell through to `return await res.text()`, so a persistent `503` error page
+was parsed as XML, yielded zero locs, and was indistinguishable from an empty catalogue: the
+difference between "we could not look" and "there is nothing there", which is exactly what the new
+rule turns on. It throws on a spent non-OK status now. The blast radius is bounded and was checked
+rather than assumed: `fetchWithBody` has exactly two call sites, both inside the enumeration `try`.
+Product and structural probes go through `fetchObservation`, untouched.
+
+**One carve-out, because the naive version breaks an empty store.** `/sitemap_products_1.xml` is a
+GUESS, used only when the index parsed and named no product sitemap at all, which is what an empty
+catalogue looks like. A guess that misses is not evidence of an outage, so a non-OK there does not
+set the failure flag. Without that, an empty store would be permanently undeployable.
+
+**Known limit, deliberately accepted:** a CDN error page served with a `200` parses to zero locs and
+lands in row 2 (SOFT-WARN), not row 1. It is not reliably distinguishable from an empty catalogue,
+and the empty-catalogue exemption is what stops a legitimately empty store being blocked forever.
+There is a test pinning that behaviour, so it is chosen rather than accidental.
+
+**Two failure messages, not one, because the recoveries differ.** Row 1 says the sitemap was
+unreachable after N attempts: likely Shopify-side weather, re-`deploy` when it clears. Row 3 says
+the time budget was exhausted before any product was probed: that wants a longer
+`SMOKE_MAX_SECONDS` or a smaller `SMOKE_MAX_PRODUCTS`, not a retry. Both state the same recovery
+context, because it is the expensive part of this trade: **the theme is already live by the time
+the smoke runs**, so a block leaves live serving the new SHA with the PR unmerged, recoverable by a
+`deploy` comment. That cost was accepted knowingly. A Shopify-side sitemap outage can now fail a
+deploy the theme did not break. Blocking on genuine exhaustion is the condition it was accepted
+under, and there is retry underneath it: the index gets three attempts, the children get the
+backoff array, both inside the run-scoped retry budget.
+
+One piece of incidental evidence worth recording. Many existing tests serve a 200-but-empty sitemap
+and expect exit 0, and they still pass. The empty-catalogue exemption is what keeps them valid,
+which is direct evidence it is load-bearing rather than a theoretical nicety.
+
 ## Contact routing, and two button rules that fail silently (unreleased)
 
 The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to

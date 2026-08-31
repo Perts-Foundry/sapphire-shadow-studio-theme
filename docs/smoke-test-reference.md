@@ -103,8 +103,27 @@ diagnosing a deploy failure it reported.
   skips auth entirely and takes the same `/password` fallback (PASS if that page is
   on-theme). **Delete the secret at public launch**; the smoke auto-detects PUBLIC mode with
   no code change.
+- **Zero product coverage HARD-FAILs.** The structural probes alone satisfy the `>= 1 PASS` rule,
+  so a run that verified no product page at all used to green. One rule, four rows:
+
+  | enumeration | products probed | verdict |
+  |---|---|---|
+  | failed (index or child non-OK / threw after retries) | 0 | **HARD-FAIL** |
+  | succeeded, sitemap lists no products | 0 | SOFT-WARN (empty-catalogue exemption) |
+  | succeeded, products enumerated | 0 (deadline hit first) | **HARD-FAIL** |
+  | failed partway, earlier children yielded paths | >= 1 | normal run + a partial-coverage warn |
+
+  The failure flag never hard-fails on its own; only zero probed products does, so partial coverage
+  is still coverage. The two hard-fail messages differ because their recoveries do: row 1 is
+  usually Shopify-side weather and wants a re-`deploy`, row 3 wants a longer `SMOKE_MAX_SECONDS` or
+  a smaller `SMOKE_MAX_PRODUCTS`. Rows 1 and 2 are only distinguishable because `fetchWithBody`
+  throws on a non-OK status instead of handing back the error page as a document. **Accepted
+  limit:** a CDN error page served with a `200` parses to zero locs and lands in row 2, not row 1;
+  it is not reliably distinguishable from an empty catalogue, and the exemption is what stops a
+  legitimately empty store being permanently undeployable. `smoke.test.mjs` pins all four rows and
+  that limit.
 - **Verdicts.** HARD-FAIL -> exit 1, blocks the deploy (sticky failure, PR stays open).
-  SOFT-WARN (throttle, enumeration skipped, password fallback) -> exit 0, deploy proceeds,
+  SOFT-WARN (throttle, an empty catalogue, partial enumeration, password fallback) -> exit 0, deploy proceeds,
   surfaced in the report. On the content-probe path at least one verified PASS is required to
   exit 0, so a wholesale `429` wall cannot green a deploy blind (the locked no-secret
   `/password` fallback is exempt: a rendered page greens with reduced coverage). Output is

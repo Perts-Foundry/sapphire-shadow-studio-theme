@@ -46,9 +46,3 @@ several of the pass's other findings.
 
 ## Deploy and CI
 
-- [ ] **Decide whether zero product coverage deserves more than a SOFT-WARN.** When the sitemap is
-  unreachable past its retries, `smoke.mjs` SOFT-WARNs "enumeration skipped" and probes structural
-  routes only, so a deploy greens having verified no product page at all; the structural passes
-  satisfy the `>= 1 PASS` rule on their own. Changing that classification is a scope call, not a
-  bug fix: it would block deploys on a sitemap outage the theme did not cause.
-

@@ -12,7 +12,7 @@ import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
   summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, POLICY_MARKERS,
   isPolicyPath, isRetryableStatus, parseRetryAfter, RETRY_AFTER_CAP_MS,
-  createRetryBudget, retrySummaryLine,
+  createRetryBudget, retrySummaryLine, fetchWithBody,
   PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
@@ -535,15 +535,101 @@ test('runSmoke: session cookie is registered with ::add-mask:: under Actions', a
   assert.ok(writes.some(w => /::add-mask::MASKME/.test(w)), 'cookie value masked');
 });
 
-// --- sitemap unreachable ---------------------------------------------------
-test('runSmoke PUBLIC: sitemap unreachable -> SOFT-WARN, structural still gate', async () => {
+// --- zero product coverage -------------------------------------------------
+//
+// The decision table this section pins, one test per row:
+//
+//   enumeration                     | products probed | verdict
+//   --------------------------------|-----------------|-----------
+//   failed (non-OK / threw)         | 0               | HARD-FAIL
+//   succeeded, no products listed   | 0               | SOFT-WARN (empty-catalogue exemption)
+//   succeeded, products enumerated  | 0 (deadline)    | HARD-FAIL
+//   failed partway, earlier paths   | >= 1            | normal run + partial-coverage warn
+//
+// The flag never hard-fails on its own; only zero probed products does. This reverses what the
+// first version of this file asserted (a thrown sitemap used to exit 0 on the structural passes
+// alone), and the trade is stated in release-notes.md: a Shopify-side sitemap outage can now fail
+// a deploy after the push has landed.
+test('row 1: sitemap throws -> HARD-FAIL, structural passes do not rescue it', async () => {
   const fetchImpl = scriptedFetch([
     [(u) => u.endsWith('/sitemap.xml'), 'THROW'],
     [() => true, { status: 200, serverTiming: themeTiming() }],
   ]);
   const r = await runSmoke(baseArgs({ fetchImpl }));
+  assert.ok(r.lines.some(l => /sitemap HARD-FAIL: product enumeration failed/.test(l)));
+  assert.ok(r.lines.some(l => /re-run with a `deploy` comment/.test(l)), 'names the recovery');
+  assert.equal(r.exitCode, 1);
+});
+
+test('row 1: a persistent 503 on the sitemap index -> HARD-FAIL, not an empty catalogue', async () => {
+  // The case the throw in fetchWithBody exists for: a CDN error page used to be returned as a
+  // body, parse to zero locs, and be indistinguishable from a store with no products.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), { status: 503, body: '<html>error</html>' }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep: recordingSleep() }));
+  assert.ok(r.lines.some(l => /sitemap HARD-FAIL/.test(l)));
+  assert.equal(r.exitCode, 1);
+});
+
+test('row 2: a sitemap that lists no products -> SOFT-WARN, exit 0 (empty-catalogue exemption)', async () => {
+  // Load-bearing, not theoretical: it is what keeps a legitimately empty store deployable, and
+  // what keeps most of the other tests in this file valid.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl }));
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: product enumeration skipped/.test(l)));
+  assert.equal(r.exitCode, 0);
+});
+
+test('row 2: the GUESSED child sitemap 404ing is not an enumeration failure', async () => {
+  // The index parsed and named no product sitemap, so `/sitemap_products_1.xml` is a guess. A
+  // guess that misses says nothing about the store's health, and treating it as an outage would
+  // make an empty store permanently undeployable.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), { status: 200, body: '<sitemapindex></sitemapindex>' }],
+    [(u) => u.endsWith('/sitemap_products_1.xml'), { status: 404, body: 'not found' }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl }));
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: product enumeration skipped/.test(l)));
+  assert.equal(r.exitCode, 0);
+});
+
+test('row 2, accepted limit: a 200 error page parses to zero locs and is exempt', async () => {
+  // KNOWN AND DELIBERATE. A CDN error page served with a 200 is not reliably distinguishable from
+  // an empty catalogue, and the exemption is what keeps an empty store deployable. Pinned here so
+  // the behaviour is chosen rather than accidental; recorded in release-notes.md.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '<html><body>Service Unavailable</body></html>' }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl }));
   assert.ok(r.lines.some(l => /sitemap SOFT-WARN/.test(l)));
-  // structural passes still verify -> exit 0
+  assert.equal(r.exitCode, 0);
+});
+
+test('row 4: a child sitemap failing after earlier paths were enumerated does not hard-fail', async () => {
+  // Partial coverage is coverage. Real product pages were probed, so the run stands; the failure
+  // is surfaced as a warn line rather than blocking a deploy that verified the catalogue's head.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), {
+      status: 200,
+      body: `<sitemapindex>
+        <sitemap><loc>${BASE}/sitemap_products_1.xml</loc></sitemap>
+        <sitemap><loc>${BASE}/sitemap_products_2.xml</loc></sitemap>
+      </sitemapindex>`,
+    }],
+    [(u) => u.endsWith('/sitemap_products_1.xml'), { status: 200, body: `<urlset><url><loc>${BASE}/products/a</loc></url></urlset>` }],
+    [(u) => u.endsWith('/sitemap_products_2.xml'), 'THROW'],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl }));
+  assert.ok(r.lines.some(l => /\/products\/a PASS/.test(l)), 'the enumerated product was probed');
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: a child sitemap failed after 1 product path/.test(l)));
   assert.equal(r.exitCode, 0);
 });
 
@@ -577,17 +663,25 @@ test('runSmoke: empty/whitespace structural paths -> no structural probes, sitem
 });
 
 // --- time budget -----------------------------------------------------------
-test('runSmoke: exhausted time budget -> SOFT-WARN remainder, does not hard-fail', async () => {
+// The partial-deadline case (some products probed, then the budget runs out) stays a SOFT-WARN and
+// exits 0; it is covered by the maxProducts-cap and enumeration tests above rather than here,
+// because forcing the deadline to land mid-loop would need a clock injection runSmoke does not
+// take, and a wall-clock race is not a test.
+test('row 3: the deadline hit before any enumerated product was probed -> HARD-FAIL', async () => {
+  // A different failure from row 1 and a different recovery, so it gets its own message: this one
+  // wants a longer SMOKE_MAX_SECONDS or a smaller slice, not a re-deploy.
   const fetchImpl = scriptedFetch([
     [(u) => u.endsWith('/sitemap.xml'), { status: 200, body: `<urlset><url><loc>${BASE}/products/a</loc></url><url><loc>${BASE}/products/b</loc></url></urlset>` }],
     [(u) => u.endsWith('/sitemap_products_1.xml'), { status: 200, body: `<urlset><url><loc>${BASE}/products/a</loc></url><url><loc>${BASE}/products/b</loc></url></urlset>` }],
     [() => true, { status: 200, serverTiming: themeTiming() }],
   ]);
-  // maxSeconds negative forces the deadline to be in the past for products.
+  // maxSeconds negative forces the deadline into the past. No real sleeping happens anywhere in
+  // this file; the deadline is driven by the injected budget, never by wall clock.
   const r = await runSmoke(baseArgs({ fetchImpl, maxSeconds: -1 }));
-  assert.ok(r.lines.some(l => /products SOFT-WARN: time budget/.test(l)));
-  // structural still passed -> exit 0
-  assert.equal(r.exitCode, 0);
+  assert.ok(r.lines.some(l => /products SOFT-WARN: time budget/.test(l)), 'the remainder warn still fires');
+  assert.ok(r.lines.some(l => /products HARD-FAIL: the time budget was exhausted before any/.test(l)));
+  assert.ok(r.lines.some(l => /Raise SMOKE_MAX_SECONDS/.test(l)), 'names its own recovery, not row 1\'s');
+  assert.equal(r.exitCode, 1);
 });
 
 // --- authenticateStorefront (shared with scripts/a11y/get-auth-cookie.mjs) ---
@@ -1371,20 +1465,76 @@ test('runSmoke: a 500 on the sitemap index is retried once, like everywhere else
   ]);
   const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/'] }));
   assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000], 'one retry, not three');
-  assert.ok(r.lines.some(l => /sitemap SOFT-WARN/.test(l)), r.lines.join('\n'));
+  // The retry policy is what this test pins; the verdict is row 1's business.
+  assert.ok(r.lines.some(l => /sitemap HARD-FAIL/.test(l)), r.lines.join('\n'));
 });
 
-test('runSmoke: a persistently dead sitemap still takes the existing SOFT-WARN path', async () => {
+test('runSmoke: a persistently dead sitemap hard-fails, however it dies', async () => {
+  // Both shapes of "could not read the sitemap" land on the same verdict: a thrown request, and a
+  // non-OK response that survived its retries. Before the throw in fetchWithBody, only the first
+  // one did, and the second silently became "the catalogue is empty".
   for (const desc of ['THROW', { status: 503 }]) {
     const fetchImpl = scriptedFetch([
       [(u) => u.includes('sitemap'), desc],
       [() => true, { status: 200, serverTiming: themeTiming() }],
     ]);
-    const r = await runSmoke(baseArgs({ fetchImpl }));
-    assert.ok(r.lines.some(l => /sitemap SOFT-WARN/.test(l)), r.lines.join('\n'));
-    // Structural passes still verify the deploy -> exit 0, classification unchanged.
-    assert.equal(r.exitCode, 0);
+    const r = await runSmoke(baseArgs({ fetchImpl, sleep: recordingSleep() }));
+    assert.ok(r.lines.some(l => /sitemap HARD-FAIL/.test(l)), r.lines.join('\n'));
+    assert.equal(r.exitCode, 1);
   }
+});
+
+// --- fetchWithBody, directly -----------------------------------------------
+//
+// Tested at this level as well as through runSmoke, because a throw condition that only covered
+// 503 would pass a single-status mock at the integration level and still let every other non-OK
+// status through as a parseable "document".
+
+const bodyArgs = (fetchImpl, over = {}) => ({
+  fetchImpl,
+  jar: new Map(),
+  sleep: recordingSleep(),
+  backoff: [8000, 20000],
+  timeoutMs: 5000,
+  ...over,
+});
+
+test('fetchWithBody: returns the body on a 200', async () => {
+  const fetchImpl = scriptedFetch([[() => true, { status: 200, body: '<urlset/>' }]]);
+  assert.equal(await fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)), '<urlset/>');
+});
+
+test('fetchWithBody: throws on a persistent 503 rather than returning the error page', async () => {
+  const fetchImpl = scriptedFetch([[() => true, { status: 503, body: '<html>oops</html>' }]]);
+  await assert.rejects(
+    fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)),
+    /returned 503 after \d+ attempt/,
+  );
+});
+
+test('fetchWithBody: throws on a non-retryable non-OK status too (404)', async () => {
+  // A 404 is never retried, so "attempts spent" is not the trigger; a non-OK response simply is
+  // not a document. Covering a second status here is the point of testing this directly.
+  const fetchImpl = scriptedFetch([[() => true, { status: 404, body: 'not found' }]]);
+  await assert.rejects(
+    fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)),
+    /returned 404 after 1 attempt/,
+  );
+});
+
+test('fetchWithBody: throws on a 403, and does not treat the body as XML', async () => {
+  const fetchImpl = scriptedFetch([[() => true, { status: 403, body: `<urlset><url><loc>${BASE}/products/ghost</loc></url></urlset>` }]]);
+  await assert.rejects(fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)), /returned 403/);
+});
+
+test('fetchWithBody: rethrows a network error once the attempts are spent', async () => {
+  const fetchImpl = scriptedFetch([[() => true, 'THROW']]);
+  await assert.rejects(fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)), /boom/);
+});
+
+test('fetchWithBody: a transient that clears still returns the body', async () => {
+  const fetchImpl = scriptedFetch([[() => true, [{ status: 503 }, { status: 200, body: 'ok' }]]]);
+  assert.equal(await fetchWithBody(`${BASE}/sitemap.xml`, bodyArgs(fetchImpl)), 'ok');
 });
 
 // --- action.yml drift ------------------------------------------------------

@@ -690,26 +690,65 @@ export async function runSmoke({
   // 4b. Enumerate products from the sitemap.
   const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
   let productPaths = [];
+  // Separates "the sitemap could not be read" from "the sitemap says there are no products". Those
+  // two used to be the same observation: an error page parses to zero locs exactly like an empty
+  // catalogue does. `fetchWithBody` throws on a spent non-OK status now, which is what makes the
+  // distinction possible at all.
+  let enumerationFailed = false;
   try {
     const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, { ...bodyOpts, maxAttempts: sitemapIndexAttempts });
     let children = parseProductSitemapChildren(idxObs);
-    if (children.length === 0) children = [`${baseUrl}/sitemap_products_1.xml`];
+    // The fallback is a GUESS, used only when the index parsed and named no product sitemap at all.
+    // That is what an empty catalogue looks like, so the guess failing is not evidence of an
+    // outage; treating it as one would make a legitimately empty store permanently undeployable.
+    const guessedChild = children.length === 0;
+    if (guessedChild) children = [`${baseUrl}/sitemap_products_1.xml`];
     const seen = new Set();
     for (const child of children) {
       if (productPaths.length >= maxProducts) break;
-      const childXml = await fetchWithBody(child, bodyOpts);
+      let childXml;
+      try {
+        childXml = await fetchWithBody(child, bodyOpts);
+      } catch (err) {
+        if (guessedChild) break;
+        throw err;
+      }
       for (const p of parseProductLocs(childXml)) {
         if (!seen.has(p)) { seen.add(p); productPaths.push(p); }
         if (productPaths.length >= maxProducts) break;
       }
     }
-  } catch { productPaths = []; }
+  } catch {
+    // Keep whatever earlier children already yielded. Partial coverage is coverage: a run that
+    // probed real product pages must not be blocked because a later child sitemap failed.
+    enumerationFailed = true;
+  }
   if (productPaths.length === 0) {
-    lines.push('sitemap SOFT-WARN: product enumeration skipped (sitemap unreachable/empty); probing structural routes only');
-    log(lines[lines.length - 1]);
-    results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'enumeration skipped' });
+    if (enumerationFailed) {
+      // Row 1 of the coverage table: nothing was enumerated AND the sitemap could not be read. The
+      // structural probes alone satisfy the `>= 1 PASS` rule, so without this a deploy greened
+      // having verified no product page at all. Genuine exhaustion, not a first blip: the index
+      // gets its own attempt count and the children get the backoff array, both inside the
+      // run-scoped retry budget.
+      lines.push(`sitemap HARD-FAIL: product enumeration failed (sitemap unreachable after ${sitemapIndexAttempts} attempt(s)); zero product coverage. Likely Shopify-side weather; re-run with a \`deploy\` comment when it clears. The theme is already live on this SHA.`);
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: HARD_FAIL, reason: 'enumeration failed; zero product coverage' });
+    } else {
+      // Row 2: the sitemap was read and lists no products. An empty catalogue is a legitimate
+      // state, and blocking it would make an empty store undeployable.
+      lines.push('sitemap SOFT-WARN: product enumeration skipped (sitemap lists no products); probing structural routes only');
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'enumeration skipped' });
+    }
   } else {
     log(`enumerated ${productPaths.length} product path(s) from sitemap`);
+    if (enumerationFailed) {
+      // Row 4: a later child failed after an earlier one yielded paths. Coverage is partial, not
+      // absent, so this warns and the run proceeds normally.
+      lines.push(`sitemap SOFT-WARN: a child sitemap failed after ${productPaths.length} product path(s) were enumerated; coverage is partial`);
+      log(lines[lines.length - 1]);
+      results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'partial enumeration' });
+    }
   }
 
   // 5. Probe structural routes, then products, paced. Stop products at deadline.
@@ -740,6 +779,14 @@ export async function runSmoke({
     record(path, obs, true);
     probed += 1;
   }
+  // Row 3 of the coverage table: the catalogue was enumerated and the budget ran out before a
+  // single product was probed. Distinct message from row 1 because the recovery is different: this
+  // one wants a longer SMOKE_MAX_SECONDS or a smaller SMOKE_MAX_PRODUCTS, not a retry.
+  if (productPaths.length > 0 && probed === 0) {
+    lines.push(`products HARD-FAIL: the time budget was exhausted before any of the ${productPaths.length} enumerated product(s) was probed; zero product coverage. Raise SMOKE_MAX_SECONDS or lower SMOKE_MAX_PRODUCTS. The theme is already live on this SHA.`);
+    log(lines[lines.length - 1]);
+    results.push({ path: 'products', verdict: HARD_FAIL, reason: 'zero products probed within the time budget' });
+  }
 
   // Absorbed transients must stay visible: a run that quietly retried its way
   // to green should say so in the deploy report, not only on stderr.
@@ -758,13 +805,19 @@ export async function runSmoke({
 // Fetch a URL's body text (for sitemap XML), following redirects, with the same
 // transient backoff/retry the content probes use so a blip on the sitemap does
 // not needlessly collapse the run to structural-only. A thrown request is
-// retried too and only rethrown once the attempts are spent, so the caller's
-// existing "enumeration skipped" SOFT-WARN path is reached exactly as before.
+// retried too and only rethrown once the attempts are spent.
+//
+// It throws rather than returning a body in two cases, and the caller treats
+// both the same way: a request that threw, and a response that is not OK once
+// the attempts are spent. Both mean "the sitemap could not be read", which the
+// caller must be able to tell apart from "the sitemap says there are no
+// products". Exported for direct unit tests, because a throw condition that
+// only covered 503 would pass a single-status mock at the integration level.
 //
 // `maxAttempts` exists for the one blocking call: a failure on the sitemap
 // INDEX zeroes product coverage for the whole run, so it is worth more tries
 // than a child sitemap that costs only its own slice.
-async function fetchWithBody(url, {
+export async function fetchWithBody(url, {
   jar, fetchImpl, sleep, backoff, timeoutMs,
   budget = createRetryBudget(), onRetry = () => {}, maxAttempts = null,
 }) {
@@ -804,6 +857,18 @@ async function fetchWithBody(url, {
       noteExhausted(budget, { hitError: Boolean(thrown), status });
     }
     if (thrown) throw thrown;
+    // A non-OK response is NOT a document. Returning `res.text()` here handed the caller a CDN
+    // error page, which parses to zero product locs and is then indistinguishable from an empty
+    // catalogue: the difference between "we could not look" and "there is nothing there", which is
+    // exactly the difference the caller's hard-fail rule turns on. Throwing is what makes that
+    // distinction available. Blast radius is bounded: this function has exactly two call sites,
+    // both inside the enumeration try. Product and structural probes go through
+    // `fetchObservation`, which is untouched.
+    // Tested on `status`, not on `res.ok`: every other decision in this file reads `res.status`,
+    // and redirects are already followed, so this is the final hop's status.
+    if (status === null || status < 200 || status >= 300) {
+      throw new Error(`${url} returned ${status} after ${attempt + 1} attempt(s)`);
+    }
     return await res.text();
   }
 }

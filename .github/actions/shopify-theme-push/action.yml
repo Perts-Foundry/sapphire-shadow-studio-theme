@@ -121,7 +121,10 @@ outputs:
     description: |
       Smoke test exit code (live mode only). 0 = at least one path verified PASS
       and no HARD-FAIL (soft-warns tolerated); 1 = a HARD-FAIL, or nothing was
-      verified (e.g. a wholesale 429 wall).
+      verified (e.g. a wholesale 429 wall). Zero PRODUCT coverage is one of the
+      HARD-FAILs: the structural probes alone satisfy the "at least one PASS"
+      rule, so a run that verified no product page must not green. An empty
+      catalogue is exempt. See docs/smoke-test-reference.md.
     value: ${{ steps.smoke.outputs.smoke_exit_code }}
   cleanup-status:
     description: |
