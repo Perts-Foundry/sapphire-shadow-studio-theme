@@ -3570,7 +3570,8 @@ feature from the theme editor on the sync theme with no hand-authored PR:
 - **The gift-card template deliberately has no vacation checkbox**: nothing
   ships, so there is nothing to delay. The popup, the announcement and the gift
   card's own delivery line still appear. That line said "Free shipping" when
-  this was written; it now reads "Delivered by email, no shipping", and the
+  this was written; it now reads "Delivered by email • No shipping" (the
+  `content.gift_card_delivery` locale key), and the
   vacation note still appends to it. See the gift-card entry at the top of this
   file.
 - **Settings-group labels are deliberately literal English**, not `t:` keys,
