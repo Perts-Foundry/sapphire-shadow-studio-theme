@@ -149,8 +149,45 @@ runs:
         SHOPIFY_FLAG_NO_COLOR: "true"
       run: |
         set +x
-        set -euo pipefail
-        npx shopify theme list --json > themes.json
+        # `set +e` first: every branch below captures an exit code and acts on
+        # it, and the composite default shell's injected `-e` would kill the
+        # step on attempt 1 instead of letting the retry loop run (the same
+        # trap documented at length on the Push step).
+        set +e
+        set -uo pipefail
+
+        # `theme list` is a read-only GET, so retrying it is idempotent by
+        # construction. Three attempts with backoff, because a transient 5xx or
+        # a hung connection here fails the whole deploy before the push is even
+        # attempted. Transient-only: an auth/permission answer is not weather,
+        # so it fails immediately rather than sleeping 90s first.
+        ATTEMPTS=3
+        LIST_EXIT=1
+        for i in $(seq 1 $ATTEMPTS); do
+          # Per-attempt wall-clock bound: a hung CLI must not eat the job's
+          # 15-minute budget. `timeout` is coreutils, present on the Linux
+          # runners this action runs on.
+          timeout --kill-after=10s 60s npx shopify theme list --json > themes.json 2> list.err
+          LIST_EXIT=$?
+          if [ "$LIST_EXIT" -eq 0 ]; then
+            break
+          fi
+          # Never echo the captured stderr: the CLI has already printed its own
+          # diagnostics, and this copy is only ever pattern-matched here.
+          if grep -qiE '401|403|unauthoriz|forbidden|invalid|expired|not found|no such' list.err; then
+            echo "::error::theme list failed with a non-transient error (exit ${LIST_EXIT}); not retrying."
+            break
+          fi
+          if [ "$i" -lt "$ATTEMPTS" ]; then
+            echo "::warning::theme list attempt ${i}/${ATTEMPTS} failed (exit ${LIST_EXIT}); retrying in $((i * 10))s"
+            sleep $((i * 10))
+          fi
+        done
+        rm -f list.err
+        if [ "$LIST_EXIT" -ne 0 ]; then
+          echo "::error::theme list failed after ${ATTEMPTS} attempt(s) (exit ${LIST_EXIT})"
+          exit "$LIST_EXIT"
+        fi
 
     - name: Push
       id: push

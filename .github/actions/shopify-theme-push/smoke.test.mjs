@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
   summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, POLICY_MARKERS,
-  isPolicyPath, PASS, SOFT_WARN, HARD_FAIL,
+  isPolicyPath, isRetryableStatus, parseRetryAfter, RETRY_AFTER_CAP_MS,
+  PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
 const THEME = '181702754604';
@@ -19,12 +20,13 @@ const HOST = 'sapphireshadowstudio.com';
 const BASE = `https://${HOST}`;
 
 // --- Response + fetch mock -------------------------------------------------
-function mkRes({ status = 200, url = `${BASE}/`, location = null, serverTiming = null, setCookie = [], body = '' } = {}) {
+function mkRes({ status = 200, url = `${BASE}/`, location = null, serverTiming = null, setCookie = [], body = '', retryAfter = null } = {}) {
   const headers = {
     get(name) {
       const n = name.toLowerCase();
       if (n === 'location') return location;
       if (n === 'server-timing') return serverTiming;
+      if (n === 'retry-after') return retryAfter;
       return null;
     },
     getSetCookie() { return setCookie; },
@@ -77,6 +79,9 @@ const baseArgs = (over = {}) => ({
   paceMs: 4000,
   backoff: [8000, 20000],
   timeoutMs: 30000,
+  // Retry diagnostics go to stderr in production; silence them here unless a
+  // test asks for them explicitly.
+  logRetry: () => {},
   ...over,
 });
 
@@ -892,6 +897,239 @@ test('POLICY_MARKERS matches what the theme actually server-renders on a policy 
   const layout = readFileSync(join(repoRoot, 'layout', 'theme.liquid'), 'utf8');
   assert.match(layout, /render 'policy-page'/, 'layout no longer renders the policy-page snippet');
   assert.match(layout, /request\.page_type == 'policy'/, 'the policy guard is gone from the layout');
+});
+
+// --- transient-failure retry ------------------------------------------------
+//
+// The content probes used to retry 429 only, so the identical transient 503 the
+// auth step is written to absorb HARD-FAILed a deploy that had already gone
+// live (PR #137). These pin the widened predicate AND its limits: the negative
+// controls below are what stop a future "just retry everything" from turning a
+// deterministic 404/401 into a slow deploy failure, and the budget/breaker
+// cases are what keep ~200 sequential probes inside the job's 15-minute cap.
+
+test('isRetryableStatus: transient only, never an answer', () => {
+  for (const s of [408, 429, 500, 502, 503, 504]) assert.equal(isRetryableStatus(s), true, `${s} retryable`);
+  for (const s of [200, 301, 400, 401, 403, 404, 410, 418, 430, 451]) {
+    assert.equal(isRetryableStatus(s), false, `${s} not retryable`);
+  }
+  assert.equal(isRetryableStatus(null), false);
+  assert.equal(isRetryableStatus(undefined), false);
+});
+
+test('parseRetryAfter: delta-seconds, HTTP-date, garbage', () => {
+  assert.equal(parseRetryAfter('12'), 12000);
+  assert.equal(parseRetryAfter(' 3 '), 3000);
+  assert.equal(parseRetryAfter(null), null);
+  assert.equal(parseRetryAfter(''), null);
+  assert.equal(parseRetryAfter('soon'), null);
+  const now = Date.parse('2026-01-01T00:00:00Z');
+  assert.equal(parseRetryAfter('Thu, 01 Jan 2026 00:00:05 GMT', now), 5000);
+  // A date already in the past is zero, never a negative sleep.
+  assert.equal(parseRetryAfter('Thu, 01 Jan 2026 00:00:00 GMT', now + 9000), 0);
+});
+
+/** Scripted fetch: root 200 on-theme, sitemap empty, `/cart` per `cartDesc`. */
+const cartFetch = (cartDesc) => scriptedFetch([
+  [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+  [(u) => u.endsWith('/cart'), cartDesc],
+  [() => true, { status: 200, serverTiming: themeTiming() }],
+]);
+
+test('runSmoke: content probe 503 then 200 -> PASS, one backoff slept', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch([{ status: 503 }, { status: 200, serverTiming: themeTiming() }]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+  assert.ok(r.lines.some(l => l.startsWith('/cart PASS')), r.lines.join('\n'));
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(sleep.delays, [8000]);
+});
+
+test('runSmoke: content probe persistent 503 -> HARD-FAIL after the full backoff', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch({ status: 503 });
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+  assert.ok(r.lines.some(l => /\/cart HARD-FAIL 503/.test(l)), r.lines.join('\n'));
+  assert.equal(r.exitCode, 1);
+  // A genuinely broken page must still block, and only after both delays.
+  assert.deepEqual(sleep.delays, [8000, 20000]);
+});
+
+test('runSmoke: content probe network throw then 200 -> PASS', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch((u, o, n) => (n === 0 ? 'THROW' : { status: 200, serverTiming: themeTiming() }));
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+  assert.ok(r.lines.some(l => l.startsWith('/cart PASS')), r.lines.join('\n'));
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(sleep.delays, [8000]);
+});
+
+test('runSmoke: a 500 is retried at most once, then HARD-FAILs', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch({ status: 500 });
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+  assert.ok(r.lines.some(l => /\/cart HARD-FAIL 500/.test(l)), r.lines.join('\n'));
+  assert.equal(r.exitCode, 1);
+  // A broken Liquid template 500s deterministically: one retry, not the whole
+  // budget, so the deploy report arrives fast.
+  assert.deepEqual(sleep.delays, [8000]);
+});
+
+test('runSmoke: a 500 that clears on the single retry -> PASS', async () => {
+  const fetchImpl = cartFetch([{ status: 500 }, { status: 200, serverTiming: themeTiming() }]);
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/cart'] }));
+  assert.ok(r.lines.some(l => l.startsWith('/cart PASS')));
+  assert.equal(r.exitCode, 0);
+});
+
+test('runSmoke: 404 and 401 are answers, not weather -> zero retries', async () => {
+  for (const status of [404, 401, 403, 410]) {
+    const sleep = recordingSleep();
+    const fetchImpl = cartFetch({ status });
+    const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+    assert.ok(r.lines.some(l => new RegExp(`/cart HARD-FAIL ${status}`).test(l)), r.lines.join('\n'));
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(sleep.delays, [], `${status} must not be retried`);
+  }
+});
+
+test('runSmoke: an exhausted 429 still SOFT-WARNs, an exhausted 5xx still HARD-FAILs', async () => {
+  // The widened predicate must not flatten the two exhaustion classifications.
+  const throttled = await runSmoke(baseArgs({ fetchImpl: cartFetch({ status: 429 }), structuralPaths: ['/cart'] }));
+  assert.ok(throttled.lines.some(l => /\/cart SOFT-WARN.*throttled/.test(l)));
+  const broken = await runSmoke(baseArgs({ fetchImpl: cartFetch({ status: 502 }), structuralPaths: ['/cart'] }));
+  assert.ok(broken.lines.some(l => /\/cart HARD-FAIL 502/.test(l)));
+});
+
+test('runSmoke: Retry-After is honoured, and clamped to the cap', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch([
+    { status: 503, retryAfter: '2' },
+    { status: 200, serverTiming: themeTiming() },
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(sleep.delays, [2000], 'header wins over the backoff array');
+
+  const clampSleep = recordingSleep();
+  const clampFetch = cartFetch([
+    { status: 503, retryAfter: '600' }, // 10 minutes; the job budget is 15
+    { status: 200, serverTiming: themeTiming() },
+  ]);
+  const clamped = await runSmoke(baseArgs({ fetchImpl: clampFetch, sleep: clampSleep, structuralPaths: ['/cart'] }));
+  assert.equal(clamped.exitCode, 0);
+  assert.deepEqual(clampSleep.delays, [RETRY_AFTER_CAP_MS]);
+});
+
+test('runSmoke: the sleep budget stops further retries and is reported', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch({ status: 503 });
+  // One 8000ms retry spends the whole budget; the second attempt is refused.
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'], retryBudgetMs: 8000 }));
+  assert.deepEqual(sleep.delays, [8000]);
+  assert.ok(r.lines.some(l => /^retries: .*sleep budget spent/.test(l)), r.lines.join('\n'));
+  assert.equal(r.exitCode, 1);
+});
+
+test('runSmoke: the breaker trips after N exhausted probes and later probes stop retrying', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u) => /\/(a|b|c)$/.test(u), { status: 503 }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({
+    fetchImpl, sleep, structuralPaths: ['/a', '/b', '/c'], retryBreakerProbes: 2,
+  }));
+  // Two probes exhaust (2 delays each), then the breaker is open: /c is probed
+  // once and fails fast. Pacing sleeps between structural paths are 4000.
+  assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000, 20000, 8000, 20000]);
+  assert.ok(r.lines.some(l => /^retries: .*edge degraded/.test(l)), r.lines.join('\n'));
+  assert.equal(r.exitCode, 1);
+});
+
+test('runSmoke: the retry summary line is absent on a clean run', async () => {
+  const fetchImpl = cartFetch({ status: 200, serverTiming: themeTiming() });
+  const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/cart'] }));
+  assert.ok(!r.lines.some(l => /^retries:/.test(l)));
+});
+
+test('runSmoke: each retry writes one diagnostic line, and it carries no secrets', async () => {
+  const retryLines = [];
+  const fetchImpl = cartFetch([{ status: 503 }, { status: 200, serverTiming: themeTiming() }]);
+  await runSmoke(baseArgs({
+    fetchImpl, structuralPaths: ['/cart'], logRetry: (l) => retryLines.push(l),
+  }));
+  assert.equal(retryLines.length, 1);
+  assert.match(retryLines[0], /\/cart/);
+  assert.match(retryLines[0], /503/);
+  assert.match(retryLines[0], /8000ms/);
+});
+
+test('authenticateStorefront: a failed cookie-seed GET is retried, then auth proceeds', async () => {
+  const sleep = recordingSleep();
+  const seenCookies = [];
+  const fetchImpl = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', (u, o) => {
+      seenCookies.push(o.headers?.cookie || '');
+      return { status: 302, location: '/' };
+    }],
+    // Seed GET: 503 first, then a 200 that actually sets the session cookie.
+    [(u, o) => u.endsWith('/password') && o.method !== 'POST', [
+      { status: 503 },
+      { status: 200, setCookie: ['_shopify_essential=SEED; path=/'] },
+    ]],
+  ]);
+  const jar = new Map();
+  const outcome = await authenticateStorefront({
+    baseUrl: BASE, password: 'p', jar, fetchImpl, sleep, backoff: [8000, 20000],
+  });
+  assert.equal(outcome, 'success');
+  assert.deepEqual(sleep.delays, [8000], 'one seed retry, no POST retry');
+  assert.match(seenCookies[0], /_shopify_essential=SEED/, 'the POST carried the re-seeded cookie');
+});
+
+test('runSmoke: a transient sitemap failure still enumerates products, no SOFT-WARN', async () => {
+  for (const firstDesc of ['THROW', { status: 503 }]) {
+    const sitemapBody = `<urlset><url><loc>${BASE}/products/x</loc></url></urlset>`;
+    const fetchImpl = scriptedFetch([
+      [(u) => u.endsWith('/sitemap.xml'), (u, o, n) => (n === 0 ? firstDesc : { status: 200, body: sitemapBody })],
+      [(u) => u.includes('sitemap_products_'), { status: 200, body: sitemapBody }],
+      [() => true, { status: 200, serverTiming: themeTiming() }],
+    ]);
+    const r = await runSmoke(baseArgs({ fetchImpl, structuralPaths: ['/'] }));
+    assert.ok(r.lines.some(l => /\/products\/x PASS/.test(l)), r.lines.join('\n'));
+    assert.ok(!r.lines.some(l => /sitemap SOFT-WARN/.test(l)));
+    assert.equal(r.exitCode, 0);
+  }
+});
+
+test('runSmoke: the sitemap index gets more attempts than the per-probe backoff allows', async () => {
+  const sleep = recordingSleep();
+  const sitemapBody = `<urlset><url><loc>${BASE}/products/x</loc></url></urlset>`;
+  const fetchImpl = scriptedFetch([
+    // Fails twice (more than backoff.length would allow a content probe), then
+    // succeeds: a dead sitemap index zeroes product coverage for the whole run.
+    [(u) => u.endsWith('/sitemap.xml'), (u, o, n) => (n < 2 ? { status: 503 } : { status: 200, body: sitemapBody })],
+    [(u) => u.includes('sitemap_products_'), { status: 200, body: sitemapBody }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/'] }));
+  assert.ok(r.lines.some(l => /\/products\/x PASS/.test(l)), r.lines.join('\n'));
+  assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000, 20000]);
+});
+
+test('runSmoke: a persistently dead sitemap still takes the existing SOFT-WARN path', async () => {
+  for (const desc of ['THROW', { status: 503 }]) {
+    const fetchImpl = scriptedFetch([
+      [(u) => u.includes('sitemap'), desc],
+      [() => true, { status: 200, serverTiming: themeTiming() }],
+    ]);
+    const r = await runSmoke(baseArgs({ fetchImpl }));
+    assert.ok(r.lines.some(l => /sitemap SOFT-WARN/.test(l)), r.lines.join('\n'));
+    // Structural passes still verify the deploy -> exit 0, classification unchanged.
+    assert.equal(r.exitCode, 0);
+  }
 });
 
 // --- action.yml drift ------------------------------------------------------

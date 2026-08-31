@@ -43,8 +43,34 @@ diagnosing a deploy failure it reported.
   `passes == 0` rule rather than on the marker. A body that cannot be read
   at all (reset mid-stream, decode failure) is a separate SOFT-WARN reason, "markers unknown",
   so a network fault stays diagnosable apart from genuinely absent markup. The body read shares
-  the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or the
-  429 retry path.
+  the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or a
+  retry path.
+- **Transient failures are retried; answers are not.** Every probe in the script (content,
+  root mode-detection, `/password` fallback, sitemap fetches, and the auth step's cookie seed)
+  shares one predicate, `isRetryableStatus`: `408`, `429`, `502`, `503`, `504` and a thrown
+  network error are retried on the injected `backoff` array; `500` is retried **at most once**
+  (a broken Liquid template `500`s deterministically, so retrying it to the cap only spends the
+  run's budget on a failure that will stand); every other `4xx` (`401`, `403`, `404`, `410`,
+  bot-rejection statuses) is an answer and is never retried. A `Retry-After` header, in either
+  the delta-seconds or the HTTP-date form, wins over the backoff array, clamped to 30s. This
+  exists because the content probes used to retry `429` only, so the identical transient `503`
+  that `authenticateStorefront` is written to absorb HARD-FAILed a deploy that had *already*
+  gone live (`release-notes.md` has the incident).
+  **Exhaustion classification is unchanged and is the point of the whole design**: a `429` that
+  survives its retries is still a SOFT-WARN, a `5xx` that survives is still a HARD-FAIL. A
+  bot-management event that persists past the retries therefore still blocks; that is
+  deliberate, because silently passing an unverifiable deploy is the worse failure.
+- **Retries are bounded run-wide, not just per probe.** Products are probed sequentially and
+  there can be ~200 of them, while the `deploy` job's cap is 15 minutes, so a run-scoped budget
+  is threaded through every probe: a total retry-sleep cap (`retryBudgetMs`, default 120s) plus
+  a circuit breaker that stops retrying entirely once `retryBreakerProbes` (default 3) probes
+  have exhausted their retries on a `5xx` or a network error. Past that point the run fails fast
+  rather than paying the backoff ~200 more times. Anything absorbed stays visible: one stderr
+  line per retry, and a `retries: ...` summary line in the smoke output (emitted only when
+  something was actually retried) naming the retry count, the total sleep, and whether the
+  budget or the breaker tripped. The sitemap **index** fetch gets more attempts than a content
+  probe (`sitemapIndexAttempts`, default 3), because its failure zeroes product coverage for the
+  whole run rather than costing one path.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->

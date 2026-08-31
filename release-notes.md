@@ -113,6 +113,60 @@ The Admin shipping policy was read before building this (US-only shipping, $8 fl
 free at $75+, threshold pre-tax), so the bar's promise matches checkout. If the threshold ever
 changes, the setting, the Admin rate, the shop policy, and the announcement slide all move
 together per the shipping-copy contract in `docs/theme-settings-contracts.md`.
+## Smoke and CI: transient failures retry, answers do not (unreleased)
+
+The smoke test's auth step retried `429` **or any `>= 500`**, with a comment saying the storefront
+password endpoint "intermittently 503s under bot management". Every other network call in the CI
+path retried `429` only, or not at all. So the exact transient the auth step was written to absorb
+HARD-FAILed a deploy on any content probe. Observed on PR #137: the live push succeeded, then three
+paths returned `503` with no theme id while eight near-identical ones passed, and all eleven were
+healthy minutes later. That failure mode is expensive in a specific way: the theme is already live
+by the time the smoke runs, so a false HARD-FAIL leaves live serving the new SHA with the PR
+unmerged and `main` behind, recoverable only by a manual re-`deploy`.
+
+**One predicate now, shared by every probe.** `isRetryableStatus` in `smoke.mjs` retries `408`,
+`429`, `502`, `503`, `504` and thrown network errors; the content probes, the root mode-detection
+probe, the `/password` fallback, both sitemap fetches and the auth step's cookie-seed GET all route
+through it. `Retry-After` is honoured when present (delta-seconds or HTTP-date), clamped to 30s.
+
+**`500` is retried at most once, and that asymmetry is deliberate.** A broken Liquid template
+`500`s deterministically. Retrying it to the cap would spend the run's budget on a failure that is
+going to stand anyway, and slow down the report an operator needs. One retry buys the genuine
+edge-`500` case without paying for the template case.
+
+**Exhaustion classification is unchanged, and that is the point.** A `429` that survives its
+retries is still a SOFT-WARN; a `5xx` that survives is still a HARD-FAIL. So a bot-management event
+that persists past the retries still blocks the deploy. That trade was taken knowingly: silently
+greening a deploy nobody could verify is worse than a slow, loud, manually re-triggerable failure.
+The widened predicate makes the smoke survive weather, not blindness.
+
+**Why a run-scoped budget, not just per-probe retries.** Products are probed sequentially and there
+can be ~200 of them, while the `deploy` job's cap is `timeout-minutes: 15`. Unbounded per-probe
+retries would convert a fast HARD-FAIL into a job timeout, which is a worse report of the same
+outcome. So a budget object threads through every probe: a total retry-sleep cap (120s) plus a
+breaker that disables retrying entirely after three probes exhaust theirs on a `5xx` or network
+error. Nothing is silently absorbed: one stderr line per retry, plus a `retries: ...` line in the
+smoke output when anything was retried, naming the count, the total sleep, and whether the budget or
+the breaker tripped. No jitter, deliberately: the probes are sequential, so there is no herd to
+spread, and deterministic delays keep the unit tests' `sleep.delays` assertions exact.
+
+**The sitemap index is not just another probe.** A failure there zeroes product coverage for the
+whole run, where a content probe's failure costs one path, so the index fetch gets three attempts
+rather than the backoff array's two. `fetchWithBody`'s `fetchImpl` call was also not inside a
+try/catch, so a single network throw during enumeration collapsed the run to structural-only with
+zero product coverage. It is caught and retried now, and only rethrown once the attempts are spent,
+so the existing "enumeration skipped" SOFT-WARN path is reached exactly as before.
+
+**`action.yml`'s pre-push `theme list` got the same treatment, plus a stderr filter.** It is a
+read-only GET, so retrying is idempotent by construction; three attempts with backoff and a
+per-attempt `timeout`. It does **not** retry on an auth or permission answer (`401`, `403`,
+`invalid`, `expired`, `not found`): those are not weather, and sleeping 90 seconds before reporting
+a rotated token helps nobody. The step also needed `set +e`, for the same reason the Push step
+documents at length: the composite default shell's injected `-e` kills the step on attempt 1, before
+any retry or exit-code capture can run. The two existing push retry loops were left alone;
+consolidating all three into one helper is backlogged, not done here, because the three have
+genuinely different retry semantics (exit 97, theme-ID re-resolution) and folding them together
+under a deploy-critical path was more risk than the duplication costs.
 
 ## Contact routing, and two button rules that fail silently (unreleased)
 

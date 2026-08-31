@@ -46,23 +46,23 @@ several of the pass's other findings.
 
 ## Deploy and CI
 
-- [ ] **Retry 5xx on the smoke test's content probes, the way the auth step already does.** In
-  `.github/actions/shopify-theme-push/smoke.mjs`, `authenticateStorefront` retries on `429` **or any
-  `>= 500`**, with a comment saying the storefront password endpoint "intermittently 503s under bot
-  management". The content probes retry on `429` only (the `status === 429` guards in
-  `fetchObservation` and `fetchWithBody`), so the identical transient 503 that the auth step is
-  written to absorb instead becomes a HARD-FAIL and blocks the deploy. The asymmetry runs one step
-  further: a `429` that exhausts its retries still only SOFT-WARNs (`classify`, asserted twice in
-  `smoke.test.mjs`), while a single 5xx neither retries nor soft-warns. Observed on PR #137: the live
-  push succeeded, then `/policies/refund-policy`, `/products/lead-ii-crewneck` and
-  `/products/lead-ii-quarter-zip` each returned `503` with `theme=-` while
-  `/products/lead-ii-vest-womens` (near-identical template) and six other paths passed; all eleven
-  paths were healthy again minutes later. Three PRs' preview theme pushes were hitting the store in
-  the same minute, which is the likely aggravator. The failure mode is expensive: the theme is
-  already live by the time the smoke runs, so a false HARD-FAIL leaves the live theme serving the new
-  SHA with the PR unmerged and `main` behind, recoverable only by a manual re-`deploy`. Reuse the
-  existing `backoff` array rather than inventing a second policy, keep a 5xx that survives every
-  retry a HARD-FAIL (a genuinely broken page must still block), and extend `smoke.test.mjs`, whose
-  `runSmoke PUBLIC: 429-then-200 retry` case is the shape to copy for a 503. Consider whether a
-  surviving 5xx on a path that passed earlier in the same run deserves a distinct reason string, so a
-  real outage reads differently from a broken template in the deploy report.
+- [ ] **`scripts/seo-review/lib/http.mjs` still retries `429` only.** Same gap the smoke test had
+  before the transient-retry change (`release-notes.md`): a transient `503` or a thrown network
+  error on a crawl fetch is not retried, so a storefront blip reads as a finding. Out of scope
+  there because the seo-review skill is read-only and advisory, not a deploy gate, so a bad run
+  costs a re-run rather than a stuck deploy. Reuse `smoke.mjs`'s `isRetryableStatus` /
+  `parseRetryAfter` rather than inventing a third policy; the skill already crawls every sitemap
+  URL, so it needs the run-scoped budget too, not just per-request retries.
+
+- [ ] **Decide whether zero product coverage deserves more than a SOFT-WARN, and fold the three
+  retry loops into one helper.** Two related follow-ups from the transient-retry change.
+  (a) When the sitemap is unreachable past its retries, `smoke.mjs` SOFT-WARNs "enumeration
+  skipped" and probes structural routes only, so a deploy greens having verified no product page
+  at all; the structural passes satisfy the `>= 1 PASS` rule on their own. Changing that
+  classification is a scope call, not a bug fix: it would block deploys on a sitemap outage the
+  theme did not cause. (b) `action.yml` now has three retry loops (live push, preview push, and
+  the pre-push `theme list`) with three shapes. A shared `retry.sh` would be one place to fix a
+  bug, but the three have genuinely different semantics (exit 97 handling, preview theme-ID
+  re-resolution, transient-only stderr filtering), so the consolidation needs a design, not a
+  mechanical merge.
+

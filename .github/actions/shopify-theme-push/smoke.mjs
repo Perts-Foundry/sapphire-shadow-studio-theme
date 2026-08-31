@@ -149,6 +149,97 @@ export function classify(o) {
   return { verdict: PASS, reason: 'ok' };
 }
 
+// --- transient-failure retry policy ----------------------------------------
+//
+// One predicate and one run-scoped budget, shared by every probe in this file,
+// so the auth step and the content probes cannot drift apart again (they did:
+// auth retried any 5xx while the content probes retried 429 only, so the exact
+// transient 503 the auth step is written to absorb HARD-FAILed a deploy that
+// had already gone live).
+//
+// Retryable: 408/429 plus the edge-transient 5xx family, and thrown network
+// errors. NOT retryable: 401/403/404/410 and every other 4xx (including the
+// bot-rejection statuses), which are answers, not weather.
+//
+// 500 is special-cased to a single retry: a broken Liquid template 500s
+// deterministically, so retrying it to the cap only spends the run's budget on
+// a failure that is going to stand.
+export const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+/** True when a status is worth a retry. A thrown request is handled separately. */
+export function isRetryableStatus(status) {
+  return typeof status === 'number' && RETRYABLE_STATUSES.has(status);
+}
+
+/** Retry-After is clamped here: an edge may name a wait longer than the job has. */
+export const RETRY_AFTER_CAP_MS = 30000;
+
+/**
+ * Parse a Retry-After header (delta-seconds or an HTTP-date) into milliseconds.
+ * Returns null when absent or unparseable; never negative.
+ * @param {string|null|undefined} value
+ * @param {number} [nowMs] injectable clock, for the HTTP-date form
+ * @returns {number|null}
+ */
+export function parseRetryAfter(value, nowMs = Date.now()) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (raw === '') return null;
+  if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+  const at = Date.parse(raw);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, at - nowMs);
+}
+
+/**
+ * Run-scoped retry budget. Threaded through every probe so ~200 sequential
+ * product probes cannot each spend the full per-probe backoff and turn a fast
+ * HARD-FAIL into a 15-minute job timeout.
+ * @param {object} [o]
+ * @param {number} [o.maxSleepMs]        total retry sleep allowed across the run
+ * @param {number} [o.maxExhaustedProbes] 5xx/network exhaustions before the breaker trips
+ */
+export function createRetryBudget({ maxSleepMs = 120000, maxExhaustedProbes = 3 } = {}) {
+  return {
+    maxSleepMs, maxExhaustedProbes,
+    sleptMs: 0, retries: 0, exhaustedProbes: 0, tripped: false, budgetSpent: false,
+  };
+}
+
+/**
+ * Delay for the next attempt, or null when the run may not sleep again.
+ * Deterministic (no jitter): probes are sequential, so there is no herd to
+ * spread, and exact delays keep the unit tests' `sleep.delays` assertions sharp.
+ */
+function retryDelayFor({ budget, backoff, attempt, retryAfterMs }) {
+  const remaining = budget.maxSleepMs - budget.sleptMs;
+  if (remaining <= 0) return null;
+  const base = retryAfterMs !== null && retryAfterMs !== undefined
+    ? Math.min(retryAfterMs, RETRY_AFTER_CAP_MS)
+    : backoff[Math.min(attempt, backoff.length - 1)];
+  if (!Number.isFinite(base) || base < 0) return null;
+  return Math.min(base, remaining);
+}
+
+/** Record a probe that used up its retries, and trip the breaker at the cap. */
+function noteExhausted(budget, { hitError, status }) {
+  // 429 is throttling, already classified as a SOFT-WARN; only a server/network
+  // failure counts toward "the edge is degraded, stop paying for retries".
+  if (!hitError && !(typeof status === 'number' && status >= 500)) return;
+  budget.exhaustedProbes += 1;
+  if (budget.exhaustedProbes >= budget.maxExhaustedProbes) budget.tripped = true;
+}
+
+/** One-line retry summary for the report, or null when nothing was retried. */
+export function retrySummaryLine(budget) {
+  if (!budget || (budget.retries === 0 && !budget.tripped && !budget.budgetSpent)) return null;
+  const notes = [];
+  if (budget.budgetSpent) notes.push('sleep budget spent');
+  if (budget.tripped) notes.push('edge degraded (retries disabled)');
+  return `retries: ${budget.retries} retry/retries, ${budget.sleptMs}ms slept, `
+    + `${budget.exhaustedProbes} probe(s) exhausted${notes.length ? `; ${notes.join('; ')}` : ''}`;
+}
+
 /**
  * Extract product paths from Shopify sitemap XML (index or child). Tolerant of
  * malformed markup; returns pathnames like `/products/handle`.
@@ -243,7 +334,19 @@ const realSleep = (ms) => new Promise(r => setTimeout(r, ms));
  * @returns {Promise<'success'|'rejected'|'throttled'|'error'>}
  */
 export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff }) {
-  try { updateJar(jar, await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' })); } catch { /* seed cookie best-effort */ }
+  // Seed the cookie jar. Best-effort as before, but no longer a single silent
+  // swallow: a transient failure here costs the POST its session cookie, so one
+  // retry pass is worth the backoff. Still non-fatal on the second failure.
+  for (let seedAttempt = 0; seedAttempt < 2; seedAttempt += 1) {
+    let seedStatus = null;
+    try {
+      const seedRes = await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' });
+      updateJar(jar, seedRes);
+      seedStatus = seedRes.status;
+    } catch { /* seed cookie best-effort */ }
+    if (seedStatus !== null && !isRetryableStatus(seedStatus)) break;
+    if (seedAttempt === 0 && backoff.length) await sleep(backoff[0]);
+  }
   let attempt = 0;
   while (true) {
     let postStatus = null;
@@ -278,7 +381,8 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
 
 /**
  * Fetch with a per-request timeout, manual-redirect hop-following (stopping at
- * a /password wall), and retry-on-429 with backoff.
+ * a /password wall), and transient-failure retry with backoff (see
+ * `isRetryableStatus` and `createRetryBudget`).
  *
  * When `markers` is supplied, the body of the FINAL hop is read on a 200 and
  * checked for each marker string. Only the names of the missing markers are
@@ -289,10 +393,13 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
  * @param {string} url
  * @param {object} opts
  * @param {string[]} [opts.markers] fixed marker strings to require in the body
+ * @param {object} [opts.budget] run-scoped retry budget (see createRetryBudget)
+ * @param {Function} [opts.onRetry] stderr sink, one line per retry
  * @returns {Promise<{status:number|null, finalHost:string|null, themeDesc:string|null, redirectPath:string|null, retriesExhausted:boolean, markersMissing:string[]|null, markerReadError:boolean}>}
  */
 async function fetchObservation(url, {
   jar, fetchImpl, sleep, backoff, timeoutMs, maxHops = 5, markers = null,
+  budget = createRetryBudget(), onRetry = () => {},
 }) {
   let attempt = 0;
   while (true) {
@@ -300,7 +407,7 @@ async function fetchObservation(url, {
     let hops = 0;
     let status = null, finalHost = null, themeDesc = null, redirectPath = null;
     let markersMissing = null, markerReadError = false;
-    let hitError = false;
+    let hitError = false, retryAfterMs = null;
     while (true) {
       const headers = { ...BROWSER_HEADERS };
       if (jar && jar.size) headers.cookie = cookieHeader(jar);
@@ -324,6 +431,7 @@ async function fetchObservation(url, {
         }
         if (jar) updateJar(jar, res);
         status = res.status;
+        retryAfterMs = parseRetryAfter(res.headers.get('retry-after'));
         finalHost = hostOf(res.url) || finalHost;
         const loc = res.headers.get('location');
         if (status >= 300 && status < 400 && loc) {
@@ -361,10 +469,25 @@ async function fetchObservation(url, {
       hops += 1;
     }
 
-    if (!hitError && status === 429 && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    // Retry the transient failures (429/408/5xx/network throw); everything else
+    // is an answer and is classified as-is. The breaker and the sleep budget are
+    // run-scoped, so a degraded edge stops costing time after a few probes.
+    if ((hitError || isRetryableStatus(status)) && !budget.tripped) {
+      // A 500 is retried at most once: a broken template 500s deterministically.
+      const cap = status === 500 ? Math.min(1, backoff.length) : backoff.length;
+      if (attempt < cap) {
+        const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+        if (delay !== null) {
+          onRetry(`retry ${url} (${hitError ? 'network error' : status}) attempt ${attempt + 1} in ${delay}ms`);
+          budget.retries += 1;
+          budget.sleptMs += delay;
+          await sleep(delay);
+          attempt += 1;
+          continue;
+        }
+        budget.budgetSpent = true;
+      }
+      noteExhausted(budget, { hitError, status });
     }
     const retriesExhausted = !hitError && status === 429;
     return {
@@ -410,15 +533,22 @@ export async function runSmoke({
   timeoutMs = 30000,
   maxProducts = 200,
   maxSeconds = 240,
+  retryBudgetMs = 120000,
+  retryBreakerProbes = 3,
+  sitemapIndexAttempts = 3,
   log = () => {},
+  logRetry = (line) => process.stderr.write(`smoke: ${line}\n`),
 } = {}) {
   const expectedHost = hostOf(baseUrl);
   const jar = new Map();
   const lines = [];
   const results = [];
   const deadline = Date.now() + maxSeconds * 1000;
+  // One budget for the whole run: ~200 sequential probes must not each be free
+  // to spend the full per-probe backoff (the deploy job's cap is 15 minutes).
+  const budget = createRetryBudget({ maxSleepMs: retryBudgetMs, maxExhaustedProbes: retryBreakerProbes });
 
-  const probeOpts = { jar, fetchImpl, sleep, backoff, timeoutMs };
+  const probeOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
 
   const record = (path, obs, isProduct) => {
     const { verdict, reason } = classify({
@@ -445,6 +575,8 @@ export async function runSmoke({
     results.push({ path: '/', verdict: HARD_FAIL, reason: `server error ${rootObs.status}` });
     lines.push(`/ HARD-FAIL ${rootObs.status} host=${rootObs.finalHost ?? '-'} theme=- (server error ${rootObs.status})`);
     log(lines[lines.length - 1]);
+    const rootRetryLine = retrySummaryLine(budget);
+    if (rootRetryLine) { lines.push(rootRetryLine); log(rootRetryLine); }
     writeGithubOutput(lines.join('\n'), 1);
     return { exitCode: 1, lines, mode };
   }
@@ -500,6 +632,8 @@ export async function runSmoke({
     results.push({ path: '/password', verdict, reason });
     lines.push(`/password ${verdict} ${obs.status ?? '000'} host=${obs.finalHost ?? '-'} theme=${obs.themeDesc ?? '-'} (${reason})`);
     log(lines[lines.length - 1]);
+    const fallbackRetryLine = retrySummaryLine(budget);
+    if (fallbackRetryLine) { lines.push(fallbackRetryLine); log(fallbackRetryLine); }
     // Block only on a broken page; a rendered page greens regardless of the
     // >=1-PASS rule (which governs the content-probe paths, not this fallback).
     const exitCode = verdict === HARD_FAIL ? 1 : 0;
@@ -508,10 +642,10 @@ export async function runSmoke({
   }
 
   // 4b. Enumerate products from the sitemap.
-  const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs };
+  const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
   let productPaths = [];
   try {
-    const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, bodyOpts);
+    const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, { ...bodyOpts, maxAttempts: sitemapIndexAttempts });
     let children = parseProductSitemapChildren(idxObs);
     if (children.length === 0) children = [`${baseUrl}/sitemap_products_1.xml`];
     const seen = new Set();
@@ -561,6 +695,14 @@ export async function runSmoke({
     probed += 1;
   }
 
+  // Absorbed transients must stay visible: a run that quietly retried its way
+  // to green should say so in the deploy report, not only on stderr.
+  const retryLine = retrySummaryLine(budget);
+  if (retryLine) {
+    lines.push(retryLine);
+    log(retryLine);
+  }
+
   const { exitCode, hardFails, softWarns, passes } = summarize(results);
   log(`summary: ${passes} pass, ${softWarns} soft-warn, ${hardFails} hard-fail -> exit ${exitCode}`);
   writeGithubOutput(lines.join('\n'), exitCode);
@@ -568,27 +710,54 @@ export async function runSmoke({
 }
 
 // Fetch a URL's body text (for sitemap XML), following redirects, with the same
-// 429 backoff/retry the content probes use so a transient throttle on the
-// sitemap does not needlessly collapse the run to structural-only.
-async function fetchWithBody(url, { jar, fetchImpl, sleep, backoff, timeoutMs }) {
+// transient backoff/retry the content probes use so a blip on the sitemap does
+// not needlessly collapse the run to structural-only. A thrown request is
+// retried too and only rethrown once the attempts are spent, so the caller's
+// existing "enumeration skipped" SOFT-WARN path is reached exactly as before.
+//
+// `maxAttempts` exists for the one blocking call: a failure on the sitemap
+// INDEX zeroes product coverage for the whole run, so it is worth more tries
+// than a child sitemap that costs only its own slice.
+async function fetchWithBody(url, {
+  jar, fetchImpl, sleep, backoff, timeoutMs,
+  budget = createRetryBudget(), onRetry = () => {}, maxAttempts = null,
+}) {
+  const cap = maxAttempts === null ? backoff.length : maxAttempts;
   let attempt = 0;
   while (true) {
     const headers = { ...BROWSER_HEADERS };
     if (jar && jar.size) headers.cookie = cookieHeader(jar);
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
-    let res;
+    let res = null;
+    let thrown = null;
     try {
       res = await fetchImpl(url, { headers, redirect: 'follow', signal: ctl.signal });
+    } catch (e) {
+      thrown = e;
     } finally {
       clearTimeout(timer);
     }
-    if (jar) updateJar(jar, res);
-    if (res.status === 429 && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    if (res && jar) updateJar(jar, res);
+    const status = res ? res.status : null;
+    if ((thrown || isRetryableStatus(status)) && !budget.tripped) {
+      const attemptCap = status === 500 ? Math.min(1, cap) : cap;
+      if (attempt < attemptCap) {
+        const retryAfterMs = res ? parseRetryAfter(res.headers.get('retry-after')) : null;
+        const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+        if (delay !== null) {
+          onRetry(`retry ${url} (${thrown ? 'network error' : status}) attempt ${attempt + 1} in ${delay}ms`);
+          budget.retries += 1;
+          budget.sleptMs += delay;
+          await sleep(delay);
+          attempt += 1;
+          continue;
+        }
+        budget.budgetSpent = true;
+      }
+      noteExhausted(budget, { hitError: Boolean(thrown), status });
     }
+    if (thrown) throw thrown;
     return await res.text();
   }
 }
