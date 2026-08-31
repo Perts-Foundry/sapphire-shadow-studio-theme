@@ -145,6 +145,7 @@
     "quantity": "Cantitate",
     "product_total": "Total produs",
     "cart_estimated_total": "Total estimat",
+    "free_shipping_remaining": "TODO: You're {{ amount }} away from free shipping",
     "seller_note": "Instrucțiuni speciale",
     "cart_subtotal": "Subtotal",
     "discounts": "Reduceri",

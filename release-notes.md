@@ -1,5 +1,25 @@
 # Release Notes
 
+## Free-shipping progress bar in the cart (unreleased)
+
+`snippets/shipping-info.liquid` now renders a progress bar toward the free-shipping threshold in
+cart context (drawer and cart page, via the shared `cart-summary` snippet), with a "You're $X away
+from free shipping" line below it. Two decisions worth keeping:
+
+- **The bar is `aria-hidden` and there is no `aria-live` region.** The sentence carries the state
+  for assistive tech, and the cart re-renders by section morphing; a live region inside morphed
+  DOM risks duplicate or spurious announcements on every quantity change. The drawer's existing
+  quantity announcements already cover the update event.
+- **The bar disables itself unless the parsed threshold is greater than zero.**
+  `free_shipping_threshold` is a free-text setting, so a cleared value, or one like "$75" that
+  Liquid coerces to 0, would otherwise pin the bar at 100% permanently with no error anywhere.
+  The pre-existing text line's behavior on a bad value is unchanged.
+
+The Admin shipping policy was read before building this (US-only shipping, $8 flat under $75,
+free at $75+, threshold pre-tax), so the bar's promise matches checkout. If the threshold ever
+changes, the setting, the Admin rate, the shop policy, and the announcement slide all move
+together per the shipping-copy contract in `docs/theme-settings-contracts.md`.
+
 ## Contact routing, and two button rules that fail silently (unreleased)
 
 The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to

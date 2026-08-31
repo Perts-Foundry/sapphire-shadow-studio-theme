@@ -187,6 +187,7 @@
     "account_profile": "Profile",
     "blog_details_separator": "|",
     "cart_estimated_total": "Estimated total",
+    "free_shipping_remaining": "You're {{ amount }} away from free shipping",
     "cart_title": "Cart",
     "cart_subtotal": "Subtotal",
     "cart_total": "Cart total",
