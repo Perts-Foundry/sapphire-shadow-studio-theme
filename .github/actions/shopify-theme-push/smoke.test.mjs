@@ -12,6 +12,7 @@ import {
   classify, parseThemeId, hostOf, parseProductLocs, parseProductSitemapChildren,
   summarize, runSmoke, authenticateStorefront, DEFAULT_SMOKE_PATHS, POLICY_MARKERS,
   isPolicyPath, isRetryableStatus, parseRetryAfter, RETRY_AFTER_CAP_MS,
+  createRetryBudget, retrySummaryLine,
   PASS, SOFT_WARN, HARD_FAIL,
 } from './smoke.mjs';
 
@@ -913,8 +914,15 @@ test('isRetryableStatus: transient only, never an answer', () => {
   for (const s of [200, 301, 400, 401, 403, 404, 410, 418, 430, 451]) {
     assert.equal(isRetryableStatus(s), false, `${s} not retryable`);
   }
+  // The 5xx family is deliberately narrow, not "any 5xx": 501/505/507 are the
+  // server saying it will never do this, which no amount of waiting changes.
+  // Without these, a future "just retry every 5xx" edit passes the suite.
+  for (const s of [501, 505, 507, 508]) {
+    assert.equal(isRetryableStatus(s), false, `${s} is an answer, not weather`);
+  }
   assert.equal(isRetryableStatus(null), false);
   assert.equal(isRetryableStatus(undefined), false);
+  assert.equal(isRetryableStatus('503'), false, 'a string status is not a status');
 });
 
 test('parseRetryAfter: delta-seconds, HTTP-date, garbage', () => {
@@ -995,10 +1003,26 @@ test('runSmoke: 404 and 401 are answers, not weather -> zero retries', async () 
 
 test('runSmoke: an exhausted 429 still SOFT-WARNs, an exhausted 5xx still HARD-FAILs', async () => {
   // The widened predicate must not flatten the two exhaustion classifications.
-  const throttled = await runSmoke(baseArgs({ fetchImpl: cartFetch({ status: 429 }), structuralPaths: ['/cart'] }));
+  // Assert the delays too: without them this passes even if the 429 path
+  // retried zero times or the breaker was already open, which would make it a
+  // regression guard that cannot see the regression.
+  const throttledSleep = recordingSleep();
+  const throttled = await runSmoke(baseArgs({
+    fetchImpl: cartFetch({ status: 429 }), sleep: throttledSleep, structuralPaths: ['/cart'],
+  }));
   assert.ok(throttled.lines.some(l => /\/cart SOFT-WARN.*throttled/.test(l)));
-  const broken = await runSmoke(baseArgs({ fetchImpl: cartFetch({ status: 502 }), structuralPaths: ['/cart'] }));
+  assert.deepEqual(throttledSleep.delays, [8000, 20000], 'the 429 exhausted a full backoff');
+  assert.ok(!throttled.lines.some(l => /\/cart HARD-FAIL/.test(l)), 'never HARD-FAIL on a 429');
+  // No exit-code assertion here: this run has zero content PASSes, so its exit
+  // code is set by the >=1-PASS rule, not by the 429's own classification.
+
+  const brokenSleep = recordingSleep();
+  const broken = await runSmoke(baseArgs({
+    fetchImpl: cartFetch({ status: 502 }), sleep: brokenSleep, structuralPaths: ['/cart'],
+  }));
   assert.ok(broken.lines.some(l => /\/cart HARD-FAIL 502/.test(l)));
+  assert.deepEqual(brokenSleep.delays, [8000, 20000], 'the 502 exhausted a full backoff');
+  assert.equal(broken.exitCode, 1, '5xx exhaustion still blocks');
 });
 
 test('runSmoke: Retry-After is honoured, and clamped to the cap', async () => {
@@ -1010,6 +1034,29 @@ test('runSmoke: Retry-After is honoured, and clamped to the cap', async () => {
   const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/cart'] }));
   assert.equal(r.exitCode, 0);
   assert.deepEqual(sleep.delays, [2000], 'header wins over the backoff array');
+
+  // The HTTP-date form only ever reached parseRetryAfter's injected clock in
+  // tests; this drives it through the real call site, whose clock is Date.now.
+  const dateSleep = recordingSleep();
+  const dateFetch = cartFetch([
+    { status: 503, retryAfter: new Date(Date.now() + 5000).toUTCString() },
+    { status: 200, serverTiming: themeTiming() },
+  ]);
+  const dated = await runSmoke(baseArgs({ fetchImpl: dateFetch, sleep: dateSleep, structuralPaths: ['/cart'] }));
+  assert.equal(dated.exitCode, 0);
+  assert.equal(dateSleep.delays.length, 1);
+  // Whole-second HTTP-date granularity plus real clock drift between the mock
+  // building the header and the probe reading it: assert the band, not a point.
+  assert.ok(dateSleep.delays[0] > 3000 && dateSleep.delays[0] <= 5000, `slept ${dateSleep.delays[0]}ms`);
+
+  // An HTTP-date far in the future is clamped by the same cap as the seconds form.
+  const farSleep = recordingSleep();
+  const farFetch = cartFetch([
+    { status: 503, retryAfter: new Date(Date.now() + 3600000).toUTCString() },
+    { status: 200, serverTiming: themeTiming() },
+  ]);
+  await runSmoke(baseArgs({ fetchImpl: farFetch, sleep: farSleep, structuralPaths: ['/cart'] }));
+  assert.deepEqual(farSleep.delays, [RETRY_AFTER_CAP_MS]);
 
   const clampSleep = recordingSleep();
   const clampFetch = cartFetch([
@@ -1029,6 +1076,92 @@ test('runSmoke: the sleep budget stops further retries and is reported', async (
   assert.deepEqual(sleep.delays, [8000]);
   assert.ok(r.lines.some(l => /^retries: .*sleep budget spent/.test(l)), r.lines.join('\n'));
   assert.equal(r.exitCode, 1);
+});
+
+test('runSmoke: the last retry is shortened to fit the remaining sleep budget', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = cartFetch({ status: 503 });
+  // 12000 of budget against a [8000, 20000] backoff: the first retry costs
+  // 8000, and the second must be clamped to the 4000 left rather than
+  // overrunning the budget by 16 seconds. This is the whole point of the cap.
+  const r = await runSmoke(baseArgs({
+    fetchImpl, sleep, structuralPaths: ['/cart'], retryBudgetMs: 12000,
+  }));
+  assert.deepEqual(sleep.delays, [8000, 4000]);
+  assert.equal(r.exitCode, 1);
+});
+
+test('runSmoke: a 429 exhaustion never counts toward the breaker', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u) => /\/(a|b)$/.test(u), { status: 429 }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  // Breaker set to 1: if a 429 counted, the second path would not retry. A
+  // throttled-but-healthy storefront must not disable retries for the run.
+  const r = await runSmoke(baseArgs({
+    fetchImpl, sleep, structuralPaths: ['/a', '/b'], retryBreakerProbes: 1, paceMs: 0,
+  }));
+  // paceMs is 0 here, so the pacing sleeps are the only zeros and no backoff
+  // entry can collide with them: filtering by 0 is exact, not coincidental.
+  assert.deepEqual(sleep.delays.filter(d => d !== 0), [8000, 20000, 8000, 20000]);
+  assert.ok(!r.lines.some(l => /edge degraded/.test(l)), r.lines.join('\n'));
+});
+
+test('runSmoke: a persistent network throw does trip the breaker', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u) => /\/(a|b)$/.test(u), 'THROW'],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  // The counterpart to the 429 case: a dropped connection is the degraded-edge
+  // signal the breaker exists for, so it must count even with no status.
+  const r = await runSmoke(baseArgs({
+    fetchImpl, sleep, structuralPaths: ['/a', '/b'], retryBreakerProbes: 1, paceMs: 0,
+  }));
+  assert.deepEqual(sleep.delays.filter(d => d !== 0), [8000, 20000], '/b fails fast, breaker already open');
+  assert.ok(r.lines.some(l => /edge degraded/.test(l)), r.lines.join('\n'));
+});
+
+test('runSmoke: the breaker default is 3 exhausted probes', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u) => /\/(a|b|c|d)$/.test(u), { status: 503 }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  // No retryBreakerProbes override: pins the default rather than leaving it
+  // free to be mutated 10x with the suite green. Three probes exhaust (two
+  // delays each), the fourth is refused.
+  const r = await runSmoke(baseArgs({
+    fetchImpl, sleep, structuralPaths: ['/a', '/b', '/c', '/d'], paceMs: 0,
+  }));
+  assert.deepEqual(sleep.delays.filter(d => d !== 0), [8000, 20000, 8000, 20000, 8000, 20000]);
+  assert.ok(r.lines.some(l => /edge degraded/.test(l)), r.lines.join('\n'));
+});
+
+test('retrySummaryLine: reports the real counts, pluralises, and is null when clean', () => {
+  assert.equal(retrySummaryLine(createRetryBudget()), null);
+  assert.equal(retrySummaryLine(null), null);
+
+  const one = createRetryBudget();
+  one.retries = 1; one.sleptMs = 8000; one.exhaustedProbes = 1;
+  assert.equal(retrySummaryLine(one), 'retries: 1 retry, 8000ms slept, 1 probe exhausted');
+
+  const many = createRetryBudget();
+  many.retries = 4; many.sleptMs = 56000; many.exhaustedProbes = 2;
+  assert.equal(retrySummaryLine(many), 'retries: 4 retries, 56000ms slept, 2 probes exhausted');
+
+  // Both notes, and the zero-retry-but-tripped case that is reachable with an
+  // empty backoff array: the line must still be emitted, not swallowed.
+  const tripped = createRetryBudget();
+  tripped.tripped = true; tripped.budgetSpent = true;
+  assert.equal(
+    retrySummaryLine(tripped),
+    'retries: 0 retries, 0ms slept, 0 probes exhausted; sleep budget spent; edge degraded (retries disabled)'
+  );
 });
 
 test('runSmoke: the breaker trips after N exhausted probes and later probes stop retrying', async () => {
@@ -1064,6 +1197,111 @@ test('runSmoke: each retry writes one diagnostic line, and it carries no secrets
   assert.match(retryLines[0], /\/cart/);
   assert.match(retryLines[0], /503/);
   assert.match(retryLines[0], /8000ms/);
+
+  // The name above is only meaningful if a secret is actually in play. Run a
+  // LOCKED flow with a real password and a real session cookie, and assert the
+  // retry sink never sees either: onRetry interpolates a whole URL, and this
+  // action's logs are public.
+  const PW = 'sup3r-secret-pw';
+  const COOKIE = 'SESSIONVALUE123';
+  const authLines = [];
+  const lockedFetch = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', [
+      { status: 503 },
+      { status: 302, location: '/', setCookie: [`_secure_session_id=${COOKIE}; path=/`] },
+    ]],
+    [(u, o) => u.endsWith('/password') && o.method !== 'POST', { status: 503 }],
+    [() => true, { status: 302, location: '/password' }],
+  ]);
+  await runSmoke(baseArgs({
+    fetchImpl: lockedFetch, password: PW, structuralPaths: ['/cart'],
+    logRetry: (l) => authLines.push(l),
+  }));
+  assert.ok(authLines.length > 0, 'the auth step retried at least once');
+  for (const line of authLines) {
+    assert.ok(!line.includes(PW), `retry line leaked the password: ${line}`);
+    assert.ok(!line.includes(COOKIE), `retry line leaked a cookie value: ${line}`);
+  }
+});
+
+test('authenticateStorefront: the POST uses the shared predicate, not its own', async () => {
+  // The whole point of isRetryableStatus is that the auth step and the content
+  // probes cannot drift apart again. Before this, the POST hand-rolled
+  // `429 || >= 500`, so a 408 POST was not retried while a 408 GET was, and a
+  // 501 POST WAS retried while a 501 GET was not.
+  const post408 = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', [
+      { status: 408 }, { status: 302, location: '/' },
+    ]],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(post408), 'success', '408 is transient, and is retried');
+
+  const sleep501 = recordingSleep();
+  const post501 = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 501 }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(post501, { sleep: sleep501 }), 'error');
+  assert.deepEqual(sleep501.delays, [], '501 is an answer, not weather: zero retries');
+});
+
+test('authenticateStorefront: a thrown POST is retried, then reported as error', async () => {
+  const sleep = recordingSleep();
+  const flaky = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', [
+      'THROW', { status: 302, location: '/' },
+    ]],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(flaky, { sleep }), 'success');
+  assert.deepEqual(sleep.delays, [8000], 'a dropped connection is weather, and is retried');
+
+  const dead = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', 'THROW'],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(dead), 'error', 'classification unchanged once the retries are spent');
+});
+
+test('authenticateStorefront: a 500 POST is retried once, and Retry-After is honoured', async () => {
+  const sleep500 = recordingSleep();
+  const post500 = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', { status: 500 }],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(post500, { sleep: sleep500 }), 'error');
+  assert.deepEqual(sleep500.delays, [8000], 'the probes 500-once rule now applies here too');
+
+  const sleepRA = recordingSleep();
+  const postRA = scriptedFetch([
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', [
+      { status: 503, retryAfter: '2' },
+      { status: 302, location: '/' },
+    ]],
+    [() => true, { status: 200 }],
+  ]);
+  assert.equal(await auth(postRA, { sleep: sleepRA }), 'success');
+  assert.deepEqual(sleepRA.delays, [2000], 'Retry-After wins over the backoff array');
+});
+
+test('runSmoke: auth retries are counted in the run budget and reported on the rejected exit', async () => {
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: '' }],
+    [(u, o) => u.endsWith('/password') && o.method === 'POST', [
+      { status: 503 },
+      { status: 200 }, // 200 re-render == rejected password
+    ]],
+    [(u, o) => u.endsWith('/password') && o.method !== 'POST', { status: 200 }],
+    [() => true, { status: 302, location: '/password' }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, password: 'p', structuralPaths: ['/cart'] }));
+  assert.equal(r.exitCode, 1);
+  assert.ok(r.lines.some(l => /AUTH: password provided but the gate refused it/.test(l)));
+  // The retry evidence must survive on the branch an operator will be
+  // diagnosing, and the auth sleeps must be visible in the run's totals.
+  assert.ok(r.lines.some(l => /^retries: 1 retry, 8000ms slept/.test(l)), r.lines.join('\n'));
 });
 
 test('authenticateStorefront: a failed cookie-seed GET is retried, then auth proceeds', async () => {
@@ -1108,15 +1346,32 @@ test('runSmoke: the sitemap index gets more attempts than the per-probe backoff 
   const sleep = recordingSleep();
   const sitemapBody = `<urlset><url><loc>${BASE}/products/x</loc></url></urlset>`;
   const fetchImpl = scriptedFetch([
-    // Fails twice (more than backoff.length would allow a content probe), then
-    // succeeds: a dead sitemap index zeroes product coverage for the whole run.
-    [(u) => u.endsWith('/sitemap.xml'), (u, o, n) => (n < 2 ? { status: 503 } : { status: 200, body: sitemapBody })],
+    // Fails THREE times. A content probe gets backoff.length (2) retries and
+    // would have given up by now, so this is the assertion that the extra
+    // `sitemapIndexAttempts` retry exists at all: a dead sitemap index zeroes
+    // product coverage for the whole run, where a content probe costs one path.
+    [(u) => u.endsWith('/sitemap.xml'), (u, o, n) => (n < 3 ? { status: 503 } : { status: 200, body: sitemapBody })],
     [(u) => u.includes('sitemap_products_'), { status: 200, body: sitemapBody }],
     [() => true, { status: 200, serverTiming: themeTiming() }],
   ]);
   const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/'] }));
   assert.ok(r.lines.some(l => /\/products\/x PASS/.test(l)), r.lines.join('\n'));
-  assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000, 20000]);
+  // The third delay also pins `backoff[Math.min(attempt, backoff.length - 1)]`:
+  // the attempt index runs past the end of the array, so it clamps to the last
+  // entry rather than reading undefined and silently refusing the retry.
+  assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000, 20000, 20000]);
+});
+
+test('runSmoke: a 500 on the sitemap index is retried once, like everywhere else', async () => {
+  const sleep = recordingSleep();
+  const fetchImpl = scriptedFetch([
+    // A deterministic 500 must not spend all three sitemap attempts.
+    [(u) => u.endsWith('/sitemap.xml'), { status: 500 }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep, structuralPaths: ['/'] }));
+  assert.deepEqual(sleep.delays.filter(d => d !== 4000), [8000], 'one retry, not three');
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN/.test(l)), r.lines.join('\n'));
 });
 
 test('runSmoke: a persistently dead sitemap still takes the existing SOFT-WARN path', async () => {

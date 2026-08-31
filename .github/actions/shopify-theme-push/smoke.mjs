@@ -151,11 +151,15 @@ export function classify(o) {
 
 // --- transient-failure retry policy ----------------------------------------
 //
-// One predicate and one run-scoped budget, shared by every probe in this file,
-// so the auth step and the content probes cannot drift apart again (they did:
-// auth retried any 5xx while the content probes retried 429 only, so the exact
-// transient 503 the auth step is written to absorb HARD-FAILed a deploy that
-// had already gone live).
+// One predicate and one run-scoped budget, shared by every request this file
+// makes (content probes, root, /password, both sitemap fetches, and BOTH halves
+// of the auth step: the cookie-seed GET and the password POST), so the auth step
+// and the content probes cannot drift apart again. They did: auth retried any
+// 5xx while the content probes retried 429 only, so the exact transient 503 the
+// auth step is written to absorb HARD-FAILed a deploy that had already gone
+// live. Nothing here may hand-roll a second policy; `authenticateStorefront`
+// creates its own budget only when called outside a run (the a11y helper), so
+// its sleeps are bounded either way.
 //
 // Retryable: 408/429 plus the edge-transient 5xx family, and thrown network
 // errors. NOT retryable: 401/403/404/410 and every other 4xx (including the
@@ -236,8 +240,10 @@ export function retrySummaryLine(budget) {
   const notes = [];
   if (budget.budgetSpent) notes.push('sleep budget spent');
   if (budget.tripped) notes.push('edge degraded (retries disabled)');
-  return `retries: ${budget.retries} retry/retries, ${budget.sleptMs}ms slept, `
-    + `${budget.exhaustedProbes} probe(s) exhausted${notes.length ? `; ${notes.join('; ')}` : ''}`;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  return `retries: ${plural(budget.retries, 'retry', 'retries')}, ${budget.sleptMs}ms slept, `
+    + `${plural(budget.exhaustedProbes, 'probe', 'probes')} exhausted`
+    + `${notes.length ? `; ${notes.join('; ')}` : ''}`;
 }
 
 /**
@@ -331,26 +337,51 @@ const realSleep = (ms) => new Promise(r => setTimeout(r, ms));
  * @param {Function} o.fetchImpl
  * @param {Function} o.sleep
  * @param {number[]} o.backoff  per-retry delays; its length caps the retries
+ * @param {object} [o.budget]   run-scoped retry budget; one is created when the
+ *   caller has no run to account against (the a11y helper), so the sleeps here
+ *   are always bounded by the same policy the probes use
+ * @param {Function} [o.onRetry] one-line retry diagnostic sink
  * @returns {Promise<'success'|'rejected'|'throttled'|'error'>}
  */
-export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff }) {
+export async function authenticateStorefront({
+  baseUrl, password, jar, fetchImpl, sleep, backoff,
+  budget = createRetryBudget(), onRetry = () => {},
+}) {
+  // Both loops below go through `isRetryableStatus` / `retryDelayFor`, the same
+  // policy the content probes use. That is the whole point of the shared
+  // predicate: the auth step and the probes drifted apart once already.
+  const sleepFor = async (attempt, retryAfterMs, what) => {
+    const delay = retryDelayFor({ budget, backoff, attempt, retryAfterMs });
+    if (delay === null) { budget.budgetSpent = true; return false; }
+    onRetry(`retry ${baseUrl}/password (${what}) attempt ${attempt + 1} in ${delay}ms`);
+    budget.retries += 1;
+    budget.sleptMs += delay;
+    await sleep(delay);
+    return true;
+  };
+
   // Seed the cookie jar. Best-effort as before, but no longer a single silent
   // swallow: a transient failure here costs the POST its session cookie, so one
   // retry pass is worth the backoff. Still non-fatal on the second failure.
   for (let seedAttempt = 0; seedAttempt < 2; seedAttempt += 1) {
     let seedStatus = null;
+    let seedRetryAfter = null;
     try {
       const seedRes = await fetchImpl(`${baseUrl}/password`, { headers: BROWSER_HEADERS, redirect: 'manual' });
       updateJar(jar, seedRes);
       seedStatus = seedRes.status;
+      seedRetryAfter = parseRetryAfter(seedRes.headers.get('retry-after'));
     } catch { /* seed cookie best-effort */ }
     if (seedStatus !== null && !isRetryableStatus(seedStatus)) break;
-    if (seedAttempt === 0 && backoff.length) await sleep(backoff[0]);
+    if (seedAttempt === 0 && !budget.tripped) {
+      if (!await sleepFor(0, seedRetryAfter, seedStatus === null ? 'network error' : seedStatus)) break;
+    }
   }
   let attempt = 0;
   while (true) {
     let postStatus = null;
     let postLocPath = null;
+    let postRetryAfter = null;
     try {
       const postRes = await fetchImpl(`${baseUrl}/password`, {
         method: 'POST',
@@ -360,15 +391,23 @@ export async function authenticateStorefront({ baseUrl, password, jar, fetchImpl
       });
       updateJar(jar, postRes);
       postStatus = postRes.status;
+      postRetryAfter = parseRetryAfter(postRes.headers.get('retry-after'));
       const loc = postRes.headers.get('location');
       if (loc) { try { postLocPath = new URL(loc, `${baseUrl}/password`).pathname; } catch { postLocPath = loc; } }
     } catch { postStatus = null; }
-    // Retry a throttled (429) or transient server/edge error (5xx) POST: the
-    // storefront password endpoint intermittently 503s under bot-management.
-    if ((postStatus === 429 || (postStatus !== null && postStatus >= 500)) && attempt < backoff.length) {
-      await sleep(backoff[attempt]);
-      attempt += 1;
-      continue;
+    // Retry a throttled (429), a transient server/edge error, or a thrown
+    // request: the storefront password endpoint intermittently 503s under
+    // bot-management. 500 keeps the probes' single-retry rule.
+    const postRetryable = postStatus === null || isRetryableStatus(postStatus);
+    if (postRetryable && !budget.tripped) {
+      const cap = postStatus === 500 ? Math.min(1, backoff.length) : backoff.length;
+      if (attempt < cap) {
+        if (await sleepFor(attempt, postRetryAfter, postStatus === null ? 'network error' : postStatus)) {
+          attempt += 1;
+          continue;
+        }
+      }
+      noteExhausted(budget, { hitError: postStatus === null, status: postStatus });
     }
     if (postStatus === null) return 'error';
     if (postStatus === 429) return 'throttled';
@@ -590,7 +629,9 @@ export async function runSmoke({
   if (mode === 'LOCKED' && password) {
     // Retry/outcome rules live in authenticateStorefront (shared with the a11y
     // auth helper); only the deploy-facing consequences are decided here.
-    const authResult = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff });
+    const authResult = await authenticateStorefront({
+      baseUrl, password, jar, fetchImpl, sleep, backoff, budget, onRetry: logRetry,
+    });
     maskCookieValues(jar);
     authed = authResult === 'success';
     if (authResult === 'rejected') {
@@ -599,6 +640,11 @@ export async function runSmoke({
       results.push({ path: '/password', verdict: HARD_FAIL, reason: 'auth rejected (password provided but refused; rotated/wrong secret)' });
       lines.push('/password HARD-FAIL - AUTH: password provided but the gate refused it (rotated or wrong secret); content coverage would be lost');
       log(lines[lines.length - 1]);
+      // This is a HARD-FAIL an operator will be diagnosing, and the root probe
+      // and the auth step may both have retried to get here. Report it on this
+      // path too, or the retry evidence vanishes on the branch that needs it.
+      const authRetryLine = retrySummaryLine(budget);
+      if (authRetryLine) { lines.push(authRetryLine); log(authRetryLine); }
       writeGithubOutput(lines.join('\n'), 1);
       return { exitCode: 1, lines, mode };
     }

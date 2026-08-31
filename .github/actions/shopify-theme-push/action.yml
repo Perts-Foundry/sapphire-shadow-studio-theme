@@ -156,14 +156,24 @@ runs:
         set +e
         set -uo pipefail
 
+        # Same ANSI-strip + token redaction the Push step uses, so server-sourced
+        # text can be shown without leaking a token. Capturing stderr to a file
+        # is what stops the CLI printing it, so the failure path has to print it
+        # back or a failed `theme list` becomes undiagnosable from the run log.
+        scrub() {
+          sed 's/\x1b\[[0-9;]*m//g' \
+            | sed -E 's/(shpat|shpca|shpss|shppa|shpua|shptka)_[A-Za-z0-9]{16,}/[REDACTED]/g'
+        }
+
         # `theme list` is a read-only GET, so retrying it is idempotent by
         # construction. Three attempts with backoff, because a transient 5xx or
         # a hung connection here fails the whole deploy before the push is even
         # attempted. Transient-only: an auth/permission answer is not weather,
-        # so it fails immediately rather than sleeping 90s first.
+        # so it fails immediately rather than sleeping the full 30s of backoff
+        # first.
         ATTEMPTS=3
         LIST_EXIT=1
-        for i in $(seq 1 $ATTEMPTS); do
+        for ((i = 1; i <= ATTEMPTS; i++)); do
           # Per-attempt wall-clock bound: a hung CLI must not eat the job's
           # 15-minute budget. `timeout` is coreutils, present on the Linux
           # runners this action runs on.
@@ -172,21 +182,36 @@ runs:
           if [ "$LIST_EXIT" -eq 0 ]; then
             break
           fi
-          # Never echo the captured stderr: the CLI has already printed its own
-          # diagnostics, and this copy is only ever pattern-matched here.
-          if grep -qiE '401|403|unauthoriz|forbidden|invalid|expired|not found|no such' list.err; then
-            echo "::error::theme list failed with a non-transient error (exit ${LIST_EXIT}); not retrying."
-            break
+          # A timeout (124, or 137 after the kill-after SIGKILL) is by definition
+          # "no answer received", so no answer can have been classified: skip the
+          # pattern match entirely. Otherwise a fragment of partial output could
+          # match below and abandon the retry on the exact hang the timeout is
+          # here to catch.
+          if [ "$LIST_EXIT" -ne 124 ] && [ "$LIST_EXIT" -ne 137 ] \
+            && grep -qiE '(http|status|error)[^0-9]{0,4}(401|403)|unauthoriz|not authoriz|forbidden|access denied|permission denied|invalid (token|password|api key|credentials)|token[^.]{0,20}expired|(theme|store|shop)[^.]{0,20}(not found|no such)|scope' list.err; then
+            echo "::error::theme list failed with a non-transient error (exit ${LIST_EXIT}) after ${i} attempt(s); not retrying."
+            scrub < list.err | tail -20
+            rm -f list.err
+            exit "$LIST_EXIT"
           fi
           if [ "$i" -lt "$ATTEMPTS" ]; then
             echo "::warning::theme list attempt ${i}/${ATTEMPTS} failed (exit ${LIST_EXIT}); retrying in $((i * 10))s"
             sleep $((i * 10))
           fi
         done
-        rm -f list.err
         if [ "$LIST_EXIT" -ne 0 ]; then
           echo "::error::theme list failed after ${ATTEMPTS} attempt(s) (exit ${LIST_EXIT})"
+          scrub < list.err | tail -20
+          rm -f list.err
           exit "$LIST_EXIT"
+        fi
+        rm -f list.err
+        # A zero-exit CLI that wrote a banner instead of JSON must not surface
+        # later as a jq riddle in the Push step (`require_json` lives in that
+        # step's shell, so it is unreachable from here).
+        if ! jq empty themes.json 2>/dev/null; then
+          echo "::error::theme list exited 0 but did not write JSON"
+          exit 1
         fi
 
     - name: Push

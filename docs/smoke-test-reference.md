@@ -45,9 +45,10 @@ diagnosing a deploy failure it reported.
   so a network fault stays diagnosable apart from genuinely absent markup. The body read shares
   the probe's existing `timeoutMs` budget and never runs on a redirect hop, a non-200, or a
   retry path.
-- **Transient failures are retried; answers are not.** Every probe in the script (content,
-  root mode-detection, `/password` fallback, sitemap fetches, and the auth step's cookie seed)
-  shares one predicate, `isRetryableStatus`: `408`, `429`, `502`, `503`, `504` and a thrown
+- **Transient failures are retried; answers are not.** Every request the script makes (content
+  probes, root mode-detection, `/password` fallback, both sitemap fetches, and both halves of
+  the auth step: the cookie-seed GET and the password POST) shares one predicate,
+  `isRetryableStatus`: `408`, `429`, `502`, `503`, `504` and a thrown
   network error are retried on the injected `backoff` array; `500` is retried **at most once**
   (a broken Liquid template `500`s deterministically, so retrying it to the cap only spends the
   run's budget on a failure that will stand); every other `4xx` (`401`, `403`, `404`, `410`,
@@ -61,16 +62,29 @@ diagnosing a deploy failure it reported.
   bot-management event that persists past the retries therefore still blocks; that is
   deliberate, because silently passing an unverifiable deploy is the worse failure.
 - **Retries are bounded run-wide, not just per probe.** Products are probed sequentially and
-  there can be ~200 of them, while the `deploy` job's cap is 15 minutes, so a run-scoped budget
-  is threaded through every probe: a total retry-sleep cap (`retryBudgetMs`, default 120s) plus
-  a circuit breaker that stops retrying entirely once `retryBreakerProbes` (default 3) probes
-  have exhausted their retries on a `5xx` or a network error. Past that point the run fails fast
-  rather than paying the backoff ~200 more times. Anything absorbed stays visible: one stderr
-  line per retry, and a `retries: ...` summary line in the smoke output (emitted only when
-  something was actually retried) naming the retry count, the total sleep, and whether the
-  budget or the breaker tripped. The sitemap **index** fetch gets more attempts than a content
-  probe (`sitemapIndexAttempts`, default 3), because its failure zeroes product coverage for the
-  whole run rather than costing one path.
+  there can be ~200 of them, so a run-scoped budget is threaded through every probe and through
+  the auth step: a total retry-sleep cap (`retryBudgetMs`, default 120s) plus a circuit breaker
+  that stops retrying entirely once `retryBreakerProbes` (default 3) probes have exhausted their
+  retries on a `5xx` or a network error. A `429` exhaustion deliberately does **not** count
+  toward the breaker: throttling is already a SOFT-WARN, and a busy-but-healthy storefront must
+  not disable retries for the rest of the run. Past the trip point the run fails fast rather
+  than paying the backoff ~200 more times.
+  What the budget actually protects is **coverage**, not the job: the product loop has its own
+  240s deadline (`SMOKE_MAX_SECONDS`), and overrunning that soft-warns the unprobed remainder
+  rather than timing out the 15-minute job. Retry sleeps are wall clock against that same
+  deadline, so a degraded edge can spend up to half the product-probing window asleep and green
+  the deploy with `products SOFT-WARN: time budget reached; N product(s) unprobed`. That reduced
+  catalogue coverage, not a job timeout, is the failure mode to look for after an edge incident.
+  Anything absorbed stays visible: one stderr line per retry, and a `retries: ...` summary line
+  in the smoke output (emitted only when something was actually retried, on every exit path)
+  naming the retry count, the total sleep, and whether the budget or the breaker tripped.
+  The sitemap **index** fetch gets one more retry than a content probe (`sitemapIndexAttempts`,
+  default 3 **retries**, against the backoff array's 2), because its failure zeroes product
+  coverage for the whole run rather than costing one path.
+  `retryBudgetMs`, `retryBreakerProbes` and `sitemapIndexAttempts` are `runSmoke` parameters
+  only: unlike `SMOKE_MAX_PRODUCTS` / `SMOKE_MAX_SECONDS` they have no env override and
+  `action.yml` passes none, so CI always runs the defaults. Changing one during an incident
+  means editing the code.
 - **Catalog coverage, no maintained list.** Product handles are not in this repo
   (`templates/` holds template suffixes, not handles; products are Admin data), so the smoke
   enumerates **every published product from the sitemap** (`/sitemap.xml` ->

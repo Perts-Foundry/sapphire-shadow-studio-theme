@@ -124,10 +124,21 @@ healthy minutes later. That failure mode is expensive in a specific way: the the
 by the time the smoke runs, so a false HARD-FAIL leaves live serving the new SHA with the PR
 unmerged and `main` behind, recoverable only by a manual re-`deploy`.
 
-**One predicate now, shared by every probe.** `isRetryableStatus` in `smoke.mjs` retries `408`,
-`429`, `502`, `503`, `504` and thrown network errors; the content probes, the root mode-detection
-probe, the `/password` fallback, both sitemap fetches and the auth step's cookie-seed GET all route
-through it. `Retry-After` is honoured when present (delta-seconds or HTTP-date), clamped to 30s.
+**One predicate now, shared by every request the file makes.** `isRetryableStatus` in `smoke.mjs`
+retries `408`, `429`, `502`, `503`, `504` and thrown network errors; the content probes, the root
+mode-detection probe, the `/password` fallback, both sitemap fetches and **both halves of the auth
+step** (the cookie-seed GET and the password POST) all route through it. `Retry-After` is honoured
+when present (delta-seconds or HTTP-date), clamped to 30s.
+
+Converting the POST was the second half of the fix, and it nearly did not happen. The first pass
+left the POST hand-rolling its old `429 || >= 500` test while the comment above it claimed the
+predicate was shared by everything, which is the same class of drift the change exists to end: a
+`408` POST went unretried while a `408` GET was retried, a `501` POST was retried while a `501` GET
+was not, `Retry-After` was ignored there, and its sleeps counted against neither the budget nor the
+breaker, so the run's stated 120s cap could be silently overrun by 28s. The predicate is only worth
+having if nothing is allowed to keep a private copy of it. `authenticateStorefront` still creates
+its own budget when called outside a run, because `scripts/a11y/get-auth-cookie.mjs` imports it and
+has no run to account against; its sleeps are bounded by the same policy either way.
 
 **`500` is retried at most once, and that asymmetry is deliberate.** A broken Liquid template
 `500`s deterministically. Retrying it to the cap would spend the run's budget on a failure that is
@@ -141,32 +152,60 @@ greening a deploy nobody could verify is worse than a slow, loud, manually re-tr
 The widened predicate makes the smoke survive weather, not blindness.
 
 **Why a run-scoped budget, not just per-probe retries.** Products are probed sequentially and there
-can be ~200 of them, while the `deploy` job's cap is `timeout-minutes: 15`. Unbounded per-probe
-retries would convert a fast HARD-FAIL into a job timeout, which is a worse report of the same
-outcome. So a budget object threads through every probe: a total retry-sleep cap (120s) plus a
-breaker that disables retrying entirely after three probes exhaust theirs on a `5xx` or network
-error. Nothing is silently absorbed: one stderr line per retry, plus a `retries: ...` line in the
-smoke output when anything was retried, naming the count, the total sleep, and whether the budget or
-the breaker tripped. No jitter, deliberately: the probes are sequential, so there is no herd to
-spread, and deterministic delays keep the unit tests' `sleep.delays` assertions exact.
+can be ~200 of them. The thing unbounded retries actually threaten is not the `deploy` job's
+`timeout-minutes: 15`, which is what the first draft of this note claimed: the product loop already
+had its own 240s deadline (`SMOKE_MAX_SECONDS`), and overrunning that soft-warns the unprobed
+remainder rather than timing out the job. What they threaten is **coverage**. Retry sleeps are wall
+clock against that same deadline, so a degraded edge can spend half the probing window asleep and
+green a deploy having checked a fraction of the catalogue. So a budget object threads through every
+probe and through the auth step: a total retry-sleep cap (120s) plus a breaker that disables
+retrying entirely after three probes exhaust theirs on a `5xx` or network error. A `429` exhaustion
+deliberately does not count toward the breaker, since throttling is already a SOFT-WARN and a
+busy-but-healthy storefront must not disable retries for the rest of the run. Nothing is silently
+absorbed: one stderr line per retry, plus a `retries: ...` line in the smoke output when anything
+was retried, on every exit path including the auth-rejected HARD-FAIL, which is precisely the branch
+an operator is diagnosing when the retry evidence matters. No jitter, deliberately: the probes are
+sequential, so there is no herd to spread, and deterministic delays keep the unit tests'
+`sleep.delays` assertions exact.
 
 **The sitemap index is not just another probe.** A failure there zeroes product coverage for the
-whole run, where a content probe's failure costs one path, so the index fetch gets three attempts
+whole run, where a content probe's failure costs one path, so the index fetch gets three retries
 rather than the backoff array's two. `fetchWithBody`'s `fetchImpl` call was also not inside a
 try/catch, so a single network throw during enumeration collapsed the run to structural-only with
 zero product coverage. It is caught and retried now, and only rethrown once the attempts are spent,
 so the existing "enumeration skipped" SOFT-WARN path is reached exactly as before.
 
 **`action.yml`'s pre-push `theme list` got the same treatment, plus a stderr filter.** It is a
-read-only GET, so retrying is idempotent by construction; three attempts with backoff and a
-per-attempt `timeout`. It does **not** retry on an auth or permission answer (`401`, `403`,
-`invalid`, `expired`, `not found`): those are not weather, and sleeping 90 seconds before reporting
-a rotated token helps nobody. The step also needed `set +e`, for the same reason the Push step
+read-only GET, so retrying is idempotent by construction; three attempts with backoff (10s then
+20s) and a per-attempt `timeout 60s`. It does **not** retry on an auth or permission answer: those
+are not weather, and sleeping out the backoff before reporting a rotated token helps nobody.
+
+Two things about that filter are worth the words, because the obvious version of it is wrong in
+both directions. Bare digit alternatives (`401|403`) match durations and byte counts, so
+`Timed out after 401ms` and `Done in 4031ms` both read as auth failures and abandon the retry on
+exactly the transient it exists for; the codes are anchored to a status context instead. And
+`unauthoriz` does not match `not authorized`, the spacing Shopify actually uses, so the real
+permanent failures were the ones being retried. A timeout is also short-circuited ahead of the
+filter: exit 124 or 137 means no answer was received, so no answer can have been classified, and a
+fragment of partial output must not be pattern-matched as one. The captured stderr is now printed
+back on the failure path, through the same ANSI-strip and token-redaction `scrub()` the Push step
+uses. Capturing stderr to a file is what stops the CLI printing it, so without that the change
+would have made a failed `theme list` undiagnosable from the run log: the redirect was the only
+sink those diagnostics had. The step also needed `set +e`, for the same reason the Push step
 documents at length: the composite default shell's injected `-e` kills the step on attempt 1, before
 any retry or exit-code capture can run. The two existing push retry loops were left alone;
 consolidating all three into one helper is backlogged, not done here, because the three have
 genuinely different retry semantics (exit 97, theme-ID re-resolution) and folding them together
 under a deploy-critical path was more risk than the duplication costs.
+
+**A coupling worth knowing about**: `preview.yml`'s cleanup job had `timeout-minutes: 5`, and the
+list retry's worst successful case is now ~3.5 minutes on top of checkout, `npm ci` and a delete
+loop that allows `timeout 2m` per theme. Overrunning that cap cancels the job mid-delete, which
+leaks a preview theme that nothing sweeps up: the exact outcome the job's `cancel-in-progress:
+false` exists to prevent. Raised to 10 minutes, with a comment naming the arithmetic so the next
+person to change either number sees the other. Nothing lints composite-action shell in this repo
+(CI's `actionlint` walks `.github/workflows/` only, so its `SHELLCHECK_OPTS` never reaches the
+largest shell script here), which is why that coupling had to be found by reading.
 
 ## Contact routing, and two button rules that fail silently (unreleased)
 
