@@ -1055,6 +1055,16 @@ jobs:
         run: |
           set +x
           set -euo pipefail
+          # Deliberately NOT routed through the shared retry helper in
+          # .github/actions/shopify-theme-push/lib/retry.sh, and deliberately
+          # keeping `set -e` where the action's steps need `set +e`. This step
+          # only fills a string in the deploy-report comment and is
+          # `continue-on-error: true`, so a blip already degrades to "unknown".
+          # Adding up to 30s of backoff to a live deploy report buys no
+          # reliability, and the helper's contract is built around a caller that
+          # captures exit codes rather than one that lets `-e` end the step.
+          # It is a workflow step, so the `actionlint + shellcheck` row already
+          # lints this shell.
           npx shopify theme list --json > themes.json
           # No updated_at field exists on this output: `theme list --json`
           # returns only {id, name, processing, createdAtRuntime, role} (per

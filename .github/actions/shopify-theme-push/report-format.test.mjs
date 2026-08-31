@@ -36,17 +36,44 @@ test('renderSmokeMarkdownTable: a per-row SOFT-WARN (throttled probe) increments
   assert.match(markdown, /\| :warning: \| `\/products\/y` \| 429 \| - \| throttled \(429 after retries\) \|/);
 });
 
-test('renderSmokeMarkdownTable: the two note-only SOFT-WARN summary lines land in notes, never dropped, never counted as rows', () => {
+test('renderSmokeMarkdownTable: aggregate SOFT-WARN lines land in notes, not rows, but still count', () => {
+  // The literals here are copied from smoke.mjs's current output; if that text drifts, the
+  // aggregate-counting assertion below is what notices.
   const output = [
     `/ PASS 200 host=${HOST} theme=${THEME} (ok)`,
-    'sitemap SOFT-WARN: product enumeration skipped (sitemap unreachable/empty); probing structural routes only',
+    'sitemap SOFT-WARN: product enumeration skipped (sitemap lists no products); probing structural routes only',
     'products SOFT-WARN: time budget reached; 5 product(s) unprobed',
   ].join('\n');
   const { summaryLine, markdown } = renderSmokeMarkdownTable(output);
-  // Only the / PASS line is a parsed row; the two summary lines are notes.
-  assert.equal(summaryLine, '1 passed, 0 warned, 0 failed');
+  // Rendered as notes (they carry no status/host/theme), but counted, so the tally matches what
+  // the run actually reported.
+  assert.equal(summaryLine, '1 passed, 2 warned, 0 failed');
   assert.match(markdown, /> sitemap SOFT-WARN: product enumeration skipped/);
   assert.match(markdown, /> products SOFT-WARN: time budget reached; 5 product\(s\) unprobed/);
+  assert.doesNotMatch(markdown, /\| .* `sitemap` .* \|/, 'never a table row');
+});
+
+test('renderSmokeMarkdownTable: an aggregate HARD-FAIL is counted, so exit 1 never reads "0 failed"', () => {
+  // The regression this guards: before the smoke gained a zero-product-coverage HARD-FAIL, every
+  // aggregate line was a SOFT-WARN, so leaving them uncounted happened to be accurate. Both of
+  // these exit 1 on their own, and the summary sits directly above a failed deploy.
+  for (const line of [
+    'sitemap HARD-FAIL: product enumeration failed (sitemap index unreachable after 4 attempt(s)); zero product coverage. Likely Shopify-side weather; re-run with a `deploy` comment when it clears. The theme is already live on this SHA.',
+    'products HARD-FAIL: the time budget was exhausted before any of the 12 enumerated product(s) was probed; zero product coverage. Raise SMOKE_MAX_SECONDS or lower SMOKE_MAX_PRODUCTS. The theme is already live on this SHA.',
+  ]) {
+    const output = [`/ PASS 200 host=${HOST} theme=${THEME} (ok)`, line].join('\n');
+    const { summaryLine } = renderSmokeMarkdownTable(output);
+    assert.equal(summaryLine, '1 passed, 0 warned, 1 failed', line);
+  }
+});
+
+test('renderSmokeMarkdownTable: a note that merely mentions a verdict is not counted', () => {
+  const output = [
+    `/ PASS 200 host=${HOST} theme=${THEME} (ok)`,
+    'retries: 2 retried, 1 exhausted (HARD-FAIL thresholds unchanged)',
+  ].join('\n');
+  const { summaryLine } = renderSmokeMarkdownTable(output);
+  assert.equal(summaryLine, '1 passed, 0 warned, 0 failed');
 });
 
 test('renderSmokeMarkdownTable: an all-notes run (zero table rows) still surfaces the notes instead of reading falsely empty', () => {
@@ -55,7 +82,9 @@ test('renderSmokeMarkdownTable: an all-notes run (zero table rows) still surface
     '/password HARD-FAIL - AUTH: password provided but the gate refused it (rotated or wrong secret); content coverage would be lost',
   ].join('\n');
   const { summaryLine, markdown } = renderSmokeMarkdownTable(output);
-  assert.equal(summaryLine, '0 passed, 0 warned, 0 failed');
+  // Both auth-branch shapes count: `<path> AUTH SOFT-WARN:` and `<path> HARD-FAIL - AUTH:`. The
+  // second exits 1, so it is the one that must never be summarised as "0 failed".
+  assert.equal(summaryLine, '0 passed, 1 warned, 1 failed');
   assert.match(markdown, /_No per-path results parsed\._/);
   assert.match(markdown, /> \/password AUTH SOFT-WARN: could not establish session/);
   assert.match(markdown, /> \/password HARD-FAIL - AUTH: password provided but the gate refused it/);
@@ -99,10 +128,10 @@ test('renderSmokeMarkdownTable: a mixed run combines rows and notes correctly', 
     `/cart PASS 200 host=${HOST} theme=${THEME} (ok)`,
     `/products/a SOFT-WARN 429 host=${HOST} theme=- (throttled (429 after retries))`,
     `/products/b HARD-FAIL 404 host=${HOST} theme=- (product unavailable)`,
-    'sitemap SOFT-WARN: product enumeration skipped (sitemap unreachable/empty); probing structural routes only',
+    'sitemap SOFT-WARN: product enumeration skipped (sitemap lists no products); probing structural routes only',
   ].join('\n');
   const { summaryLine, markdown } = renderSmokeMarkdownTable(output);
-  assert.equal(summaryLine, '2 passed, 1 warned, 1 failed');
+  assert.equal(summaryLine, '2 passed, 2 warned, 1 failed');
   assert.match(markdown, /:white_check_mark:.*`\/`/);
   assert.match(markdown, /:warning:.*`\/products\/a`/);
   assert.match(markdown, /:x:.*`\/products\/b`/);

@@ -68,7 +68,7 @@ README documents the workflow surface (`validate` / `preview` / `deploy` / `sync
 
 ### Code changes
 
-Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it does not cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file; it catches schema, filter and tag errors earlier than CI's `theme-check` step. Exception: `marketing/emails/*.liquid` are Shopify Email templates, not theme code, so treat the validator's output there as syntax-only and ignore its undefined-object findings (`marketing/emails/README.md` explains why; the real check is a test send). The local `actionlint` invocation and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table.
+Follow README's "How shipping works" for the branch/PR/validate/comment-deploy flow. One thing it does not cover: before pushing, run `validate_theme_codeblocks` (shopify-dev MCP) on every changed Liquid file; it catches schema, filter and tag errors earlier than CI's `theme-check` step. Exception: `marketing/emails/*.liquid` are Shopify Email templates, not theme code, so treat the validator's output there as syntax-only and ignore its undefined-object findings (`marketing/emails/README.md` explains why; the real check is a test send). The two local `actionlint + shellcheck` invocations (workflow YAML, and the composite-action shell that actionlint structurally cannot reach) and the `reconcile`-failure fix snippet are in README's Development section and Troubleshooting table.
 
 ### Backlog hygiene (`TODO.md`)
 
@@ -90,7 +90,9 @@ Do not click "Customize" or "Edit code" on the live theme card in admin; use the
 
 ### Smoke test (node fetch; catalog-wide)
 
-The post-deploy smoke (`.github/actions/shopify-theme-push/smoke.mjs`) probes every published product from the sitemap, not a fixed handle list, so a broken template or a missing product HARD-FAILs the deploy. It is node `fetch`, not curl: Cloudflare bot-management blocklists curl's fingerprint, so **do not reintroduce a curl probe**. Full behavior: `docs/smoke-test-reference.md`.
+The post-deploy smoke (`.github/actions/shopify-theme-push/smoke.mjs`) probes every published product from the sitemap, not a fixed handle list, so a broken template or a missing product HARD-FAILs the deploy. It is node `fetch`, not curl: Cloudflare bot-management blocklists curl's fingerprint, so **do not reintroduce a curl probe**.
+
+**A healthy store can HARD-FAIL too, and that is deliberate.** Zero *product* coverage blocks the deploy: the structural probes satisfy the "at least one PASS" rule on their own, so a run that verified no product page must not green. Two ways in, with two different recoveries (the sitemap unreadable, vs. the time budget exhausted before any product was probed), and an empty catalogue is exempt. The theme is already live by the time the smoke runs, so a block leaves live on the new SHA with the PR unmerged. Full behavior and the four-row decision table: `docs/smoke-test-reference.md`.
 
 ### Deploy gate trust delta
 
@@ -101,6 +103,15 @@ Three refactor hazards, each already the cause of a regression here:
 - Gate on the `validate` **job** (`listJobsForWorkflowRun`), never on `workflow_run.conclusion`: the same run's `deploy-preview` job pushes a preview theme, so a Shopify hiccup there fails the run with all validation green. Do not rename that job; the name is hardcoded, as is the workflow name in `on.workflow_run.workflows`.
 - Do not drop `compareCommits.status === 'identical'` as "redundant" with SHA equality. It is commit-object, not tree, equality, so it independently catches same-tree amends and different-tree force-pushes.
 - Do not add strict equality on `commit.committer.login`. A legitimate `web-flow` committer (web-UI edits, Update-branch/Rebase, `@dependabot rebase`) is not a security signal; that was a prior false-positive regression.
+
+**The Shopify CLI calls share one retry helper, `.github/actions/shopify-theme-push/lib/retry.sh`** (one engine, three named policies: live push, preview push, pre-push `theme list`), sourced by both steps because composite steps do not share shell state. Four rules in it, each already the cause of a regression, and all four fail silently:
+
+- **A timeout retries; it does not stop.** Exit 124/137 means no answer was received, so the classify hook is skipped entirely and the attempt takes its usual backoff. "Short-circuit on 124" does **not** mean "stop retrying"; reading it that way reverses the whole point of the retry.
+- **No `cmd || retry`, and the helper never runs `set -e`.** Every attempt's code is captured explicitly into `RETRY_EXIT` in condition context. The callers' `set +e` is load-bearing: the composite default shell injects `-e`, which otherwise kills the step on attempt 1 before any capture, retry or `GITHUB_OUTPUT` write.
+- **The `theme list` auth filter is anchored in both directions.** Bare digit alternatives match durations and byte counts (`Error: 4031ms` contains `403`); a bare `scope` matches prose. Codes need a status word *and* a trailing non-digit, and `scope` needs nearby context. Widening it abandons retries on the exact transient it exists for.
+- **The retry caps and the calling job's `timeout-minutes` are one coupled pair.** A job timeout cancels the job; it does not stop the loop safely. Change either and re-check the other.
+
+`RETRY_*` environment overrides exist for the unit tests only; nothing in the workflows sets one.
 
 Do NOT add `SHOPIFY_SYNC_DEPLOY_KEY` as a bypass actor on any ruleset protecting `main`. It has full repo push capability, and its `Deploy keys` bypass row is scoped to `shopify-sync-protection` alone.
 
@@ -115,14 +126,14 @@ A value is a **secret** if it grants write access to live infrastructure or a th
 The global gate supplies general code review (the headless `/code-review`) and `/security-review`; there is no `code-reviewer`, `architecture-reviewer`, or `security-auditor` agent to invoke. This repo always adds **doc-sync-checker** (diff-scoped), plus these on their own triggers:
 
 - **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: theme Liquid has no test framework, so skip it for theme changes. Run it when the code behind any `node --test` suite changes: `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/catalogue/`, `scripts/lib/`, and the top-level `scripts/*.test.mjs`. `blank-inventory/` writes live inventory and `upload-product-media.mjs` writes live product media, so those two are higher-risk.
+- **test-engineer**: theme Liquid has no test framework, so skip it for theme changes. Run it when the code behind any `node --test` suite changes: `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/catalogue/`, `scripts/lib/`, the top-level `scripts/*.test.mjs`, and `.github/actions/shopify-theme-push/` (the `smoke:test` suites: the post-deploy smoke, the push-rejection audit, the report formatter and the retry helper). `blank-inventory/` writes live inventory and `upload-product-media.mjs` writes live product media, so those two are higher-risk; the `shopify-theme-push` suites are the only automated coverage the live-push path has before a production deploy.
 - **prompt-reviewer**: run when this `CLAUDE.md`, any of the four reference docs it points at (`docs/theme-conventions.md`, `docs/structured-data.md`, `docs/theme-settings-contracts.md`, `docs/accessibility-patterns.md`), agent definitions, or `.claude/` content change.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
 ## Development commands
 
-`npm ci`, then `npx shopify theme dev` for the local dev server and `npx shopify theme check` for the linter; README's Development section covers the rest, including `actionlint`.
+`npm ci`, then `npx shopify theme dev` for the local dev server and `npx shopify theme check` for the linter; README's Development section covers the rest, including both halves of `actionlint + shellcheck`.
 
 **Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Live pushes happen exclusively via `deploy.yml`. To inspect the live theme, pull it read-only to a scratch path: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`.
 
