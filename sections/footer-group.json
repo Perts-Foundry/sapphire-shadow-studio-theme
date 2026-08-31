@@ -206,8 +206,7 @@
               "type": "footer-link",
               "name": "Link",
               "settings": {
-                "policy_type": "custom",
-                "link_url": "shopify://policies/contact-information",
+                "policy_type": "contact",
                 "link_label": "Contact"
               },
               "blocks": {}

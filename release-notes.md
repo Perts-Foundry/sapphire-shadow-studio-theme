@@ -1,5 +1,71 @@
 # Release Notes
 
+## Contact routing, and two button rules that fail silently (unreleased)
+
+The footer's "Contact" link and the Admin main menu's "Contact" item disagreed: the footer went to
+`shopify://policies/contact-information` while the nav went to `/pages/contact`. **Both now go to
+the Contact information policy**, `/policies/contact-information`.
+
+That is the opposite of the obvious fix, and the reason is what the policy actually contains. It is
+not a bare legal notice; it carries the phone number, the note that email is the faster route, and a
+link on to the `/pages/contact` form. So it works as the contact landing page, with the form one
+click away, while `/pages/contact` is the form alone and mentions the phone number nowhere. Sending
+both "Contact" entry points there means a customer who would rather call can find the number, and
+one who wants the form is one link from it.
+
+Two things deliberately did **not** change. The twelve inline calls to action in
+`templates/page.faq.json` and `templates/page.custom-orders.json` ("message us", "send it over",
+`/pages/contact?subject=custom-order`) still go straight to the form: those are mid-sentence prompts
+to *do* something, not navigation, and routing them through a policy page would add a hop to an
+action the sentence already committed the reader to. And `/pages/contact` itself stays exactly as it
+is, including its `templates/page.contact.json` template and its `scripts/a11y/paths.json` entry.
+
+**The `contact` branch in `blocks/footer-link.liquid` is the one branch with a hardcoded URL, and it
+has to be.** Liquid's `shop` object exposes `privacy_policy`, `refund_policy`, `terms_of_service`,
+`shipping_policy` and `subscription_policy`, and nothing for Contact information, so unlike its five
+siblings this branch has no policy object to resolve a `url` and `title` from. That is why the
+schema option labelled "Contact information" used to resolve to a *page*: nobody had a policy object
+to hand. Its default label is now "Contact information" rather than "Contact", matching the policy
+titles the sibling branches inherit; the footer block overrides it to "Contact" for the visible link.
+
+**A link-color rule inside a rich-text container has to carve out `.button`, or it repaints the
+label.** `snippets/policy-page.liquid` styled `.shopify-policy__body .rte a` with no exclusion. A
+policy body is Admin rich text, so an operator can paste `<a class="button">` into it, and the
+Contact information policy ends with exactly that. The two-class selector scores (0,2,1) against
+`.button`'s own `color: var(--button-color)` at (0,1,0), so it won and painted the label
+`--color-primary`, which on scheme-1 is `#000000cf`, over `--color-primary-button-background`, which
+is `#000000`. The result was a solid black box with no readable text. It rendered that way for as
+long as the rule has existed; it only became visible when the nav and footer started pointing at
+that page.
+
+The fix is the carve-out `assets/base.css` already uses for its own `.rte` link rule:
+`a:where(:not(.button, .button-primary, .button-secondary))`. `:where()` keeps the specificity at
+(0,2,1) so ordinary policy links are unchanged. Nothing in CI catches this class of bug and no policy
+page appears in `scripts/a11y/paths.json`, so contrast tooling never saw it either. Contact
+information is currently the only policy body containing a button-classed link; the other four have
+none.
+
+**`blocks/contact-form-submit-button.liquid` emitted both a hardcoded `button` class and the
+selected `style_class`.** With the style set to Secondary the element carried `button` and
+`button-secondary` at once, and because `.button-secondary`'s custom-property block in
+`assets/base.css` comes after `.button`'s, secondary silently won: transparent background, black
+text, on a button the editor still labelled Primary. The block now emits only
+`style_class | default: 'button'`; `snippets/button.liquid` and `blocks/add-to-cart.liquid` follow
+the same "setting alone, no hardcoded `button`" rule, though neither adds a `default` and
+`snippets/button.liquid` also emits a per-block `{{ style_class }}--{{ block.id }}` variant this
+button has no use for. `.button-secondary` is self-sufficient in `base.css` (the shared geometry
+selector at the top of the Buttons section names both classes), so dropping the hardcoded `button`
+loses no applied styling. The only `.button`-only rules left behind are the `[hidden]`, `:disabled`
+and `outline-color` states, and nothing in `blocks/contact-form.liquid` or any JS puts this button
+into them. The general rule is now in `docs/theme-conventions.md` under CSS.
+
+A read-only pull of the live theme (`shopify theme pull --live --nodelete`) found **no drift** in
+`templates/page.contact.json`, `sections/footer-group.json` or `config/settings_data.json`: the live
+submit button is `style_class: "button"` under `scheme-1`, which is black background and white text.
+So the collision above was latent, not the cause of a current misrender, and any remaining
+appearance complaint about that button is a design question about scheme-1's black primary, not a
+bug in the block.
+
 ## `show_shipping_info` now defaults to false (unreleased)
 
 The cart's "You may also like" cards restated the shipping policy under every price, because the

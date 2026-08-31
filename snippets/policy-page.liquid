@@ -152,7 +152,14 @@
     border-block-end: 2px solid var(--color-foreground-heading);
   }
 
-  .shopify-policy__body .rte a {
+  /* The carve-out is load-bearing, and it is the same one base.css uses for
+     `.rte` links. A policy body is Admin rich text, so an operator can paste a
+     `<a class="button">` into it. Without the `:not`, this two-class selector
+     (0,2,1) outranks `.button`'s own `color: var(--button-color)` (0,1,0) and
+     repaints the label `--color-primary`, which on scheme-1 is #000000cf on a
+     #000000 button: a solid black box with invisible text. Nothing in CI
+     catches it and no policy page is in the pa11y path list. */
+  .shopify-policy__body .rte a:where(:not(.button, .button-primary, .button-secondary)) {
     color: var(--color-primary);
     text-underline-offset: 3px;
   }
