@@ -146,6 +146,7 @@
     "product_total": "Totale del prodotto",
     "cart_estimated_total": "Totale stimato",
     "free_shipping_remaining": "TODO: You're {{ amount }} away from free shipping",
+    "gift_card_delivery": "TODO: Delivered by email • No shipping",
     "seller_note": "Istruzioni speciali",
     "cart_subtotal": "Subtotale",
     "discounts": "Sconti",

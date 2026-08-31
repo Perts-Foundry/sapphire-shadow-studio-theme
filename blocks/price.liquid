@@ -53,8 +53,11 @@
 
   {% if block_settings.show_shipping_info %}
     {% liquid
+      # The product drop spells this `gift_card?`, with the question mark.
+      # `gift_card` alone is nil on every product, so the branch never fired
+      # and the gift card page advertised flat-rate shipping.
       assign is_gift_card = false
-      if product_resource.gift_card == true or product_resource.type == 'Gift Card'
+      if product_resource.gift_card?
         assign is_gift_card = true
       endif
     %}

@@ -265,9 +265,14 @@
       {% render 'tax-info', has_discounts_enabled: settings.show_add_discount_code %}
     </div>
     {% liquid
+      # requires_shipping is the predicate checkout itself evaluates, so it is
+      # what decides whether a shipping message belongs here at all. It also
+      # covers any future non-shipping item, not just gift cards. (The old
+      # `item.product.gift_card` accessor was nil on every line item, so a
+      # gift-card-only cart used to show the flat-rate line.)
       assign has_shippable_items = false
       for item in cart.items
-        if item.product.gift_card != true
+        if item.requires_shipping
           assign has_shippable_items = true
           break
         endif

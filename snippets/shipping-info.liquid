@@ -1,11 +1,16 @@
 {% doc %}
-  Displays shipping information with dynamic messaging based on cart total.
-  Shows flat rate shipping and free shipping threshold. In cart context it also
-  renders a decorative progress bar toward the free-shipping threshold plus a
-  "You're $X away" line; the bar is aria-hidden because the sentence carries the
-  state. When vacation mode is
-  enabled (settings.vacation_mode_enabled), appends the vacation shipping note
-  (settings.vacation_shipping_message) to the text in both branches.
+  Displays shipping information with dynamic messaging based on the shippable
+  merchandise subtotal. Shows flat rate shipping and free shipping threshold. In
+  cart context it also renders a decorative progress bar toward the
+  free-shipping threshold plus a "You're $X away" line; the bar is aria-hidden
+  because the sentence carries the state. Both the sentence and the bar count
+  only line items with requires_shipping, matching what checkout evaluates. When
+  vacation mode is enabled (settings.vacation_mode_enabled), appends the
+  vacation shipping note (settings.vacation_shipping_message) to the text.
+
+  With is_gift_card the snippet renders a separate email-delivery line instead:
+  a gift card is emailed, never shipped, and its value does not count toward the
+  free-shipping threshold at checkout.
 
   @param {number} [product_price] - Product price to use for calculating shipping (product page)
   @param {boolean} [cart_context] - Set to true when rendering in cart context
@@ -21,25 +26,35 @@
   assign flat_rate_shipping = settings.flat_rate_shipping | default: '8.00'
   assign free_shipping_threshold = settings.free_shipping_threshold | default: '75.00'
 
-  # Gift cards always qualify for free shipping
-  if is_gift_card
+  # One derivation in cents feeds both the text branch and the progress
+  # bar, so they cannot disagree. Prices are already integer cents.
+  assign threshold_cents = free_shipping_threshold | times: 100.0 | round
+
+  if cart_context
+    # Checkout evaluates its price-based rate conditions against the
+    # shippable merchandise only. A gift card never enters a shipment, so
+    # its value does not count toward the free-shipping threshold, and
+    # cart.total_price (which includes it) would promise free shipping that
+    # checkout will not honour on a mixed cart. Verified at checkout on
+    # 2026-08-31: $65 garment + $50 gift card was charged the flat rate.
+    # requires_shipping is the predicate checkout itself uses, so it also
+    # covers any future non-shipping item. final_line_price is quantity- and
+    # discount-aware; see release-notes.md for the discount-basis assumption.
+    assign shippable_total = 0
+    for item in cart.items
+      if item.requires_shipping
+        assign shippable_total = shippable_total | plus: item.final_line_price
+      endif
+    endfor
+    assign remaining_cents = threshold_cents | minus: shippable_total
+  elsif product_price
+    assign remaining_cents = threshold_cents | minus: product_price
+  endif
+
+  if remaining_cents <= 0
     assign qualifies_for_free_shipping = true
   else
-    # One derivation in cents feeds both the text branch and the progress
-    # bar, so they cannot disagree. Prices are already integer cents.
-    assign threshold_cents = free_shipping_threshold | times: 100.0 | round
-
-    if cart_context
-      assign remaining_cents = threshold_cents | minus: cart.total_price
-    elsif product_price
-      assign remaining_cents = threshold_cents | minus: product_price
-    endif
-
-    if remaining_cents <= 0
-      assign qualifies_for_free_shipping = true
-    else
-      assign qualifies_for_free_shipping = false
-    endif
+    assign qualifies_for_free_shipping = false
   endif
 
   if settings.vacation_mode_enabled
@@ -53,58 +68,73 @@
   assign show_shipping_progress = false
   if cart_context and threshold_cents > 0
     assign show_shipping_progress = true
-    assign progress_percent = cart.total_price | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
+    assign progress_percent = shippable_total | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
     assign remaining_amount = remaining_cents | money
   endif
 %}
 
-{% if show_shipping_progress %}
-  <div
-    class="shipping-progress{% if qualifies_for_free_shipping %} shipping-progress--complete{% endif %}"
-    style="--progress: {{ progress_percent }}%"
-    aria-hidden="true"
-  >
-    <span class="shipping-progress__fill"></span>
-  </div>
-{% endif %}
-
-<a href="/policies/shipping-policy" class="shipping-info">
-  {% if qualifies_for_free_shipping %}
-    <svg class="shipping-info__icon shipping-info__icon--success" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="8" r="7" fill="currentColor" opacity="0.15"/>
-      <path d="M11.5 5.5L6.75 10.25L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <span class="shipping-info__text">
-      {%- if show_shipping_progress -%}
-        <strong class="shipping-info__highlight shipping-info__highlight--success">Free shipping on this order</strong>
-        {%- if vacation_note != blank %}<span class="shipping-info__secondary">{{ vacation_note }}</span>{% endif %}
-      {%- else -%}
-        {% if is_gift_card %}
-          Free shipping
-        {% else %}
-          Free shipping on this order
-        {% endif %}
-        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
-      {%- endif -%}
-    </span>
-  {% else %}
+{%- if is_gift_card -%}
+  {%- comment -%}
+    A gift card is emailed, not shipped. Saying "free shipping" here reads as a
+    perk that also implies the card counts toward the free-shipping threshold,
+    which checkout does not do. State the delivery method instead.
+  {%- endcomment -%}
+  <a href="/policies/shipping-policy" class="shipping-info">
     <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M1 4.5C1 3.67157 1.67157 3 2.5 3H9.5C10.3284 3 11 3.67157 11 4.5V10.5H2.5C1.67157 10.5 1 9.82843 1 9V4.5Z" stroke="currentColor" stroke-width="1.2"/>
-      <path d="M11 7H12.5L14.5 9V10.5H11V7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-      <circle cx="4" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
-      <circle cx="12.5" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M2 4.5L8 9L14 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="shipping-info__text">
-      {%- if show_shipping_progress -%}
-        <strong class="shipping-info__highlight">{{ 'content.free_shipping_remaining' | t: amount: remaining_amount }}</strong>
-        <span class="shipping-info__secondary">${{ flat_rate_shipping }} shipping within the USA{% if vacation_note != blank %} • {{ vacation_note }}{% endif %}</span>
-      {%- else -%}
-        ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
-        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
-      {%- endif -%}
+      {{- 'content.gift_card_delivery' | t -}}
+      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif -%}
     </span>
+  </a>
+{%- else -%}
+
+  {% if show_shipping_progress %}
+    <div
+      class="shipping-progress{% if qualifies_for_free_shipping %} shipping-progress--complete{% endif %}"
+      style="--progress: {{ progress_percent }}%"
+      aria-hidden="true"
+    >
+      <span class="shipping-progress__fill"></span>
+    </div>
   {% endif %}
-</a>
+
+  <a href="/policies/shipping-policy" class="shipping-info">
+    {% if qualifies_for_free_shipping %}
+      <svg class="shipping-info__icon shipping-info__icon--success" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="8" cy="8" r="7" fill="currentColor" opacity="0.15"/>
+        <path d="M11.5 5.5L6.75 10.25L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="shipping-info__text">
+        {%- if show_shipping_progress -%}
+          <strong class="shipping-info__highlight shipping-info__highlight--success">Free shipping on this order</strong>
+          {%- if vacation_note != blank %}<span class="shipping-info__secondary">{{ vacation_note }}</span>{% endif %}
+        {%- else -%}
+          Free shipping on this order
+          {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+        {%- endif -%}
+      </span>
+    {% else %}
+      <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1 4.5C1 3.67157 1.67157 3 2.5 3H9.5C10.3284 3 11 3.67157 11 4.5V10.5H2.5C1.67157 10.5 1 9.82843 1 9V4.5Z" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M11 7H12.5L14.5 9V10.5H11V7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        <circle cx="4" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="12.5" cy="12" r="1.25" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+      <span class="shipping-info__text">
+        {%- if show_shipping_progress -%}
+          <strong class="shipping-info__highlight">{{ 'content.free_shipping_remaining' | t: amount: remaining_amount }}</strong>
+          <span class="shipping-info__secondary">${{ flat_rate_shipping }} shipping within the USA{% if vacation_note != blank %} • {{ vacation_note }}{% endif %}</span>
+        {%- else -%}
+          ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
+          {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+        {%- endif -%}
+      </span>
+    {% endif %}
+  </a>
+{%- endif -%}
 
 {% stylesheet %}
   .shipping-info {

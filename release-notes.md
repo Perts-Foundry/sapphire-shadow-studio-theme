@@ -1,5 +1,50 @@
 # Release Notes
 
+## Gift cards are emailed, and do not count toward the free-shipping threshold (unreleased)
+
+Checkout excludes digital gift card value from price-based shipping rate conditions. This is
+platform behaviour, not a store misconfiguration: a gift card never enters a shipment, and the rate
+tiers evaluate the shippable merchandise subtotal. It is undocumented and changed silently around
+late 2023. **The decision is to accept the platform semantics and make the theme say so
+accurately**, rather than to work around it with a shipping-rate script or a discount.
+
+Verified at live checkout on 2026-08-31, three carts, all abandoned before payment:
+
+| Cart | Shippable subtotal | Order total | Shipping charged |
+| --- | --- | --- | --- |
+| $65 garment + $50 gift card | $65 | $115 | $8.00 Economy |
+| $50 gift card only | $0 | $50 | no shipping step at all |
+| 2 x $65 garment (control) | $130 | $130 | FREE Economy |
+
+So the free tier is real and works; it simply does not see the gift card. The storefront was
+promising the opposite on the middle case.
+
+Three things worth keeping:
+
+- **`requires_shipping` is the predicate for all shipping math and gating**, because it is what
+  checkout itself evaluates. `gift_card?` is used only where the copy is specifically about gift
+  cards (the product-page delivery line). That rule generalises: a future non-shipping item gets
+  the right treatment with no further edits.
+- **Three nil accessors, one of which was load-bearing.** The product drop spells it `gift_card?`
+  and `blocks/price.liquid` was reading `gift_card`; the cart snippets were reading
+  `item.product.gift_card`, which is nil on every line item. So the gift card page advertised
+  "$8.00 shipping within the USA" and a gift-card-only cart showed the flat-rate line. The third
+  site, `snippets/cart-products.liquid`, was excluding gift cards from the variant list and the nil
+  accidentally produced the behaviour we want (the denomination is the option, and the customer
+  needs to see it), so that clause is now gone rather than fixed: the intent is expressed directly.
+- **The threshold math sums `final_line_price` over `requires_shipping` line items.** Assumption,
+  accepted rather than tested: Shopify evaluates the rate condition against the *discounted*
+  shippable subtotal. The store runs no discounts today, so there is nothing to test against; if
+  discounts are ever introduced, re-verify this at checkout before trusting the cart message.
+
+The "Free-shipping progress bar in the cart" entry below reads the Admin policy as "$8
+flat under $75, free at $75+". That is still right, with the qualifier this entry adds: the
+comparison is against shippable merchandise, not the order total. The bar and its sentence now
+derive from the same shippable subtotal, so they cannot disagree with each other or with checkout.
+
+Sequencing: the theme goes conservative first and the `/policies/shipping-policy` edit follows the
+deploy, so the storefront never over-promises relative to policy.
+
 ## An illustration on the 404 page, and the transparency trap behind it (unreleased)
 
 `templates/404.json` gains an `image` block above the "Page not found" heading: a black line-art cat,

@@ -181,7 +181,7 @@
           "type": "faq_item",
           "settings": {
             "question": "Is there free shipping?",
-            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders over our free-shipping threshold ship free via economy shipping; below that, a flat rate applies. The current threshold and rate are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, and you'll see them at checkout.<br/><br/>Want it faster? Expedited shipping is available at checkout.</p>",
+            "answer": "<p>Yep, who doesn't love free shipping!<br/><br/>Orders over our free-shipping threshold ship free via economy shipping; below that, a flat rate applies. Gift card value does not count toward that threshold, since there is nothing to ship. The current threshold and rate are in our <a href=\"/policies/shipping-policy\">Shipping Policy</a>, and you'll see them at checkout.<br/><br/>Want it faster? Expedited shipping is available at checkout.</p>",
             "custom_anchor": ""
           }
         },
