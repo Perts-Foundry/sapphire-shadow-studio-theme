@@ -239,7 +239,18 @@ everywhere beats a parser that has to guess. And the composite pass gets its **o
 variable rather than sharing `SHELLCHECK_OPTS`: extraction structurally forces `SC1091` (the
 runtime-resolved `source` in commit 2 cannot be followed from an extracted file), and a suppression
 that extraction forces must not quietly weaken linting of `.github/workflows/`, which has none of
-the same excuses. shellcheck itself is pinned to 0.10.0 by download, the same pattern the step
+the same excuses.
+
+**Declaring a separate options variable did not achieve that, though, and the reason is worth
+knowing: shellcheck reads `SHELLCHECK_OPTS` from the ENVIRONMENT, not only from actionlint.** The
+variable is a step-level `env:`, so the composite pass inherited the workflow suppressions and ran
+with `-e SC2016 -e SC2317 -e SC1091` while a comment three lines above claimed the opposite. It
+changed nothing on the day (both option sets are clean over these files), which is exactly why it
+would have gone unnoticed until it mattered: `SC2317` in particular is the check most likely to fire
+on `retry.sh`, which is built on indirect dispatch, and that is the shape that both provokes
+unreachable-code false positives and can hide real dead code. The invocation clears the variable on
+the command line now, and adds `--norc` so a future repo-root `.shellcheckrc` cannot widen the pass
+either. README's local recipe does the same, and says why. shellcheck itself is pinned to 0.10.0 by download, the same pattern the step
 already used for actionlint: a runner-image bump must not be able to flip an auto-deploy gate with
 zero repo changes.
 
@@ -278,10 +289,25 @@ the other reading of "short-circuit on 124" is "stop retrying", which would quie
 widening this whole change is about. There is a test for both halves, including one where the
 partial stderr says `not authorized` and the exit code is 124, which must still retry.
 
-**The engine suite runs twice, once under `bash -eo pipefail`.** That is the composite default shell
-GitHub injects, and an `errexit` interaction is the specific regression this refactor was most
-likely to reintroduce: a failed attempt 1 killing the step before any capture or retry. A non-`-e`
-harness passes straight through that. Two consequences in the helper itself. The hook dispatch is
+**The engine suite runs twice, the second time under `bash -euo pipefail`.** That is the composite
+default shell GitHub injects (plus the `-u` both callers set), and an `errexit` interaction is the
+specific regression this refactor was most likely to reintroduce: a failed attempt 1 killing the
+step before any capture or retry. A non-`-e` harness passes straight through that.
+
+**Writing that harness is where this nearly went wrong, and the shape of the mistake is worth
+keeping.** The first version spawned `bash -eo pipefail` and then called `retry_run ... || :` in
+every case, mirroring how the callers tolerate a non-zero return. But **bash disables `errexit` for
+the entire dynamic extent of a function called on the left of `||`**, so `set -e` was off inside
+`retry_run` and every hook it called: seven doubled tests and one standalone test, all asserting
+that the option was handled, none of them running with it on. Deleting the `|| :` guard from
+retry.sh's own loop left the suite fully green, including the case commented "the historical
+regression, verbatim". Production calls `retry_run` bare and relies on `set +e`, and with a bare
+call that same mutant dies on attempt 1 with empty stdout.
+
+The fix is to call `retry_run` bare in the harness too and move the reporting into an `EXIT` trap,
+so the assertions survive the exit they exist to detect. The mutation now fails the suite, which is
+the only evidence worth having that a test of a shell option tests anything. The general lesson: a
+harness that tolerates the failure it is testing for has usually disabled the thing under test. Two consequences in the helper itself. The hook dispatch is
 `"$run_fn" "$i" || :` (not `cmd || retry`; the attempt's real code is always captured explicitly
 into `RETRY_EXIT` by the hook), and every command whose exit code is wanted is captured in condition
 context (`if cmd; then rc=0; else rc=$?; fi`) rather than by a bare `$?` on the line after. The
@@ -298,6 +324,16 @@ forged delimiter line, so this is defence in depth rather than a hole being clos
 the reviewer's related worry does not apply: nothing evaluates the captured text as shell, the body
 is written with `cat file | scrub | tail` and never expanded.
 
+**One budget coupling that this change makes sharper, stated because the comment first written here
+got it backwards.** `timeout-minutes` on the calling job does not bound the retry loop to a safe
+stopping point; it cancels the job. The live push's `3 x 8m` plus backoff is 26 minutes against
+`deploy.yml`'s 15, which predates this change, but the list retry adds up to 3.5 minutes *ahead of*
+the first push attempt and so converts previously survivable runs into cancellations. A cancelled
+`deploy` job skips every step after the push: no report comment, no squash merge, no marker, and a
+live theme left half-pushed, which nothing self-heals. The caps and the job budget are one coupled
+pair and `retry.sh` now says so at the point where the numbers live. Reconciling the numbers
+themselves is a separate decision about how long a live push may take, not a comment fix.
+
 **Two smaller things folded in while both steps were open.** The preview loop's in-loop theme-ID
 re-resolution (`npx shopify theme list --json > themes-retry.json`) had no `timeout` and no retry;
 it was the one unbounded CLI call left on the preview path, and it now takes the same per-attempt
@@ -308,8 +344,8 @@ to a live deploy report buys no reliability. The `delete-preview` loop stays unr
 different reason: it is a per-theme loop, not a retry loop, and a delete failure is already
 surfaced through `cleanup_status` and the preview-cleanup warning.
 
-**Residual risk, stated rather than papered over.** `preview.yml`'s preview push is the only real
-traffic this helper sees before merge. The live-push policies are covered by unit tests and by
+**Residual risk, stated rather than papered over.** The preview push in `validate.yml`'s
+`deploy-preview` job is the only real traffic this helper sees before merge. The live-push policies are covered by unit tests and by
 nothing else until the next production deploy, so the first post-merge deploy's Push step output is
 worth reading rather than treating CI green as full confidence for that path.
 
@@ -364,6 +400,36 @@ backoff array, both inside the run-scoped retry budget.
 One piece of incidental evidence worth recording. Many existing tests serve a 200-but-empty sitemap
 and expect exit 0, and they still pass. The empty-catalogue exemption is what keeps them valid,
 which is direct evidence it is load-bearing rather than a theoretical nicety.
+
+**A failed child sitemap costs its own slice and no more.** The first cut of this rethrew out of the
+child loop, so one bad shard skipped every later child and could zero the coverage of a catalogue
+that was otherwise entirely reachable, hard-failing the deploy over it. The failure is counted and
+the loop continues; only the total decides the verdict. That also means the two failure causes need
+different words, because they are reached after different attempt counts: the index gets its own
+retry count, a child gets the backoff array, and both are reported as **requests** rather than
+retries (`fetchWithBody` spends its retries on top of the first attempt, so calling the retry count
+the attempt count undercounts every message by one).
+
+**A non-positive `maxProducts` is now refused rather than reported as an empty store.** It broke out
+of the child loop before the first fetch, leaving zero paths with no failure recorded, which landed
+on the empty-catalogue exemption: the entire zero-coverage rule silently off, and the deploy report
+asserting the catalogue was empty when nothing had been looked at. `envConfig`'s `posInt` already
+rejected a non-positive `SMOKE_MAX_PRODUCTS`; the guard covers the programmatic callers it does not
+sit in front of.
+
+**Aggregate verdict lines count toward the deploy comment's summary now.** `renderSmokeMarkdownTable`
+only tallied lines matching the per-path row shape, and the aggregate lines (`sitemap SOFT-WARN: ...`,
+`/password HARD-FAIL - AUTH: ...`) have no status/host/theme, so they render as notes. Until this
+change every aggregate line was a SOFT-WARN and leaving them out of the tally happened to be
+accurate. A run can now exit 1 on an aggregate line alone, which would have printed
+`N passed, 0 warned, 0 failed` directly above a failed deploy.
+
+**Recorded as a won't-do, since the item is gone from `TODO.md`:** distinguishing a surviving `5xx`
+from a first-shot one with a distinct reason string, so a real outage reads differently from a
+broken template in the deploy report. Not done. The retry evidence is already in the run, in the
+per-retry stderr lines and the `retries: ...` summary line, and splitting `server error 503` into
+two reason strings adds a classifier branch to earn a distinction an operator can already make from
+the line above it.
 
 ## Contact routing, and two button rules that fail silently (unreleased)
 

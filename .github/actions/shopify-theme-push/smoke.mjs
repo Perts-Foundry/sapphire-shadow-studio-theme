@@ -688,13 +688,32 @@ export async function runSmoke({
   }
 
   // 4b. Enumerate products from the sitemap.
+  //
+  // A non-positive `maxProducts` would break out of the child loop before the first fetch, leaving
+  // zero paths with no failure recorded, which lands on the empty-catalogue exemption: the whole
+  // zero-coverage rule silently off, and the report asserting the store lists no products. That is
+  // a misconfiguration, not a catalogue, so it is refused here rather than reported as one.
+  // `envConfig`'s `posInt` already rejects a non-positive SMOKE_MAX_PRODUCTS; this covers the
+  // programmatic callers it does not sit in front of.
+  if (!Number.isFinite(maxProducts) || maxProducts < 1) {
+    throw new Error(`maxProducts must be a positive integer (got ${maxProducts})`);
+  }
   const bodyOpts = { jar, fetchImpl, sleep, backoff, timeoutMs, budget, onRetry: logRetry };
   let productPaths = [];
   // Separates "the sitemap could not be read" from "the sitemap says there are no products". Those
   // two used to be the same observation: an error page parses to zero locs exactly like an empty
   // catalogue does. `fetchWithBody` throws on a spent non-OK status now, which is what makes the
   // distinction possible at all.
-  let enumerationFailed = false;
+  // `indexFailed` and `childrenFailed` are tracked separately because they need different
+  // messages: they are reached after different attempt counts, and only one of them is
+  // "the sitemap index was unreachable".
+  let indexFailed = false;
+  let childrenFailed = 0;
+  // Requests, not retries. `fetchWithBody` spends `cap` retries on top of the first attempt, so
+  // the index makes `sitemapIndexAttempts + 1` and a child makes `backoff.length + 1`. Reporting
+  // the retry count as the attempt count undercounts every message by one.
+  const indexRequests = sitemapIndexAttempts + 1;
+  const childRequests = backoff.length + 1;
   try {
     const idxObs = await fetchWithBody(`${baseUrl}/sitemap.xml`, { ...bodyOpts, maxAttempts: sitemapIndexAttempts });
     let children = parseProductSitemapChildren(idxObs);
@@ -709,9 +728,13 @@ export async function runSmoke({
       let childXml;
       try {
         childXml = await fetchWithBody(child, bodyOpts);
-      } catch (err) {
-        if (guessedChild) break;
-        throw err;
+      } catch {
+        // One child's failure costs ITS OWN SLICE and no more. Rethrowing here abandoned every
+        // later child, so a single bad shard could zero the coverage of a catalogue that was
+        // otherwise entirely reachable, and hard-fail a deploy over it. Record it and keep going;
+        // the count decides the verdict below.
+        if (!guessedChild) childrenFailed += 1;
+        continue;
       }
       for (const p of parseProductLocs(childXml)) {
         if (!seen.has(p)) { seen.add(p); productPaths.push(p); }
@@ -719,10 +742,11 @@ export async function runSmoke({
       }
     }
   } catch {
-    // Keep whatever earlier children already yielded. Partial coverage is coverage: a run that
-    // probed real product pages must not be blocked because a later child sitemap failed.
-    enumerationFailed = true;
+    // Only the index fetch and the parse can reach here now; a child failure is handled in the
+    // loop. Keep whatever was already collected: partial coverage is coverage.
+    indexFailed = true;
   }
+  const enumerationFailed = indexFailed || childrenFailed > 0;
   if (productPaths.length === 0) {
     if (enumerationFailed) {
       // Row 1 of the coverage table: nothing was enumerated AND the sitemap could not be read. The
@@ -730,7 +754,10 @@ export async function runSmoke({
       // having verified no product page at all. Genuine exhaustion, not a first blip: the index
       // gets its own attempt count and the children get the backoff array, both inside the
       // run-scoped retry budget.
-      lines.push(`sitemap HARD-FAIL: product enumeration failed (sitemap unreachable after ${sitemapIndexAttempts} attempt(s)); zero product coverage. Likely Shopify-side weather; re-run with a \`deploy\` comment when it clears. The theme is already live on this SHA.`);
+      const cause = indexFailed
+        ? `sitemap index unreachable after ${indexRequests} attempt(s)`
+        : `${childrenFailed} product sitemap(s) unreachable after ${childRequests} attempt(s) each`;
+      lines.push(`sitemap HARD-FAIL: product enumeration failed (${cause}); zero product coverage. Likely Shopify-side weather; re-run with a \`deploy\` comment when it clears. The theme is already live on this SHA.`);
       log(lines[lines.length - 1]);
       results.push({ path: 'sitemap', verdict: HARD_FAIL, reason: 'enumeration failed; zero product coverage' });
     } else {
@@ -743,9 +770,10 @@ export async function runSmoke({
   } else {
     log(`enumerated ${productPaths.length} product path(s) from sitemap`);
     if (enumerationFailed) {
-      // Row 4: a later child failed after an earlier one yielded paths. Coverage is partial, not
-      // absent, so this warns and the run proceeds normally.
-      lines.push(`sitemap SOFT-WARN: a child sitemap failed after ${productPaths.length} product path(s) were enumerated; coverage is partial`);
+      // Row 4: a child (or the index) failed but other children still yielded paths. Coverage is
+      // partial, not absent, so this warns and the run proceeds normally.
+      const what = indexFailed ? 'the sitemap index' : `${childrenFailed} child sitemap(s)`;
+      lines.push(`sitemap SOFT-WARN: ${what} failed after ${productPaths.length} product path(s) were enumerated; coverage is partial`);
       log(lines[lines.length - 1]);
       results.push({ path: 'sitemap', verdict: SOFT_WARN, reason: 'partial enumeration' });
     }

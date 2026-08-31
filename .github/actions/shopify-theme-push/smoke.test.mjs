@@ -629,8 +629,72 @@ test('row 4: a child sitemap failing after earlier paths were enumerated does no
   ]);
   const r = await runSmoke(baseArgs({ fetchImpl }));
   assert.ok(r.lines.some(l => /\/products\/a PASS/.test(l)), 'the enumerated product was probed');
-  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: a child sitemap failed after 1 product path/.test(l)));
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: 1 child sitemap\(s\) failed after 1 product path/.test(l)));
   assert.equal(r.exitCode, 0);
+});
+
+test('row 4: a child failing FIRST does not cost the coverage of the healthy children after it', async () => {
+  // One child's failure costs its own slice and no more. Rethrowing abandoned every later child,
+  // so a single bad shard could zero the coverage of an otherwise reachable catalogue and
+  // hard-fail the deploy over it.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), {
+      status: 200,
+      body: `<sitemapindex>
+        <sitemap><loc>${BASE}/sitemap_products_1.xml</loc></sitemap>
+        <sitemap><loc>${BASE}/sitemap_products_2.xml</loc></sitemap>
+      </sitemapindex>`,
+    }],
+    [(u) => u.endsWith('/sitemap_products_1.xml'), 'THROW'],
+    [(u) => u.endsWith('/sitemap_products_2.xml'), { status: 200, body: `<urlset><url><loc>${BASE}/products/b</loc></url></urlset>` }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep: recordingSleep() }));
+  assert.ok(r.lines.some(l => /\/products\/b PASS/.test(l)), 'the healthy child was still read');
+  assert.ok(r.lines.some(l => /sitemap SOFT-WARN: 1 child sitemap\(s\) failed/.test(l)));
+  assert.equal(r.exitCode, 0);
+});
+
+test('row 1: every child failing leaves zero coverage and hard-fails, with the child attempt count', async () => {
+  // The message must not claim the sitemap INDEX was unreachable here: the index parsed on the
+  // first try, and children get the backoff array rather than the index's own attempt count.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), {
+      status: 200,
+      body: `<sitemapindex><sitemap><loc>${BASE}/sitemap_products_1.xml</loc></sitemap></sitemapindex>`,
+    }],
+    [(u) => u.endsWith('/sitemap_products_1.xml'), { status: 503 }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep: recordingSleep(), backoff: [1, 2] }));
+  assert.ok(r.lines.some(l => /1 product sitemap\(s\) unreachable after 3 attempt\(s\) each/.test(l)), r.lines.join('\n'));
+  assert.ok(!r.lines.some(l => /index unreachable/.test(l)), 'the index was fine; do not blame it');
+  assert.equal(r.exitCode, 1);
+});
+
+test('row 1: the index message counts requests, not retries', async () => {
+  // `sitemapIndexAttempts` is a RETRY count; fetchWithBody spends it on top of the first attempt.
+  // Reporting it as the attempt count undercounts every message by one.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.endsWith('/sitemap.xml'), 'THROW'],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  const r = await runSmoke(baseArgs({ fetchImpl, sleep: recordingSleep(), sitemapIndexAttempts: 3 }));
+  assert.ok(r.lines.some(l => /sitemap index unreachable after 4 attempt\(s\)/.test(l)), r.lines.join('\n'));
+});
+
+test('a non-positive maxProducts is refused, not reported as an empty catalogue', async () => {
+  // It would otherwise break out before the first child fetch, leaving zero paths with no failure
+  // recorded: the whole zero-coverage rule silently off, and the report asserting something false
+  // about the store.
+  const fetchImpl = scriptedFetch([
+    [(u) => u.includes('sitemap'), { status: 200, body: `<urlset><url><loc>${BASE}/products/a</loc></url></urlset>` }],
+    [() => true, { status: 200, serverTiming: themeTiming() }],
+  ]);
+  await assert.rejects(
+    runSmoke(baseArgs({ fetchImpl, maxProducts: 0 })),
+    /maxProducts must be a positive integer/,
+  );
 });
 
 // --- output hygiene --------------------------------------------------------

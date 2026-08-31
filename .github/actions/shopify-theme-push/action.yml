@@ -381,10 +381,11 @@ runs:
             fi
 
             # Same engine as live mode, two attempts instead of three (a preview
-            # theme is a draft with no customer exposure, and preview.yml's job
-            # budget is 15 minutes, so 2 x 5m is the proportionate version of
-            # live's 3 x 8m). Before the retry existed, a transient blip or a
-            # hung CLI failed the PR outright.
+            # theme is a draft with no customer exposure, and this runs in
+            # validate.yml's `deploy-preview` job, whose budget is 15 minutes, so
+            # 2 x 5m is the proportionate version of live's 3 x 8m). Not
+            # preview.yml, which only runs mode: delete-preview. Before the retry
+            # existed, a transient blip or a hung CLI failed the PR outright.
             #
             # `preview_push_run` and `preview_push_before_retry` read and write
             # TARGET_ID and THEME_NAME in this shell, which is why the engine

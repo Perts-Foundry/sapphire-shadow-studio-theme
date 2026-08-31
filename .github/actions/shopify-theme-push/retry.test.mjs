@@ -27,24 +27,47 @@ const RETRY_SH = path.join(here, 'lib', 'retry.sh');
 /**
  * Run a bash snippet with retry.sh sourced and `sleep` stubbed.
  *
- * The snippet is responsible for tolerating a non-zero `retry_run` under errexit (`|| :`), exactly
- * as action.yml's callers tolerate it with their `set +e`.
+ * REPORTING RUNS FROM AN EXIT TRAP, and that is load-bearing rather than tidy. It is what lets the
+ * engine tests call `retry_run` BARE, which is the only way the errexit variant tests anything:
+ * bash disables `errexit` for the entire dynamic extent of a function called on the left of `||`,
+ * so a harness that writes `retry_run ... || :` runs the non-errexit path twice and reports it as
+ * coverage. Deleting the `|| :` guard inside retry.sh's own loop left such a harness fully green.
+ * With a bare call, an errexit kill still fires the trap, so the assertions survive the exit they
+ * are there to detect. Production calls `retry_run` bare too (it relies on `set +e`), so this is
+ * also the shape action.yml actually uses.
+ *
+ * A body may define a `report` function; the trap calls it, then prints the exit status and the
+ * recorded sleeps.
  */
 function runShell(body, { errexit = false } = {}) {
   const script = [
     'SLEEPS=()',
     // The stub production actually reaches: retry_sleep calls `sleep` in this same shell.
     'sleep() { SLEEPS+=("$1"); return 0; }',
+    '__on_exit() {',
+    '  __rc=$?',
+    '  if declare -F report >/dev/null 2>&1; then report; fi',
+    '  printf "RC=%s\\n" "$__rc"',
+    '  printf "SLEEPS=%s\\n" "${SLEEPS[*]-}"',
+    '}',
+    'trap __on_exit EXIT',
     `source ${JSON.stringify(RETRY_SH)}`,
     body,
-    'printf "SLEEPS=%s\\n" "${SLEEPS[*]-}"',
   ].join('\n');
 
-  const args = errexit ? ['-eo', 'pipefail', '-c', script] : ['-c', script];
+  // `-u` as well as `-e`: both callers run `set -uo pipefail`, and under `-u` an unbound expansion
+  // is fatal REGARDLESS of `set +e`. It kills the step before any GITHUB_OUTPUT write, which the
+  // parent workflow's failure ladder reads as "step never ran" rather than as a failure.
+  const args = errexit ? ['-euo', 'pipefail', '-c', script] : ['-c', script];
+  // The RETRY_* budgets read `${VAR:-default}`, so an ambient one silently rewrites the caps these
+  // tests assert on. Strip them rather than trusting the developer's shell.
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.startsWith('RETRY_'))
+  );
   const res = spawnSync('bash', args, {
     cwd: mkdtempSync(path.join(tmpdir(), 'retry-sh-')),
     encoding: 'utf8',
-    env: { ...process.env, GITHUB_ACTION_PATH: here },
+    env: { ...env, GITHUB_ACTION_PATH: here },
   });
   assert.equal(res.error, undefined, `bash failed to spawn: ${res.error}`);
   return {
@@ -83,10 +106,7 @@ for (const errexit of [false, true]) {
     const r = runShell(
       `${HOOKS}
        CODES=(1 1 1)
-       RC=0
-       retry_run "t" 3 fake_run fake_classify fake_before || RC=$?
-       printf 'RC=%s\\n' "$RC"
-       report`,
+       retry_run "t" 3 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('RC'), '1', 'retry_run must return the failing code');
@@ -100,8 +120,7 @@ for (const errexit of [false, true]) {
     const r = runShell(
       `${HOOKS}
        CODES=(1 0 0)
-       retry_run "t" 3 fake_run fake_classify fake_before || :
-       report`,
+       retry_run "t" 3 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('EXIT'), '0');
@@ -117,8 +136,7 @@ for (const errexit of [false, true]) {
       `${HOOKS}
        CODES=(124 137 1)
        CLASSIFY_RC=1
-       retry_run "t" 3 fake_run fake_classify fake_before || :
-       report`,
+       retry_run "t" 3 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('CALLS'), 'run:1 before:1:124 run:2 before:2:137 run:3 classify:3:1');
@@ -134,10 +152,7 @@ for (const errexit of [false, true]) {
       `${HOOKS}
        CODES=(5 0 0)
        CLASSIFY_RC=1
-       RC=0
-       retry_run "t" 3 fake_run fake_classify fake_before || RC=$?
-       printf 'RC=%s\\n' "$RC"
-       report`,
+       retry_run "t" 3 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('RC'), '5');
@@ -151,8 +166,7 @@ for (const errexit of [false, true]) {
       `${HOOKS}
        CODES=(97 0 0)
        BEFORE_RC=1
-       retry_run "t" 3 fake_run fake_classify fake_before || :
-       report`,
+       retry_run "t" 3 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('EXIT'), '97');
@@ -166,8 +180,7 @@ for (const errexit of [false, true]) {
       `${HOOKS}
        CODES=(1 1 1 1)
        fake_before() { CALLS+=("before:$1:$2"); RETRY_DELAY=$(( $1 * 10 )); return 0; }
-       retry_run "t" 4 fake_run fake_classify fake_before || :
-       report`,
+       retry_run "t" 4 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('SLEEPS'), '10 20 30');
@@ -178,8 +191,7 @@ for (const errexit of [false, true]) {
       `${HOOKS}
        CODES=(1 1)
        BACKOFF=0
-       retry_run "t" 2 fake_run fake_classify fake_before || :
-       report`,
+       retry_run "t" 2 fake_run fake_classify fake_before`,
       { errexit }
     );
     assert.equal(r.get('SLEEPS'), '', 'retry_sleep 0 must not call sleep at all');
@@ -194,8 +206,7 @@ test('[errexit shell] a run hook ending on a non-zero command does not kill the 
     `${HOOKS}
      CODES=(1 1 0)
      fake_run() { RETRY_EXIT="\${CODES[$IDX]}"; IDX=$((IDX + 1)); CALLS+=("run:$1"); false; }
-     retry_run "t" 3 fake_run fake_classify fake_before || :
-     report`,
+     retry_run "t" 3 fake_run fake_classify fake_before`,
     { errexit: true }
   );
   assert.equal(r.get('CALLS'), 'run:1 classify:1:1 before:1:1 run:2 classify:2:1 before:2:1 run:3');
@@ -204,19 +215,51 @@ test('[errexit shell] a run hook ending on a non-zero command does not kill the 
 
 // --- scrub, the one definition ------------------------------------------------------------------
 
-test('scrub strips ANSI, redacts tokens, and neutralises a forged delimiter line', () => {
+// Every token prefix scrub() knows, and two lengths around the regex's 16-character minimum.
+// Prefix and body are kept APART in this file and joined at runtime: a fixture shaped exactly like
+// a real Shopify token is indistinguishable from one to a secret scanner, and this repo is public,
+// so a literal here blocks every push to the branch. scrub() sees the joined string either way,
+// which is the thing under test.
+const TOKEN_PREFIXES = ['shpat', 'shpca', 'shpss', 'shppa', 'shpua', 'shptka'];
+const TOKEN_CHARS = 'A1b2C3d4E5f6G7h8i9J0kLmNoPqR';
+
+test('scrub strips ANSI, redacts every token prefix, and neutralises a forged delimiter line', () => {
+  const tokens = TOKEN_PREFIXES.map((p, i) => [p, '_', TOKEN_CHARS.slice(0, 16 + i * 2)].join(''));
+  const assigns = tokens.map((t, i) => `T${i}=${JSON.stringify(t)}`).join('\n     ');
+  const prints = tokens.map((_, i) => `       printf 'token %s\\n' "$T${i}"`).join('\n');
+
   const r = runShell(
-    `printf 'DELIM=%s\\n' "$RETRY_OUTPUT_DELIM"
+    `${assigns}
+     printf 'DELIM=%s\\n' "$RETRY_OUTPUT_DELIM"
      {
        printf '\\033[31mred\\033[0m\\n'
-       printf 'token %s_0123456789abcdef0123456789abcdef\\n' 'shpat'
+${prints}
        printf '%s\\n' "$RETRY_OUTPUT_DELIM"
+       printf 'a line mentioning %s inline\\n' "$RETRY_OUTPUT_DELIM"
      } > raw.txt
      printf 'OUT=%s\\n' "$(scrub < raw.txt | tr '\\n' '|')"`
   );
   const delim = r.get('DELIM');
   assert.match(delim, /^GHEOF_[0-9a-f]{16}$/, 'the delimiter is generated per run, not the fixed GHEOF');
-  assert.equal(r.get('OUT'), `red|token [REDACTED]|${delim}.|`);
+  const redacted = tokens.map(() => 'token [REDACTED]').join('|');
+  // The last line matters as much as the forged one: the neutralising sed is ANCHORED, so a line
+  // that merely CONTAINS the delimiter must pass through untouched. Widening that anchor would
+  // corrupt ordinary output.
+  assert.equal(
+    r.get('OUT'),
+    `red|${redacted}|${delim}.|a line mentioning ${delim} inline|`,
+  );
+});
+
+test('scrub leaves a token-shaped string that is too short alone', () => {
+  // The regex requires 16+ characters after the prefix. A shorter one is not a token, and
+  // redacting it would be a silent lie about what was in the output.
+  const short = [TOKEN_PREFIXES[0], '_', TOKEN_CHARS.slice(0, 8)].join('');
+  const r = runShell(
+    `printf '%s\\n' ${JSON.stringify(short)} > raw.txt
+     printf 'OUT=%s\\n' "$(scrub < raw.txt)"`
+  );
+  assert.equal(r.get('OUT'), short);
 });
 
 // --- policy: the exit-97 synthesis path ----------------------------------------------------------
@@ -315,15 +358,60 @@ test('theme list stops on the spacing Shopify actually uses ("not authorized")',
   assert.equal(r.get('SLEEPS'), '');
 });
 
-test('theme list treats a duration-shaped string as weather, not as an auth answer', () => {
-  // Bare digit alternatives (`401|403`) match durations and byte counts. `Done in 4031ms` contains
-  // "403" and "401"-adjacent digits; it must retry, not stop.
+// Negative controls on RETRY_LIST_AUTH_PATTERN. Each of these is a plausible CLI stderr line that
+// an over-eager pattern reads as a permanent auth answer, abandoning the retry on exactly the
+// transient the retry exists for. The first three were verified to match the pre-hardening pattern:
+// a bare `scope` alternative matches ordinary prose, and a status-anchored code with no trailing
+// boundary matches the `403`/`401` inside a four-digit number.
+for (const [label, text] of [
+  ['a bare duration', 'Done in 4031ms, then the socket hung up'],
+  ['a duration after "Error:"', 'Error: 4031ms elapsed before the socket responded'],
+  ['a byte count after "error"', 'error 4030 bytes read, connection reset'],
+  ['"scope" used in prose', 'The scope of this deploy is large; uploading 401 files'],
+  ['a retryable gateway error', '502 Bad Gateway'],
+  ['a plain timeout note', 'socket hang up after 40100 ms'],
+]) {
+  test(`theme list treats ${label} as weather, not as an auth answer`, () => {
+    const r = runShell(`${LIST_HARNESS}
+       STDERR_TEXT=${JSON.stringify(text)}
+       run_list`);
+    assert.equal(r.get('STOPPED'), '0', `must not stop on: ${text}`);
+    assert.equal(r.get('SLEEPS'), '10 20', 'linear backoff, three attempts');
+    assert.equal(r.get('EXIT'), '1');
+  });
+}
+
+// Positive controls, so tightening the pattern cannot quietly stop matching the real thing. Only
+// two of the twelve alternatives had coverage before.
+for (const [label, text] of [
+  ['an HTTP 403', 'Request failed: HTTP 403 while listing themes'],
+  ['a forbidden answer', '403 Forbidden'],
+  ['access denied', 'Access denied for this store'],
+  ['an invalid token', 'invalid token supplied'],
+  ['an expired token', 'The token you supplied has expired.'],
+  ['a missing theme', 'theme not found for this shop'],
+  ['a missing scope', 'Missing required scope: write_themes'],
+  ['a scope reported as denied', 'scope write_themes denied for this app'],
+]) {
+  test(`theme list stops on ${label}`, () => {
+    const r = runShell(`${LIST_HARNESS}
+       STDERR_TEXT=${JSON.stringify(text)}
+       run_list`);
+    assert.equal(r.get('STOPPED'), '1', `must stop on: ${text}`);
+    assert.equal(r.get('SLEEPS'), '', 'a permanent answer is reported now, not after the backoff');
+  });
+}
+
+test('theme list stops when any line of a multi-line stderr answers "auth"', () => {
+  // Deliberate bias, worth pinning: a rotated token will not un-rotate on attempt 2, so one
+  // auth line stops the retry even alongside transient-looking noise.
   const r = runShell(`${LIST_HARNESS}
-     STDERR_TEXT="Done in 4031ms, then the socket hung up"
+     STDERR_TEXT="warning: retrying upstream
+502 Bad Gateway
+Access denied for this store"
      run_list`);
-  assert.equal(r.get('STOPPED'), '0');
-  assert.equal(r.get('SLEEPS'), '10 20', 'linear backoff, three attempts');
-  assert.equal(r.get('EXIT'), '1');
+  assert.equal(r.get('STOPPED'), '1');
+  assert.equal(r.get('SLEEPS'), '');
 });
 
 test('theme list retries a plain transient with the linear backoff', () => {
@@ -367,11 +455,11 @@ test('preview re-resolves the theme ID from a fresh theme list before retrying',
      npx() { return 0; }
      jq() { echo 987654321; }
      preview_push_before_retry 1 1
-     printf 'RC=%s\\n' "$?"
+     printf 'FN_RC=%s\\n' "$?"
      printf 'TARGET_ID=%s\\n' "$TARGET_ID"
      printf 'DELAY=%s\\n' "$RETRY_DELAY"`
   );
-  assert.equal(r.get('RC'), '0');
+  assert.equal(r.get('FN_RC'), '0');
   assert.equal(r.get('TARGET_ID'), '987654321');
   assert.equal(r.get('DELAY'), '30');
 });
@@ -396,9 +484,9 @@ test('preview stops rather than retry a rejection with no theme ID resolved', ()
      THEME_NAME="pr-140-preview"
      timeout() { return 1; }
      preview_push_before_retry 1 97
-     printf 'RC=%s\\n' "$?"`
+     printf 'FN_RC=%s\\n' "$?"`
   );
-  assert.equal(r.get('RC'), '1', 'a non-zero return abandons the retries');
+  assert.equal(r.get('FN_RC'), '1', 'a non-zero return abandons the retries');
   assert.match(r.stdout, /no theme ID could be resolved; not retrying/);
 });
 
@@ -407,10 +495,10 @@ test('preview retries a rejection immediately once an ID is known', () => {
     `TARGET_ID="222"
      THEME_NAME="pr-140-preview"
      preview_push_before_retry 1 97
-     printf 'RC=%s\\n' "$?"
+     printf 'FN_RC=%s\\n' "$?"
      printf 'DELAY=%s\\n' "$RETRY_DELAY"`
   );
-  assert.equal(r.get('RC'), '0');
+  assert.equal(r.get('FN_RC'), '0');
   assert.equal(r.get('DELAY'), '0', 'a rejection skips the 30s backoff');
 });
 

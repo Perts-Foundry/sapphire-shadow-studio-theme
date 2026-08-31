@@ -141,6 +141,50 @@ test('a `run:` inside a comment is not a run key', () => {
 
 // --- guard 2: zero bodies -------------------------------------------------------------------
 
+test('an empty run block raises rather than counting as a body', () => {
+  // Without this, `Math.min()` of no lines is Infinity, `slice(Infinity)` is '', and a zero-byte
+  // "body" is counted. Guard 2 then sees a count of 1 and passes, which is the "green having
+  // linted nothing" outcome the count exists to make visible, just wearing a number.
+  const text = action(['    - name: Blank', '      shell: bash', '      run: |', '', '    - name: Next', '      shell: bash', '      run: |', '        echo one']);
+  assert.throws(() => extractRunBodies(text, { source: 'a/action.yml' }), /block is empty/);
+});
+
+test('two steps sharing a name still produce two distinct files', () => {
+  // A collision silently dropped a body while the printed count still said two, which is exactly
+  // the case where the "did it lint anything" signal lies.
+  const text = action([
+    '    - name: Push',
+    '      shell: bash',
+    '      run: |',
+    '        echo first',
+    '    - name: Push',
+    '      shell: bash',
+    '      run: |',
+    '        echo second',
+  ]);
+  const { bodies } = extractRunBodies(text, { source: 'a/action.yml' });
+  assert.equal(bodies.length, 2);
+  assert.equal(new Set(bodies.map((b) => b.fileName)).size, 2, 'filenames must be distinct');
+  assert.deepEqual(bodies.map((b) => b.script), ['echo first', 'echo second']);
+  assert.match(bodies[1].fileName, /-L\d+\.sh$/, 'disambiguated by run line');
+});
+
+test('a step whose first key is `- shell:` is still recognised as bash', () => {
+  // `SHELL_KEY` lacked the sequence-dash allowance `ID_KEY` and `NAME_KEY` both had, so this step
+  // read as having no shell at all and was silently demoted to "not bash, not linted".
+  const text = action([
+    '    - shell: bash',
+    '      name: Dashed',
+    '      run: |',
+    '        echo dashed',
+  ]);
+  const { bodies, skipped } = extractRunBodies(text, { source: 'a/action.yml' });
+  assert.deepEqual(skipped, []);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].shell, 'bash');
+  assert.equal(bodies[0].script, 'echo dashed');
+});
+
 test('zero extracted bodies raises', () => {
   const text = action(['    - name: Uses only', '      uses: ./.github/actions/setup-shopify-cli']);
   assert.throws(() => extractRunBodies(text, { source: 'a/action.yml' }), /no bash `run:` bodies/);

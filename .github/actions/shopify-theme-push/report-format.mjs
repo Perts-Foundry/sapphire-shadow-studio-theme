@@ -16,6 +16,22 @@ const VERDICT_BADGE = {
 // not just PASS/HARD-FAIL.
 const ROW_RE = /^(\S+) (PASS|SOFT-WARN|HARD-FAIL) (\S+) host=(\S+) theme=(\S+) \((.+)\)$/;
 
+// smoke.mjs also emits AGGREGATE verdict lines that belong to no single path, so they carry no
+// status/host/theme and cannot match ROW_RE: `sitemap SOFT-WARN: ...`, `products HARD-FAIL: ...`.
+// They render as notes rather than table rows, which is right, but they must still COUNT.
+//
+// This is not cosmetic. Until the smoke gained its zero-product-coverage HARD-FAIL, every
+// aggregate line was a SOFT-WARN, so leaving them out of the tally happened to be accurate. Now a
+// run can exit 1 on an aggregate line alone, and the summary would read `N passed, 0 warned,
+// 0 failed` directly above a failed deploy.
+//
+// The optional middle token and the `-` alternative cover the auth branch's two shapes
+// (`/password AUTH SOFT-WARN: ...` and `/password HARD-FAIL - AUTH: ...`), which have the same
+// problem: the second is a HARD-FAIL that exits 1. Anchoring on a delimiter after the verdict is
+// what keeps this from counting a note that merely mentions a verdict in prose. ROW_RE is tried
+// first and wins, so a real per-path row can never reach here.
+const AGG_RE = /^\S+(?: \S+)? (PASS|SOFT-WARN|HARD-FAIL)(?::| -|$)/;
+
 /**
  * Escape `|` and backtick so a value sourced from outside this repo (a
  * storefront response header, an Admin-edited theme name, a PR-title-derived
@@ -41,18 +57,22 @@ export function renderSmokeMarkdownTable(smokeOutput) {
   const lines = (smokeOutput || '').split(/\r?\n/).filter((l) => l.trim());
   const rows = [];
   const notes = [];
+  const aggregateVerdicts = [];
   for (const line of lines) {
     const m = line.match(ROW_RE);
     if (m) {
       const [, path, verdict, status, host, themeId, reason] = m;
       rows.push({ path, verdict, status, host, themeId, reason });
-    } else {
-      notes.push(line);
+      continue;
     }
+    const agg = line.match(AGG_RE);
+    if (agg) aggregateVerdicts.push(agg[1]);
+    notes.push(line);
   }
 
   const counts = { PASS: 0, 'SOFT-WARN': 0, 'HARD-FAIL': 0 };
   for (const r of rows) counts[r.verdict] += 1;
+  for (const v of aggregateVerdicts) counts[v] += 1;
   const summaryLine = `${counts.PASS} passed, ${counts['SOFT-WARN']} warned, ${counts['HARD-FAIL']} failed`;
 
   const parts = [];

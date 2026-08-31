@@ -129,6 +129,11 @@ retry_run() {
 # Policy: `theme list` (pre-push, both modes)
 # ---------------------------------------------------------------------------------------------
 
+# Every RETRY_* budget below takes its value from the environment when one is set. That seam exists
+# so the unit tests can shrink a cap; it is NOT a supported knob. Nothing in action.yml or the
+# workflows sets one, and a job- or workflow-level `env:` with one of these names would change live
+# deploy behaviour with nothing in action.yml mentioning it.
+#
 # A read-only GET, so retrying is idempotent by construction. Three attempts, because a transient
 # 5xx or a hung connection here fails the whole deploy before the push is even attempted.
 RETRY_LIST_ATTEMPTS="${RETRY_LIST_ATTEMPTS:-3}"
@@ -136,15 +141,24 @@ RETRY_LIST_ATTEMPTS="${RETRY_LIST_ATTEMPTS:-3}"
 # coreutils, present on the Linux runners this action runs on.
 RETRY_LIST_TIMEOUT="${RETRY_LIST_TIMEOUT:-60s}"
 
-# The transient-only filter. Both obvious versions of this are wrong, in opposite directions:
+# The transient-only filter. Every version of this that looks obvious is wrong in one of two
+# directions, and both directions have bitten:
 #
-#   Bare digit alternatives (`401|403`) match durations and byte counts, so `Timed out after 401ms`
-#   and `Done in 4031ms` both read as auth failures and abandon the retry on exactly the transient
-#   it exists for. The codes are anchored to a status context instead.
+#   TOO LOOSE. Bare digit alternatives (`401|403`) match durations and byte counts, so
+#   `Timed out after 401ms` reads as an auth failure and abandons the retry on exactly the transient
+#   the retry exists for. Anchoring the codes to a status word is necessary but NOT sufficient: the
+#   code also needs a trailing non-digit, or `Error: 4031ms elapsed` and `error 4030 bytes read`
+#   both still match on the `403` inside a four-digit number. And a bare `scope` alternative matches
+#   ordinary prose, e.g. `The scope of this deploy is large; uploading 401 files`, so it is
+#   contextual now: some word about the scope being missing or required has to be near it.
 #
-#   `unauthoriz` does not match `not authorized`, the spacing Shopify actually uses, so the real
-#   permanent failures were the ones being retried.
-RETRY_LIST_AUTH_PATTERN='(http|status|error)[^0-9]{0,4}(401|403)|unauthoriz|not authoriz|forbidden|access denied|permission denied|invalid (token|password|api key|credentials)|token[^.]{0,20}expired|(theme|store|shop)[^.]{0,20}(not found|no such)|scope'
+#   TOO TIGHT. `unauthoriz` does not match `not authorized`, the spacing Shopify actually uses, so
+#   the real permanent failures were the ones being retried.
+#
+# Matched case-insensitively against the whole of `list.err`, so any line answering "auth" stops the
+# retry even when other lines look transient. That is the intended bias: a rotated token is not
+# going to un-rotate on attempt 2.
+RETRY_LIST_AUTH_PATTERN='(http|status|error)[^0-9]{0,4}(401|403)([^0-9]|$)|unauthoriz|not authoriz|forbidden|access denied|permission denied|invalid (token|password|api key|credentials)|token[^.]{0,20}expired|(theme|store|shop)[^.]{0,20}(not found|no such)|(missing|required|insufficient|invalid|lacks|needs|not granted)[^.]{0,24}scopes?|scopes?[^.]{0,24}(missing|required|insufficient|denied|not granted)'
 
 list_attempt_run() {
   # Captured in condition context so the capture happens even under an inherited
@@ -180,12 +194,19 @@ list_attempt_before_retry() {
 # ---------------------------------------------------------------------------------------------
 
 RETRY_LIVE_ATTEMPTS="${RETRY_LIVE_ATTEMPTS:-3}"
-# 8-minute attempt limit + 10s SIGKILL grace. The whole step is bounded by the caller's
-# timeout-minutes (15), so 3 x 8min cannot starve the runner.
+# 8-minute attempt limit + 10s SIGKILL grace.
+#
+# BUDGET WARNING, because the obvious reading of this is wrong. `timeout-minutes` on the calling job
+# does NOT bound this loop to a safe stopping point; it CANCELS the job. 3 x 8m plus 2 x 60s of
+# backoff is 26 minutes against `deploy.yml`'s 15, so a live push that keeps timing out is killed
+# mid-upload, with every step after it skipped: no deploy report, no squash merge, no marker, and a
+# live theme left half-pushed. Nothing self-heals that, unlike the preview path. The retry caps here
+# and the job's `timeout-minutes` are one coupled pair; change either and re-check the other.
 RETRY_LIVE_TIMEOUT="${RETRY_LIVE_TIMEOUT:-8m}"
 
-# A preview theme is a draft with no customer exposure and preview.yml's job budget is 15 minutes,
-# so 2 x 5m is the proportionate version of live's 3 x 8m.
+# A preview theme is a draft with no customer exposure, and the preview push runs in `validate.yml`'s
+# `deploy-preview` job (`timeout-minutes: 15`), so 2 x 5m is the proportionate version of live's
+# 3 x 8m. NOT `preview.yml`, which runs `mode: delete-preview` only and has its own 10-minute cap.
 RETRY_PREVIEW_ATTEMPTS="${RETRY_PREVIEW_ATTEMPTS:-2}"
 RETRY_PREVIEW_TIMEOUT="${RETRY_PREVIEW_TIMEOUT:-5m}"
 
@@ -218,7 +239,10 @@ run_push_attempt() {
       check_rc=$?
     fi
     if [ -s rejections.txt ]; then
-      cat rejections.txt
+      # Through scrub(): this is server-sourced text going to the run log, and it was the last
+      # sink in this file still dumping it raw. GitHub masks the literal secret, but scrub's job
+      # is the transformed or partial token the masker does not catch.
+      scrub < rejections.txt
     fi
     if [ "$check_rc" -eq 1 ]; then
       RETRY_EXIT=97
@@ -297,7 +321,10 @@ preview_push_before_retry() {
     # Re-resolve by name: the failed create may have got far enough to register the theme, and a
     # second `--unpublished` would duplicate it. Bounded by the same per-attempt timeout as the push
     # itself; before this it was the one unbounded CLI call on the preview path.
-    if timeout --kill-after=10s "$RETRY_PREVIEW_TIMEOUT" npx shopify theme list --json > themes-retry.json 2>/dev/null; then
+    # RETRY_LIST_TIMEOUT, not RETRY_PREVIEW_TIMEOUT: this is a `theme list`, and the list policy
+    # already decided 60s is the right bound for one. Borrowing the push's 5m gave the same call an
+    # 8x looser bound here than 30 lines up, on a job that has already spent time on both.
+    if timeout --kill-after=10s "$RETRY_LIST_TIMEOUT" npx shopify theme list --json > themes-retry.json 2>/dev/null; then
       TARGET_ID=$(jq -r --arg n "$THEME_NAME" '[.[] | select(.name==$n)][0].id // empty' themes-retry.json 2>/dev/null) || TARGET_ID=""
     fi
   fi

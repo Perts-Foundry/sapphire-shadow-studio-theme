@@ -41,7 +41,10 @@ const RUN_BLOCK = /^(\s*)(?:-\s+)?run:[ \t]*\|[ \t]*$/;
 // `id:`/`name:` can be read.
 const SEQ_ITEM = /^(\s*)-\s+\S/;
 
-const SHELL_KEY = /^\s*shell:[ \t]*["']?([^"'#\s]+)/;
+// The `(?:-\s+)?` matters: a step whose FIRST key is `shell:` is written `- shell: bash`, and
+// without the dash alternative it reads as having no shell at all, which silently demotes the step
+// to "not bash, not linted". Same allowance ID_KEY and NAME_KEY already carried.
+const SHELL_KEY = /^\s*(?:-\s+)?shell:[ \t]*["']?([^"'#\s]+)/;
 const ID_KEY = /^\s*(?:-\s+)?id:[ \t]*["']?([^"'#\s]+)/;
 const NAME_KEY = /^\s*(?:-\s+)?name:[ \t]*["']?([^"'#]+?)["']?[ \t]*$/;
 
@@ -75,6 +78,7 @@ export function extractRunBodies(text, opts = {}) {
 
   const bodies = [];
   const skipped = [];
+  const usedNames = new Set();
   let stepCount = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -102,9 +106,18 @@ export function extractRunBodies(text, opts = {}) {
     while (last > i + 1 && lines[last - 1].trim() === '') last--;
 
     const raw = lines.slice(i + 1, last);
-    const dedent = Math.min(
-      ...raw.filter((l) => l.trim() !== '').map(indentOf)
-    );
+    const nonBlank = raw.filter((l) => l.trim() !== '');
+    // Guard 2, first half. An empty `run: |` would otherwise produce a body: `Math.min()` of no
+    // arguments is Infinity, `slice(Infinity)` is '', and a zero-byte "body" gets counted. That is
+    // the exact "green having linted nothing" outcome the body count exists to make visible, only
+    // now hiding behind a count of 1.
+    if (nonBlank.length === 0) {
+      throw new Error(
+        `${source}:${i + 1}: \`run: |\` block is empty; it would be counted as an extracted body ` +
+          'while giving shellcheck nothing to lint.'
+      );
+    }
+    const dedent = Math.min(...nonBlank.map(indentOf));
     const script = raw.map((l) => (l.trim() === '' ? '' : l.slice(dedent))).join('\n');
 
     // Guard 3.
@@ -159,6 +172,16 @@ export function extractRunBodies(text, opts = {}) {
     // blank lines ahead of it.
     const padded = '\n'.repeat(i + 1) + script + '\n';
 
+    // Two steps sharing a `name:` with no `id:` slug identically. Writing both to one filename
+    // loses a body while the printed count still says two, which is precisely the case where the
+    // "did it lint anything" signal lies. Disambiguate by run line (unique by construction) rather
+    // than refusing: same-named steps are legal YAML, and dropping coverage is the failure here.
+    let fileName = `${slug(source.replace(/\.ya?ml$/, ''))}__${label}.sh`;
+    if (usedNames.has(fileName)) {
+      fileName = `${slug(source.replace(/\.ya?ml$/, ''))}__${label}-L${i + 1}.sh`;
+    }
+    usedNames.add(fileName);
+
     bodies.push({
       source,
       stepId: label,
@@ -167,7 +190,7 @@ export function extractRunBodies(text, opts = {}) {
       firstBodyLine: i + 2,
       script,
       padded,
-      fileName: `${slug(source.replace(/\.ya?ml$/, ''))}__${label}.sh`,
+      fileName,
     });
 
     i = end - 1;
@@ -199,11 +222,19 @@ async function main(argv) {
 
   await mkdir(outDir, { recursive: true });
   let total = 0;
+  // Every body must reach shellcheck as its own file. Within one action.yml `extractRunBodies`
+  // guarantees that; this catches the cross-file case, where two source paths could in principle
+  // slug the same, before a silent overwrite makes the count below a lie.
+  const written = new Set();
 
   for (const file of files) {
     const text = await readFile(file, 'utf8');
     const { bodies, skipped } = extractRunBodies(text, { source: file });
     for (const body of bodies) {
+      if (written.has(body.fileName)) {
+        throw new Error(`${file}:${body.runLine}: extracted filename ${body.fileName} collides with an earlier body`);
+      }
+      written.add(body.fileName);
       await writeFile(path.join(outDir, body.fileName), body.padded, 'utf8');
       console.log(`  ${file}:${body.runLine} (${body.shell}) -> ${body.fileName}`);
       total++;

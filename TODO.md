@@ -8,8 +8,9 @@ work left behind reasoning worth keeping (a corrected mistake, a cross-layer con
 why it went that way), write that into `release-notes.md` as part of the same change, then remove the
 item here.
 
-Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas),
-[Deploy and CI](#deploy-and-ci) (workflow and tooling reliability).
+Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas). Add a
+`## Deploy and CI` section back when there is deploy or tooling work outstanding; there is none
+right now, and an empty heading with a live index entry is the residue this file's rule targets.
 
 ## Product and storefront
 
@@ -43,6 +44,3 @@ several of the pass's other findings.
   unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
-
-## Deploy and CI
-

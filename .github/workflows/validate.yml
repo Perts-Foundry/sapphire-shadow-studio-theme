@@ -872,11 +872,19 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::shellcheck (composite actions)"
+          # Everything this pass creates goes to RUNNER_TEMP, not the workspace. The workspace is a
+          # Shopify theme checkout, so a tarball and two directories dropped beside `assets/` and
+          # `templates/` are one future "assert the tree is clean" step away from being a problem.
+          # It also matches the local recipe in README's Development section.
+          SC_DIR="${RUNNER_TEMP}/shellcheck"
+          BODIES_DIR="${RUNNER_TEMP}/composite-shell-bodies"
+          rm -rf "$SC_DIR" "$BODIES_DIR"
+          mkdir -p "$SC_DIR"
           curl --max-time 60 -fsSL \
             "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
-            -o shellcheck.tar.xz
-          tar -xJf shellcheck.tar.xz "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
-          SHELLCHECK="./shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+            -o "${SC_DIR}/shellcheck.tar.xz"
+          tar -xJf "${SC_DIR}/shellcheck.tar.xz" -C "$SC_DIR" "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          SHELLCHECK="${SC_DIR}/shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           "$SHELLCHECK" --version | grep '^version:'
 
           # The extractor fails closed three ways (an unsupported `run:` form,
@@ -885,18 +893,26 @@ jobs:
           # leaving shellcheck to lint an empty directory. Its
           # `extracted N run bodies` line is the visible difference between
           # "green" and "green having linted nothing".
-          rm -rf composite-shell-bodies
-          EXTRACT_OUT=$(node scripts/lib/composite-shell.mjs composite-shell-bodies .github/actions/*/action.yml 2>&1)
+          EXTRACT_OUT=$(node scripts/lib/composite-shell.mjs "$BODIES_DIR" .github/actions/*/action.yml 2>&1)
           EXTRACT_EXIT=$?
           echo "$EXTRACT_OUT"
 
           SHELLCHECK_OUT=""
           SHELLCHECK_EXIT=0
+          LINTED=0
           if [ "$EXTRACT_EXIT" -ne 0 ]; then
             SHELLCHECK_OUT="composite-shell extraction failed; nothing was linted."
             SHELLCHECK_EXIT="$EXTRACT_EXIT"
           else
-            # Own options variable, deliberately NOT the SHELLCHECK_OPTS above.
+            # Own options list, deliberately NOT the SHELLCHECK_OPTS above -- and
+            # `SHELLCHECK_OPTS=` on the command line is what makes that true.
+            # The linter reads that variable FROM THE ENVIRONMENT, not only via
+            # actionlint, so the step-level `env:` would otherwise silently apply
+            # the workflow suppressions here too. That matters most for SC2317:
+            # lib/retry.sh is built on indirect dispatch, exactly the shape that
+            # both provokes unreachable-code false positives and could hide real
+            # dead code. `--norc` blocks a future repo-root .shellcheckrc from
+            # widening this pass unannounced, for the same reason.
             #
             # SC1091 = "Not following: file was not specified as input" - the
             # `source "${GITHUB_ACTION_PATH}/lib/retry.sh"` in the Push and List
@@ -910,12 +926,12 @@ jobs:
             # are guaranteed non-empty by the extractor's own zero-body guard,
             # so the target list can never end up empty.
             shopt -s nullglob
-            SHELLCHECK_TARGETS=(composite-shell-bodies/*.sh .github/actions/*/lib/*.sh)
+            SHELLCHECK_TARGETS=("$BODIES_DIR"/*.sh .github/actions/*/lib/*.sh)
             shopt -u nullglob
-            SHELLCHECK_OUT=$("$SHELLCHECK" --shell=bash --color=never \
+            LINTED=${#SHELLCHECK_TARGETS[@]}
+            SHELLCHECK_OUT=$(SHELLCHECK_OPTS='' "$SHELLCHECK" --norc --shell=bash --color=never \
               "${COMPOSITE_OPTS[@]}" "${SHELLCHECK_TARGETS[@]}" 2>&1)
             SHELLCHECK_EXIT=$?
-            echo "shellcheck linted ${#SHELLCHECK_TARGETS[@]} files"
           fi
           echo "$SHELLCHECK_OUT"
           echo "::endgroup::"
@@ -928,18 +944,30 @@ jobs:
           fi
 
           # Label both tools' text before it reaches the shared capture, so a
-          # red row in the PR comment says which tool failed.
+          # red row in the PR comment says which tool failed. The linted-file
+          # count rides along for the same reason the extractor prints a body
+          # count: it is the difference between "green" and "green having linted
+          # nothing", and it is worth nothing if it only exists in the job log.
           OUTPUT=$(
-            printf '[actionlint exit %s]\n%s\n[shellcheck exit %s]\n%s\n%s\n' \
+            printf '[actionlint exit %s]\n%s\n[shellcheck exit %s, %s file(s) linted]\n%s\n%s\n' \
               "$ACTIONLINT_EXIT" "$ACTIONLINT_OUT" \
-              "$SHELLCHECK_EXIT" "$EXTRACT_OUT" "$SHELLCHECK_OUT"
+              "$SHELLCHECK_EXIT" "$LINTED" "$EXTRACT_OUT" "$SHELLCHECK_OUT"
           )
 
+          # Per-run delimiter, and any line forging it is neutralised on the way
+          # into the block. Both tools echo lines from the files they lint, so
+          # the body here is file-sourced text; the sibling `push_output` block
+          # in the composite action is hardened the same way and for the same
+          # reason. Hex-only, so it is inert as a sed pattern.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           {
-            echo "output<<GHEOF"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -30
-            echo "GHEOF"
+            echo "output<<${DELIM}"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -30
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       # ── zizmor (security audit of workflows + composite actions) ─
