@@ -75,12 +75,17 @@
       <path d="M11.5 5.5L6.75 10.25L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="shipping-info__text">
-      {% if is_gift_card %}
-        Free shipping
-      {% else %}
-        Free shipping on this order
-      {% endif %}
-      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- if show_shipping_progress -%}
+        <strong class="shipping-info__highlight shipping-info__highlight--success">Free shipping on this order</strong>
+        {%- if vacation_note != blank %}<span class="shipping-info__secondary">{{ vacation_note }}</span>{% endif %}
+      {%- else -%}
+        {% if is_gift_card %}
+          Free shipping
+        {% else %}
+          Free shipping on this order
+        {% endif %}
+        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
+      {%- endif -%}
     </span>
   {% else %}
     <svg class="shipping-info__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -91,11 +96,12 @@
     </svg>
     <span class="shipping-info__text">
       {%- if show_shipping_progress -%}
-        {{ 'content.free_shipping_remaining' | t: amount: remaining_amount }} • ${{ flat_rate_shipping }} shipping within the USA
+        <strong class="shipping-info__highlight">{{ 'content.free_shipping_remaining' | t: amount: remaining_amount }}</strong>
+        <span class="shipping-info__secondary">${{ flat_rate_shipping }} shipping within the USA{% if vacation_note != blank %} • {{ vacation_note }}{% endif %}</span>
       {%- else -%}
         ${{ flat_rate_shipping }} shipping within the USA • Free for orders over ${{ free_shipping_threshold }}
+        {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
       {%- endif -%}
-      {%- if vacation_note != blank %} • {{ vacation_note }}{% endif %}
     </span>
   {% endif %}
 </a>
@@ -133,6 +139,7 @@
   }
 
   .shipping-info__icon--success,
+  .shipping-info__highlight--success,
   .shipping-progress--complete .shipping-progress__fill {
     --shipping-success-color: #16a34a;
   }
@@ -147,6 +154,25 @@
 
   .shipping-info__text {
     font-weight: 400;
+  }
+
+  /* Cart emphasis: the remaining-amount sentence is the call to action,
+     so it gets full foreground at body size while the flat-rate detail
+     drops to a subdued second line. */
+  .shipping-info__highlight {
+    display: block;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
+
+  .shipping-info__highlight--success {
+    color: var(--shipping-success-color, #16a34a);
+  }
+
+  .shipping-info__secondary {
+    display: block;
+    margin-top: 0.125rem;
   }
 
   .shipping-progress {
