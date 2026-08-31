@@ -1,5 +1,30 @@
 # Release Notes
 
+## `show_shipping_info` now defaults to false (unreleased)
+
+The cart's "You may also like" cards restated the shipping policy under every price, because the
+`show_shipping_info` checkbox in `blocks/price.liquid` defaulted to `true` and the cart card's price
+block (`price_yXfkPX` in `templates/cart.json`) simply omitted the key. Nothing in the template said
+"show shipping here"; the line appeared because a schema default reached across from the product-page
+use case, where the shipping note belongs, into a product card, where it does not.
+
+The fix flips that default to `false` and, in the same change, brings the cart card's four settings
+blocks in line with the site-standard card copied from `templates/index.json` and
+`templates/collection.json`: card gap 8, `scheme-1` with inherit off, radius 24, padding 16; gallery
+ratio portrait with radius 8; title on the `custom` preset in the subheading font at 1rem/tight with
+the heading color; price on the `custom` preset at 0.875rem, with `show_shipping_info` now written
+out explicitly.
+
+**Why the default flip is safe, and what it costs.** Every existing consumer already sets the key
+explicitly: `false` on the collection, index, search and (now) cart cards, `true` on all six product
+templates' own price blocks, both occurrences per template. So no rendering changes anywhere except
+the one card that was the bug. The trade-off is that a price block newly placed from the editor on a
+product page now needs the checkbox ticked to get the shipping note back. That was accepted
+deliberately: a missing shipping line on a product page is visible on the page the operator is
+editing, whereas the old default failed silently, adding the line to every new product card anyone
+ever placed. The preset in `blocks/price.liquid` carries no settings of its own, so it takes the
+schema default either way.
+
 ## CLAUDE.md becomes a policy-and-trigger layer (unreleased)
 
 `CLAUDE.md` had reached 39,844 characters, 99% of the 40,000-char hard limit, because every merge
