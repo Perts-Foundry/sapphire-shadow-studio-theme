@@ -25,12 +25,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
   involved, so there is nothing to unwind there.
-- [ ] Bring `templates/404.json`'s product card onto the site-standard card shape. Its
-  `static-product-card` is the only remaining copy of the old format (gap 4, inherit colour scheme,
-  radius 0, gallery `adapt`, title `rte`); the cart card was moved onto the standard shape used by
-  `templates/index.json`, `templates/collection.json` and `templates/search.json`, and 404 only had
-  its `show_shipping_info` made explicit, not its styling aligned.
-- [ ] Fix contact footer link vs contact nav link, also contact us button is darkened, text isn't white?
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
 / consistency pass over all six product templates and the other 15 templates, cross-checked against
