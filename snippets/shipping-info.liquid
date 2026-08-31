@@ -25,18 +25,17 @@
   if is_gift_card
     assign qualifies_for_free_shipping = true
   else
-    # Convert to number for calculations
-    assign threshold_number = free_shipping_threshold | times: 1.0
+    # One derivation in cents feeds both the text branch and the progress
+    # bar, so they cannot disagree. Prices are already integer cents.
+    assign threshold_cents = free_shipping_threshold | times: 100.0 | round
 
     if cart_context
-      assign current_total = cart.total_price | divided_by: 100.0
-      assign remaining_for_free_shipping = threshold_number | minus: current_total
+      assign remaining_cents = threshold_cents | minus: cart.total_price
     elsif product_price
-      assign product_price_number = product_price | divided_by: 100.0
-      assign remaining_for_free_shipping = threshold_number | minus: product_price_number
+      assign remaining_cents = threshold_cents | minus: product_price
     endif
 
-    if remaining_for_free_shipping <= 0
+    if remaining_cents <= 0
       assign qualifies_for_free_shipping = true
     else
       assign qualifies_for_free_shipping = false
@@ -47,14 +46,13 @@
     assign vacation_note = settings.vacation_shipping_message | strip
   endif
 
-  # Free-shipping progress bar (cart only). Guard on a positive parsed
-  # threshold: the setting is free text, so a cleared value or one like
-  # "$75" parses to 0 and must disable the bar, not pin it at 100%.
+  # Free-shipping progress bar (cart only). Guard on positive parsed
+  # cents: the setting is free text, so a cleared value or one like
+  # "$75" parses to 0 and must disable the bar, not pin it at 100%
+  # (and 0 cents would divide by zero below).
   assign show_shipping_progress = false
-  if cart_context and threshold_number > 0
+  if cart_context and threshold_cents > 0
     assign show_shipping_progress = true
-    assign threshold_cents = threshold_number | times: 100 | round
-    assign remaining_cents = threshold_cents | minus: cart.total_price
     assign progress_percent = cart.total_price | times: 100.0 | divided_by: threshold_cents | at_most: 100 | round
     assign remaining_amount = remaining_cents | money
   endif
@@ -134,8 +132,13 @@
     transition: color 0.2s ease;
   }
 
+  .shipping-info__icon--success,
+  .shipping-progress--complete .shipping-progress__fill {
+    --shipping-success-color: #16a34a;
+  }
+
   .shipping-info__icon--success {
-    color: #16a34a;
+    color: var(--shipping-success-color);
   }
 
   .shipping-info:hover .shipping-info__icon--success {
@@ -169,7 +172,7 @@
   }
 
   .shipping-progress--complete .shipping-progress__fill {
-    background: #16a34a;
+    background: var(--shipping-success-color);
   }
 
   @media (prefers-reduced-motion: no-preference) {
