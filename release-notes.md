@@ -23,12 +23,19 @@ background, which is what `scheme-1` renders on anyway, and rebuild the alpha lo
 result can be measured. The second-pass asset was generated that way and came back clean on every
 check: white ground at 254 to 255, ink at 0, and a maximum RGB channel spread of 5.
 
-**`blocks/image.liquid` calls `image_tag` without an `alt:` parameter**, so the rendered `alt` is
-whatever alt text the file carries in Admin, and an empty one yields `alt=""`. That is the correct
-outcome here: the illustration restates "Page not found" and should be skipped by a screen reader
-rather than announced to someone who just hit a dead link. It also means the a11y behaviour of every
-placed image block lives in Admin, not in the repo, and nothing in CI can see it. Leave the alt text
-on `404-image.png` empty on purpose; filling it in is what would break this.
+**`blocks/image.liquid` calls `image_tag` without an `alt:` parameter**, so for an `image_picker`
+setting the rendered `alt` is whatever alt text the Files asset carries in Admin. (The scoping
+matters: `image_tag` falls back to the resource title for article, collection, line item, product and
+variant images, so the theme's other no-`alt` call sites do not behave this way.) An empty Admin alt
+is the correct outcome here, because the illustration restates "Page not found" and should be skipped
+by a screen reader rather than announced to someone who just hit a dead link.
+
+The consequence is that this block's a11y behaviour is a property of Admin, not of the repo. CI is
+not blind to it: `scripts/a11y/paths.json` lists `/404-intentionally-missing`, so `pa11y-ci` renders
+and audits this page on every PR, and an `<img>` with no `alt` attribute at all fails axe's
+`image-alt`. What CI cannot distinguish is a deliberately empty alt from a filled one, since both
+pass. So leave the alt on `404-image.png` empty on purpose; "fixing" it in Admin would reverse this
+decision silently, with the repo and CI both none the wiser.
 
 ## The 404 card joins the standard, and the real holdouts turn out to be the product pages (unreleased)
 
