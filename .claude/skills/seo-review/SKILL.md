@@ -8,8 +8,9 @@ description: >-
   sees it; and review the repo's structured-data and meta-tag invariants. Use after adding or
   editing products, pages, collections, or templates, after changes near snippets/meta-tags.liquid
   or snippets/structured-data*.liquid, before and after removing the storefront password, or for a
-  periodic check (a full product addition run from add-product ends with this audit). Read-only: it never writes to the store, the repo, or Admin, so it is not for
-  applying fixes, keyword strategy, or copywriting.
+  periodic check (a full product addition run from add-product ends with this audit). Read-only:
+  it never writes to the store, the repo, or Admin, so it is not for applying fixes, keyword
+  strategy, or copywriting.
 ---
 
 # SEO review

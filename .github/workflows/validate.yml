@@ -728,7 +728,14 @@ jobs:
         run: |
           set +e
           EXIT_CODE=0
-          TRACKED=$(git ls-files -- 'product-images/' '*.heic' '*.HEIC')
+          # :(icase) covers every case variant of the extension (IMG.HeIc included), which the
+          # earlier two-spelling form did not.
+          TRACKED=$(git ls-files -- 'product-images/' ':(icase)*.heic')
+          LS_EXIT=$?
+          if [ "$LS_EXIT" -ne 0 ]; then
+            echo "::error::git ls-files exited $LS_EXIT; the guard did not query its pathspecs."
+            EXIT_CODE=1
+          fi
           if [ -n "$TRACKED" ]; then
             OUTPUT=$(printf 'Tracked files that must never enter this public repo:\n%s\n' "$TRACKED")
             EXIT_CODE=1
@@ -1501,7 +1508,7 @@ jobs:
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
-              `| **Tracked media guard** | \`git ls-files product-images/ *.heic\` | ${status(trackedMedia)} |`,
+              `| **Tracked media guard** | \`git ls-files -- 'product-images/' ':(icase)*.heic'\` | ${status(trackedMedia)} |`,
               `| **Contrast + a11y** | \`npm run contrast:lint\` + tests | ${status(contrast)} |`,
               `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
               '',
@@ -1542,7 +1549,7 @@ jobs:
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
-              { title: 'Tracked media guard', tool: 'git ls-files product-images/ *.heic', out: trackedMediaOut, exit: trackedMedia },
+              { title: 'Tracked media guard', tool: "git ls-files -- 'product-images/' ':(icase)*.heic'", out: trackedMediaOut, exit: trackedMedia },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
               { title: 'Deploy smoke', tool: 'npm run smoke:test', out: smokeTestOut, exit: smokeTest },
               { title: 'Workflow Lint', tool: 'actionlint + shellcheck', out: actionlintOut, exit: actionlint },

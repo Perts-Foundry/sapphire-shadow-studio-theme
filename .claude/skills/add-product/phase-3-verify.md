@@ -14,5 +14,5 @@ the admin Preview link).
    - Completion check: its report exists and any finding is presented to the operator.
 3. `converge` (verify): the sku skill's verify and, where run, blank-inventory's verify both
    report convergence (propagation is not atomic).
-4. `close` : mark the state file's last step, summarise the whole run (every step, its evidence),
+4. `close`: mark the state file's last step, summarise the whole run (every step, its evidence),
    and note that the state file can be deleted once the operator is satisfied.

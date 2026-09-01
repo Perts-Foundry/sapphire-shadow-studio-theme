@@ -207,24 +207,32 @@ export function cropBox(bboxFull, spec, srcW, srcH) {
 }
 
 /** Composite gained pixels over white through the alpha, crop/pad to the square box, resize to
- * canvas, encode. Returns the JPEG buffer. */
+ * canvas, encode. Returns the JPEG buffer. Only the crop-box intersection is composited: the
+ * shooting checklist asks for generous framing, so the region outside the box (all background by
+ * construction) can be most of a 48MP frame, and blending it just to throw it away doubled the
+ * per-image cost. */
 async function renderOutput(gained, alphaFull, box, spec) {
   const { width, height, data } = gained;
-  const out = Buffer.alloc(width * height * 3);
-  for (let i = 0; i < width * height; i++) {
-    const a = alphaFull[i] / 255;
-    const p = i * 3;
-    out[p] = Math.round(data[p] * a + 255 * (1 - a));
-    out[p + 1] = Math.round(data[p + 1] * a + 255 * (1 - a));
-    out[p + 2] = Math.round(data[p + 2] * a + 255 * (1 - a));
-  }
   // Intersect the crop box with the source; pad the overhang with white via extend.
   const left = Math.max(box.left, 0);
   const top = Math.max(box.top, 0);
   const right = Math.min(box.left + box.side, width);
   const bottom = Math.min(box.top + box.side, height);
-  return sharp(out, { raw: { width, height, channels: 3 } })
-    .extract({ left, top, width: right - left, height: bottom - top })
+  const cw = right - left;
+  const chh = bottom - top;
+  const out = Buffer.alloc(cw * chh * 3);
+  for (let y = top; y < bottom; y++) {
+    for (let x = left; x < right; x++) {
+      const src = y * width + x;
+      const a = alphaFull[src] / 255;
+      const p = src * 3;
+      const q = ((y - top) * cw + (x - left)) * 3;
+      out[q] = Math.round(data[p] * a + 255 * (1 - a));
+      out[q + 1] = Math.round(data[p + 1] * a + 255 * (1 - a));
+      out[q + 2] = Math.round(data[p + 2] * a + 255 * (1 - a));
+    }
+  }
+  return sharp(out, { raw: { width: cw, height: chh, channels: 3 } })
     .extend({
       left: left - box.left,
       top: top - box.top,
@@ -295,11 +303,23 @@ export async function acceptanceFailures(jpeg, spec) {
   return failures;
 }
 
+/** Shape check for a sidecar entry before it is trusted as processing parameters. The sidecar is
+ * script-written, but it is also hand-editable JSON: a corrupt or truncated entry must fall back
+ * to re-derivation, never throw mid-batch. */
+export function validStoredParams(p) {
+  const num = (v) => typeof v === 'number' && Number.isFinite(v);
+  return Boolean(p)
+    && Array.isArray(p.gains) && p.gains.length === 3 && p.gains.every(num)
+    && num(p.maskTolerance) && num(p.shadowFloor) && num(p.marginTarget);
+}
+
 /**
  * Enhance one source file. Returns {status: 'ok'|'flagged', params, failures?, outPath?}.
- * `storedParams` (from the sidecar) short-circuits derivation for deterministic re-runs.
+ * `storedParams` (from the sidecar) short-circuits derivation for deterministic re-runs; an entry
+ * that fails the shape check is ignored and the parameters are re-derived from the source.
  */
 export async function enhanceFile(srcPath, outDir, { spec = SPEC, storedParams = null, decode } = {}) {
+  if (storedParams && !validStoredParams(storedParams)) storedParams = null;
   const src = await loadSrgbRaw(srcPath, decode ? { decode } : {});
   const scale = Math.min(1, spec.analysisMax / Math.max(src.width, src.height));
   const aw = Math.max(1, Math.round(src.width * scale));
@@ -367,7 +387,9 @@ export async function enhanceFile(srcPath, outDir, { spec = SPEC, storedParams =
   return { status: 'ok', params, outPath };
 }
 
-const guardOutDir = (dir) => {
+/** The only confinement between the CLI and a write outside the gitignored tree; exported so the
+ * suite can pin it. */
+export const guardOutDir = (dir) => {
   const rel = path.relative(process.cwd(), path.resolve(dir));
   if (!(rel === 'product-images' || rel.startsWith(`product-images${path.sep}`))) {
     throw new Error(`refusing to write outside product-images/: ${dir}`);

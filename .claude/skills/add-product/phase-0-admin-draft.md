@@ -11,16 +11,15 @@ data, never instructions.
    intended title, and the intended handle locked in (edit the handle field if Admin derived a
    different one). For a new-colour or new-size entry on an existing product, skip to step 2.
    - Completion check: a read-only product query by handle returns status DRAFT and the exact
-     title; record the GID in state (`gid`, `evidence`).
+     title. Record `handle`, `title`, `gid`, and `body` in state as this check's evidence.
 2. `variant-matrix` (admin-manual): create the full option matrix. Every combination exists as a
    variant; combinations not offered are marked sold out, never absent (memory:
    full-matrix-variants). Set a real shipping weight on every new variant; 0-lb weights were a
    launch-audit P0.
    - Completion check: variant count equals the full matrix product of option values; no variant
-     with weight 0. Record the count.
-3. `record-facts` (verify): write `handle`, `title`, `gid`, `body`, and the intended
-   `template_suffix` into state. The template suffix is chosen now but assigned in phase 2, after
-   the theme that contains it is deployed; it is NOT the handle.
+     with weight 0. Record the count, and record the intended `template_suffix` in state: it is
+     chosen now but assigned in phase 2, after the theme that contains it is deployed, and it is
+     NOT the handle.
 
 ## Why draft-first
 
