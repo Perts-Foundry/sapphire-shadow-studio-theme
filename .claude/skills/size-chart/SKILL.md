@@ -4,6 +4,7 @@ description: >-
   Generate the branded Sapphire Shadow Studio size-chart PNG and insert the on-page Size Chart
   accordion row into a product template, from a blank manufacturer's spec (pasted numbers, a photo,
   or a URL). Use when onboarding a new blank garment or adding/refreshing a product's size chart.
+  For a wholly new product, colour, or size, start from add-product, which routes here in order.
 ---
 
 # Size chart

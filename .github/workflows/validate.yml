@@ -715,6 +715,51 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── Tracked media guard ────────────────────────────────────
+      # The studio enhance pass (scripts/enhance-product-images.mjs) ingests raw
+      # phone shots into /product-images/, which is gitignored; raw HEICs carry
+      # EXIF/GPS and this repo is public, and a gitignore does not stop
+      # `git add -f` or a later un-ignore. This structural check is the CI-side
+      # backstop: any TRACKED file under the top-level product-images/ tree, or
+      # any tracked .heic anywhere, fails the build. Pathspecs are rooted at the
+      # repo top, so the like-named .claude/skills/product-images/ is not matched.
+      - name: Tracked media guard
+        id: tracked-media-guard
+        run: |
+          set +e
+          EXIT_CODE=0
+          # :(icase) covers every case variant of the extension (IMG.HeIc included), which the
+          # earlier two-spelling form did not.
+          TRACKED=$(git ls-files -- 'product-images/' ':(icase)*.heic')
+          LS_EXIT=$?
+          if [ "$LS_EXIT" -ne 0 ]; then
+            echo "::error::git ls-files exited $LS_EXIT; the guard did not query its pathspecs."
+            EXIT_CODE=1
+          fi
+          if [ -n "$TRACKED" ]; then
+            OUTPUT=$(printf 'Tracked files that must never enter this public repo:\n%s\n' "$TRACKED")
+            EXIT_CODE=1
+          else
+            OUTPUT="No tracked files under product-images/ and no tracked .heic anywhere."
+          fi
+          echo "$OUTPUT"
+
+          # Fail-closed floor, same spirit as the blank-id guard: if git ls-files
+          # sees no tracked files at all, the guard ran against nothing and a
+          # green result would be meaningless.
+          TOTAL_TRACKED=$(git ls-files | wc -l)
+          if [ "$TOTAL_TRACKED" -lt 1 ]; then
+            echo "::error::tracked-media guard saw an empty index; it cannot have covered the repo."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | tail -30
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Contrast lint + accessibility tooling tests ────────────
       # The theme had no accessibility check of any kind in CI, so a colour
       # scheme with failing contrast shipped silently (the sss-dark-scheme
@@ -1210,6 +1255,7 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
+          TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
           A11Y_STATE: ${{ steps.a11y-config.outputs.preview_state }}
@@ -1228,7 +1274,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft
@@ -1284,6 +1330,7 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
+          TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
           A11Y_STATE: ${{ steps.a11y-config.outputs.preview_state }}
@@ -1305,6 +1352,7 @@ jobs:
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
           EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
+          TRACKED_MEDIA_OUTPUT: ${{ steps.tracked-media-guard.outputs.output }}
           CONTRAST_OUTPUT: ${{ steps.contrast.outputs.output }}
           SMOKE_TEST_OUTPUT: ${{ steps.smoke-test.outputs.output }}
           ACTIONLINT_OUTPUT: ${{ steps.actionlint.outputs.output }}
@@ -1353,6 +1401,7 @@ jobs:
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const emailIcons = process.env.EMAIL_ICONS_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
+            const trackedMedia = process.env.TRACKED_MEDIA_EXIT;
             const contrast = process.env.CONTRAST_EXIT;
             const a11y = process.env.A11Y_EXIT;
             const a11yState = process.env.A11Y_STATE;
@@ -1377,6 +1426,7 @@ jobs:
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
+            const trackedMediaOut = sanitize(process.env.TRACKED_MEDIA_OUTPUT) || 'No output';
             const contrastOut = sanitize(process.env.CONTRAST_OUTPUT) || 'No output';
             // NOT run through sanitize(): the a11y summary is markdown built
             // and sanitised by scripts/a11y/summarize-pa11y.mjs (its per-URL
@@ -1458,6 +1508,7 @@ jobs:
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
+              `| **Tracked media guard** | \`git ls-files -- 'product-images/' ':(icase)*.heic'\` | ${status(trackedMedia)} |`,
               `| **Contrast + a11y** | \`npm run contrast:lint\` + tests | ${status(contrast)} |`,
               `| **Deploy smoke** | \`npm run smoke:test\` | ${status(smokeTest)} |`,
               '',
@@ -1498,6 +1549,7 @@ jobs:
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
+              { title: 'Tracked media guard', tool: "git ls-files -- 'product-images/' ':(icase)*.heic'", out: trackedMediaOut, exit: trackedMedia },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
               { title: 'Deploy smoke', tool: 'npm run smoke:test', out: smokeTestOut, exit: smokeTest },
               { title: 'Workflow Lint', tool: 'actionlint + shellcheck', out: actionlintOut, exit: actionlint },
@@ -1611,6 +1663,7 @@ jobs:
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
+          TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
           A11Y_EXIT: ${{ steps.a11y.outputs.exit_code }}
           SMOKE_TEST_EXIT: ${{ steps.smoke-test.outputs.exit_code }}
@@ -1647,6 +1700,7 @@ jobs:
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "email-icons" "$EMAIL_ICONS_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
+          check_exit "tracked-media-guard" "$TRACKED_MEDIA_EXIT"
           check_exit "contrast" "$CONTRAST_EXIT"
           # 0 when the audit passed OR when deploy-preview was skipped by
           # design (draft / Dependabot); 1 when the audit found errors or the
