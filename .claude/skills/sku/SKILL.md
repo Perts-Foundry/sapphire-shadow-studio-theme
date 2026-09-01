@@ -4,7 +4,8 @@ description: >-
   Derive, audit and apply Shopify variant SKUs from the committed code tables in
   scripts/sku/tables.json: backfill variants that have none, report drift and unmapped option
   values, and assign SKUs to new products, colours, designs or sizes. Use when the operator adopts
-  SKUs, adds a product or option value, or wants a SKU health check. Operator-invoked; it performs
+  SKUs, adds a product or option value, or wants a SKU health check. For a wholly new product,
+  colour, or size, start from add-product, which routes here in order. Operator-invoked; it performs
   live writes to variant SKUs, so it is not for the shared-blank custom.inventory_blank_sku
   metafield (blank-inventory), inventory levels, or renaming products.
 ---

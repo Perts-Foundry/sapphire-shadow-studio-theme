@@ -5,7 +5,8 @@ description: >-
   images and matching dropdown: group multi-angle HEIC shots into distinct patterns, lock names,
   threads, heroes, and crops with the operator, composite brand-styled grid charts, publish them
   as product media, and sync the pattern_options dropdown from the committed registry. Use when
-  onboarding new pattern photos, renaming or discontinuing a pattern, or re-styling the charts.
+  onboarding new pattern photos, renaming or discontinuing a pattern, or re-styling the charts
+  (a new Huddle-line product run from add-product routes here for its charts).
   Operator-invoked; it performs irreversible live media writes and template edits through gated
   steps, so it is not for general product photos (product-images), size charts (size-chart), or
   one-off image editing.
