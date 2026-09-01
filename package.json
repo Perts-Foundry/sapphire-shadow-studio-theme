@@ -28,6 +28,9 @@
     "applique-grid:test": "node --test scripts/applique-grid/test/*.test.mjs",
     "applique-grid:golden:update": "node scripts/applique-grid/test/regen-golden.mjs",
     "email-icons:test": "node --test scripts/email-icons/test/*.test.mjs",
+    "notifications:generate": "node scripts/notifications/brand.mjs",
+    "notifications:check": "node scripts/notifications/brand.mjs --check",
+    "notifications:test": "node --test scripts/notifications/test/*.test.mjs",
     "images:enhance": "node scripts/enhance-product-images.mjs"
   },
   "devDependencies": {

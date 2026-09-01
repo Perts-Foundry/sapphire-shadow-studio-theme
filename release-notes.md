@@ -1,5 +1,61 @@
 # Release Notes
 
+## Branded notification templates, generated from committed stock (unreleased)
+
+The 46 customer notification templates (Admin > Settings > Notifications) now have branded,
+ready-to-paste copies under `marketing/notifications/`, restyled to the welcome email's look. The
+README there documents the surface; this entry records the decisions.
+
+**The restyle lives in the template's own `<style>` block, and the body stays byte-identical to
+stock.** Shopify's notification inliner applies the template's stylesheet by class at send time
+(verified on the `order_confirmation` pilot: every rule in `lib/brand-style.css` was inlined and
+the Shop-app button text stayed stock). That means the brand can ride on a stylesheet swap plus one
+footer insertion, with no markup rewrite. The payoff is reviewability: a generated file is stock
+plus exactly three mechanical edits (style block replaced, social row inserted before the footer
+disclaimer, a generator comment prepended), so a future upstream change to a stock template shows
+up as a plain diff against `stock/<id>.liquid` rather than a three-way merge across hand-edited
+markup.
+
+**There is no API.** Notification templates are read and written only through the Admin editor,
+so the repo file is the source of truth and Admin holds a pasted copy, the same model as
+`marketing/emails/`. Nothing reconciles the two.
+
+**Customising opts each template out of Shopify's stock updates.** That is accepted. The drift
+procedure is: revert the one template to default in Admin (a short window of stock sends), copy the
+editor's text to a file, `record-stock.mjs` it, diff the snapshot, regenerate, re-paste. The
+snapshots in `stock/` are what the editor held when recorded, with "Revert changes" disabled as the
+only stock signal Shopify offers; they are not certified stock.
+
+**Committing Shopify's stock templates is merchant use of merchant-editable templates.** The
+templates are handed to every store as editable source in the store's own admin, and are already
+served in full to every customer who receives one; they are committed here so the branded output
+can be generated, checked and reviewed, not redistributed as a product.
+
+**Overrides, seven of them.** The generator is manifest-driven and fail-closed: an anchor that does
+not occur exactly once is a refusal, never a guess. Six templates (`local_delivered`, `order_link`,
+`shipment_delivered`, `shipment_out_for_delivery`, `shipping_confirmation`, `shipping_update`)
+carry two `disclaimer__subtext` paragraphs, one in the body and the stock one in the footer, so
+their manifest entry names the footer paragraph by its opening text (`footerAnchor`). One
+(`pos_send_cart`) carries a fourth rule in its stock style block, a `.top-border` hairline, so its
+entry names the whole block (`styleAnchor`) and the hairline is dropped on purpose. A `skip` field
+exists for a template that should stay stock; none uses it.
+
+**A mistake those six templates caught, corrected before release.** The first draft of
+`brand-style.css` coloured `.disclaimer__subtext` for the navy footer without scoping it to the
+footer, so the body-side paragraph in those six (the tracking-number line, or the email-safety
+message) would have rendered light grey on white with a white link. The pilot had no body-side
+disclaimer, so its preview could not show this; a verification pass over the stock files did. Every
+rule naming `disclaimer__subtext` or an inserted `ssb-` class is now scoped under `.footer`, and a
+suite test refuses an unscoped one. The lesson for the next stylesheet change: a stock class is
+not a location, so check where else the stock templates use it before restyling it.
+
+**Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
+them delta-compressed and the generated file differs from its stock twin by three hunks, so the
+packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated
+file that drifts from what the generator would produce, and `npm run notifications:test` covers the
+generator itself; `.gitattributes` pins LF for the directory because the generator refuses a
+carriage return.
+
 ## Gift cards are emailed, and do not count toward the free-shipping threshold (unreleased)
 
 Checkout excludes digital gift card value from price-based shipping rate conditions. This is

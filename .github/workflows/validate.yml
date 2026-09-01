@@ -680,6 +680,59 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── Notification template regeneration check ───────────────
+      # The branded Shopify notification templates under marketing/notifications/
+      # are generated from the stock snapshots by scripts/notifications/brand.mjs.
+      # This step regenerates them in memory and fails if a committed file was
+      # hand-edited or the manifest, stock and generated sets disagree.
+      - name: Notification template regeneration check
+        id: notifications-check
+        run: |
+          set +e
+          OUTPUT=$(npm run notifications:check 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # A check script, not `node --test`, so there is no test count to
+          # assert on. Require its explicit success marker instead: an exit 0
+          # with no marker means the script did not run its comparison.
+          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qF 'notifications:check ok'; then
+            echo "::error::notifications:check exited 0 without printing 'notifications:check ok'. The check script has probably stopped running its comparison."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Notification template tests ────────────────────────────
+      # Unit tests for scripts/notifications/ (the brander behind the check above).
+      - name: Notification template tests
+        id: notifications-tests
+        run: |
+          set +e
+          OUTPUT=$(npm run notifications:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Same "green on zero tests" guard as the suites above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::notifications suite reported ${TESTS_RUN:-0} tests. The glob in the notifications:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Blank-id leak guard ────────────────────────────────────
       # Blank ids embed the supplier name and style number, which are sensitive for
       # this public repo. Gitleaks matches token-shaped strings and does not catch
@@ -1254,6 +1307,8 @@ jobs:
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
+          NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
+          NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1274,7 +1329,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$NOTIFICATIONS_CHECK_EXIT" "$NOTIFICATIONS_TESTS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft
@@ -1329,6 +1384,8 @@ jobs:
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
+          NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
+          NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1351,6 +1408,8 @@ jobs:
           CATALOGUE_FAILING: ${{ steps.catalogue.outputs.failing_checks }}
           APPLIQUE_GRID_OUTPUT: ${{ steps.applique-grid.outputs.output }}
           EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
+          NOTIFICATIONS_CHECK_OUTPUT: ${{ steps.notifications-check.outputs.output }}
+          NOTIFICATIONS_TESTS_OUTPUT: ${{ steps.notifications-tests.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
           TRACKED_MEDIA_OUTPUT: ${{ steps.tracked-media-guard.outputs.output }}
           CONTRAST_OUTPUT: ${{ steps.contrast.outputs.output }}
@@ -1400,6 +1459,8 @@ jobs:
             const seoReview = process.env.SEO_REVIEW_EXIT;
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const emailIcons = process.env.EMAIL_ICONS_EXIT;
+            const notificationsCheck = process.env.NOTIFICATIONS_CHECK_EXIT;
+            const notificationsTests = process.env.NOTIFICATIONS_TESTS_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const trackedMedia = process.env.TRACKED_MEDIA_EXIT;
             const contrast = process.env.CONTRAST_EXIT;
@@ -1425,6 +1486,8 @@ jobs:
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
+            const notificationsCheckOut = sanitize(process.env.NOTIFICATIONS_CHECK_OUTPUT) || 'No output';
+            const notificationsTestsOut = sanitize(process.env.NOTIFICATIONS_TESTS_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const trackedMediaOut = sanitize(process.env.TRACKED_MEDIA_OUTPUT) || 'No output';
             const contrastOut = sanitize(process.env.CONTRAST_OUTPUT) || 'No output';
@@ -1507,6 +1570,8 @@ jobs:
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
+              `| **Notification templates: check** | \`npm run notifications:check\` | ${status(notificationsCheck)} |`,
+              `| **Notification templates: tests** | \`npm run notifications:test\` | ${status(notificationsTests)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
               `| **Tracked media guard** | \`git ls-files -- 'product-images/' ':(icase)*.heic'\` | ${status(trackedMedia)} |`,
               `| **Contrast + a11y** | \`npm run contrast:lint\` + tests | ${status(contrast)} |`,
@@ -1548,6 +1613,8 @@ jobs:
               { title: 'SEO review', tool: 'npm run seo-review:test', out: seoReviewOut, exit: seoReview },
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
+              { title: 'Notification templates: check', tool: 'npm run notifications:check', out: notificationsCheckOut, exit: notificationsCheck },
+              { title: 'Notification templates: tests', tool: 'npm run notifications:test', out: notificationsTestsOut, exit: notificationsTests },
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
               { title: 'Tracked media guard', tool: "git ls-files -- 'product-images/' ':(icase)*.heic'", out: trackedMediaOut, exit: trackedMedia },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
@@ -1662,6 +1729,8 @@ jobs:
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
           APPLIQUE_GRID_EXIT: ${{ steps.applique-grid.outputs.exit_code }}
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
+          NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
+          NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1699,6 +1768,8 @@ jobs:
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "email-icons" "$EMAIL_ICONS_EXIT"
+          check_exit "notifications-check" "$NOTIFICATIONS_CHECK_EXIT"
+          check_exit "notifications-tests" "$NOTIFICATIONS_TESTS_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "tracked-media-guard" "$TRACKED_MEDIA_EXIT"
           check_exit "contrast" "$CONTRAST_EXIT"

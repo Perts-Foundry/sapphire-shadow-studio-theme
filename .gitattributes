@@ -1,0 +1,3 @@
+# The notification-email tooling compares bytes, so keep LF on every checkout.
+marketing/notifications/** text eol=lf
+scripts/notifications/** text eol=lf
