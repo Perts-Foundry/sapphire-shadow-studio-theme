@@ -1,11 +1,22 @@
 extends: theme-check:recommended
 ignore:
   - node_modules/**
-  # Shopify Email campaign templates (marketing/emails/). Pasted by hand into
-  # the Shopify Email custom-code editor, never pushed to a theme. They use
-  # email-only objects (unsubscribe_url, open_tracking_block, email.*) that do not
-  # exist in a theme, so theme-check would flag every one as undefined.
+  # Shopify Email campaign templates (marketing/emails/) and Shopify notification
+  # templates (marketing/notifications/). Pasted by hand into Shopify's own
+  # editors, never pushed to a theme. They use objects that do not exist in a
+  # theme (unsubscribe_url, open_tracking_block, email.*, fulfillment, ...), and
+  # Shopify's stock notification markup trips ImgWidthAndHeight and the HTML
+  # parser at error level.
   - marketing/**
+  # Synthetic notification-template fixtures for scripts/notifications/test.
+  # They are .liquid files under scripts/, which is otherwise scanned, and they
+  # carry the same stock markup, so without this line they fail theme-check.
+  - scripts/notifications/test/fixtures/**
+  # These patterns are matched against absolute paths with minimatch, whose `**`
+  # does not cross a dot-directory. From a checkout under a dotted path (a
+  # worktree in .claude/worktrees/) nothing here is ignored and `theme check`
+  # reports every marketing template; CI runs from a plain path and is the
+  # authority.
 
 # Suppressed checks (from THEME_CHECK_NON_ACTIONABLE.md)
 JSONMissingBlock:

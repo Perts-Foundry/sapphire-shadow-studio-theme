@@ -133,7 +133,7 @@ Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONAB
 
 ## Development commands
 
-`npm ci`, then `npx shopify theme dev` for the local dev server and `npx shopify theme check` for the linter; README's Development section covers the rest, including both halves of `actionlint + shellcheck`.
+`npm ci`, then `npx shopify theme dev` for the local dev server and `npx shopify theme check` for the linter; README's Development section covers the rest, including both halves of `actionlint + shellcheck`. From a worktree under `.claude/worktrees/`, `theme check` ignores nothing in `.theme-check.yml` (its globs do not cross a dot-directory) and reports every `marketing/` template; CI, which runs from a plain path, is the authority for those.
 
 **Do NOT run** `shopify theme push` or `shopify theme pull` against the working tree. Live pushes happen exclusively via `deploy.yml`. To inspect the live theme, pull it read-only to a scratch path: `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`.
 
