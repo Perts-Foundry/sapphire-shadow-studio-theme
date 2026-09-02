@@ -11,8 +11,9 @@
 // A non-garment product (catalogue.json `body: null`, the tote and the gift card) has no line,
 // garment or colour axis, so its filename carries the product handle itself and nothing else. Its
 // census key is the handle (a key with no '/' can never collide with a '<line>/<garment>' key), its
-// colour vocabulary is empty, and every alt on it is colour-free by construction: the guard runs
-// with expected=null against an empty value list, so it only ever rejects nothing.
+// colour vocabulary is empty, and the alt guard accepts any alt on it: it runs with expected=null
+// against an empty value list, so it only ever rejects nothing (a colour word in such an alt is
+// plain description, not a binding; there is no gallery filter to bind to).
 //
 // Fields are underscore-separated. A multi-word field value hyphenates internally
 // (crew-sweater, classic-navy). The shot carries a -<index> suffix (flat-1). ONE scheme runs end
@@ -125,9 +126,24 @@ export function createNaming(manifest) {
   }
 
   // Non-garment products: keyed by handle, no line/garment/colour. A handle never contains '/', so
-  // this key space cannot collide with the '<line>/<garment>' keys above.
+  // this key space cannot collide with the '<line>/<garment>' keys above. It CAN collide with the
+  // hyphen-recovery vocabulary: a hyphenated handle becomes a multi-word token, and the greedy
+  // all-hyphen parser consumes the longest token first, so a handle that equals or hyphen-prefixes
+  // a '<line>-<garment>' name would silently eat that garment's every all-hyphen source name.
+  // Refuse that loudly, the same way the census-key collision above is refused.
+  const garmentNames = Object.values(products).map((p) => `${p.line}-${p.garment}`);
   const nonGarments = [];
   for (const product of nonGarmentProducts(manifest)) {
+    const clash = product.handle.includes('-')
+      ? garmentNames.find((name) => name === product.handle || name.startsWith(`${product.handle}-`))
+      : null;
+    if (clash) {
+      throw new Error(
+        `Non-garment product ${JSON.stringify(product.handle)} equals or prefixes the garment filename ` +
+          `form "${clash}". The hyphen-recovery parser consumes the longest known token first, so every ` +
+          `all-hyphen source name for that garment would parse as this product. Choose a different handle.`
+      );
+    }
     products[product.handle] = {
       line: null,
       garment: null,
@@ -391,6 +407,14 @@ function parseWithVocab(filename, vocab) {
     const { shot, index } = parseShot(shotField);
     if (shot && !SHOTS.includes(shot)) { warnings.push(`unknown shot "${shot}"`); uncertain = true; }
     return { line: null, garment: null, colorway: null, design: null, product, shot, index, fields: rawFields, warnings, ok: true, uncertain };
+  }
+
+  if (rawFields.length && nonGarments.includes(rawFields[0])) {
+    // The first token declares the two-field form, so say so instead of quoting the garment shape.
+    warnings.push(
+      `"${rawFields[0]}" is a non-garment product: expected exactly 2 fields (<handle>_<shot>-<index>), found ${rawFields.length}`
+    );
+    return { line: null, garment: null, colorway: null, design: null, product: null, shot: null, index: null, fields: rawFields, warnings, ok: false, uncertain: true };
   }
 
   if (rawFields.length < 4 || rawFields.length > 5) {

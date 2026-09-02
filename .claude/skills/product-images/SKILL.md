@@ -36,8 +36,11 @@ non-garment: <handle>_<shot>-<index>.jpg
 ```
 
 The non-garment form is for a `body: null` product (the tote, the gift card): the filename carries
-the product handle, there is no colorway field, `admin_color` is always empty, and every alt on it
-is colour-free (it has no Color option to bind). It is still product-bound, not shared.
+the product handle, there is no colorway field, and `admin_color` is always empty. Such a product
+has no Color option, so its alt binds to nothing and the guard accepts any alt on it: write plain
+description, and treat a colour word in it as ordinary prose, not a binding (this is NOT the
+group/shared "name no value" rule, which only exists on products that have colours). It is still
+product-bound, not shared.
 
 The machine-readable vocab, the colorway-to-Admin-colour map, and the product resolution all come
 from `scripts/lib/photo-naming.mjs`, which derives them from the root `catalogue.json`; that pair is
@@ -45,17 +48,18 @@ the source of truth and this list is the human summary. A new product, colour, o
 `catalogue.json`, never added here.
 `line` huddle / lead2 / shift-fuel. `garment` crew-sweater / quarter-zip / vest. `colorway` black /
 classic-navy / grey-heather / group. `design` an open profession token (rn, cna, emt, ...), optional.
-`shot` angled / closeup / flat / styled. One scheme runs end to end: the processed output and the
+`shot` angled / closeup / flat / styled. `handle` (non-garment form only) any `body: null` product
+handle, e.g. shift-fuel-tote. One scheme runs end to end: the processed output and the
 uploaded Shopify filename keep the same underscore-separated form as the source (fields split by `_`,
-multi-word values hyphenated internally). Do not invent tokens; extend the module when a genuinely new
-line / garment / colour / shot ships.
+multi-word values hyphenated internally). Do not invent tokens; a genuinely new line, product, colour
+or shot is declared in `catalogue.json` (or, for a shot, in the module's `SHOTS` list), never here.
 
 ### Shared assets
 
 An asset is shared **only if the operator designated it shared in step 1**; never reclassify an
 asset as shared to resolve a naming, parsing, or vocab problem. Shared means no specific product is
-identifiable in frame (a logo tag close-up, packaging, a studio scene); if any garment is
-identifiable, the asset is product-bound; when unclear, ask. Mechanics: a shared file sits outside
+identifiable in frame (a logo tag close-up, packaging, a studio scene); if any product is
+identifiable, garment or not, the asset is product-bound; when unclear, ask. Mechanics: a shared file sits outside
 the convention under a plain descriptive kebab name (`logo-tag-closeup-1.jpg`); the processor emits
 its manifest row with an empty `product`; **Claude performs the manifest-row duplication at step 4b**,
 replacing that empty-`product` row with one row per target product from the step-1 list, setting each
@@ -160,11 +164,13 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
    - **Shared assets:** **product-bound is the default.** The required answer is the (possibly empty)
      list of shared assets by filename; anything not on that list is product-bound (see "Shared
      assets" above). Ask per batch, not per frame.
-   - **Colour-binding intent:** colour-free is only available where `admin_color` is empty, meaning
-     group shots and shared assets. Every other row's alt MUST name its `admin_color` verbatim or it
-     fails the guard at step 5, so there is no choice to offer there. The answer to collect is which
-     group/shared assets this batch has, and whether any product-bound photo should instead be
-     treated as a group shot.
+   - **Colour-binding intent:** `admin_color` is empty in three cases: group shots, shared assets,
+     and every photo of a non-garment product. The first two are colour-free by rule (the alt must
+     name no value). The third has no Color option at all, so there is no intent to collect for it
+     and it is never re-classified as group or shared. Every other row's alt MUST name its
+     `admin_color` verbatim or it fails the guard at step 5, so there is no choice to offer there.
+     The answer to collect is which group/shared assets this batch has, and whether any product-bound
+     garment photo should instead be treated as a group shot.
 
    Also confirm the input location: the finished photos are in `product-images/originals/` (the
    default) or an explicit `--input-dir <path>` (an external folder with spaces is fine). iPhone
@@ -195,7 +201,8 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
 2. **Dry-run the naming + guard, propose names for anything that did not match, and STOP for
    approval.** `node scripts/process-product-images.mjs --dry-run` (add `--input-dir` if not the
    default). Present the report: each `original -> canonical (output)`, its resolved `product` and
-   `admin_color`, any convention warnings, and any alt-colour guard problems. A warning means the
+   `admin_color` (the cell reads `(shared)` for a group/shared row and `(no colour option)` for a
+   non-garment row), any convention warnings, and any alt-colour guard problems. A warning means the
    file did not cleanly match the convention (its product will not resolve, so it would be dead
    weight in the batch); a guard problem means an already-authored alt names zero or the wrong colour
    value.
@@ -209,8 +216,14 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
      group. Renaming one into the convention is the reclassification the Shared assets section
      forbids, just in the other direction.
    - Draw every field only from the closed vocab in `scripts/lib/photo-naming.mjs` (line / garment /
-     colorway / shot); map an obvious misspelling or separator slip to the nearest valid token
-     (`quarterzip` -> `quarter-zip`, an all-hyphen name -> its underscore form).
+     colorway / shot, plus the `body: null` handles for the non-garment form); map an obvious
+     misspelling or separator slip to the nearest valid token (`quarterzip` -> `quarter-zip`, an
+     all-hyphen name -> its underscore form).
+   - **A non-garment name has exactly two fields**, the declared handle and the shot: there is no
+     colorway or design slot, so an absent colorway is correct there and gets no `<colorway?>`
+     placeholder, and a colour word in such a filename is an extra field to drop, not a value to
+     bind. A file that names the product some other way (`tote_flat-1.jpg`) is proposed as
+     `<handle>_<shot>-<index>` with the handle taken from the step-1 target list, never invented.
    - **Never fabricate a field you cannot infer from the filename.** If the colorway, garment, or a
      needed field is simply absent (for example `lquarter-medic_flat-1.jpg` names no colorway), do
      not invent one: show the name with an explicit `<colorway?>` placeholder and ask the operator
@@ -275,7 +288,10 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
    auto-completed.** Apply the rulebook: the filenames-lie trap (the colour comes from `admin_color`,
    never from the file's colour word), name at most one value, and the design-shot-versus-group-shot
    distinction (a group/shared row has an empty `admin_color` and its alt must name no colour value at
-   all). Every non-group alt must contain exactly its `admin_color` and nothing else; you do not need a
+   all). A non-garment row also has an empty `admin_color`, for a different reason: the product has no
+   Color option, so its alt is plain description and the guard accepts whatever you write (see
+   `docs/product-media-alt-text.md`). Every other alt, meaning every garment row with an
+   `admin_color`, must contain exactly that value and no other; you do not need a
    separate processor verify pass for this, because the dry-run below re-runs the same alt-colour guard
    over your text (editing alt does not change the image caps already checked at step 4).
 
@@ -300,6 +316,8 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
    dry-ran: `node scripts/upload-product-media.mjs --all --manifest '<batch-dir>/manifest.csv'`. Report
    the per-image result, then have the operator open the storefront and confirm that selecting each
    colour shows the right photos (the alt-text colour binding, which nothing in the repo can check).
+   A non-garment product has no colour selector; there the check is that every uploaded image
+   renders in the gallery.
    If the operator instead wants a cautious first write of just one product, `--product <handle>` is
    still supported and is a safe subset of the already-approved `--all` plan; but the default, and what
    the operator asked for, is the reviewed batch in one shot. Never write **wider** than the gate-5

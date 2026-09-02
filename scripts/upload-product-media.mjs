@@ -360,7 +360,8 @@ async function resolveProduct(domain, token, handle, redact) {
   const product = data.productByIdentifier;
   if (!product) throw new Error(`no product resolves for handle "${handle}"`);
 
-  // Cross-check against the recorded map: find the (line,garment) whose handle matches.
+  // Cross-check against the recorded census: the '<line>/<garment>' entry whose handle matches, or
+  // the handle-keyed entry for a non-garment product.
   const known = productForHandle(handle);
   const key = known ? known.key : null;
   if (key) {
@@ -549,7 +550,10 @@ async function main() {
       }
 
       if (opts.dryRun) {
-        console.log(`  create      ${row.new_name}  alt="${row.alt}"  colour=${row.admin_color || '(shared)'}`);
+        // A non-garment (handle-keyed, no '/') has no Color option at all; that is a different fact
+        // from a shared/group photo on a product that does have colours. Same labels as the processor.
+        const colourCell = row.admin_color || (key && !key.includes('/') ? '(no colour option)' : '(shared)');
+        console.log(`  create      ${row.new_name}  alt="${row.alt}"  colour=${colourCell}`);
         created++; processed++;
         // Mirror the live create's hero bookkeeping with a placeholder id so a dry run previews the
         // exact --attach-heroes plan for newly-created media, not just for dupes it found live.

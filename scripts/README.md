@@ -218,10 +218,14 @@ manifest enter this public repo.
 ### The alt-colour guard
 
 Because alt text drives the gallery colour filter, the processor validates the manifest's `alt`
-column against the reserved-colour rule (`docs/product-media-alt-text.md`): every non-group photo's
-alt must name **exactly one** recognized Color value for its product, and it must be that photo's own
-colour; a group/shared photo must name none. Violations are printed by `--dry-run`, `--verify`, and a
-normal run, and block the uploader. The guard only checks rows whose `alt` you have authored.
+column against the reserved-colour rule (`docs/product-media-alt-text.md`): every non-group photo of
+a garment must name **exactly one** recognized Color value for its product, and it must be that
+photo's own colour; a group/shared photo must name none. A non-garment product has no Color option,
+so its recognized value list is empty and the guard accepts any alt on it (a colour word there is
+plain description, not a binding). Violations are printed by `--dry-run`, `--verify`, and a normal
+run, and block the uploader. The guard only checks rows whose `alt` you have authored. In the
+`--dry-run` table the `admin_color` cell reads `(shared)` for a group/shared row and
+`(no colour option)` for a non-garment row; the uploader's dry run uses the same two labels.
 
 ### Usage
 

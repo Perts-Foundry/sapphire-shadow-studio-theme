@@ -20,8 +20,9 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
 4. `media` (route:/product-images): stage 0 (studio enhance) for raw shots, then the normal
    naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
    `docs/product-media-alt-text.md`. Include the size-chart PNG upload with its descriptive alt.
-   A non-garment product uses the `<handle>_<shot>-<index>` filename form; its alts are colour-free
-   and there is no size-chart PNG.
+   A non-garment product uses the `<handle>_<shot>-<index>` filename form; it has no Color option,
+   so its alts are plain description (nothing binds, nothing is rejected) and there is no size-chart
+   PNG.
    - Completion check: that skill's final handoff summary lists this product's uploads.
 5. `metafields-seo` (admin-manual): set `custom.breadcrumb_collection` if the breadcrumb cascade
    needs steering (read `docs/breadcrumb-collection-metafield.md` first; the Storefronts-read

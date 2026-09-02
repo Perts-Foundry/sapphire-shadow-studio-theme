@@ -92,6 +92,28 @@ test('checkProducts labels a drift failure DRIFT and reports not-ok', async () =
   assert.equal(lines.filter((l) => l.startsWith('ok')).length, Object.keys(PRODUCTS).length - 1);
 });
 
+test('checkProducts prints the empty colour list a non-garment actually resolves to', async () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  const { ok, lines } = await checkProducts(PRODUCTS, async (handle) => ({
+    colorValues: handle === nonGarment.handle ? [] : ['Black'],
+  }));
+  assert.equal(ok, true);
+  assert.equal(lines.find((l) => l.includes(nonGarment.handle)), `ok     ${nonGarment.handle} []`);
+});
+
+test('checkProducts surfaces a Color option appearing on a non-garment as DRIFT', async () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  const key = nonGarment.handle;
+  const { ok, lines } = await checkProducts(PRODUCTS, async (handle) => {
+    if (handle === key) throw new Error(colorDriftProblem(['Black'], key));
+    return { colorValues: ['Black'] };
+  });
+  assert.equal(ok, false);
+  const bad = lines.find((l) => l.includes(key));
+  assert.match(bad, /^DRIFT /);
+  assert.match(bad, /Color option drift/);
+});
+
 test('checkProducts labels an auth failure distinctly from drift', async () => {
   const { ok, lines } = await checkProducts(PRODUCTS, async () => {
     throw new Error('HTTP 401 unauthorized');

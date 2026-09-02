@@ -8,10 +8,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import {
-  planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
+  planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems, derivedColumns,
   profileName, underProductImages, prepareInput,
 } from './process-product-images.mjs';
-import { allProducts } from './lib/photo-naming.mjs';
+import { allProducts, parseName } from './lib/photo-naming.mjs';
 import { asRgba, fakeHeic, maxDelta, p3Fixture } from './lib/heic.fixtures.mjs';
 
 const execFileP = promisify(execFile);
@@ -162,6 +162,52 @@ test('planManifestRows does not fan out when no preserved row carries a product'
 // A body-null product from the committed catalogue, whatever it is called today.
 const NON_GARMENT = Object.values(allProducts()).find((p) => p.garment === null)?.handle;
 assert.ok(NON_GARMENT, 'the committed catalogue declares at least one non-garment product');
+
+// --- derivedColumns: the three parse shapes ------------------------------------------------
+test('derivedColumns resolves the garment, non-garment and unparseable shapes', () => {
+  const garment = Object.values(allProducts()).find((p) => p.garment !== null);
+  const g = derivedColumns(parseName(`${garment.line}_${garment.garment}_group_flat-1.jpg`));
+  assert.equal(g.product, garment.handle);
+  assert.equal(g.line, garment.line);
+  assert.equal(g.garment, garment.garment);
+  assert.equal(g.colorway, 'group');
+  assert.equal(g.admin_color, '', 'a group shot binds to no colour');
+  assert.equal(g.shot, 'flat');
+
+  const t = derivedColumns(parseName(`${NON_GARMENT}_styled-2.jpg`));
+  assert.deepEqual(t, { line: '', garment: '', colorway: '', admin_color: '', product: NON_GARMENT, shot: 'styled' });
+
+  const empty = { line: '', garment: '', colorway: '', admin_color: '', product: '', shot: '' };
+  assert.deepEqual(derivedColumns(parseName('not-a-product_flat-1.jpg')), empty);
+  assert.deepEqual(derivedColumns(null), empty);
+});
+
+test('the dry-run table labels a non-garment row "(no colour option)" and a group row "(shared)" (CLI)', { timeout: 120000 }, async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'ppi-'));
+  try {
+    const { mkdir, copyFile } = await import('node:fs/promises');
+    const inDir = path.join(base, 'originals');
+    await mkdir(inDir, { recursive: true });
+    const seed = path.join(base, 'seed.jpg');
+    await sharp({ create: { width: 32, height: 24, channels: 3, background: '#808080' } }).jpeg().toFile(seed);
+    const garment = Object.values(allProducts()).find((p) => p.garment !== null);
+    await copyFile(seed, path.join(inDir, `${NON_GARMENT}_flat-1.jpg`));
+    await copyFile(seed, path.join(inDir, `${garment.line}_${garment.garment}_group_flat-1.jpg`));
+    const { stdout } = await execFileP(process.execPath, [SCRIPT, '--dry-run', '--input-dir', inDir]);
+    const lines = stdout.split('\n');
+    const toteLine = lines.find((l) => l.startsWith(`${NON_GARMENT}_flat-1.jpg`));
+    const groupLine = lines.find((l) => l.startsWith(`${garment.line}_${garment.garment}_group_flat-1.jpg`));
+    assert.ok(toteLine, 'the non-garment row is in the table');
+    assert.ok(groupLine, 'the group row is in the table');
+    const cells = (l) => l.split('\t');
+    assert.equal(cells(toteLine)[2], NON_GARMENT);
+    assert.equal(cells(toteLine)[3], '(no colour option)');
+    assert.equal(cells(groupLine)[2], garment.handle);
+    assert.equal(cells(groupLine)[3], '(shared)');
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
 
 // --- altGuardProblems: shared fan-out rows -------------------------------------------------
 test('altGuardProblems guards shared rows via productForHandle', () => {
