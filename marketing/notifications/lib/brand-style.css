@@ -30,6 +30,7 @@
     .actions-buttons .button__cell--primary { background-color: #0071C2; border-radius: 4px; }
     .button__text { font-weight: bold; padding: 14px 32px; }
     .button__text--shop-app { font-weight: normal; padding: 20px 25px; }
+    .actions__cell { padding-bottom: 20px; }
     a, a:hover, a:active, a:visited { color: #0071C2; }
     .footer { margin: 0; border-top-width: 0; }
     .footer__cell { padding: 0 12px 24px 12px; }
