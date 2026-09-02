@@ -57,6 +57,10 @@
       "code": "SFCN",
       "segments": [{ "kind": "color" }, { "kind": "size" }]
     },
+    "shift-fuel-tote": {
+      "code": "SFTB",
+      "segments": []
+    },
     "sapphire-shadow-studio-gift-card": {
       "code": "GIFT",
       "skuWritable": true,

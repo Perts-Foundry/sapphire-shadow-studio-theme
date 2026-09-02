@@ -27,8 +27,16 @@ only.
    `docs/theme-conventions.md`, never from editor output.
    - Completion check: the template file exists, no `lead-ii`/sweatshirt copy remains (read it),
      and `validate_theme_codeblocks` is clean on it.
-5. `size-chart` (route:/size-chart): profile from the blank manufacturer's spec, template list
-   gains the new suffix, accordion row and PNG regenerated.
+   - **Non-garment branch (`body: null`)**: clone `templates/product.shift-fuel-crewneck.json`
+     instead (no design, custom-text or return-policy blocks to strip), delete the size-chart row
+     for good and the `request-combination` block, and give the Product Details `_accordion-row`
+     an `anchor_id` (the tote uses `ProductDetails`): the site-check render probe needs one
+     committed marker per product template, and a page with no size chart and no acknowledgment
+     input has none otherwise. Register it in `scripts/site-check/lib/markers.mjs` and, if the
+     product is made to order, add a `TEMPLATE_BLOCK_RULES` row in
+     `scripts/site-check/lib/repo-checks.mjs` requiring `vacation-acknowledgment`.
+5. `size-chart` (route:/size-chart; garments only, skip for `body: null`): profile from the blank
+   manufacturer's spec, template list gains the new suffix, accordion row and PNG regenerated.
    - Completion check: `npm run size-chart:test` passes and the PNG artifact exists.
 6. `locales` (repo-edit): any new storefront strings land in `locales/en.default.json` first,
    mirrored to `it.json` and `ro.json` with `TODO: ` placeholders. Confirm the single-published-
@@ -36,7 +44,15 @@ only.
    before assuming those two suffice.
    - Completion check: theme check reports no dangling keys; the two mirrors carry the keys.
 7. `validate` (verify): `validate_theme_codeblocks` on every changed Liquid file, `npx shopify
-   theme check`, and the full local suites for every script area touched.
+   theme check`, and the full local suites for every script area touched. **Every product addition
+   trips these pinned counts and lists; update them in the same PR rather than discovering them in
+   CI**: `scripts/sku/test/tables.test.mjs` (census handle list), `scripts/sku/test/sku.test.mjs`
+   (product count), `scripts/sku/test/derive.test.mjs` (cross-product SKU count), and
+   `scripts/a11y/test/build-pa11yci.test.mjs` (`ADDED_SINCE_BASELINE`, one hand-authored row per
+   product added after the frozen fixture; never re-run `capture-baseline.mjs` for a product
+   addition). Also add the product to `scripts/sku/test/fixtures.mjs` when it introduces a new SKU
+   shape. Docs that count products: `docs/theme-conventions.md`, `docs/theme-settings-contracts.md`,
+   `docs/collection-differentiation-runbook.md`, `scripts/site-check/README.md`.
 8. `handoff` (STOP, ends the session): present the branch summary. The pre-PR gate, merge, and the
    `deploy` comment are the operator's; this skill does not shepherd the PR. Resume with
    `/add-product <handle>` after the deploy report is green.

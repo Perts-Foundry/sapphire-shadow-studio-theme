@@ -46,7 +46,7 @@ right now, and an empty heading with a live index entry is the residue this file
   involved, so there is nothing to unwind there.
 
 **Pre-launch product and template review (2026-08-13).** Findings from a correctness / completeness
-/ consistency pass over all six product templates and the other 15 templates, cross-checked against
+/ consistency pass over all seven product templates and the other 15 templates, cross-checked against
 read-only Admin reads (products, variants, media, collections, pages, files, delivery profiles,
 menus) through the `scripts/blank-inventory/lib/admin.mjs` token client. Nothing was changed. (The
 null variant SKUs, the empty `/blogs/news` and the per-colour hero attach were all on that list; all
@@ -57,7 +57,7 @@ several of the pass's other findings.
 - [ ] **[LAUNCH BLOCKER] All 431 variants weigh 0 lb while Expedited is weight-tiered.** The live rate
   table on the General profile prices Expedited at $20 (0 to 2.9 lb), $40 (3 to 5.9), $60 (6 to 8.9),
   and $80 (9+).
-  Every variant on all six products reports `0 POUNDS`, so every order of any size buys the $20 tier
+  Every variant on the six products audited on 2026-08-13 reports `0 POUNDS` (the tote, added later, carries a real weight), so every order of any size buys the $20 tier
   and the tiering above it is unreachable. Economy is priced on the shippable merchandise subtotal, not
   weight, so it is unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not

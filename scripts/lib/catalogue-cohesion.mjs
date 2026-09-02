@@ -3,7 +3,7 @@
 // as part of `npm run catalogue:lint`, which is one CI step and deliberately stays one CI step.
 //
 // WHAT THIS IS FOR. The manifest became the repo's single source of truth for the colour list, the
-// size list, the option axis names and the six-product census. Seven areas used to carry a private
+// size list, the option axis names and the seven-product census. Seven areas used to carry a private
 // copy of some of that: five spellings of three garment bodies, three casings of one colour, one
 // product GID written four times, and an allowlist comparing a template suffix against a product
 // handle that could never match. These checks are what stops a copy drifting back in.

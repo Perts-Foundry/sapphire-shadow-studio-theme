@@ -83,7 +83,7 @@ shape. Placing a card and leaving it is therefore drift by default, not by accid
 
 It has drifted silently twice so far. The cart card sat on the pre-standard shape and, because its
 price block omitted `show_shipping_info`, restated the shipping policy under every recommendation;
-`templates/404.json` sat on the same shape until it was aligned. Six more cards are still open, see
+`templates/404.json` sat on the same shape until it was aligned. Seven more cards are still open, see
 below.
 
 Copy these values when placing a product card, or copy the block wholesale out of
@@ -97,7 +97,7 @@ Copy these values when placing a product card, or copy the block wholesale out o
 | `price` | `type_preset: "custom"`, `font: "var(--font-body--family)"`, `font_size: "0.875rem"`, `show_shipping_info: false` |
 
 `templates/index.json`, `templates/collection.json`, `templates/search.json`, `templates/cart.json`
-and `templates/404.json` all match this. The remaining holdouts are the six product templates'
+and `templates/404.json` all match this. The remaining holdouts are the seven product templates'
 "You may also like" cards. The full divergence, not a sample of it: `inherit_color_scheme: true` with
 `color_scheme: ""`, `border_radius: 0`, card paddings `0 / 8 / 0 / 0`, gallery `image_ratio: "adapt"`
 and `border_radius: 0`, title `type_preset: "rte"` in the body font at `line_height: "normal"` with
@@ -130,7 +130,7 @@ and deliberately not part of the standard.
 
 ### HTML
 
-- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`. The suffix is there to keep repeated blocks unique. **Exception: link anchors**, whose job is to be stable and hand-authorable, so they are bare. The only one today is `SizeChart` (`anchor_id` on `_accordion-row`, emitted by `scripts/size-chart/`, targeted by `snippets/size-guide-link.liquid` and by shared `#SizeChart` URLs). Do NOT "fix" it to `SizeChart-{{ block.id }}`; that silently breaks the size-guide link and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` fails if you do. A second narrow exception: snippets rendered exactly once from `layout/theme.liquid` have no section or block ID to suffix with, so their IDs are bare singletons (today `VacationPopupHeading` in `snippets/vacation-popup.liquid` and `PolicyNavHeading` in `snippets/policy-page.liquid`). A third: `assets/policy-nav.js` slugifies every policy-body `h2` into a bare runtime ID (no Liquid ever sees them) and finishes an incoming `#hash` itself, so `/policies/...#section` links are supported customer-facing URLs. Unlike `SizeChart` they are only as durable as the heading wording: rewording changes the anchor and nothing checks sent links. For one that survives rewording, put an `id` in the Admin body: the component only assigns when a heading has none. That works on operator-authored policies, not the auto-managed privacy policy, whose body Shopify rewrites.
+- IDs: CamelCase + section/block ID suffix, like `id="ProductModal-{{ section.id }}"`. The suffix is there to keep repeated blocks unique. **Exception: link anchors**, whose job is to be stable and hand-authorable, so they are bare. The only ones today are `SizeChart` (`anchor_id` on `_accordion-row`, emitted by `scripts/size-chart/`, targeted by `snippets/size-guide-link.liquid` and by shared `#SizeChart` URLs) and `ProductDetails` (hand-authored `anchor_id` on the Product Details `_accordion-row` in `templates/product.shift-fuel-tote.json`, a page with no size chart; `scripts/site-check/lib/markers.mjs` asserts it as that page's render marker). Do NOT "fix" either to `SizeChart-{{ block.id }}`; that silently breaks the size-guide link and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` and `scripts/site-check/test/a1-markers.test.mjs` fail if you do. A second narrow exception: snippets rendered exactly once from `layout/theme.liquid` have no section or block ID to suffix with, so their IDs are bare singletons (today `VacationPopupHeading` in `snippets/vacation-popup.liquid` and `PolicyNavHeading` in `snippets/policy-page.liquid`). A third: `assets/policy-nav.js` slugifies every policy-body `h2` into a bare runtime ID (no Liquid ever sees them) and finishes an incoming `#hash` itself, so `/policies/...#section` links are supported customer-facing URLs. Unlike `SizeChart` they are only as durable as the heading wording: rewording changes the anchor and nothing checks sent links. For one that survives rewording, put an `id` in the Admin body: the component only assigns when a heading has none. That works on operator-authored policies, not the auto-managed privacy policy, whose body Shopify rewrites.
 
 ### JavaScript
 

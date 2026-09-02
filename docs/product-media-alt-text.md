@@ -81,7 +81,7 @@ The values in Admin today, which is the only authority:
 | **Lead II Vest, Women's** | **`Black` only** |
 <!-- catalogue:end product-colors -->
 
-> Reconciled 2026-08-11 against the live Admin values for all five recorded products; this table,
+> Reconciled 2026-08-11 against the live Admin values for all five garment products (the gift card and the tote have no colour option); this table,
 > `scripts/lib/photo-naming.mjs`, and `scripts/README.md` agree, and the uploader's
 > `--check-products` preflight re-verifies them against Admin on demand.
 
@@ -269,7 +269,7 @@ safety net, and upload each colour's own photos.
 The **selected** variant's attached image always survives the filter, whatever its alt text says:
 an explicit binding in Admin outranks an inferred one. Only that one image, and only on its own
 colour. Every other colour's hero is filtered by alt like any other photo, and with
-`hide_variants: true` (set on all five product templates) the non-selected ones are hidden at
+`hide_variants: true` (set on every product template) the non-selected ones are hidden at
 render anyway. So heroes still need correct alt text.
 
 **Do not attach a shared photo as a hero.** If a group shot is any variant's attached image,
