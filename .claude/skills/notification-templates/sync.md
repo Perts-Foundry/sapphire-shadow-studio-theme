@@ -19,8 +19,8 @@ One STOP for the whole batch (SKILL.md records the operator's reason). No git wr
    | bytes equal the repo file | `in-sync` |
    | stamped, lower version than the repo | `behind` |
    | stamped, higher version than the repo | `ahead` |
-   | unstamped, revert disabled (stock) | `unstamped-stock` |
-   | unstamped, revert enabled (hand-edited or an older paste) | `unstamped-edited` |
+   | unstamped, bytes equal `stock/<id>.liquid` (`dump.mjs --hash` on it) | `unstamped-stock` |
+   | unstamped, any other bytes (hand-edited or an older paste) | `unstamped-edited` |
    | stamped with the repo version, bytes differ | `hash-mismatch` |
    | bytes match no file on `--from` at any version and the stamp names another id | `orphan` |
 
@@ -35,11 +35,12 @@ One STOP for the whole batch (SKILL.md records the operator's reason). No git wr
    order; the two pickup ids always move to the end, after at least one non-pickup template on the
    same stylesheet has passed its render check. Per id, per `browser.md`:
    1. `node scripts/notifications/clipboard.mjs marketing/notifications/<id>.liquid`.
-   2. Navigate to the editor with `editor-probe.js` and `preview-dump.js` as initScripts, fresh
-      snapshot, click the editor, select all, paste.
+   2. Navigate to the editor with `editor-probe.js` as the initScript, fresh snapshot, click the
+      editor, select all, paste.
    3. Read `SSSPOLL`; require the repo file's length and FNV. Always before Save.
-   4. Click "Preview template with content"; read the preview dump from the console;
-      `node scripts/notifications/verify-render.mjs --dump <file> --id <id> --version <n>`.
+   4. Click "Preview template with content"; read the preview from the network response;
+      `node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>`;
+      close the dialog.
    5. Click "Save" (uid from a fresh snapshot). Reload. Require `SSSPOLL` to equal the repo file
       and `SSSSTAMP` to say `<id> <n>`. On the first Save of the run, apply the normalisation
       probe.

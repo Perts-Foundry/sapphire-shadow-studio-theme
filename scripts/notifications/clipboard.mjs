@@ -6,8 +6,9 @@
 //   node scripts/notifications/clipboard.mjs <file>
 //
 // Tools, in order: pbcopy (macOS), wl-copy (Wayland, when WAYLAND_DISPLAY is set), xclip (X11),
-// clip.exe (WSL: /proc/version names Microsoft; the text is sent as UTF-16LE with a BOM because
-// clip.exe reads the console code page otherwise and mangles anything non-ASCII).
+// clip.exe (WSL: /proc/version names Microsoft; the text is sent as UTF-16LE WITHOUT a byte-order
+// mark: clip.exe takes UTF-16LE as is, and a BOM is pasted into the editor as a U+FEFF character,
+// which the byte check caught on the first run as "one character too long").
 
 import { readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -27,14 +28,14 @@ export function pickTool({ platform = process.platform, env = process.env, has =
   if (platform === 'darwin' && has('pbcopy')) return { cmd: 'pbcopy', args: [], encoding: 'utf8' };
   if (env.WAYLAND_DISPLAY && has('wl-copy')) return { cmd: 'wl-copy', args: [], encoding: 'utf8' };
   if (has('xclip')) return { cmd: 'xclip', args: ['-selection', 'clipboard'], encoding: 'utf8' };
-  if (wsl() && has('clip.exe')) return { cmd: 'clip.exe', args: [], encoding: 'utf16le-bom' };
-  if (platform === 'win32' && has('clip.exe')) return { cmd: 'clip.exe', args: [], encoding: 'utf16le-bom' };
+  if (wsl() && has('clip.exe')) return { cmd: 'clip.exe', args: [], encoding: 'utf16le' };
+  if (platform === 'win32' && has('clip.exe')) return { cmd: 'clip.exe', args: [], encoding: 'utf16le' };
   return null;
 }
 
 export function encodeFor(text, encoding) {
   if (encoding === 'utf8') return Buffer.from(text, 'utf8');
-  if (encoding === 'utf16le-bom') return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+  if (encoding === 'utf16le') return Buffer.from(text, 'utf16le');
   throw new Error(`unknown encoding ${encoding}`);
 }
 

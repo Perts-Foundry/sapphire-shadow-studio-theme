@@ -2,7 +2,9 @@
 // verbatim as initScripts. Each embeds its own copy of the FNV-1a function (and editor-probe.js
 // the stamp regex), because the browser cannot import from the repo. This suite loads each probe
 // under node:vm with a stub document and proves the embedded copies agree with dump.mjs and
-// brand.mjs on the inputs that matter: non-ASCII text and CRLF line endings.
+// brand.mjs on the inputs that matter: non-ASCII text and CRLF line endings. (There is no preview
+// probe: the Preview dialog's iframe is an about:srcdoc frame where no init script runs, so the
+// render is read from the EmailTemplateGeneratePreview network response instead.)
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,13 +17,13 @@ import { STAMP_RE_SOURCE, commentLine } from '../brand.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, '..', 'browser');
-const PROBES = ['editor-probe.js', 'editor-dump.js', 'preview-dump.js', 'mobile-check.js'];
+const PROBES = ['editor-probe.js', 'editor-dump.js', 'mobile-check.js'];
 const src = (name) => readFileSync(path.join(dir, name), 'utf8');
 
 // Runs a probe with a stub DOM: `textarea` is the editor text, `frame` makes the window a child
 // frame, `previewHtml` is what documentElement.outerHTML returns. Timers fire synchronously as
 // many times as asked; console lines are collected.
-function runProbe(name, { textarea = null, frame = false, previewHtml = '', ticks = 3 } = {}) {
+function runProbe(name, { textarea = null, frame = false, previewHtml = '', ticks = 3, noButtons = false } = {}) {
   const logs = [];
   const timers = [];
   const buttons = [{ textContent: 'Revert changes button', disabled: true, getAttribute: () => null }, { textContent: 'Save', disabled: false, getAttribute: () => null }];
@@ -40,7 +42,7 @@ function runProbe(name, { textarea = null, frame = false, previewHtml = '', tick
     },
     querySelectorAll: (sel) => {
       if (sel === 'textarea') return textarea === null ? [] : [{ value: textarea }];
-      if (sel === 'button') return buttons;
+      if (sel === 'button') return noButtons ? [] : buttons;
       if (sel.startsWith('input')) return inputs;
       if (sel === 'table.container') return [el('table')];
       return [];
@@ -81,13 +83,13 @@ test('every probe file exists, is plain script (no import/export), and carries n
   }
 });
 
-test('the three hashing probes embed the FNV-1a function and the dump prefixes; editor-probe embeds STAMP_RE_SOURCE', () => {
+test('the two hashing probes embed the FNV-1a function and the dump prefixes; editor-probe embeds STAMP_RE_SOURCE', () => {
   const fnvBody = 'h = Math.imul(h, 0x01000193) >>> 0;';
-  for (const name of ['editor-probe.js', 'editor-dump.js', 'preview-dump.js']) {
+  for (const name of ['editor-probe.js', 'editor-dump.js']) {
     assert.ok(src(name).includes(fnvBody), `${name} lacks the FNV-1a step`);
     assert.ok(src(name).includes('0x811c9dc5'), `${name} lacks the FNV offset basis`);
   }
-  for (const name of ['editor-dump.js', 'preview-dump.js']) {
+  for (const name of ['editor-dump.js']) {
     for (const [label, value] of [['LEN_PREFIX', LEN_PREFIX], ['HASH_PREFIX', HASH_PREFIX], ['CHUNK_PREFIX', CHUNK_PREFIX]]) {
       assert.ok(src(name).includes(`var ${label} = '${value}';`), `${name} does not define ${label} = ${value}`);
     }
@@ -105,6 +107,8 @@ test('editor-probe.js: SSSPOLL length and FNV agree with dump.mjs on non-ASCII a
     assert.equal(polls[0], `SSSPOLL ${lf.length} ${fnv1a(lf)} textarea`);
     assert.ok(logs.includes('SSSREVERT true'));
   }
+  // The revert state is part of the change key: a control that appears later is logged when it does.
+  assert.ok(runProbe('editor-probe.js', { textarea: 'x', noButtons: true }).includes('SSSREVERT unknown'));
   assert.deepEqual(runProbe('editor-probe.js', { textarea: null }), [], 'no editor, no output');
 });
 
@@ -131,18 +135,6 @@ test('editor-dump.js: the console lines reassemble through parseDump to the LF-n
     if (lf.length > 8000) assert.ok(logs.some((l) => l.startsWith('SSSCHUNK1 ')), 'long text is chunked');
   }
   assert.deepEqual(runProbe('editor-dump.js', { textarea: '' }), [], 'an empty editor is not dumped');
-});
-
-test('preview-dump.js: acts only inside a child frame with a rendered table, and reassembles to the frame HTML', () => {
-  const html = '<html><head></head><body><table class="body"><tr><td>café ©</td></tr></table></body></html>';
-  assert.deepEqual(runProbe('preview-dump.js', { frame: false, previewHtml: html }), [], 'the top window is the editor, not the preview');
-  assert.deepEqual(runProbe('preview-dump.js', { frame: true, previewHtml: '' }), [], 'an empty frame is not ready');
-  assert.deepEqual(runProbe('preview-dump.js', { frame: true, previewHtml: '<html><body>loading</body></html>' }), [], 'a frame without a table is not the render');
-  const logs = runProbe('preview-dump.js', { frame: true, previewHtml: html, ticks: 3 });
-  assert.equal(logs.filter((l) => l.startsWith('SSSLEN ')).length, 1);
-  const r = parseDump(logs.map((l, i) => `msgid=${i + 1} [log] ${l} (1 args)\n`).join(''));
-  assert.equal(r.text, html);
-  assert.equal(r.hash, fnv1a(html));
 });
 
 test('mobile-check.js: logs SSSMOBILE and SSSSQUEEZE lines', () => {

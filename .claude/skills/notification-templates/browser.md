@@ -13,11 +13,16 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
 - The editor URL per id: `https://admin.shopify.com/store/<store>/email_templates/<id>/edit`, with
   `<store>` the handle from SKILL.md's State section and `<id>` a manifest id. Observed on a
   previous run; if the first navigation of a run lands elsewhere, stop and report the URL.
-- Observed control labels: the code editor is a multiline textbox; the buttons are "Preview
-  template with content", "Revert changes button" (disabled when the stored template is stock,
-  the only stock signal Shopify offers), "Save", and, inside the Preview dialog, an "Email
-  preview" iframe, "Close" and "Send test email". Confirm against a fresh snapshot; if a label
-  differs, report it and continue only when the control is unambiguous.
+- Observed control labels: the code editor is a multiline textbox backed by CodeMirror 6 (the
+  probe reports `cm6`); the buttons are "Preview template with content", "Save" (present only
+  once the editor is dirty) and, inside the Preview dialog, an "Email preview" iframe, "Close" and
+  "Send test email". A "Revert changes" button has been seen on one run and absent on another;
+  the probe logs `SSSREVERT unknown` when it is absent. Confirm against a fresh snapshot; if a
+  label differs, report it and continue only when the control is unambiguous.
+- **The stock signal is bytes, not a button.** An unstamped editor whose `SSSPOLL` equals
+  `node scripts/notifications/dump.mjs --hash marketing/notifications/stock/<id>.liquid` holds
+  the recorded stock (`unstamped-stock`); any other unstamped document is `unstamped-edited`.
+  `SSSREVERT true` is corroboration when present, never the criterion.
 
 ## Reading the page
 
@@ -35,10 +40,12 @@ whole text; do not paraphrase it.
 
 | File | Logs | Use |
 |---|---|---|
-| `editor-probe.js` | `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false` | read-only: classify, and verify a paste before Save and after reload |
+| `editor-probe.js` | `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false|unknown` | read-only: classify, and verify a paste before Save and after reload |
 | `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record`: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>` |
-| `preview-dump.js` | `SSSLEN`, `SSSHASH`, `SSSCHUNK<n>` of the Preview iframe's document, once it holds a table | render checks: `node scripts/notifications/verify-render.mjs --dump <file> --id <id> --version <n>` |
 | `mobile-check.js` | `SSSMOBILE ok|fail ...`, `SSSSQUEEZE ok|warn ...` | the mobile procedure below |
+
+There is no preview probe: the Preview dialog's iframe is an `about:srcdoc` frame where no init
+script runs. Read the render from the network instead (next section).
 
 The hash contract: both sides hash the UTF-16 code units of the LF-normalised text with 32-bit
 FNV-1a, and the length is the LF-normalised `String.length`. The numbers a repo file must produce
@@ -49,6 +56,21 @@ it on the first run of a session and report a change.
 
 To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> --out <path>`.
 
+## Reading a preview
+
+1. Click "Preview template with content" (uid from a fresh snapshot) and wait for the Preview
+   dialog.
+2. `list_network_requests` filtered to `fetch`/`xhr`; the render is the last POST whose URL ends
+   in `/EmailTemplateGeneratePreview/shopify/<store>`; take its `reqid`.
+3. `get_network_request` with that `reqid` and a `responseFilePath` in the scratchpad (the body
+   is the GraphQL response; its `data.emailTemplateGeneratePreview.preview.bodyHtml` is the
+   rendered HTML, with CRLF line endings).
+4. `node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>`.
+   For the mobile procedure, extract the HTML to a file first (the verifier's
+   `previewHtmlFromResponse` does the extraction; `node -e` with it, or save the dialog's
+   document another way).
+5. Close the dialog before doing anything else in the editor.
+
 ## Clipboard and paste
 
 1. `node scripts/notifications/clipboard.mjs marketing/notifications/<id>.liquid` (detects
@@ -56,7 +78,9 @@ To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> -
    otherwise).
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line and require the repo file's `--hash` numbers. Never proceed on
-   a mismatch. This step always precedes Preview and Save.
+   a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
+   first run pasted one character too many, a U+FEFF from a clipboard byte-order mark, and the
+   check caught it before Preview.
 
 ## Dirty editor
 
@@ -88,8 +112,8 @@ appear, a stale uid) end the run with the failure reported.
 Run on one representative non-pickup template and once per `header`-override template
 (`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`):
 
-1. Reassemble the preview dump to a file in the scratchpad
-   (`node scripts/notifications/dump.mjs <dump> --out <scratch>/preview-<id>.html`).
+1. Write the preview HTML to a file in the scratchpad (from the saved network response, see
+   "Reading a preview").
 2. `emulate` viewport `411x900x2,mobile,touch`; open the file with `navigate_page` on its
    `file://` URL with `browser/mobile-check.js` as the initScript.
 3. Read the console: `SSSMOBILE ok` means every `table.container` has the same width and left

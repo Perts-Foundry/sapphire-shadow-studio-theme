@@ -5,8 +5,15 @@
 // from lib/brand-style.css so the hexes live in one place, and a missing token is a loud error.
 //
 //   node scripts/notifications/verify-render.mjs <rendered.html> --id <id> --version <n>
+//   node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>
 //   node scripts/notifications/verify-render.mjs --dump <console-dump...> --id <id> --version <n>
 //     [--manifest <path>] [--css <path>]
+//
+// --preview-response takes the saved body of the Admin editor's EmailTemplateGeneratePreview
+// GraphQL response (the chrome-devtools MCP's get_network_request writes it to a file); the
+// rendered HTML is its data.emailTemplateGeneratePreview.preview.bodyHtml, CRLF-normalised here.
+// That is the reliable way to read a preview: the Preview dialog's iframe is an about:srcdoc
+// frame where no init script runs.
 //
 // --version is required and is also checked against the manifest, so a stale invocation cannot
 // pass a v3 render as v4. A render with no stamp fails the version check as "unstamped"; the
@@ -223,6 +230,14 @@ export function verifyRender(html, { id, version, manifest, css }) {
   return { results, passed: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
 }
 
+// The rendered HTML inside a saved EmailTemplateGeneratePreview response body.
+export function previewHtmlFromResponse(jsonText) {
+  const parsed = JSON.parse(jsonText);
+  const html = parsed && parsed.data && parsed.data.emailTemplateGeneratePreview && parsed.data.emailTemplateGeneratePreview.preview && parsed.data.emailTemplateGeneratePreview.preview.bodyHtml;
+  if (typeof html !== 'string' || html.length === 0) throw new Error('preview response carries no data.emailTemplateGeneratePreview.preview.bodyHtml');
+  return html.replace(/\r\n?/g, '\n');
+}
+
 export function formatResults({ results, passed, failed }) {
   const lines = results.map((r) => (r.ok ? `PASS ${r.name}` : `FAIL ${r.name}: ${r.detail}`));
   lines.push(`verify-render: ${passed} passed, ${failed} failed`);
@@ -244,14 +259,18 @@ function main(argv) {
   const manifestPath = get('--manifest') || p.manifest;
   const cssPath = get('--css') || p.css;
   const dumpAt = args.indexOf('--dump');
-  const flagsWithValue = new Set(['--id', '--version', '--root', '--manifest', '--css']);
+  const previewResponse = get('--preview-response');
+  const flagsWithValue = new Set(['--id', '--version', '--root', '--manifest', '--css', '--preview-response']);
   const positional = args.filter((a, i) => !a.startsWith('--') && !flagsWithValue.has(args[i - 1]) && (dumpAt === -1 || i < dumpAt));
-  if (!id || !/^\d+$/.test(String(versionArg)) || (positional.length !== 1 && dumpAt === -1)) {
-    console.error('usage: verify-render.mjs (<rendered.html> | --dump <console-dump...>) --id <id> --version <n> [--manifest <path>] [--css <path>]');
+  const sources = (positional.length === 1 ? 1 : 0) + (dumpAt !== -1 ? 1 : 0) + (previewResponse ? 1 : 0);
+  if (!id || !/^\d+$/.test(String(versionArg)) || sources !== 1) {
+    console.error('usage: verify-render.mjs (<rendered.html> | --preview-response <file> | --dump <console-dump...>) --id <id> --version <n> [--manifest <path>] [--css <path>]');
     return 2;
   }
   let html;
-  if (dumpAt !== -1) {
+  if (previewResponse) {
+    html = previewHtmlFromResponse(readFileSync(previewResponse, 'utf8'));
+  } else if (dumpAt !== -1) {
     const rest = args.slice(dumpAt + 1);
     const nextFlag = rest.findIndex((a) => a.startsWith('--'));
     const dumps = nextFlag === -1 ? rest : rest.slice(0, nextFlag);

@@ -5,14 +5,14 @@ Full by default; `--quick` skips the previews.
 
 1. **Read** (browser opt-in ask first, its own turn). For each id, navigate with
    `editor-probe.js` and read `SSSPOLL`, `SSSSTAMP` and `SSSREVERT`, exactly as in the `sync` read
-   pass, and classify with the same `match` table. `SSSREVERT true` (the "Revert changes"
-   button disabled) is the only stock signal Shopify offers, so an unstamped template with it is
-   `unstamped-stock`, without it `unstamped-edited`. A template whose FNV matches no file on
+   pass, and classify with the same `match` table: an unstamped template whose bytes equal
+   `stock/<id>.liquid` is `unstamped-stock`, any other unstamped template `unstamped-edited`
+   (`SSSREVERT` corroborates when it is not `unknown`). A template whose FNV matches no file on
    `--from` (default `origin/main`) and whose stamp names another id is `orphan`.
 
-2. **Render** (skipped under `--quick`). For each stamped id, open Preview with
-   `preview-dump.js` installed, dump, and run
-   `node scripts/notifications/verify-render.mjs --dump <file> --id <id> --version <admin version>`;
+2. **Render** (skipped under `--quick`). For each stamped id, open Preview, read it from the
+   network response, and run
+   `node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <admin version>`;
    an Admin version that is not the manifest's fails `manifest-version`, which is expected for a
    `behind` template and is reported as such. Unstamped ids get `render: skipped`.
 

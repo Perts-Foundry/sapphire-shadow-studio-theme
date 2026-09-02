@@ -121,7 +121,13 @@ operator's call, since the batch is up to 46 identical mechanical writes each ve
 after; and the render checker is a tag-stack walker rather than regex, which is what produced three
 false positives in the first checker (the navy test matched the row tables, not the containers).
 The browser probes are committed files run under `node:vm` by the tests so the FNV in the browser
-is provably the FNV in Node.
+is provably the FNV in Node. The first end-to-end run of the `change` mode paid for the byte check at
+once: the editor held one character too many after the paste, a U+FEFF from the byte-order mark
+`clip.exe` had been fed, and the check stopped the run before Preview; the fix is to send
+UTF-16LE with no mark. The same run found that the Preview dialog's iframe is an `about:srcdoc`
+frame no init script reaches, so the render is read from the `EmailTemplateGeneratePreview`
+response instead, and that a clean editor shows neither a Save nor a "Revert changes" control,
+so the stock signal the skill trusts is the document's bytes equalling `stock/<id>.liquid`.
 
 **Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
 them delta-compressed and the generated file differs from its stock twin by three hunks, so the

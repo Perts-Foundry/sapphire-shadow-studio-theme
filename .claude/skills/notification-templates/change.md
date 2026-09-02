@@ -23,10 +23,10 @@ green PR. Ends with one STOP that decides whether Admin is synced now or after m
    46 by design; say so rather than treating it as noise.
 
 3. **Render check** (browser opt-in ask first, its own turn). Per `browser.md`: paste the branded
-   file into the editor of at least one non-pickup template without saving, Preview, dump with
-   `preview-dump.js`, and run
-   `node scripts/notifications/verify-render.mjs --dump <file> --id <id> --version <n>` with the
-   version from `--status` on the branch. For a stylesheet change also run the mobile procedure.
+   file into the editor of at least one non-pickup template without saving, read the preview
+   from the network response, and run
+   `node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>`
+   with the version from `--status` on the branch. For a stylesheet change also run the mobile procedure.
    For a `replace` or `header` override, check that template specifically, unless it is a pickup
    id, in which case the check is deferred to `sync` and the STOP in step 6 says so. Then discard
    the unsaved paste per the dirty-editor rule. Declined browser: skip, and every later report

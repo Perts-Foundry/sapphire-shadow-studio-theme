@@ -55,9 +55,11 @@ byte-order mark. A refusal writes nothing.
 Tooling under `scripts/notifications/`: `brand.mjs` (generate, `--check`, `--status`),
 `record-stock.mjs` (record a stock snapshot), `dump.mjs` (the console-dump and hash contract the
 browser probes use; `--hash <file>` prints a file's length and FNV), `verify-render.mjs` (checks a
-rendered preview against the brand), `html-walk.mjs` (its parser), `clipboard.mjs` (copies a file
-for the paste step), `state.mjs` (the skill's per-store state file) and `browser/` (the probe
-scripts the skill injects into the Admin editor).
+rendered preview against the brand; `--preview-response` reads the editor's
+EmailTemplateGeneratePreview response, the reliable way to get a render, since the Preview
+dialog's iframe is an `about:srcdoc` frame no script can be injected into), `html-walk.mjs` (its
+parser), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
 ## Versioning
 
@@ -286,8 +288,10 @@ Re-check that they return 200 to an anonymous request after changing one.
 - **No `{{ open_tracking_block }}` and no `{{ unsubscribe_url }}`.** These are transactional
   notifications, not marketing sends; neither variable exists for them and neither belongs.
 - **The `stock/` snapshots are what the editor held when recorded, not certified stock.** Every one
-  showed the editor's "Revert changes" control disabled at the time, which is the only stock signal
-  Shopify offers; treat that as the evidence, not as a guarantee.
+  showed the editor's "Revert changes" control disabled at the time; treat that as the evidence,
+  not as a guarantee. That control is not always present (a later run found a clean editor with
+  neither Save nor Revert), so the working stock signal is bytes: an editor whose document hashes
+  like `stock/<id>.liquid` holds the recorded stock.
 - `theme-check` ignores `marketing/**`, and `validate_theme_codeblocks` is syntax-only here:
   notification objects (`fulfillment`, `order_name`, `customer.reset_password_url` and the rest) are
   undefined to a theme validator, so ignore its undefined-object findings. The editor's preview is

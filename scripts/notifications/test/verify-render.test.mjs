@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { verifyRender, parsePalette, formatResults, CHECKS, SHOP_APP_BUTTON, PALETTE_TOKENS } from '../verify-render.mjs';
+import { verifyRender, parsePalette, formatResults, previewHtmlFromResponse, CHECKS, SHOP_APP_BUTTON, PALETTE_TOKENS } from '../verify-render.mjs';
 import { paths, readManifest, footerStamp, sha256 } from '../brand.mjs';
 import { fnv1a } from '../dump.mjs';
 
@@ -364,4 +364,12 @@ test('CLI: exit 0 on PASS, 1 on FAIL, 2 on usage; --dump reassembles a console d
   assert.notEqual(badDump.status, 0);
   assert.match(badDump.stderr, /hash mismatch/);
   assert.equal(sha256('x').length, 64);
+  // The saved EmailTemplateGeneratePreview response: CRLF inside bodyHtml, as Shopify sends it.
+  const response = path.join(dir, 'preview.network-response');
+  writeFileSync(response, JSON.stringify({ data: { emailTemplateGeneratePreview: { preview: { subject: 'Order #9999 confirmed', bodyHtml: html.replace(/\n/g, '\r\n') } } } }), 'utf8');
+  const fromResponse = cli(['--preview-response', response, '--id', 'plain_id', '--version', '3', '--manifest', manifestPath]);
+  assert.equal(fromResponse.status, 0, fromResponse.stderr + fromResponse.stdout);
+  assert.equal(previewHtmlFromResponse(readFileSync(response, 'utf8')), html);
+  assert.throws(() => previewHtmlFromResponse('{"data":{}}'), /carries no data\.emailTemplateGeneratePreview/);
+  assert.equal(cli(['--preview-response', response, file, '--id', 'plain_id', '--version', '3']).status, 2, 'two sources is a usage error');
 });

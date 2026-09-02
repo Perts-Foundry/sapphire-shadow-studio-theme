@@ -150,16 +150,16 @@ test('CLI: seen, pending-add, pending-remove and audit round-trip through the fi
 
 // --- clipboard.mjs -------------------------------------------------------------------------------
 
-test('clipboard: tool selection by platform, environment and availability; WSL gets UTF-16LE with a BOM', () => {
+test('clipboard: tool selection by platform, environment and availability; clip.exe gets UTF-16LE without a BOM', () => {
   const has = (set) => (n) => set.includes(n);
   assert.deepEqual(pickTool({ platform: 'darwin', env: {}, has: has(['pbcopy']), wsl: () => false }), { cmd: 'pbcopy', args: [], encoding: 'utf8' });
   assert.deepEqual(pickTool({ platform: 'linux', env: { WAYLAND_DISPLAY: 'wayland-0' }, has: has(['wl-copy', 'xclip']), wsl: () => false }).cmd, 'wl-copy');
   assert.deepEqual(pickTool({ platform: 'linux', env: {}, has: has(['wl-copy', 'xclip']), wsl: () => false }).cmd, 'xclip', 'no Wayland display, so xclip');
-  assert.deepEqual(pickTool({ platform: 'linux', env: {}, has: has(['clip.exe']), wsl: () => true }), { cmd: 'clip.exe', args: [], encoding: 'utf16le-bom' });
+  assert.deepEqual(pickTool({ platform: 'linux', env: {}, has: has(['clip.exe']), wsl: () => true }), { cmd: 'clip.exe', args: [], encoding: 'utf16le' });
   assert.equal(pickTool({ platform: 'linux', env: {}, has: has(['clip.exe']), wsl: () => false }), null, 'clip.exe outside WSL or Windows is not trusted');
   assert.equal(pickTool({ platform: 'linux', env: {}, has: has([]), wsl: () => true }), null);
   assert.deepEqual(encodeFor('ab', 'utf8'), Buffer.from('ab'));
-  const wide = encodeFor('a©', 'utf16le-bom');
-  assert.deepEqual([...wide], [0xff, 0xfe, 0x61, 0x00, 0xa9, 0x00]);
+  const wide = encodeFor('a©', 'utf16le');
+  assert.deepEqual([...wide], [0x61, 0x00, 0xa9, 0x00], 'no BOM: clip.exe pastes one as a U+FEFF character');
   assert.throws(() => encodeFor('x', 'latin1'), /unknown encoding/);
 });

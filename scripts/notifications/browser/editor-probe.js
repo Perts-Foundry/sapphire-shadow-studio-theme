@@ -4,8 +4,10 @@
 //   SSSPOLL <length> <fnv> <source>   String.length and 32-bit FNV-1a of the editor text
 //                                     (UTF-16 code units, LF-normalised), and which widget it read
 //   SSSSTAMP <id> <version> | none    the stamp parsed from the editor's FIRST LINE only
-//   SSSREVERT true|false              whether the persisted-state button ("Revert changes") is
-//                                     disabled, the only stock signal the editor offers
+//   SSSREVERT true|false|unknown      whether a "Revert" button is disabled; `unknown` when the
+//                                     editor shows none (observed: a clean editor shows neither
+//                                     Save nor Revert), so the stock signal that counts is the
+//                                     document's bytes equalling stock/<id>.liquid
 // Nothing here writes to the page. The FNV function and the stamp regex are copies of the ones in
 // scripts/notifications/dump.mjs and brand.mjs; test/browser-probes.test.mjs proves they agree.
 (function () {
@@ -42,14 +44,15 @@
     var r = readEditor();
     if (!r) return;
     var text = r.text.replace(/\r\n?/g, '\n');
-    var key = r.source + ':' + text.length + ':' + fnv1a(text);
+    var rd = revertDisabled();
+    var key = r.source + ':' + text.length + ':' + fnv1a(text) + ':' + rd;
     if (key === last) return;
     last = key;
     console.log('SSSPOLL ' + text.length + ' ' + fnv1a(text) + ' ' + r.source);
     var firstLine = text.split('\n')[0];
     var m = new RegExp(STAMP_RE_SOURCE).exec(firstLine);
     console.log('SSSSTAMP ' + (m ? m[1] + ' ' + m[2] : 'none'));
-    console.log('SSSREVERT ' + revertDisabled());
+    console.log('SSSREVERT ' + rd);
   }
   setInterval(poll, 500);
 })();
