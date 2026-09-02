@@ -41,7 +41,7 @@ inputs:
   smoke-paths:
     description: |
       Space-separated STRUCTURAL storefront paths to smoke-test after live push
-      (homepage, cart, all-products collection, search, refund policy). These
+      (homepage, cart, the built-in `all` collection, search, refund policy). These
       verify the deploy landed (200 + host + live theme-id). Product pages are
       NOT listed here; the smoke enumerates every published product from the
       sitemap and probes each, so the catalog is covered automatically without a

@@ -95,7 +95,7 @@
       "ignore": ["video-caption"]
     },
     { "path": "/collections", "label": "list-collections", "template": "templates/list-collections.json" },
-    { "path": "/collections/all-products", "label": "collection", "template": "templates/collection.json" },
+    { "path": "/collections/all", "label": "collection", "template": "templates/collection.json" },
     { "marker": "catalogue:products" },
     { "path": "/cart", "label": "cart", "template": "templates/cart.json" },
     { "path": "/search?q=crewneck", "label": "search results", "template": "templates/search.json" },
