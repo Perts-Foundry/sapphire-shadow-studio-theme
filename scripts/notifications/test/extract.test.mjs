@@ -5,9 +5,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fnv1a, verifyText, parseDump, parseEnvelope, reassembleDump, record } from '../record-stock.mjs';
+import { fnv1a, verifyText, parseDump, reassembleDump } from '../dump.mjs';
+import { parseEnvelope, record } from '../record-stock.mjs';
+import * as recordStock from '../record-stock.mjs';
+import * as dump_ from '../dump.mjs';
 import { paths, sha256 } from '../brand.mjs';
 
 // Independent reference: FNV-1a 32-bit over UTF-16 code units, done in BigInt so it shares no
@@ -329,4 +334,86 @@ test('record refuses a bad id or unverifiable text and writes nothing', () => {
   assert.throws(() => record({ root, id: 'ok', text: 'a\rb' }), /carriage return/);
   assert.ok(!existsSync(p.manifest));
   assert.ok(!existsSync(p.stock('ok')));
+});
+
+// --- dump.mjs is the one path -------------------------------------------------------------------
+
+test('record-stock.mjs re-exports the very same dump.mjs functions (shim identity)', () => {
+  for (const name of ['fnv1a', 'verifyText', 'parseDump', 'reassembleDump', 'LEN_PREFIX', 'HASH_PREFIX', 'CHUNK_PREFIX']) {
+    assert.strictEqual(recordStock[name], dump_[name], name);
+  }
+  assert.equal(dump_.LEN_PREFIX, 'SSSLEN');
+  assert.equal(dump_.HASH_PREFIX, 'SSSHASH');
+  assert.equal(dump_.CHUNK_PREFIX, 'SSSCHUNK');
+});
+
+test('parseDump refuses a duplicate SSSLEN or SSSHASH line, even when the values agree', () => {
+  const text = 'ABCD';
+  const twoLen = [['SSSLEN', '4'], ['SSSHASH', fnv1a(text)], ['SSSLEN', '4'], ['SSSCHUNK0', text]];
+  assert.throws(() => parseDump(dump(twoLen)), /duplicate SSSLEN/);
+  const twoHash = [['SSSLEN', '4'], ['SSSHASH', fnv1a(text)], ['SSSHASH', fnv1a(text)], ['SSSCHUNK0', text]];
+  assert.throws(() => parseDump(dump(twoHash)), /duplicate SSSHASH/);
+  // A chunk whose text merely contains the literal is not a second line: the line must start with it.
+  const inChunk = 'see SSSLEN 4 and SSSHASH deadbeef inside';
+  assert.equal(parseDump(dumpFor(inChunk, { chunkSize: 100 })).text, inChunk);
+});
+
+test('parsePoll returns the last SSSPOLL line of a console listing, or null', () => {
+  const { parsePoll } = dump_;
+  assert.equal(parsePoll(''), null);
+  assert.equal(parsePoll('msgid=1 [log] SSSPOLL nope (1 args)'), null);
+  const listing = 'msgid=1 [log] SSSPOLL 10 0123abcd textarea (1 args)\nmsgid=2 [log] SSSSTAMP none (1 args)\nmsgid=3 [log] SSSPOLL 12 89abcdef cm6 (1 args)\n';
+  assert.deepEqual(parsePoll(listing), { length: 12, hash: '89abcdef', source: 'cm6' });
+  assert.deepEqual(parsePoll(JSON.stringify([{ text: listing }])), { length: 12, hash: '89abcdef', source: 'cm6' });
+});
+
+test('dump.mjs CLI reassembles to stdout or --out and exits 2 without a file', () => {
+  const root = tempRoot();
+  const text = '<p>{{ shop.name }} ©</p>\n';
+  const file = path.join(root, 'd.txt');
+  writeFileSync(file, dumpFor(text, { chunkSize: 5, subject: 'S', revert: true }), 'utf8');
+  const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dump.mjs');
+  const toStdout = spawnSync(process.execPath, [script, file], { encoding: 'utf8', cwd: root });
+  assert.equal(toStdout.status, 0, toStdout.stderr);
+  assert.equal(toStdout.stdout, text);
+  const out = path.join(root, 'out.liquid');
+  const toFile = spawnSync(process.execPath, [script, file, '--out', out], { encoding: 'utf8', cwd: root });
+  assert.equal(toFile.status, 0, toFile.stderr);
+  assert.equal(readFileSync(out, 'utf8'), text);
+  assert.match(toFile.stderr, /reassembled \d+ chars, fnv [0-9a-f]{8}, subject "S", revert disabled/);
+  assert.equal(spawnSync(process.execPath, [script], { encoding: 'utf8', cwd: root }).status, 2);
+  writeFileSync(file, dumpFor(text, { hash: 'deadbeef' }), 'utf8');
+  const bad = spawnSync(process.execPath, [script, file], { encoding: 'utf8', cwd: root });
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /hash mismatch/);
+});
+
+test('record carries version and brandedSha256 across a re-record on purpose, changed content or not', () => {
+  const root = tempRoot();
+  const p = paths(root);
+  record({ root, id: 'alpha', subject: 'first', text: 'A\n' });
+  const manifest = JSON.parse(readFileSync(p.manifest, 'utf8'));
+  manifest.templates.alpha.version = 3;
+  manifest.templates.alpha.brandedSha256 = 'c'.repeat(64);
+  manifest.templates.alpha.override = { styleAnchor: '<x>' };
+  writeFileSync(p.manifest, JSON.stringify(manifest), 'utf8');
+  const same = record({ root, id: 'alpha', text: 'A\n' });
+  assert.equal(same.version, 3);
+  assert.equal(same.brandedSha256, 'c'.repeat(64));
+  const changed = record({ root, id: 'alpha', text: 'AB\n' });
+  assert.equal(changed.version, 3, 'the version survives so the next generate bumps it');
+  assert.equal(changed.brandedSha256, 'c'.repeat(64), 'the stale hash survives so the next generate sees the change');
+  assert.equal(changed.override, undefined, 'the override is dropped as before');
+});
+
+test('dump.mjs --hash prints the LF-normalised length and FNV a probe must report for that file', () => {
+  const root = tempRoot();
+  const file = path.join(root, 'x.liquid');
+  writeFileSync(file, 'ab\r\ncd ©\n', 'utf8');
+  const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dump.mjs');
+  const r = spawnSync(process.execPath, [script, '--hash', file], { encoding: 'utf8', cwd: root });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `${'ab\ncd ©\n'.length} ${fnv1a('ab\ncd ©\n')}\n`);
+  assert.deepEqual(dump_.hashFile(file), { length: 'ab\ncd ©\n'.length, hash: fnv1a('ab\ncd ©\n') });
+  assert.equal(spawnSync(process.execPath, [script, '--hash'], { encoding: 'utf8', cwd: root }).status, 2);
 });

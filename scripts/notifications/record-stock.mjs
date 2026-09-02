@@ -4,8 +4,8 @@
 // it, not bytes). Input forms:
 //
 //   --file <path>      a file saved from the Admin editor (select all, copy, paste into a file)
-//   --dump <path...>   one or more console dumps produced by the extraction init script
-//                      (SSSLEN / SSSHASH / SSSCHUNK<n> lines), reassembled and verified here
+//   --dump <path...>   one or more console dumps produced by browser/editor-dump.js
+//                      (SSSLEN / SSSHASH / SSSCHUNK<n> lines), reassembled and verified by dump.mjs
 //
 //   node scripts/notifications/record-stock.mjs --id order_confirmation \
 //     --subject "Order {{name}} confirmed" --file /path/to/saved.liquid
@@ -18,80 +18,11 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { paths, readManifest, sha256, REPO_ROOT } from './brand.mjs';
+import { fnv1a, verifyText, parseDump } from './dump.mjs';
 
-// FNV-1a, 32-bit, over UTF-16 code units. Mirrors the extraction init script exactly.
-export function fnv1a(text) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
-}
-
-export function verifyText(text, expected = {}) {
-  if (expected.length !== undefined && text.length !== expected.length) {
-    throw new Error(`length mismatch: reassembled ${text.length}, dump said ${expected.length}`);
-  }
-  if (expected.hash !== undefined && fnv1a(text) !== expected.hash) {
-    throw new Error(`hash mismatch: reassembled ${fnv1a(text)}, dump said ${expected.hash}`);
-  }
-  if (text.includes('�')) throw new Error('text contains U+FFFD (replacement character)');
-  if (/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)) {
-    throw new Error('text contains a lone surrogate');
-  }
-  if (text.includes('\r')) throw new Error('text contains a carriage return');
-  if (text.charCodeAt(0) === 0xfeff) throw new Error('text starts with a BOM');
-  if (text.length === 0) throw new Error('text is empty');
-}
-
-// A dump is the console output of the extraction init script: one `msgid=N [log] ...` message per
-// line group. The MCP client sometimes persists it as a JSON array of { text } parts instead of
-// plain text; both forms are accepted. Returns { text, subject, revertDisabled, length, hash }.
-export function parseDump(dumpText) {
-  let raw = dumpText;
-  if (/^\s*\[/.test(raw)) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) raw = parsed.map((p) => (p && typeof p.text === 'string' ? p.text : '')).join('\n');
-    } catch {
-      // not JSON after all; treat as plain text
-    }
-  }
-  const segments = raw.split(/^msgid=\d+ \[log\] /m).slice(1);
-  let length;
-  let hash;
-  let subject;
-  let revertDisabled;
-  const chunks = new Map();
-  for (const seg of segments) {
-    // \n* not \n?: the JSON-array form joins parts with '\n', so a part that already ends in a
-    // newline leaves two after the terminator, and an unstripped SSSSUBJ is recorded silently.
-    const body = seg.replace(/ \(1 args\)\n*$/, '');
-    let m;
-    if ((m = /^SSSLEN (\d+)\s*$/.exec(body))) length = Number(m[1]);
-    else if ((m = /^SSSHASH ([0-9a-f]{8})\s*$/.exec(body))) hash = m[1];
-    else if ((m = /^SSSSUBJ (.*)$/s.exec(body))) subject = m[1].replace(/\n$/, '');
-    else if ((m = /^SSSREVERT (true|false)\s*$/.exec(body))) revertDisabled = m[1] === 'true';
-    else if ((m = /^SSSCHUNK(\d+) /.exec(body))) {
-      const k = Number(m[1]);
-      if (chunks.has(k)) throw new Error(`duplicate chunk ${k}`);
-      chunks.set(k, body.slice(m[0].length));
-    }
-  }
-  if (length === undefined) throw new Error('no SSSLEN line in dump');
-  if (hash === undefined) throw new Error('no SSSHASH line in dump');
-  const keys = [...chunks.keys()].sort((a, b) => a - b);
-  if (keys.length === 0) throw new Error('no SSSCHUNK lines in dump');
-  for (let i = 0; i < keys.length; i++) if (keys[i] !== i) throw new Error(`missing chunk ${i}`);
-  const text = keys.map((k) => chunks.get(k)).join('');
-  verifyText(text, { length, hash });
-  return { text, subject, revertDisabled, length, hash };
-}
-
-export function reassembleDump(dumpText) {
-  return parseDump(dumpText).text;
-}
+// The dump contract (fnv1a, verifyText, parseDump, reassembleDump and the line prefixes) lives in
+// dump.mjs, the one path for it; these re-exports keep older imports working.
+export { fnv1a, verifyText, parseDump, reassembleDump, LEN_PREFIX, HASH_PREFIX, CHUNK_PREFIX } from './dump.mjs';
 
 // An envelope is the JSON file the extraction init script downloads from the Admin editor:
 // { id, length, hash, subject, revertDisabled, text }. Returns the same shape as parseDump.
