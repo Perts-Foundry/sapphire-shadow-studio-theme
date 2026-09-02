@@ -27,16 +27,20 @@ Global CSS variables in `snippets/theme-styles-variables.liquid`; color schemes 
 
 ## Shipping copy
 
-**Shipping copy has four sources of truth and only one is greppable.** (1) Theme settings `flat_rate_shipping` and `free_shipping_threshold`, read by `snippets/shipping-info.liquid`. (2) Inline HTML in template JSON with no locale keys: the "Shipping & Turnaround" accordion in the five garment product templates and in `templates/product.shift-fuel-tote.json`, the **"Delivery" accordion in `templates/product.gift-card.json`** (a seventh threshold claim, under a different heading, so a grep for "Shipping & Turnaround" does not find it), plus three answers in `templates/page.faq.json`. (3) The announcement slides in `sections/header-group.json`. (4) Two things outside the repo entirely: the Admin shipping-rate names (Settings > Shipping and delivery) and the Shopify shop policy at `/policies/shipping-policy`. A shipping-copy audit that only runs `git grep` misses the last two, which is how "Expedited" in the theme and "Express" at checkout coexisted. Read the out-of-repo half with:
+**Shipping copy has four sources of truth and only one is greppable.** (1) Theme settings `flat_rate_shipping` and `free_shipping_threshold`, read by `snippets/shipping-info.liquid`. (2) Inline HTML in template JSON with no locale keys: the "Shipping & Turnaround" accordion in the five garment product templates and in `templates/product.shift-fuel-tote.json` (**those six now defer to the policy and state no duration**, held byte-identical by `scripts/policies/test/templates-cohesion.test.mjs`), the **"Delivery" accordion in `templates/product.gift-card.json`** (a seventh threshold claim, under a different heading, so a grep for "Shipping & Turnaround" does not find it), plus three answers in `templates/page.faq.json`. (3) The announcement slides in `sections/header-group.json`. (4) The Admin shipping-rate names (Settings > Shipping and delivery), still outside the repo entirely. (5) The Shopify shop policy at `/policies/shipping-policy`, which **is now in the repo**, at `marketing/policies/shipping_policy.html`, and is greppable like any other file.
+
+A shipping-copy audit that only runs `git grep` therefore misses one source rather than two: the rate names. `write_shipping` is not granted, so read them in Admin. The policy half is now:
 
 ```bash
-node --env-file=.env --input-type=module -e '
-import { createAdminClient } from "./scripts/blank-inventory/lib/admin.mjs";
-const c = createAdminClient();
-console.log(JSON.stringify(await c.gql(`{ shop { shopPolicies { type title body } } }`)));'
+git grep -n 'business days' -- marketing/policies/
+npm run policies:pull -- --check   # and confirm Admin has not drifted from the committed copy
 ```
 
-A campaign email would be a fifth source, and the only one that cannot be corrected after it is sent, so `marketing/emails/` templates deliberately link to the policy and FAQ pages instead of restating a rate, a threshold, or a turnaround.
+Source (5) moved into the repo on the 3-5 day production change; `marketing/policies/README.md` documents the pull / check / gated-push tooling, and the CI row for it proves **repo consistency only**, never that Admin is in sync. Live drift is caught by the push-time freshness gate, or by running `policies:pull --check` by hand.
+
+Note the drift direction reversed with it: for the notification and marketing templates Admin holds a hand-pasted copy of the repo, but for policies **the repo is the source of truth and pushes**, because policies have a write API and those do not.
+
+A campaign email would be a sixth source, and the only one that cannot be corrected after it is sent, so `marketing/emails/` templates deliberately link to the policy and FAQ pages instead of restating a rate, a threshold, or a turnaround. That rule still holds now that the policy is in the repo: a sent email cannot be repushed.
 
 `write_shipping` is not granted, so rate names are read-only from here and renaming is an operator task in Admin. Also note `blocks/price.liquid`'s `show_shipping_info` setting hardcodes "$8 flat rate shipping and free shipping over $75 threshold" in an editor `info` string, so it goes stale if either theme setting changes.
 

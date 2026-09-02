@@ -62,3 +62,30 @@ several of the pass's other findings.
   weight, so it is unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
+
+- [ ] **Scheduled live-drift detection for the shop policies.** `npm run policies:check` is offline
+  and proves only that the repo agrees with itself; nothing automated notices when someone edits a
+  policy in Admin. The push-time freshness gate catches it at the one moment it can do damage
+  (`scripts/policies/push.mjs` step 4), and the manual cadence is in
+  `marketing/policies/README.md`. A scheduled `policies:pull --check` opening a sticky issue is the
+  fuller answer, and it was deliberately left out of `validate.yml`: it needs
+  `read_legal_policies` credentials, and putting them in a workflow widens the blast radius of the
+  whole subsystem to anyone who can trigger one, on a workflow that also runs for Dependabot. If
+  this is ever built, it belongs in a separate scheduled workflow with its own minimal secret, not
+  in `validate`.
+
+- [ ] **Reconcile the two delay-refund windows.** The shipping policy's "Order Delays and
+  Communication" promises a refund "within 7 business days" when a customer cancels a delayed
+  order; the refund policy states 10. Pre-existing, not introduced by the 3-5 day change, and
+  flagged rather than fixed because picking the right number is an operator decision. Both are now
+  in the repo (`marketing/policies/shipping_policy.html`,
+  `marketing/policies/refund_policy.html`), so whichever way it goes is one `policies:push` per
+  policy.
+
+- [ ] **Read the refund policy's misspellings disclaimer against the new personalisation-pause
+  copy.** The refund policy says the studio is "not responsible for misspellings" in
+  customer-provided details. The shipping policy now also promises to reach out when a
+  personalisation detail is unclear (an ambiguous spelling, a character count that will not fit, a
+  thread colour) and to pause production until the customer replies. Those are not contradictory:
+  one is about details the customer got wrong, the other about details the studio could not read.
+  Worth a read for tone, since they sit one click apart.
