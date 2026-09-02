@@ -57,11 +57,12 @@
         assign parent_collection = ''
 
         # Catch-all collections are never a useful breadcrumb parent. `all` and
-        # `frontpage` are Shopify's virtual ones; `all-products` is a real
-        # collection in this store that serves the same purpose, and it sorts
-        # first in `product.collections`, so without it here every canonical
-        # product URL reads "Home > All Products > ..." instead of naming a
-        # category.
+        # `frontpage` are Shopify's virtual ones. `all-products` was a real
+        # collection in this store that served the same purpose and sorted
+        # first in `product.collections`, so every canonical product URL read
+        # "Home > All Products > ..." instead of naming a category. It was
+        # deleted in Admin (release-notes.md, 2026-08-16); the entry stays as a
+        # harmless guard against the handle being recreated.
         assign excluded_handles = 'all,frontpage,all-products' | split: ','
 
         # A collection-scoped URL means the shopper actually walked through that
@@ -77,7 +78,7 @@
         # every failure mode: `.value` is nil when the metafield is unset, when
         # the definition does not exist, when the definition is not readable by
         # the storefront, and when the referenced collection has been deleted.
-        # The catch-all guard is not redundant. Pointing this at `all-products`
+        # The catch-all guard is not redundant. Pointing this at a catch-all
         # would reintroduce the exact "Home > All Products > ..." trail the
         # exclusion list exists to prevent, so a misconfigured value falls
         # through to the preferred list rather than to the worst trail.

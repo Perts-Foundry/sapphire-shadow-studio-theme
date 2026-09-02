@@ -18,8 +18,9 @@ export const BREADCRUMB_PAGE_TYPES = new Set([
 ]);
 
 // Collection handles that are never a useful breadcrumb parent. `all` and
-// `frontpage` are Shopify's virtual catch-alls; `all-products` is a real
-// collection in this store that serves the same purpose. Mirrors
+// `frontpage` are Shopify's virtual catch-alls; `all-products` was a real
+// collection that served the same purpose, deleted in Admin on 2026-08-16 and
+// kept here as a guard against the handle being recreated. Mirrors
 // `excluded_handles` in snippets/breadcrumbs.liquid; change them together.
 export const BREADCRUMB_EXCLUDED_HANDLES = new Set(['all', 'frontpage', 'all-products']);
 

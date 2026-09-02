@@ -2373,6 +2373,10 @@ product and the second matched nothing, so it worked by accident, and flipping t
 referenced it: every "shop all" surface in the theme (footer, hero buttons, 404, button defaults)
 points at Shopify's built-in `/collections/all`, and `snippets/breadcrumbs.liquid` deliberately
 excluded the handle from breadcrumb parents (the exclusion entry is a harmless string and stays).
+One reference was missed: `scripts/a11y/paths.json` still audited `/collections/all-products` as
+the collection template, so from the deletion until 2026-09-01 the pa11y "collection" row was
+auditing the 404 page. The first `site-check` probe run caught it (`render-status` on that path);
+the audit path is now `/collections/all`.
 If catalog-page control (image, description, SEO fields, sort, exclusions) is ever wanted, the
 move is a new collection with the handle `all`, which overrides the built-in at the same URL; do
 not recreate `all-products`.

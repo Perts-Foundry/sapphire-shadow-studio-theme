@@ -53,8 +53,9 @@ is not readable by the storefront, or the referenced collection has been deleted
 Liquid as nil and all four should behave the same way, which is to fall through to step 3.
 
 **Why a catch-all value is ignored.** `all`, `frontpage`, and `all-products` are excluded even when
-hand-set. `all-products` is a real collection in this store, it sorts first in `product.collections`,
-and naming it is exactly the defect the exclusion list exists to prevent. A misconfigured value
+hand-set. `all-products` was a real collection in this store (deleted in Admin on 2026-08-16; the
+exclusion stays as a guard) that sorted first in `product.collections`, and naming it was exactly the
+defect the exclusion list exists to prevent. A misconfigured value
 therefore falls through to the preferred list rather than to the worst available trail.
 
 ## Per-product values
@@ -82,7 +83,7 @@ site is worse off. Once values are set, check on a preview theme:
   the `BreadcrumbList` second `ListItem` matches the visible middle crumb.
 - A **collection-scoped** URL (`/collections/featured/products/lead-ii-crewneck`) still says
   Featured, proving step 1 beats the metafield.
-- The **catch-all guard** only exercises by temporarily pointing one product at `all-products` and
+- The **catch-all guard** only exercises by temporarily pointing one product at a catch-all handle and
   confirming the trail falls through to the preferred list. Revert afterwards.
 - The **gift card**, with a blank value, renders a two-item trail and does not crash.
 
