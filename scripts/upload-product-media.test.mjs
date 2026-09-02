@@ -39,6 +39,18 @@ test('colorDriftProblem flags missing, extra, and renamed values', () => {
   assert.match(colorDriftProblem(['Black', 'Gray', 'Classic Navy'], KEY), /Color option drift/);
 });
 
+test('drift predicates treat a non-garment product as recorded, with an empty colour set', () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  assert.ok(nonGarment, 'the committed catalogue declares at least one non-garment product');
+  const key = nonGarment.handle;
+  assert.equal(PRODUCTS[key].handle, nonGarment.handle, 'a non-garment is keyed by its handle');
+  assert.equal(gidDriftProblem(nonGarment.gid, key), null);
+  assert.match(gidDriftProblem('gid://shopify/Product/1', key), /product GID drift/);
+  assert.equal(colorDriftProblem([], key), null);
+  // A Color option appearing on a non-garment is drift: nothing recorded could bind an alt to it.
+  assert.match(colorDriftProblem(['Black'], key), /Color option drift/);
+});
+
 test('colorDriftProblem returns null for an unknown key', () => {
   assert.equal(colorDriftProblem(['Anything'], 'nope/nope'), null);
 });

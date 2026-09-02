@@ -239,6 +239,9 @@ function planManifestRows(d, preservedRows) {
 function derivedColumns(parsed) {
   const empty = { line: '', garment: '', colorway: '', admin_color: '', product: '', shot: '' };
   if (!parsed || !parsed.ok) return empty;
+  // The non-garment form carries the handle itself: no line, garment or colour, and admin_color
+  // stays empty so the alt guard enforces a colour-free alt against that product's empty vocab.
+  if (parsed.product) return { ...empty, product: parsed.product, shot: parsed.shot || '' };
   const key = `${parsed.line}/${parsed.garment}`;
   const prod = productForLineGarment(parsed.line, parsed.garment);
   const admin = colorwayToAdminValue(parsed.colorway, key);
@@ -666,7 +669,10 @@ async function main() {
       if (collided) notes.push('collision -> suffixed');
       if (fanOut) notes.push(`shared asset: ${seeds.length} preserved product row(s)`);
       const productCell = fanOut ? `(shared: ${seeds.length} products)` : (d.product || '(unresolved)');
-      console.log([f, name, productCell, d.admin_color || '(shared)', notes.join('; ')].join('\t'));
+      // A non-garment product has no Color option at all, which is not the same fact as a shared or
+      // group photo (a colour-free photo on a product that does have colours).
+      const colorCell = d.admin_color || (norm.parsed?.product ? '(no colour option)' : '(shared)');
+      console.log([f, name, productCell, colorCell, notes.join('; ')].join('\t'));
     }
     const guard = altGuardProblems(previewRows);
     if (guard.length) {

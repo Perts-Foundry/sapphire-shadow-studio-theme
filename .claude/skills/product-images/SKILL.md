@@ -32,7 +32,12 @@ Files follow, underscore-separated, multi-word values hyphenated internally, the
 ```
 <line>_<garment>_<colorway>[_<design>]_<shot>-<index>.jpg
 group shot:  <line>_<garment>_group_<shot>-<index>.jpg
+non-garment: <handle>_<shot>-<index>.jpg
 ```
+
+The non-garment form is for a `body: null` product (the tote, the gift card): the filename carries
+the product handle, there is no colorway field, `admin_color` is always empty, and every alt on it
+is colour-free (it has no Color option to bind). It is still product-bound, not shared.
 
 The machine-readable vocab, the colorway-to-Admin-colour map, and the product resolution all come
 from `scripts/lib/photo-naming.mjs`, which derives them from the root `catalogue.json`; that pair is
@@ -150,8 +155,8 @@ The dry-run is read-only, so folding it in front of the same stop costs nothing.
 
    - **Frames in scope:** all frames, or a best-of selection (see "Selecting and reviewing frames")?
    - **Target products:** which products this batch serves. When asking, enumerate every product
-     `scripts/lib/photo-naming.mjs` resolves (every garment product `catalogue.json` declares), by
-     name; never a guessed subset and never a hardcoded count.
+     `scripts/lib/photo-naming.mjs` resolves (every product `catalogue.json` declares, garment or
+     not), by name; never a guessed subset and never a hardcoded count.
    - **Shared assets:** **product-bound is the default.** The required answer is the (possibly empty)
      list of shared assets by filename; anything not on that list is product-bound (see "Shared
      assets" above). Ask per batch, not per frame.

@@ -11,6 +11,7 @@ import {
   planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
   profileName, underProductImages, prepareInput,
 } from './process-product-images.mjs';
+import { allProducts } from './lib/photo-naming.mjs';
 import { asRgba, fakeHeic, maxDelta, p3Fixture } from './lib/heic.fixtures.mjs';
 
 const execFileP = promisify(execFile);
@@ -158,6 +159,10 @@ test('planManifestRows does not fan out when no preserved row carries a product'
   assert.equal(seeds[0].alt, 'kept');
 });
 
+// A body-null product from the committed catalogue, whatever it is called today.
+const NON_GARMENT = Object.values(allProducts()).find((p) => p.garment === null)?.handle;
+assert.ok(NON_GARMENT, 'the committed catalogue declares at least one non-garment product');
+
 // --- altGuardProblems: shared fan-out rows -------------------------------------------------
 test('altGuardProblems guards shared rows via productForHandle', () => {
   const rows = [
@@ -167,11 +172,15 @@ test('altGuardProblems guards shared rows via productForHandle', () => {
     { new_name: 'y.jpg', line: '', garment: '', admin_color: '', product: 'huddle-crewneck', alt: 'Woven logo tag close-up' },
     // Unknown handle: a guard problem, never a throw.
     { new_name: 'z.jpg', line: '', garment: '', admin_color: '', product: 'no-such-product', alt: 'anything' },
+    // Non-garment product (body null, keyed by handle): recorded, empty colour vocabulary, so a
+    // colour-free alt passes and there is no value it could wrongly bind to.
+    { new_name: 'w.jpg', line: '', garment: '', admin_color: '', product: NON_GARMENT, alt: 'Front of the product, flat on white' },
   ];
   const problems = altGuardProblems(rows);
   assert.ok(problems.some((p) => p.startsWith('x.jpg:') && p.includes('would bind instead of staying shared')));
   assert.ok(!problems.some((p) => p.startsWith('y.jpg:')));
   assert.ok(problems.some((p) => p.startsWith('z.jpg:') && p.includes('not a recorded product')));
+  assert.ok(!problems.some((p) => p.startsWith('w.jpg:')));
 });
 
 // --- profileName ---------------------------------------------------------------------------

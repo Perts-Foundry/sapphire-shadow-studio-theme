@@ -6,6 +6,13 @@
 // Convention:
 //   <line>_<garment>_<colorway>[_<design>]_<shot>-<index>.jpg
 //   group shot:  <line>_<garment>_group_<shot>-<index>.jpg   (no colorway, no design)
+//   non-garment: <handle>_<shot>-<index>.jpg                  (a body-null product; no colour)
+//
+// A non-garment product (catalogue.json `body: null`, the tote and the gift card) has no line,
+// garment or colour axis, so its filename carries the product handle itself and nothing else. Its
+// census key is the handle (a key with no '/' can never collide with a '<line>/<garment>' key), its
+// colour vocabulary is empty, and every alt on it is colour-free by construction: the guard runs
+// with expected=null against an empty value list, so it only ever rejects nothing.
 //
 // Fields are underscore-separated. A multi-word field value hyphenates internally
 // (crew-sweater, classic-navy). The shot carries a -<index> suffix (flat-1). ONE scheme runs end
@@ -35,6 +42,7 @@ import {
   parseCatalogue,
   readCommittedCatalogue,
   garmentProducts,
+  nonGarmentProducts,
   colorValuesFor,
   colorDisplay,
   colorSlug,
@@ -116,8 +124,25 @@ export function createNaming(manifest) {
     };
   }
 
+  // Non-garment products: keyed by handle, no line/garment/colour. A handle never contains '/', so
+  // this key space cannot collide with the '<line>/<garment>' keys above.
+  const nonGarments = [];
+  for (const product of nonGarmentProducts(manifest)) {
+    products[product.handle] = {
+      line: null,
+      garment: null,
+      title: product.title,
+      handle: product.handle,
+      gid: product.gid,
+      colorValues: [],
+    };
+    nonGarments.push(product.handle);
+  }
+
   const garments = [];
-  for (const p of Object.values(products)) if (!garments.includes(p.garment)) garments.push(p.garment);
+  for (const p of Object.values(products)) {
+    if (p.garment !== null && !garments.includes(p.garment)) garments.push(p.garment);
+  }
 
   // Colorway token -> the Admin Color option value the storefront gallery filter matches alt text
   // against. The token is the manifest's own colour slug, so the third casing of every colour is
@@ -133,14 +158,17 @@ export function createNaming(manifest) {
 
   // Multi-word vocab tokens, longest first, used only by the hyphen-fallback parser to repair
   // all-hyphen source names (where the field separators were typed as '-' instead of '_').
-  const multiword = [...new Set([...lines, ...garments, ...colorways].filter((t) => t.includes('-')))].sort(
+  const multiword = [...new Set([...lines, ...garments, ...colorways, ...nonGarments].filter((t) => t.includes('-')))].sort(
     (a, b) => b.length - a.length || a.localeCompare(b)
   );
+
+  const vocab = { lines, garments, colorways, nonGarments, multiword };
 
   return {
     LINES: lines,
     GARMENTS: garments,
     COLORWAYS: colorways,
+    NON_GARMENTS: nonGarments,
     SHOTS,
     PRODUCTS: products,
     MULTIWORD_TOKENS: multiword,
@@ -149,8 +177,8 @@ export function createNaming(manifest) {
     productForHandle: (handle) => findByHandle(products, handle),
     recognizedColorValues: valuesFor,
     altColorProblem: (alt, expected, productKey) => checkAltColor(alt, expected, productKey, valuesFor),
-    parseName: (filename) => parseWithVocab(filename, { lines, garments, colorways, multiword }),
-    normalizeName: (filename) => normalizeWithVocab(filename, { lines, garments, colorways, multiword }),
+    parseName: (filename) => parseWithVocab(filename, vocab),
+    normalizeName: (filename) => normalizeWithVocab(filename, vocab),
   };
 }
 
@@ -319,7 +347,9 @@ function fieldsFromHyphenated(base, multiword) {
 
 /**
  * Parse a source filename into convention fields. Never throws. Returns:
- *   { line, garment, colorway, design, shot, index, fields, warnings, ok, uncertain }
+ *   { line, garment, colorway, design, product, shot, index, fields, warnings, ok, uncertain }
+ * `product` is the handle for the non-garment form (`<handle>_<shot>-<index>`) and null for the
+ * garment forms, whose product is resolved from (line, garment) by the caller.
  * `fields` is the corrected, ordered field list used to build the canonical names. `ok` is
  * false when the name could not be parsed into a plausible structure at all. `uncertain` is
  * true when a warning reflects genuine ambiguity (unknown token, missing index, unparseable);
@@ -327,38 +357,51 @@ function fieldsFromHyphenated(base, multiword) {
  * to a source file. `--rename-originals` renames only when `ok && !uncertain`.
  */
 function parseWithVocab(filename, vocab) {
-  const { lines, garments, colorways, multiword } = vocab;
+  const { lines, garments, colorways, nonGarments = [], multiword } = vocab;
   const warnings = [];
   let uncertain = false;
   const dot = filename.lastIndexOf('.');
   const base = dot === -1 ? filename : filename.slice(0, dot);
 
+  // The non-garment form is exactly two fields whose first is a declared non-garment handle.
+  const isNonGarmentShape = (fields) => fields.length === 2 && nonGarments.includes(fields[0]);
+
   // Prefer underscore fields; fall back to hyphen recovery when there is no usable underscore
   // structure (the all-hyphen separator-misuse case). A hyphen repair is confident, not uncertain.
   let rawFields = base.split('_').filter((f) => f.length);
-  if (rawFields.length < 4) {
+  if (rawFields.length < 4 && !isNonGarmentShape(rawFields.map(repairToken))) {
     const recovered = fieldsFromHyphenated(base, multiword);
-    if (recovered && recovered.length >= 4) {
+    if (recovered && (recovered.length >= 4 || isNonGarmentShape(recovered))) {
       warnings.push('field separators were hyphens; expected underscores between fields');
       rawFields = recovered;
     }
   }
   rawFields = rawFields.map(repairToken);
 
+  const parseShot = (shotField) => {
+    const m = INDEX_RE.exec(shotField);
+    if (m) return { shot: m[1], index: Number(m[2]) };
+    warnings.push(`shot field "${shotField}" has no -<index> suffix`);
+    uncertain = true;
+    return { shot: shotField, index: null };
+  };
+
+  if (isNonGarmentShape(rawFields)) {
+    const [product, shotField] = rawFields;
+    const { shot, index } = parseShot(shotField);
+    if (shot && !SHOTS.includes(shot)) { warnings.push(`unknown shot "${shot}"`); uncertain = true; }
+    return { line: null, garment: null, colorway: null, design: null, product, shot, index, fields: rawFields, warnings, ok: true, uncertain };
+  }
+
   if (rawFields.length < 4 || rawFields.length > 5) {
     warnings.push(`expected 4 or 5 fields, found ${rawFields.length}: could not parse convention`);
-    return { line: null, garment: null, colorway: null, design: null, shot: null, index: null, fields: rawFields, warnings, ok: false, uncertain: true };
+    return { line: null, garment: null, colorway: null, design: null, product: null, shot: null, index: null, fields: rawFields, warnings, ok: false, uncertain: true };
   }
 
   const [line, garment, colorway] = rawFields;
   const shotField = rawFields[rawFields.length - 1];
   const design = rawFields.length === 5 ? rawFields[3] : null;
-
-  const m = INDEX_RE.exec(shotField);
-  let shot = shotField;
-  let index = null;
-  if (m) { shot = m[1]; index = Number(m[2]); }
-  else { warnings.push(`shot field "${shotField}" has no -<index> suffix`); uncertain = true; }
+  const { shot, index } = parseShot(shotField);
 
   if (!lines.includes(line)) { warnings.push(`unknown line "${line}"`); uncertain = true; }
   if (!garments.includes(garment)) { warnings.push(`unknown garment "${garment}"`); uncertain = true; }
@@ -368,7 +411,7 @@ function parseWithVocab(filename, vocab) {
     warnings.push('group shot should not carry a design field'); uncertain = true;
   }
 
-  return { line, garment, colorway, design, shot, index, fields: rawFields, warnings, ok: true, uncertain };
+  return { line, garment, colorway, design, product: null, shot, index, fields: rawFields, warnings, ok: true, uncertain };
 }
 
 /**
@@ -405,7 +448,7 @@ function normalizeWithVocab(filename, vocab) {
 // that needs a different census (a test, or a tool that has already loaded the manifest) calls
 // `createNaming(manifest)` and uses the object it returns instead.
 
-/** Every recorded product, keyed '<line>/<garment>'. */
+/** Every recorded product: garments keyed '<line>/<garment>', non-garments keyed by handle. */
 export function allProducts() {
   return defaultNaming().PRODUCTS;
 }

@@ -281,8 +281,10 @@ async function pollMediaReady(domain, token, productId, mediaId, redact) {
 }
 
 // Pure drift predicates, exported for unit tests. Each returns an error string or null; the key
-// is a product key ('<line>/<garment>'). An unknown/null key returns null (nothing recorded to
-// drift from; resolveProduct only reaches these with a known key anyway).
+// is a product key ('<line>/<garment>', or the handle for a non-garment product). An unknown/null
+// key returns null (nothing recorded to drift from; resolveProduct only reaches these with a known
+// key anyway). For a non-garment the recorded colour set is empty, so a live Color option on it is
+// drift too: the alt guard would have nothing to bind against.
 export function gidDriftProblem(liveId, key) {
   const record = allProducts()[key];
   if (!record) return null;
@@ -512,12 +514,13 @@ async function main() {
       const expected = row.admin_color ? row.admin_color : null;
 
       if (!row.alt) { problems.push(`${row.new_name}: no alt text; author it in the manifest first`); skipped++; continue; }
-      // An unrecorded handle means no recorded Color vocabulary, so the GID check, the drift check
-      // and the alt-colour guard above all had nothing to compare against. Refuse rather than
+      // An unrecorded handle means no recorded GID or Color vocabulary, so the GID check, the drift
+      // check and the alt-colour guard above all had nothing to compare against. Refuse rather than
       // upload unguarded: the file header promises the guard passes for EVERY row, and shared-asset
-      // rows carry a hand-authored handle, which is exactly where a typo lands.
+      // rows carry a hand-authored handle, which is exactly where a typo lands. A non-garment
+      // product (body null) IS recorded, keyed by handle with an empty colour vocabulary.
       if (!key) {
-        problems.push(`${row.new_name}: product "${handle}" is not declared as a garment in catalogue.json, so the colour-drift and alt-colour guards cannot run; declare it there before uploading to it`);
+        problems.push(`${row.new_name}: product "${handle}" is not declared in catalogue.json, so the GID, colour-drift and alt-colour guards cannot run; declare it there before uploading to it`);
         skipped++;
         continue;
       }
