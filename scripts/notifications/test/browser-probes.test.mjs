@@ -20,36 +20,47 @@ const dir = path.join(here, '..', 'browser');
 const PROBES = ['editor-probe.js', 'editor-dump.js', 'mobile-check.js'];
 const src = (name) => readFileSync(path.join(dir, name), 'utf8');
 
-// Runs a probe with a stub DOM: `textarea` is the editor text, `frame` makes the window a child
-// frame, `previewHtml` is what documentElement.outerHTML returns. Timers fire synchronously as
-// many times as asked; console lines are collected.
-function runProbe(name, { textarea = null, frame = false, previewHtml = '', ticks = 3, noButtons = false } = {}) {
+// Runs a probe with a stub DOM. `textarea` is the editor text (a string, or an array of strings
+// for several textareas; the probe must read the longest); `cm6` / `cm5` make the CodeMirror
+// widgets exist with that text; `containers` and `scrollWidth` drive mobile-check. Timers fire
+// synchronously `ticks` times, and `between(tick)` runs before each tick so a test can mutate the
+// stub mid-run; console lines are collected.
+function runProbe(name, { textarea = null, cm6 = null, cm5 = null, ticks = 3, noButtons = false, containers, scrollWidth = 400, between = null } = {}) {
   const logs = [];
   const timers = [];
   const buttons = [{ textContent: 'Revert changes button', disabled: true, getAttribute: () => null }, { textContent: 'Save', disabled: false, getAttribute: () => null }];
   const inputs = [{ getAttribute: (a) => (a === 'aria-label' ? 'Email subject' : null), id: '', value: 'Order {{name}} confirmed' }];
-  const el = (tag) => ({ tagName: tag.toUpperCase(), className: '', getBoundingClientRect: () => ({ width: 0, left: 0 }), querySelectorAll: () => [] });
+  const areas = textarea === null ? [] : (Array.isArray(textarea) ? textarea : [textarea]).map((value) => ({ value }));
+  const el = (tag, { width = 0, left = 0, className = '', children = [] } = {}) => ({
+    tagName: tag.toUpperCase(),
+    className,
+    getBoundingClientRect: () => ({ width, left }),
+    querySelectorAll: () => children,
+  });
+  const defaultContainers = [el('table', { width: 380, left: 15 }), el('table', { width: 380, left: 15 })];
+  const cm6El = cm6 === null ? null : { cmView: { view: { state: { doc: { toString: () => cm6 } } } } };
+  const cm5El = cm5 === null ? null : { CodeMirror: { getValue: () => cm5 } };
+  const stub = { buttons, areas, containers: containers === undefined ? defaultContainers : containers, scrollWidth };
   const document = {
     readyState: 'complete',
-    body: { innerHTML: previewHtml },
     head: { appendChild() {}, removeChild() {} },
-    documentElement: { outerHTML: previewHtml, scrollWidth: 400 },
+    documentElement: { get scrollWidth() { return stub.scrollWidth; } },
     createElement: () => ({}),
     querySelector: (sel) => {
-      if (sel.includes('.cm-content') || sel.includes('.CodeMirror')) return sel.includes('textarea') && textarea !== null ? { value: textarea } : null;
-      if (sel === 'table') return previewHtml.includes('<table') ? {} : null;
+      if (sel === '.cm-content') return cm6El;
+      if (sel === '.CodeMirror') return cm5El;
       return null;
     },
     querySelectorAll: (sel) => {
-      if (sel === 'textarea') return textarea === null ? [] : [{ value: textarea }];
-      if (sel === 'button') return noButtons ? [] : buttons;
+      if (sel === 'textarea') return stub.areas;
+      if (sel === 'button') return noButtons ? [] : stub.buttons;
       if (sel.startsWith('input')) return inputs;
-      if (sel === 'table.container') return [el('table')];
+      if (sel === 'table.container') return stub.containers;
       return [];
     },
   };
   const window = { innerWidth: 411, addEventListener() {} };
-  window.top = frame ? {} : window;
+  window.top = window;
   const context = {
     document,
     window,
@@ -66,7 +77,10 @@ function runProbe(name, { textarea = null, frame = false, previewHtml = '', tick
     String,
   };
   vm.runInNewContext(src(name), context, { filename: name });
-  for (let t = 0; t < ticks; t++) for (const fn of timers) fn();
+  for (let t = 0; t < ticks; t++) {
+    if (between) between(t, stub);
+    for (const fn of timers) fn();
+  }
   return logs;
 }
 
@@ -137,9 +151,46 @@ test('editor-dump.js: the console lines reassemble through parseDump to the LF-n
   assert.deepEqual(runProbe('editor-dump.js', { textarea: '' }), [], 'an empty editor is not dumped');
 });
 
-test('mobile-check.js: logs SSSMOBILE and SSSSQUEEZE lines', () => {
-  const logs = runProbe('mobile-check.js');
-  assert.equal(logs.length, 2);
-  assert.match(logs[0], /^SSSMOBILE (ok|fail) widths=/);
-  assert.match(logs[1], /^SSSSQUEEZE (ok|warn)/);
+test('mobile-check.js: ok when every container shares a width and left edge and nothing scrolls sideways; fail otherwise', () => {
+  const ok = runProbe('mobile-check.js');
+  assert.deepEqual(ok, ['SSSMOBILE ok widths=380,380 lefts=15,15 scrollWidth=400 innerWidth=411', 'SSSSQUEEZE ok']);
+  const el = (width, left) => ({ tagName: 'TABLE', className: 'container', getBoundingClientRect: () => ({ width, left }), querySelectorAll: () => [] });
+  assert.match(runProbe('mobile-check.js', { containers: [el(300, 15), el(200, 15)] })[0], /^SSSMOBILE fail widths=300,200/);
+  assert.match(runProbe('mobile-check.js', { containers: [el(300, 15), el(300, 60)] })[0], /^SSSMOBILE fail widths=300,300 lefts=15,60/);
+  assert.match(runProbe('mobile-check.js', { scrollWidth: 500 })[0], /^SSSMOBILE fail .*scrollWidth=500 innerWidth=411$/);
+  assert.deepEqual(runProbe('mobile-check.js', { containers: [] }), ['SSSMOBILE fail no table.container found']);
+  const wideRow = { tagName: 'TD', className: 'price', getBoundingClientRect: () => ({ width: 350, left: 0 }), querySelectorAll: () => [] };
+  const withWide = { tagName: 'TABLE', className: 'container', getBoundingClientRect: () => ({ width: 380, left: 15 }), querySelectorAll: () => [wideRow] };
+  const squeezed = runProbe('mobile-check.js', { containers: [withWide] });
+  assert.equal(squeezed[1], 'SSSSQUEEZE warn <td class="price"> 350px');
+});
+
+test('editor-probe.js reads CodeMirror 6 first, then CodeMirror 5, then the longest textarea', () => {
+  const text = 'cm text ©\n';
+  const lf = text;
+  assert.ok(runProbe('editor-probe.js', { cm6: text, textarea: 'other' }).includes(`SSSPOLL ${lf.length} ${fnv1a(lf)} cm6`), 'cm6 wins over a textarea');
+  assert.ok(runProbe('editor-probe.js', { cm5: text, textarea: 'other' }).includes(`SSSPOLL ${lf.length} ${fnv1a(lf)} cm5`), 'cm5 wins over a textarea');
+  assert.ok(runProbe('editor-probe.js', { cm6: text, cm5: 'five' }).includes(`SSSPOLL ${lf.length} ${fnv1a(lf)} cm6`), 'cm6 wins over cm5');
+  const longest = 'the longer textarea';
+  assert.ok(runProbe('editor-probe.js', { textarea: ['short', longest, 'mid one'] }).includes(`SSSPOLL ${longest.length} ${fnv1a(longest)} textarea`), 'the longest textarea is read');
+  assert.ok(runProbe('editor-dump.js', { cm6: text }).includes(`SSSHASH ${fnv1a(lf)}`), 'editor-dump reads cm6 too');
+  assert.ok(runProbe('editor-dump.js', { cm5: text }).includes(`SSSHASH ${fnv1a(lf)}`), 'editor-dump reads cm5 too');
+});
+
+test('editor-probe.js logs again when the document or the revert state changes, and not otherwise', () => {
+  const logs = runProbe('editor-probe.js', {
+    textarea: 'first',
+    ticks: 6,
+    between: (t, stub) => {
+      if (t === 2) stub.areas[0].value = 'second';
+      if (t === 4) stub.buttons[0].disabled = false;
+    },
+  });
+  const polls = logs.filter((l) => l.startsWith('SSSPOLL '));
+  assert.deepEqual(polls, [
+    `SSSPOLL 5 ${fnv1a('first')} textarea`,
+    `SSSPOLL 6 ${fnv1a('second')} textarea`,
+    `SSSPOLL 6 ${fnv1a('second')} textarea`,
+  ]);
+  assert.deepEqual(logs.filter((l) => l.startsWith('SSSREVERT ')), ['SSSREVERT true', 'SSSREVERT true', 'SSSREVERT false']);
 });

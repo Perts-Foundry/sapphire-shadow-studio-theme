@@ -17,10 +17,12 @@ green PR. Ends with one STOP that decides whether Admin is synced now or after m
 2. **Worktree, branch, regenerate, check.** Per the global git rules, then
    `npm run notifications:generate`, `npm run notifications:check`, `npm run notifications:test`,
    and the em-dash sweep. Report the version deltas by diffing
-   `node scripts/notifications/brand.mjs --status` on the branch against the same command on
-   `origin/main` (checked out to a scratch path or read with `git show origin/main:marketing/notifications/manifest.json`);
-   not from the generate's stdout, which shows only the last hop. A stylesheet change bumps all
-   46 by design; say so rather than treating it as noise.
+   `node scripts/notifications/brand.mjs --status` on the branch against
+   `node scripts/notifications/brand.mjs --status --root <scratch>`, where `<scratch>` holds
+   `origin/main` (`git worktree add <scratch> origin/main`, or
+   `git archive origin/main marketing/notifications | tar -x -C <scratch>`); not from the
+   generate's stdout, which shows only the last hop. A stylesheet change bumps every id in the
+   manifest by design; say so rather than treating it as noise.
 
 3. **Render check** (browser opt-in ask first, its own turn). Per `browser.md`: paste the branded
    file into the editor of at least one non-pickup template without saving, read the preview
@@ -32,21 +34,27 @@ green PR. Ends with one STOP that decides whether Admin is synced now or after m
    the unsaved paste per the dirty-editor rule. Declined browser: skip, and every later report
    says "render check not run (browser declined)".
 
-4. **Pre-push and PR.** The repo CLAUDE.md pre-push checklist (branch-diff scan, commit-message
-   scan, `git config --local user.email`), rebase onto `origin/main`, commit with a message naming
-   the ids bumped and why, push. Then the repo's pre-PR gate (`/pre-pr`: doc-sync-checker,
+4. **Pre-push and PR.** Commit with a message naming the ids bumped and why, then the repo
+   CLAUDE.md pre-push checklist (branch-diff scan, commit-message scan,
+   `git config --local user.email`), fetch and rebase onto `origin/main`, push. Then the repo's pre-PR gate (`/pre-pr`: doc-sync-checker,
    test-engineer for `scripts/notifications/`, prompt-reviewer for `.claude/` content, the
    headless code review, `/security-review`), presented and waited on per that gate's own rules.
    Then open the PR (MCP github tools preferred); no attribution trailer in the commit or the
    PR body.
 
-5. **Wait for the PR's checks** (`gh pr checks <n> --watch`) and report them by name:
-   `notifications-check`, `notifications-tests`, `secret-scan`, and the rest of `validate`. A red
-   check ends the run with the failure text; do not offer a sync on a red PR.
+5. **Wait for the PR's checks** (`gh pr checks <n> --watch`) and report `validate` and
+   `deploy-preview` by name (the per-tool results are steps inside the `validate` job, not
+   checks of their own). Then read the sticky CI report comment on the PR and quote its
+   "Notification templates: check", "Notification templates: tests" and "Gitleaks" rows
+   verbatim. A red `validate`, or a failed row, ends the run with the failure text; do not offer
+   a sync on a red PR.
 
-6. **STOP** on green. Report: the PR, the check results, the ids now behind in Admin (from the
-   step 2 diff), the render-check result (or "not run"), and any deferred pickup render check.
-   Three legal answers, anything else is not approval:
+6. **STOP** on green. Report: the PR, the check results, the ids whose version bumped in this PR
+   (from the step 2 diff; they are now behind wherever Admin held the previous version, the
+   state file's `seen` is the hint and `sync` is the proof), the render-check result (or "not
+   run"), and any deferred pickup render check. This STOP presents a choice, not a single
+   action, so a bare affirmative is re-asked, never read as `sync now`. Three legal answers,
+   anything else is not approval:
    - `sync now`: return to SKILL.md and run `sync --from <branch> <ids>`; it asks its own
      browser opt-in and presents its own plan-table STOP (three operator turns in total).
    - `after merge`: for each id, `node scripts/notifications/state.mjs --store <store>

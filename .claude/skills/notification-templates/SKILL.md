@@ -25,17 +25,26 @@ this skill drives it. Nothing here is theme code: never `shopify theme push` or 
 Unlike `add-product`, which never commits, this skill **commits, pushes and opens PRs**, and it
 **clicks Save in Admin itself** once every check passes; both by the operator's decision. And
 unlike the sibling skills' one-STOP-per-write, a `sync` run has **one STOP for the whole batch**:
-the operator's reason is that the batch is up to 46 identical mechanical writes, each byte-verified
+the operator's reason is that the batch is up to one write per manifest id, each byte-verified
 before Save and again after reload, and a failed check stops the run before Save.
 
 ## Arguments
 
-The first word of `$ARGUMENTS` is the mode, from the closed set `change | sync | audit | record |
-rollback`. No mode, or an unknown word: print the entry-points table below and stop; there is no
-default mode. `audit` accepts `--quick`. `sync` and `audit` accept an optional id list; validate
-every id against `node scripts/notifications/brand.mjs --status` and refuse the run on any unknown
-id. `sync` and `rollback` accept `--from <ref>` (default `origin/main`). `test-send` is not a
-mode: it is a request the operator makes during or after a run, handled per `browser.md`.
+The mode is `$0`, from the closed set `change | sync | audit | record | rollback`; the rest of
+`$ARGUMENTS` are its flags and ids. No mode, or an unknown word: print the entry-points table
+below and stop; there is no default mode. Per mode:
+
+- `change`: no arguments.
+- `sync [--from <ref>] [id ...]`: optional id list; `--from` defaults to `origin/main`.
+- `audit [--quick] [--from <ref>] [id ...]`: as `sync`, plus `--quick`.
+- `record <id>`: exactly one id, required.
+- `rollback <id> [--from <ref>]`: exactly one id, required; `--from` defaults to the commit
+  before the one recorded in `seen` (per `rollback.md`), never to what Admin already holds.
+
+Every id, positional in any mode, is validated against
+`node scripts/notifications/brand.mjs --status`; an unknown id, or zero or several ids where
+exactly one is required, refuses the run with the entry-points table. `test-send` is not a mode:
+it is a request the operator makes during or after a run, handled per `browser.md`.
 
 ## Entry points
 
@@ -44,7 +53,7 @@ mode: it is a request the operator makes during or after a run, handled per `bro
 | `change` | `change.md` | the operator's description, `lib/`, `manifest.json` | the repo (branch, commit, push, PR); an unsaved paste in one editor | browser opt-in; the pre-PR gate; one STOP on a green PR |
 | `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save), the state file | browser opt-in; one STOP with the plan table |
 | `audit` | `audit.md` | every Admin editor in scope | the state file, a table in the scratchpad | browser opt-in |
-| `record` | `record.md` | one Admin editor | `stock/<id>.liquid`, `manifest.json` (then `change`) | browser opt-in; one STOP before Revert to default |
+| `record` | `record.md` | one Admin editor | `stock/<id>.liquid`, `manifest.json` (then `change`) | browser opt-in; one STOP before Revert to default (that approval covers the Save that follows) |
 | `rollback` | `rollback.md` | git history, one Admin editor | Admin (Save), the state file | browser opt-in; one STOP before the paste; a second before Revert to default |
 
 `browser.md` holds everything shared by the browser modes: the editor URL, the probes, the paste
@@ -87,7 +96,7 @@ any violation, because an id from it flows into a navigation URL.
   its own STOP, for the single id named, and in `rollback` as the last resort after its own STOP.
   Never as a reaction to a failed `sync` check.
 - Git per the operator's global rules; they are not restated here. The em-dash sweep is the
-  repo's own `git grep -l $'\xe2\x80\x94'`.
+  one the repo CLAUDE.md gives under Formatting.
 - Browser opt-in is asked once, in its own turn, at the start of any run that needs the browser
   (`change` step 3, `sync`, `audit`, `record`, `rollback`). Declined: `change` skips step 3 and
   its report and PR say "render check not run (browser declined)", never "verified"; `sync`,
@@ -101,10 +110,11 @@ any violation, because an id from it flows into a navigation URL.
 One file per store, outside the checkout:
 `${XDG_STATE_HOME:-~/.local/state}/notification-templates/<store>.json`, read and written only
 through `node scripts/notifications/state.mjs --store <store> ...`. The store is the handle the
-README's CLI commands pass with `-s`, and must match `^[a-z0-9-]+$` or the run refuses. Schema
-(fixed, `schemaVersion: 1`): `seen` per id (`version`, `fnv`, `length`, `sha`, `ref`, `at`),
-`pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), and `lastAudit` (`at`, per-id
-`adminVersion`, `repoVersion`, `match`, `render`). `match` is from the closed set `in-sync |
+repo `README.md`'s Development section passes to the Shopify CLI with `-s`, and must match
+`^[a-z0-9-]+$` or the run refuses. Schema (fixed): `{ schemaVersion: 1, store, seen, pending,
+lastAudit }` and nothing else; `seen` per id (`version`, `fnv`, `length`, `sha`, `ref`, `at`),
+`pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), and `lastAudit` as
+`{ at, results: { <id>: { adminVersion, repoVersion, match, render } } }` or `null`. `match` is from the closed set `in-sync |
 behind | ahead | unstamped-stock | unstamped-edited | hash-mismatch | orphan`; `render` from
 `pass | fail | skipped`; dates ISO 8601. A hint, never an authority: `sync` and `audit` always
 read Admin. The audit's human-readable table goes to the scratchpad, never the repo.

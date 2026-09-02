@@ -77,6 +77,15 @@ test('uppercase tags and attributes are lowercased; unquoted attribute values pa
   assert.equal(elements[0].tag, 'table');
   assert.equal(elements[0].attrs.bgcolor, '#071E3F');
   assert.equal(elements[0].attrs.class, 'row');
+  const selfClosed = parseHtml('<td><img src=a.png/><br/></td>');
+  assert.equal(selfClosed.elements[1].attrs.src, 'a.png', 'the self-closing slash is not part of an unquoted value');
+  assert.deepEqual(selfClosed.elements.map((e) => e.tag), ['td', 'img', 'br']);
+});
+
+test('doctype, processing instructions, a bare < in text and an unterminated tag are survivable', () => {
+  const { elements } = parseHtml('<!DOCTYPE html><?xml version="1.0"?><p>a < b</p><td');
+  assert.deepEqual(elements.map((e) => e.tag), ['p']);
+  assert.equal(innerText(elements[0]), 'a < b');
 });
 
 test('normalizeColor accepts the inliner forms and refuses non-colours', () => {

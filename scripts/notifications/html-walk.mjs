@@ -67,6 +67,12 @@ export function parseHtml(html) {
       i = end === -1 ? html.length : end + 1;
       continue;
     }
+    // A `<` not followed by a tag name, `/`, `!` or `?` is text (a browser does the same).
+    if (!/[A-Za-z/!?]/.test(html[lt + 1] || '')) {
+      addText('<');
+      i = lt + 1;
+      continue;
+    }
     if (html.startsWith('</', lt)) {
       const end = html.indexOf('>', lt);
       const name = html.slice(lt + 2, end === -1 ? html.length : end).trim().toLowerCase();
@@ -90,7 +96,10 @@ export function parseHtml(html) {
     }
     const tag = nameMatch[1].toLowerCase();
     const selfClosing = /\/\s*$/.test(inner);
-    const el = { tag, attrs: parseAttrs(inner.slice(nameMatch[1].length)), parent: top(), children: [], text: '', raw: '' };
+    // Strip the closing slash before attribute parsing so an unquoted value right before `/>`
+    // (`<img src=a.png/>`) does not swallow it.
+    const attrText = inner.slice(nameMatch[1].length).replace(/\/\s*$/, '');
+    const el = { tag, attrs: parseAttrs(attrText), parent: top(), children: [], text: '', raw: '' };
     top().children.push(el);
     elements.push(el);
     i = end + 1;

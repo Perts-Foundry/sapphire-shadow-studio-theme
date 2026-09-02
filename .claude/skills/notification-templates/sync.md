@@ -3,12 +3,15 @@
 Push the repo's branded templates into Admin, byte-verified before Save and again after reload.
 One STOP for the whole batch (SKILL.md records the operator's reason). No git writes here.
 
-1. **Preconditions.** `npm run notifications:check` passes on the checkout at `--from` (default
-   `origin/main`; a branch name when `change` handed over). Load the state file
+1. **Preconditions.** `node scripts/notifications/brand.mjs --check --root <scratch>` passes,
+   where `<scratch>` holds `--from` (default `origin/main`; a branch name when `change` handed
+   over): `git worktree add <scratch> <ref>`, or
+   `git archive <ref> marketing/notifications | tar -x -C <scratch>`. The same `--root` serves
+   `--status` and `dump.mjs --hash` below. Load the state file
    (`node scripts/notifications/state.mjs --store <store> show`); a refusal ends the run and is
    reported as such. For each `pending` entry, confirm `--status` on `--from` still carries that
-   version and the repo file still has that FNV; drop stale entries with `pending-remove` and say
-   so.
+   version and the repo file still has that FNV (`node scripts/notifications/dump.mjs --hash`);
+   drop stale entries with `pending-remove` and say so.
 
 2. **Plan** (browser opt-in ask first, its own turn). `node scripts/notifications/brand.mjs
    --status`, then for each id in scope navigate with `editor-probe.js` and read `SSSPOLL`
@@ -22,12 +25,17 @@ One STOP for the whole batch (SKILL.md records the operator's reason). No git wr
    | unstamped, bytes equal `stock/<id>.liquid` (`dump.mjs --hash` on it) | `unstamped-stock` |
    | unstamped, any other bytes (hand-edited or an older paste) | `unstamped-edited` |
    | stamped with the repo version, bytes differ | `hash-mismatch` |
-   | bytes match no file on `--from` at any version and the stamp names another id | `orphan` |
+   | stamped with a stamp naming a different id, and bytes equal no `<id>.liquid` or `stock/<id>.liquid` on `--from` | `orphan` |
+
+   Rows are tested top to bottom; the first match wins.
 
    **The paste criterion is bytes**: Admin length and FNV differ from the repo file. The version
    column is informational (a `git revert` moves a version backwards by design). `sync` pastes
    over `behind`, `unstamped-stock`, `unstamped-edited`, `hash-mismatch` and `orphan`; `ahead` is
    flagged in the table and not pasted unless the operator named that id explicitly.
+   If the scope contains no non-pickup id that will be pasted or is already `in-sync`, the plan
+   table says so and the STOP offers adding one `in-sync` non-pickup id to the run for its render
+   check only (paste, verify, discard; no Save); a scope of pickup ids alone is refused otherwise.
    **STOP** once with the table: per id, Admin version and FNV before, repo version after, the
    `match`, and the count of live saves. No per-template stops after this.
 

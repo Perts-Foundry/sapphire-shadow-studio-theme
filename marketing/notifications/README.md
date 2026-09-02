@@ -55,9 +55,10 @@ byte-order mark. A refusal writes nothing.
 Tooling under `scripts/notifications/`: `brand.mjs` (generate, `--check`, `--status`),
 `record-stock.mjs` (record a stock snapshot), `dump.mjs` (the console-dump and hash contract the
 browser probes use; `--hash <file>` prints a file's length and FNV), `verify-render.mjs` (checks a
-rendered preview against the brand; `--preview-response` reads the editor's
-EmailTemplateGeneratePreview response, the reliable way to get a render, since the Preview
-dialog's iframe is an `about:srcdoc` frame no script can be injected into), `html-walk.mjs` (its
+rendered preview against the brand; input is a rendered HTML file, `--dump <console dump...>`,
+or `--preview-response <file>`, the editor's EmailTemplateGeneratePreview response and the
+reliable way to get a render, since the Preview dialog's iframe is an `about:srcdoc` frame no
+script can be injected into; `--manifest` and `--css` override the checkout's for a rollback), `html-walk.mjs` (its
 parser), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
 state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
@@ -93,7 +94,11 @@ dropping them.
 
 `verify-render.mjs` checks a rendered preview (or a test send's source) for the palette on the right
 elements, the social row, the footer nesting, the empty-subtotal bug, the mobile media block and the
-version stamp. It proves the sample-data render only: Liquid branches the preview does not take
+version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `footer-navy`,
+`page-colour`, `content-white`, `buttons`, `shop-app-button`, `footer-disclaimer`,
+`body-disclaimer`, `headings`, `body-paragraphs`, `social-row`, `footer-inside-body`,
+`subtotal-lines`, `no-accent`, `no-liquid-error`, `no-translation-missing`, `mobile-css`,
+`header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
 (discounts, gift cards, partial fulfilment, refunds) are not exercised.
 
 ## Skill

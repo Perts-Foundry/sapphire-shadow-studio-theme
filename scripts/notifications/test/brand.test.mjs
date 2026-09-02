@@ -1323,6 +1323,26 @@ test('crash recovery: a manifest already bumped but files not yet written is hea
   assert.deepEqual(check(root).mismatches, []);
 });
 
+test('generate writes the manifest before the files: a crash on the first file leaves a bumped manifest and old files, which the rerun heals', () => {
+  const root = cleanRoot();
+  const p = paths(root);
+  writeFileSync(p.css, fixtureCss + '    .bump { color: #000; }\n', 'utf8');
+  // A directory where the first branded file goes makes renameSync throw after the manifest write.
+  rmSync(p.branded('alpha'));
+  mkdirSync(p.branded('alpha'));
+  assert.throws(() => generate(root), /EISDIR|EPERM|ENOTEMPTY|EEXIST/);
+  assert.equal(readVersion(root, 'alpha').version, 2, 'the manifest was written first');
+  assert.equal(readVersion(root, 'beta').version, 2);
+  rmSync(p.branded('alpha'), { recursive: true });
+  const c = check(root);
+  assert.ok(c.mismatches.every((m) => /differs from regenerated output|is missing/.test(m)), c.mismatches.join('\n'));
+  assert.ok(!c.mismatches.some((m) => m.endsWith(CHECK_BUMP_MESSAGE)), 'the hash is already recorded, so no bump message');
+  const g = generate(root);
+  assert.deepEqual(g.bumps, [], 'the rerun does not bump again');
+  assert.deepEqual(g.written, ['alpha', 'beta']);
+  assert.deepEqual(check(root).mismatches, []);
+});
+
 test('plan() is side-effect free: the manifest on disk and the parsed object are unchanged', () => {
   const root = cleanRoot();
   const p = paths(root);

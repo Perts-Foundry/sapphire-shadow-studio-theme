@@ -74,8 +74,8 @@ To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> -
 ## Clipboard and paste
 
 1. `node scripts/notifications/clipboard.mjs marketing/notifications/<id>.liquid` (detects
-   `pbcopy`, `wl-copy`, `xclip`, or `clip.exe` under WSL with UTF-16LE; fails with a clear message
-   otherwise).
+   `pbcopy`, `wl-copy`, `xclip`, or `clip.exe` under WSL or native Windows with UTF-16LE; fails
+   with a clear message otherwise).
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line and require the repo file's `--hash` numbers. Never proceed on
    a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
