@@ -24,6 +24,7 @@ the repo catches up afterwards.
 | `manifest.json` | The list of template ids. Each entry records the subject line, the sha256 and the length of the stock snapshot (UTF-16 code units, as `String.length` reports it, so `wc -c` disagrees on any file with non-ASCII text), and, where needed, an `override`. Ids come from here, never from a directory glob. |
 | `lib/brand-style.css` | The `<style>` rules that replace the stock accent-colour block. The only file that carries the palette. |
 | `lib/footer-social.html` | The social icon row and shop-name line inserted at the top of the footer. |
+| `lib/header.html` | The stock logo-only header table, inserted into the three templates that ship without one (the `header` override below). |
 | `stock/<id>.liquid` | Verbatim snapshot of what the Admin editor held when it was recorded. Never edited by hand. |
 | `<id>.liquid` | The generated, ready-to-paste branded template. Never edited by hand. |
 
@@ -37,6 +38,10 @@ the repo catches up afterwards.
 
 Every other byte is identical to the stock snapshot, so `diff stock/<id>.liquid <id>.liquid` shows
 only those three hunks, and an upstream change to a stock template stays reviewable as a plain diff.
+The one exception is the `header` override (three templates), which adds two more mechanical
+edits: `lib/header.html` is inserted before `<table class="row content">`, and every stock
+`{% if shop.email_logo_url %}` ... `{% endif %}` logo block in the body is removed, so the logo
+appears once, in the band.
 
 To change anything in the branded output, edit `lib/` or `manifest.json` and run
 `npm run notifications:generate`. `npm run notifications:check` regenerates in memory and fails if
@@ -95,19 +100,24 @@ do not, the manifest entry carries an `override` object with a `reason` and one 
   extra `.top-border` hairline rule. The whole block is replaced and the hairline is dropped on
   purpose; the branded card layout supplies its own separation.
 
-A third field, `skip`, with a reason string, would leave a template stock: no branded file is
+- **`header`** (`true`): the stock template has no header table, so the generator inserts
+  `lib/header.html` immediately before `<table class="row content">` (which must occur exactly
+  once, first on its line, between the style block and the footer) and removes every stock logo
+  block from the body (a `{% if shop.email_logo_url %}` ... `{% endif %}` span whose only content
+  is the logo image; a block holding any other Liquid tag is a refusal). Three templates carry it:
+  `gift_card_confirmation`, `gift_card_notification` (two logo blocks, one per branch) and
+  `store_credit_issued`. Without it the logo sat inside the white card and the brand band could
+  not be applied by stylesheet alone. A stock template that already has a header table refuses
+  the override.
+
+A fourth field, `skip`, with a reason string, would leave a template stock: no branded file is
 generated and the check refuses if one exists. No template is skipped today.
 
-Two layout notes that no override records, because the generator handles them correctly and they
-are stock behaviour:
-
-- `customer_email_address_changed_confirmation` is the only template with a second `<style>` block,
-  Shopify-authored, after `</head>`. It is left in place (it references no accent colour), and
-  because it comes after `brand-style.css` its bare `a` rule wins over the brand link colour in the
-  body. Header and footer are unaffected. Accept it.
-- `gift_card_confirmation`, `gift_card_notification` and `store_credit_issued` have no header
-  table, so the brand header band never renders there and the footer's rounded bottom corners
-  stand alone. Preview those before pasting; they are not represented by the pilot.
+One layout note that no override records, because the generator handles it correctly and it is
+stock behaviour: `customer_email_address_changed_confirmation` is the only template with a second
+`<style>` block, Shopify-authored, after `</head>`. It is left in place (it references no accent
+colour), and because it comes after `brand-style.css` its bare `a` rule wins over the brand link
+colour in the body. Header and footer are unaffected. Accept it.
 
 ## Drift: catching up with a Shopify change to a stock template
 
@@ -154,8 +164,8 @@ column means the manifest entry carries one (see above).
 | `customer_update_payment_method` | Update your payment method for {{ shop.name }} | none |
 | `draft_order_invoice` | Invoice {{name}} | none |
 | `failed_payment_processing` | [{{shop.name}}] Payment couldn't be processed | none |
-| `gift_card_confirmation` | {{ shop.name }} {{ gift_card.initial_value }} gift card, plus the recipient when there is one | none; no header table |
-| `gift_card_notification` | {{ shop.name }} {{ gift_card.initial_value }} gift card, plus the sender when there is one | none; no header table |
+| `gift_card_confirmation` | {{ shop.name }} {{ gift_card.initial_value }} gift card, plus the recipient when there is one | override: `header` |
+| `gift_card_notification` | {{ shop.name }} {{ gift_card.initial_value }} gift card, plus the sender when there is one | override: `header` |
 | `local_delivered` | Order {{ name }} has been delivered | override: `footerAnchor` |
 | `local_missed_delivery` | Delivery from order {{ name }} has been missed | none |
 | `local_out_for_delivery` | Order {{ name }} is out for delivery | none |
@@ -183,7 +193,7 @@ column means the manifest entry carries one (see above).
 | `shipment_out_for_delivery` | A shipment from order {{ name }} is out for delivery | override: `footerAnchor` |
 | `shipping_confirmation` | A shipment from order {{ name }} is on the way | override: `footerAnchor` |
 | `shipping_update` | Shipping update for order {{ name }} | override: `footerAnchor` |
-| `store_credit_issued` | {{ shop.name }} {{ issued_store_credit.amount }} store credit | none; no header table |
+| `store_credit_issued` | {{ shop.name }} {{ issued_store_credit.amount }} store credit | override: `header` |
 | `store_receipt` | Receipt for order {{name}} | none |
 
 Three subjects are abbreviated above (`change_requested`, `gift_card_*`, `return_receipt`) because

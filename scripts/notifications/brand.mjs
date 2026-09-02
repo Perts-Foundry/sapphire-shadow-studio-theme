@@ -30,6 +30,13 @@ export const STOCK_STYLE_BLOCK = [
 
 export const FOOTER_TABLE_ANCHOR = '<table class="row footer">';
 export const DISCLAIMER_ANCHOR = '<p class="disclaimer__subtext">';
+// The `header` override inserts lib/header.html before this table and removes every stock logo
+// block (a `{% if shop.email_logo_url %}` ... `{% endif %}` span holding the logo image) from the
+// body, so a template that ships without a header table gets the brand band like the rest.
+export const CONTENT_TABLE_ANCHOR = '<table class="row content">';
+export const HEADER_TABLE_ANCHOR = '<table class="header row">';
+export const LOGO_IF_TAG = '{% if shop.email_logo_url %}';
+export const LOGO_ENDIF_TAG = '{% endif %}';
 
 export class BrandError extends Error {
   constructor(id, anchor, detail) {
@@ -93,7 +100,39 @@ function lineIndent(text, index) {
   return prefix;
 }
 
-// Locate the two regions in a stock template. Returns { styleStart, styleEnd, footerStart }.
+// Every stock logo block, as whole-line [start, end) spans. A block is `{% if shop.email_logo_url %}`
+// first on its line, then an <img> that references the logo, and the very next Liquid tag is the
+// `{% endif %}` that closes it, alone on its line. Anything else is a refusal: a block that holds
+// another tag is not the shape this removal was written for.
+function logoBlocks(stock, id, ranges) {
+  const spans = [];
+  for (const at of indexesOf(stock, LOGO_IF_TAG)) {
+    if (insideComment(ranges, at)) throw new BrandError(id, 'logo', 'logo block found inside a Liquid comment');
+    const indent = lineIndent(stock, at);
+    if (indent === null) throw new BrandError(id, 'logo', 'logo block tag is not first on its line');
+    const innerStart = at + LOGO_IF_TAG.length;
+    const nextTag = stock.indexOf('{%', innerStart);
+    if (nextTag === -1 || !stock.startsWith(LOGO_ENDIF_TAG, nextTag)) {
+      throw new BrandError(id, 'logo', 'logo block is not closed by the next Liquid tag');
+    }
+    const inner = stock.slice(innerStart, nextTag);
+    if (!inner.includes('<img') || !inner.includes('shop.email_logo_url')) {
+      throw new BrandError(id, 'logo', 'logo block does not hold the logo image');
+    }
+    if (lineIndent(stock, nextTag) === null) throw new BrandError(id, 'logo', 'logo block endif is not first on its line');
+    const endifEnd = nextTag + LOGO_ENDIF_TAG.length;
+    const lineEnd = stock.indexOf('\n', endifEnd);
+    if (lineEnd === -1 || stock.slice(endifEnd, lineEnd).trim() !== '') {
+      throw new BrandError(id, 'logo', 'logo block endif is not alone on its line');
+    }
+    spans.push([at - indent.length, lineEnd + 1]);
+  }
+  if (spans.length === 0) throw new BrandError(id, 'logo', 'anchor not found');
+  return spans;
+}
+
+// Locate the regions in a stock template. Returns { styleStart, styleEnd, footerStart, contentStart,
+// logos }; contentStart is null and logos is empty unless the override asks for a header.
 export function locateAnchors(stock, id, override) {
   const ranges = commentRanges(stock);
   let styleStart;
@@ -141,21 +180,50 @@ export function locateAnchors(stock, id, override) {
     throw new BrandError(id, 'footer', 'insertion point is not at the start of a line');
   }
   if (styleEnd > footerStart) throw new BrandError(id, 'footer', 'footer anchor precedes the style block');
-  return { styleStart, styleEnd, footerStart };
+
+  let contentStart = null;
+  let logos = [];
+  if (override && override.header) {
+    if (indexesOf(stock, HEADER_TABLE_ANCHOR).some((i) => !insideComment(ranges, i))) {
+      throw new BrandError(id, 'header', 'stock already has a header table');
+    }
+    contentStart = requireOnce(id, 'content-table', indexesOf(stock, CONTENT_TABLE_ANCHOR), ranges);
+    if (lineIndent(stock, contentStart) === null) throw new BrandError(id, 'header', 'content table is not first on its line');
+    if (contentStart < styleEnd) throw new BrandError(id, 'header', 'content table precedes the style block');
+    if (contentStart > tableAt) throw new BrandError(id, 'header', 'content table follows the footer table');
+    logos = logoBlocks(stock, id, ranges);
+    for (const [a, b] of logos) {
+      if (a < contentStart || b > tableAt) throw new BrandError(id, 'logo', 'logo block is outside the content region');
+    }
+  }
+  return { styleStart, styleEnd, footerStart, contentStart, logos };
 }
 
-export function brandTemplate(stock, { id, css, social, override }) {
+export function brandTemplate(stock, { id, css, social, header, override }) {
   if (stock.charCodeAt(0) === 0xfeff) throw new BrandError(id, 'input', 'stock file starts with a BOM');
   if (stock.includes('\r')) throw new BrandError(id, 'input', 'stock file contains a carriage return');
-  const { styleStart, styleEnd, footerStart } = locateAnchors(stock, id, override);
-  const indent = lineIndent(stock, footerStart);
-  const output =
-    commentLine(id) +
-    stock.slice(0, styleStart) +
-    '<style>\n' + css + '  </style>' +
-    stock.slice(styleEnd, footerStart) +
-    social.replace(/\s+$/, '') + '\n' + indent +
-    stock.slice(footerStart);
+  const { styleStart, styleEnd, footerStart, contentStart, logos } = locateAnchors(stock, id, override);
+  // Edits as [start, end, replacement] over the stock text, applied in offset order. The two
+  // every template gets, then the header pair when the override asks for it.
+  const edits = [
+    [styleStart, styleEnd, '<style>\n' + css + '  </style>'],
+    [footerStart, footerStart, social.replace(/\s+$/, '') + '\n' + lineIndent(stock, footerStart)],
+  ];
+  if (contentStart !== null) {
+    if (typeof header !== 'string' || header.trim() === '') {
+      throw new BrandError(id, 'header', 'lib/header.html is required by the header override');
+    }
+    edits.push([contentStart, contentStart, header.replace(/\s+$/, '') + '\n\n' + lineIndent(stock, contentStart)]);
+    for (const [a, b] of logos) edits.push([a, b, '']);
+  }
+  edits.sort((x, y) => x[0] - y[0]);
+  let output = commentLine(id);
+  let cursor = 0;
+  for (const [a, b, text] of edits) {
+    output += stock.slice(cursor, a) + text;
+    cursor = b;
+  }
+  output += stock.slice(cursor);
   const body = stock.slice(0, styleStart) + stock.slice(styleEnd);
   const accentRemaining = indexesOf(body, 'email_accent_color').length;
   return { output, accentRemaining };
@@ -169,6 +237,7 @@ export function paths(root = REPO_ROOT) {
     stockDir: join(dir, 'stock'),
     css: join(dir, 'lib', 'brand-style.css'),
     social: join(dir, 'lib', 'footer-social.html'),
+    header: join(dir, 'lib', 'header.html'),
     branded: (id) => join(dir, `${id}.liquid`),
     stock: (id) => join(dir, 'stock', `${id}.liquid`),
   };
@@ -216,9 +285,13 @@ export function plan(root = REPO_ROOT) {
 
   const css = readFileSync(p.css, 'utf8');
   const social = readFileSync(p.social, 'utf8');
+  const header = existsSync(p.header) ? readFileSync(p.header, 'utf8') : null;
   if (!css.endsWith('\n')) problems.push('lib/brand-style.css must end with a newline');
-  for (const [name, text] of [['lib/brand-style.css', css], ['lib/footer-social.html', social]]) {
+  for (const [name, text] of [['lib/brand-style.css', css], ['lib/footer-social.html', social], ['lib/header.html', header || '']]) {
     if (text.includes('\r')) problems.push(`${name} contains a carriage return`);
+  }
+  if (header === null && ids.some((id) => manifest.templates[id].override && manifest.templates[id].override.header)) {
+    problems.push('lib/header.html is missing but a manifest entry sets override.header');
   }
 
   for (const id of ids) {
@@ -240,8 +313,10 @@ export function plan(root = REPO_ROOT) {
       notes.push(`${id}: skipped (${entry.skip})`);
       continue;
     }
+    // Already reported once above; a per-id refusal on top would say the same thing three times.
+    if (header === null && entry.override && entry.override.header) continue;
     try {
-      const { output, accentRemaining } = brandTemplate(stock, { id, css, social, override: entry.override });
+      const { output, accentRemaining } = brandTemplate(stock, { id, css, social, header, override: entry.override });
       outputs.set(id, output);
       if (accentRemaining > 0) notes.push(`${id}: ${accentRemaining} email_accent_color reference(s) remain in the body`);
     } catch (err) {

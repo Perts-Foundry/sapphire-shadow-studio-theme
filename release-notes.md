@@ -31,14 +31,21 @@ templates are handed to every store as editable source in the store's own admin,
 served in full to every customer who receives one; they are committed here so the branded output
 can be generated, checked and reviewed, not redistributed as a product.
 
-**Overrides, seven of them.** The generator is manifest-driven and fail-closed: an anchor that does
+**Overrides, ten of them.** The generator is manifest-driven and fail-closed: an anchor that does
 not occur exactly once is a refusal, never a guess. Six templates (`local_delivered`, `order_link`,
 `shipment_delivered`, `shipment_out_for_delivery`, `shipping_confirmation`, `shipping_update`)
 carry two `disclaimer__subtext` paragraphs, one in the body and the stock one in the footer, so
 their manifest entry names the footer paragraph by its opening text (`footerAnchor`). One
 (`pos_send_cart`) carries a fourth rule in its stock style block, a `.top-border` hairline, so its
-entry names the whole block (`styleAnchor`) and the hairline is dropped on purpose. A `skip` field
-exists for a template that should stay stock; none uses it.
+entry names the whole block (`styleAnchor`) and the hairline is dropped on purpose. Three
+(`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`) ship with no header
+table and the logo inside the white card, so no stylesheet could give them the navy band; their
+entry sets `header`, which inserts `lib/header.html` (the stock logo-only header) before the
+content row and removes the in-body logo block, the only override that touches body markup. It was
+added during the paste session after the first gift-card preview showed a bare white card where
+every other template has the band; the "stock plus a stylesheet" principle gave way to the brand
+reading the same on all 46. A `skip` field exists for a template that should stay stock; none uses
+it.
 
 **A mistake those six templates caught, corrected before release.** The first draft of
 `brand-style.css` coloured `.disclaimer__subtext` for the navy footer without scoping it to the

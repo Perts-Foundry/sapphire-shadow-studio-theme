@@ -27,6 +27,9 @@ import {
   STOCK_STYLE_BLOCK,
   FOOTER_TABLE_ANCHOR,
   DISCLAIMER_ANCHOR,
+  CONTENT_TABLE_ANCHOR,
+  HEADER_TABLE_ANCHOR,
+  LOGO_IF_TAG,
   REPO_ROOT,
 } from '../brand.mjs';
 
@@ -39,6 +42,7 @@ const fixtureStock = readFileSync(path.join(fixtures, 'minimal.stock.liquid'), '
 const fixtureBranded = readFileSync(path.join(fixtures, 'minimal.branded.liquid'), 'utf8');
 const fixtureCss = readFileSync(path.join(fixtures, 'brand-style.css'), 'utf8');
 const fixtureSocial = readFileSync(path.join(fixtures, 'footer-social.html'), 'utf8');
+const fixtureHeader = readFileSync(path.join(fixtures, 'header.html'), 'utf8');
 
 const EM_DASH = '\u2014';
 const SOCIAL_URLS = new Set([
@@ -74,6 +78,13 @@ function makeStock({
   footerTableTag = FOOTER_TABLE_ANCHOR,
   bodyAccentRefs = 0,
   trailingNewline = true,
+  // The headerless shape: a content table holding `logoBlocks` stock logo blocks and no header
+  // row, the layout the gift card and store credit templates ship with. `headerRow` adds a stock
+  // header table anyway; `logoInnerTag` plants a second Liquid tag inside the logo block.
+  contentTable = false,
+  logoBlocks = 1,
+  headerRow = false,
+  logoInnerTag = false,
 } = {}) {
   const accent = accentInStyle ? '{{ shop.email_accent_color }}' : '#0071C2';
   const styleBlock = [
@@ -85,6 +96,42 @@ function makeStock({
     '  </style>',
   ].join('\n');
   const disclaimer = '              <p class="disclaimer__subtext">Questions? Reply to this email.</p>';
+  const logoBlock = [
+    '{% if shop.email_logo_url %}',
+    '  <table align="center" class="giftcard__doubletopmargin">',
+    ...(logoInnerTag ? ['    {% assign logo_seen = true %}'] : []),
+    '    <tr><td><img src="{{shop.email_logo_url}}" alt="{{ shop.name }}" class="giftcard__logosize" width="{{ shop.email_logo_width }}"></td></tr>',
+    '  </table>',
+    '{% endif %}',
+  ];
+  const headerBlock = [
+    `          ${HEADER_TABLE_ANCHOR}`,
+    '  <tr><td class="header__cell"><center><table class="container"><tr><td>',
+    '    <h1 class="shop-name__text"><a href="{{ shop.url }}">{{ shop.name }}</a></h1>',
+    '  </td></tr></table></center></td></tr>',
+    '</table>',
+    '',
+  ];
+  const contentBlock = [
+    ...(headerRow ? headerBlock : []),
+    `          ${CONTENT_TABLE_ANCHOR}`,
+    '  <tr>',
+    '    <td class="content__cell">',
+    '      <center>',
+    '        <table class="container">',
+    '          <tr>',
+    '            <td>',
+    ...Array.from({ length: logoBlocks }, () => logoBlock).flat(),
+    '              <p>{{ greeting }}</p>',
+    '            </td>',
+    '          </tr>',
+    '        </table>',
+    '      </center>',
+    '    </td>',
+    '  </tr>',
+    '</table>',
+    '',
+  ];
   const lines = [
     '{% assign greeting = "Hello" %}',
     ...(anchorInComment ? ['{% comment %}stock footer: <p class="disclaimer__subtext"> goes below{% endcomment %}'] : []),
@@ -95,7 +142,7 @@ function makeStock({
     ...Array.from({ length: styleBlocks }, () => styleBlock),
     '</head>',
     '  <body>',
-    '    <p>{{ greeting }}</p>',
+    ...(contentTable ? contentBlock : ['    <p>{{ greeting }}</p>']),
     ...Array.from({ length: bodyAccentRefs }, () => '    <p style="color: {{ shop.email_accent_color }}">accent</p>'),
     `          ${footerTableTag}`,
     '  <tr>',
@@ -120,7 +167,7 @@ function makeStock({
   return lines.join('\n') + (trailingNewline ? '\n' : '');
 }
 
-const brandOpts = { id: 'synthetic', css: fixtureCss, social: fixtureSocial };
+const brandOpts = { id: 'synthetic', css: fixtureCss, social: fixtureSocial, header: fixtureHeader };
 
 function assertRefuses(stock, { anchor, detail }, extra = {}) {
   assert.throws(
@@ -145,13 +192,14 @@ function stockEntry(text, extra = {}) {
 // Lays out <root>/marketing/notifications/{manifest.json,lib/*,stock/<id>.liquid} from a spec of
 // { [id]: { stock, ...manifestExtras } } and returns the root. Branded files are NOT written; call
 // generate() for that, so each test decides what the branded set looks like.
-function makeRoot(spec, { css = fixtureCss, social = fixtureSocial, manifest } = {}) {
+function makeRoot(spec, { css = fixtureCss, social = fixtureSocial, header = fixtureHeader, manifest } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'ssb-notifications-'));
   const p = paths(root);
   mkdirSync(p.stockDir, { recursive: true });
   mkdirSync(path.dirname(p.css), { recursive: true });
   writeFileSync(p.css, css, 'utf8');
   writeFileSync(p.social, social, 'utf8');
+  if (header !== null) writeFileSync(p.header, header, 'utf8');
   const templates = {};
   for (const [id, { stock, ...extra }] of Object.entries(spec)) {
     if (stock !== undefined) writeFileSync(p.stock(id), stock, 'utf8');
@@ -194,7 +242,7 @@ function runCli(args) {
 
 // --- 1. reconstruction invariant against the real repo ----------------------------------------
 
-test('every committed branded file is exactly stock + comment + css + social, rebuilt without brand.mjs', () => {
+test('every committed branded file is exactly stock + comment + css + social (+ header), rebuilt without brand.mjs', () => {
   const p = paths(repoRoot);
   const manifest = JSON.parse(readFileSync(p.manifest, 'utf8'));
   const ids = Object.keys(manifest.templates).sort();
@@ -252,11 +300,34 @@ test('every committed branded file is exactly stock + comment + css + social, re
     assert.ok(disclaimerStart > tableAt, `${id}: insertion anchor precedes the footer table`);
     assert.ok(!stock.slice(tableAt, disclaimerStart).includes('</table>'), `${id}: insertion anchor is not inside the footer table`);
 
+    // The header override: lib/header.html goes in front of the content table (exactly once, first
+    // on its line, between the style block and the footer) and every stock logo block after it is
+    // removed as whole lines. Independent of brand.mjs's own matcher on purpose.
+    let middle = stock.slice(styleEnd, disclaimerStart);
+    if (override.header) {
+      const header = readFileSync(p.header, 'utf8').replace(/\s+$/, '');
+      assert.ok(!stock.includes(HEADER_TABLE_ANCHOR), `${id}: stock already has a header table`);
+      const contentAt = middle.indexOf(CONTENT_TABLE_ANCHOR);
+      assert.notEqual(contentAt, -1, `${id}: content table not found`);
+      assert.equal(middle.indexOf(CONTENT_TABLE_ANCHOR, contentAt + 1), -1, `${id}: content table found more than once`);
+      assert.ok(contentAt < middle.indexOf(FOOTER_TABLE_ANCHOR), `${id}: content table follows the footer table`);
+      const cLineStart = middle.lastIndexOf('\n', contentAt - 1) + 1;
+      const cIndent = middle.slice(cLineStart, contentAt);
+      assert.match(cIndent, /^[ \t]*$/, `${id}: content table is not first on its line`);
+      const logoRe = /^[ \t]*\{% if shop\.email_logo_url %\}\n(?:(?!.*\{%)[^\n]*\n)*?[ \t]*\{% endif %\}[ \t]*\n/gm;
+      const after = middle.slice(contentAt);
+      const stripped = after.replace(logoRe, '');
+      assert.notEqual(stripped, after, `${id}: no logo block found after the content table`);
+      assert.ok(!stripped.includes(LOGO_IF_TAG), `${id}: a logo block survived the rebuild`);
+      assert.ok(!middle.slice(0, contentAt).includes(LOGO_IF_TAG), `${id}: a logo block precedes the content table`);
+      middle = middle.slice(0, contentAt) + header + '\n\n' + cIndent + stripped;
+    }
+
     const rebuilt =
       commentLine(id) +
       stock.slice(0, styleStart) +
       '<style>\n' + css + '  </style>' +
-      stock.slice(styleEnd, disclaimerStart) +
+      middle +
       social.replace(/\s+$/, '') + '\n' + indent +
       stock.slice(disclaimerStart);
     const branded = readFileSync(p.branded(id), 'utf8');
@@ -773,10 +844,107 @@ test('hygiene: the inserted regions of every branded file are clean and the styl
     assert.equal(branded.indexOf(social, socialAt + 1), -1, `${id}.liquid has the social region twice`);
     const socialRegion = branded.slice(socialAt, socialAt + social.length);
 
-    for (const [name, region] of [['style', styleRegion], ['social', socialRegion], ['comment', branded.slice(0, branded.indexOf('\n'))]]) {
+    const regions = [['style', styleRegion], ['social', socialRegion], ['comment', branded.slice(0, branded.indexOf('\n'))]];
+    const override = manifest.templates[id].override || {};
+    if (override.header) {
+      const header = readFileSync(p.header, 'utf8').replace(/\s+$/, '');
+      const headerAt = branded.indexOf(header);
+      assert.notEqual(headerAt, -1, `${id}.liquid lacks the inserted header region`);
+      assert.equal(branded.indexOf(header, headerAt + 1), -1, `${id}.liquid has the header region twice`);
+      assert.ok(headerAt > styleAt && headerAt < socialAt, `${id}.liquid header region is not between the style and social regions`);
+      assert.ok(!branded.includes(LOGO_IF_TAG), `${id}.liquid still carries a stock logo block`);
+      regions.push(['header', branded.slice(headerAt, headerAt + header.length)]);
+    }
+    for (const [name, region] of regions) {
       assert.ok(!region.includes('\r'), `${id}.liquid ${name} region contains a carriage return`);
       assert.ok(!region.includes(EM_DASH), `${id}.liquid ${name} region contains an em dash`);
     }
     assert.equal(branded.slice(0, branded.indexOf('\n') + 1), commentLine(id));
   }
+});
+
+// --- 5. the header override ---------------------------------------------------------------------
+
+const headerOverride = { header: true };
+
+test('header override: lib/header.html lands before the content table and every logo block goes', () => {
+  const stock = makeStock({ contentTable: true, logoBlocks: 2 });
+  assert.equal([...stock.matchAll(/\{% if shop\.email_logo_url %\}/g)].length, 2, 'control: two logo blocks in');
+  const { output } = brandTemplate(stock, { ...brandOpts, override: headerOverride });
+  const header = fixtureHeader.trimEnd();
+  const headerAt = output.indexOf(header);
+  assert.notEqual(headerAt, -1, 'header not inserted');
+  assert.equal(output.indexOf(header, headerAt + 1), -1, 'header inserted twice');
+  assert.equal(output.indexOf(CONTENT_TABLE_ANCHOR), headerAt + header.length + '\n\n          '.length, 'header is not immediately before the content table');
+  assert.ok(!output.includes(LOGO_IF_TAG), 'a logo block survived');
+  assert.ok(!output.includes('giftcard__logosize'), 'the logo image survived');
+  assert.ok(output.includes('<p>{{ greeting }}</p>'), 'body content lost');
+  assert.ok(output.includes('class="ssb-social"'), 'footer insertion lost');
+  assert.ok(!output.includes('email_accent_color'));
+  // Everything outside the four edits is stock, byte for byte.
+  const stripped = output
+    .slice(commentLine('synthetic').length)
+    .replace('<style>\n' + fixtureCss + '  </style>', '')
+    .replace('          ' + header + '\n\n', '')
+    .replace(fixtureSocial.trimEnd() + '\n              ', '');
+  const stockStripped = stock
+    .replace(/<style>[\s\S]*?<\/style>/, '')
+    .replace(/^\{% if shop\.email_logo_url %\}\n[\s\S]*?\{% endif %\}\n/gm, '');
+  assertBytesEqual(stripped, stockStripped, 'bytes outside the edits changed');
+});
+
+test('header override: the same stock without the override brands as before, logo blocks and all', () => {
+  const stock = makeStock({ contentTable: true });
+  const { output } = brandTemplate(stock, brandOpts);
+  assert.ok(output.includes(LOGO_IF_TAG));
+  assert.ok(!output.includes(HEADER_TABLE_ANCHOR));
+});
+
+const headerRefusals = [
+  ['no content table', makeStock(), { anchor: 'content-table', detail: /not found/ }],
+  ['two content tables', makeStock({ contentTable: true }).replace('  </body>', `          ${CONTENT_TABLE_ANCHOR}\n  </body>`), { anchor: 'content-table', detail: /found 2 times/ }],
+  ['a stock header table already present', makeStock({ contentTable: true, headerRow: true }), { anchor: 'header', detail: /already has a header table/ }],
+  ['no logo block', makeStock({ contentTable: true, logoBlocks: 0 }), { anchor: 'logo', detail: /not found/ }],
+  ['a logo block holding another Liquid tag', makeStock({ contentTable: true, logoInnerTag: true }), { anchor: 'logo', detail: /not closed by the next Liquid tag/ }],
+  ['a logo block whose endif shares its line', makeStock({ contentTable: true }).replace('{% endif %}\n              <p>', '{% endif %} <p>'), { anchor: 'logo', detail: /not alone on its line/ }],
+  ['a logo block that is not first on its line', makeStock({ contentTable: true }).replace('\n{% if shop.email_logo_url %}', '\n<br>{% if shop.email_logo_url %}'), { anchor: 'logo', detail: /not first on its line/ }],
+  ['a logo block inside a Liquid comment', makeStock({ contentTable: true }).replace('<!DOCTYPE html>', '{% comment %}{% if shop.email_logo_url %}{% endcomment %}\n<!DOCTYPE html>'), { anchor: 'logo', detail: /inside a Liquid comment/ }],
+];
+
+for (const [name, stock, expected] of headerRefusals) {
+  test(`header override refuses: ${name}`, () => {
+    assertRefuses(stock, expected, { override: headerOverride });
+  });
+}
+
+test('header override refuses when no header text is supplied', () => {
+  assertRefuses(makeStock({ contentTable: true }), { anchor: 'header', detail: /lib\/header\.html is required/ }, { override: headerOverride, header: undefined });
+  assertRefuses(makeStock({ contentTable: true }), { anchor: 'header', detail: /lib\/header\.html is required/ }, { override: headerOverride, header: '  \n' });
+});
+
+test('header override: a root without lib/header.html is a problem only when an entry asks for it', () => {
+  const plain = makeRoot({ alpha: { stock: fixtureStock } }, { header: null });
+  assert.deepEqual(generate(plain).problems, []);
+  const wants = makeRoot({ card: { stock: makeStock({ contentTable: true }), override: headerOverride } }, { header: null });
+  const g = generate(wants);
+  assert.equal(g.problems.length, 1);
+  assert.match(g.problems[0], /lib\/header\.html is missing/);
+  assert.deepEqual(g.written, []);
+});
+
+test('header override: changing lib header html is a mismatch until regenerate, and only for header ids', () => {
+  const root = cleanRoot({ alpha: { stock: fixtureStock }, card: { stock: makeStock({ contentTable: true }), override: headerOverride } });
+  const p = paths(root);
+  writeFileSync(p.header, fixtureHeader.replace('shop-name__cell', 'shop-name__cell brand'), 'utf8');
+  const c = check(root);
+  assert.equal(c.mismatches.length, 1);
+  assert.match(c.mismatches[0], /^card: /);
+  generate(root);
+  assert.deepEqual(check(root).mismatches, []);
+});
+
+test('header override: a carriage return in lib/header.html is a problem', () => {
+  const root = makeRoot({ card: { stock: makeStock({ contentTable: true }), override: headerOverride } }, { header: fixtureHeader.replace('\n', '\r\n') });
+  const g = generate(root);
+  assert.ok(g.problems.some((m) => /lib\/header\.html contains a carriage return/.test(m)), g.problems.join('\n'));
 });

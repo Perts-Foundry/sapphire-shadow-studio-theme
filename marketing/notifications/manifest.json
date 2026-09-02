@@ -78,12 +78,20 @@
     "gift_card_confirmation": {
       "stockSha256": "61fc3c5b4a551b9943691417e9e188841664dc232bd810331e192b2b87be13e9",
       "stockLength": 4825,
-      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient %} for {% if gift_card.recipient.nickname != blank %}{{ gift_card.recipient.nickname }}{% elsif gift_card.recipient.name != blank %}{{ gift_card.recipient.name }}{% else %}{{ gift_card.recipient.email }}{% endif %}{% endif %}"
+      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient %} for {% if gift_card.recipient.nickname != blank %}{{ gift_card.recipient.nickname }}{% elsif gift_card.recipient.name != blank %}{{ gift_card.recipient.name }}{% else %}{{ gift_card.recipient.email }}{% endif %}{% endif %}",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
     },
     "gift_card_notification": {
       "stockSha256": "0a58fb052ac19edcfa30186080bfc54667c19680e530e8173a7c3d6a8065414a",
       "stockLength": 7509,
-      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient and gift_card.customer %} from {% if gift_card.customer.name != blank %}{{ gift_card.customer.name }}{% elsif gift_card.customer.email != blank %}{{ gift_card.customer.email }}{% else %}{{ gift_card.customer.phone }}{% endif %}{% endif %}"
+      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient and gift_card.customer %} from {% if gift_card.customer.name != blank %}{{ gift_card.customer.name }}{% elsif gift_card.customer.email != blank %}{{ gift_card.customer.email }}{% else %}{{ gift_card.customer.phone }}{% endif %}{% endif %}",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
     },
     "local_delivered": {
       "stockSha256": "2788ac13d634b9588cf75f327fd65860f1ebed1678489bc6aeadbac155cfd41e",
@@ -251,7 +259,11 @@
     "store_credit_issued": {
       "stockSha256": "cdbfeefd91c0d650d0ace88c832d5ca6df20517143186da84d5700339b3acd3b",
       "stockLength": 3904,
-      "subject": "{{ shop.name }} {{ issued_store_credit.amount | money_without_trailing_zeros }} store credit"
+      "subject": "{{ shop.name }} {{ issued_store_credit.amount | money_without_trailing_zeros }} store credit",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
     },
     "store_receipt": {
       "stockSha256": "5eaf44b9dfac057a0b4c60bb4c3eddcf5e975c06b45443d14aa12ae96b1a671f",
