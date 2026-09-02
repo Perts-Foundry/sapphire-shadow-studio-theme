@@ -86,6 +86,19 @@ function headingsOf(body) {
   return out;
 }
 
+/**
+ * The invariant for a refusal that happens AFTER the mutation landed: the repo BODY is untouched,
+ * but the manifest's `remote` token records what Admin now holds. A blanket assertTreeUnchanged is
+ * wrong here, and asserting it was what hid the unreachable `--accept-normalisation` recovery:
+ * leaving `remote` stale sends the re-run into the freshness gate and on to --force-overwrite-live.
+ */
+function assertBodyUntouchedRemoteRecorded(root, expectedBody, storedBody) {
+  assert.equal(bodyFromFileText(readPolicy(root, 'SHIPPING_POLICY')), expectedBody, 'the repo body moved');
+  const entry = JSON.parse(readManifestRaw(root)).policies.shipping_policy;
+  assert.equal(entry.sha256, sha(expectedBody), 'the manifest body hash moved');
+  assert.equal(entry.remote.sha256, sha(storedBody), 'the remote token does not record what Admin holds');
+}
+
 const BASE = { now: NOW, domain: 'example.myshopify.com', log: () => {}, sleep: async () => {} };
 
 function options(overrides = {}) {
@@ -669,7 +682,6 @@ test('a re-read that differs by entities and whitespace refuses without --accept
       state.set(type, { ...state.get(type), body: normalised });
       return { shopPolicyUpdate: { shopPolicy: { id: 'gid://1', type, title: 'Shipping', body: normalised }, userErrors: [] } };
     } });
-    const before = snapshotTree(policiesDir(root));
     await assert.rejects(
       () =>
         run({
@@ -681,7 +693,7 @@ test('a re-read that differs by entities and whitespace refuses without --accept
         }),
       /renormalised.*--accept-normalisation/s,
     );
-    assertTreeUnchanged(assert, before, snapshotTree(policiesDir(root)), 'a normalisation refusal wrote something');
+    assertBodyUntouchedRemoteRecorded(root, EDITED, normalised);
   } finally {
     cleanup(root);
     cleanup(dir);
@@ -716,6 +728,69 @@ test('--accept-normalisation takes the stored version into the repo and the mani
   }
 });
 
+test('the documented --accept-normalisation re-run is REACHABLE: it does not trip the freshness gate', async () => {
+  // The bug this pins: on the normalisation refusal the manifest's `remote` used to keep its
+  // pre-push value while Admin already held the normalised body, so the instructed re-run hit the
+  // freshness gate at step 4 and was told to use --force-overwrite-live. Two documented steps in
+  // sequence landed the operator on the most dangerous flag in the set, to fix whitespace.
+  const root = editedRoot();
+  const dir = backupDir();
+  try {
+    const normalised = EDITED.replace('Production &amp; Delivery Times', 'Production &#38; Delivery Times');
+    const makeNormalising = () => makeClient({ live: liveFrom(), onMutate: (type, body, state) => {
+      state.set(type, { ...state.get(type), body: normalised });
+      return { shopPolicyUpdate: { shopPolicy: { id: 'gid://1', type, title: 'Shipping', body: normalised }, userErrors: [] } };
+    } });
+
+    // First run: refuses, and its message must carry a re-run command that can actually work,
+    // which means the NEW live sha, not the one the operator passed in.
+    await assert.rejects(
+      () => run({
+        ...BASE,
+        client: makeNormalising(),
+        root,
+        backupDir: dir,
+        options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
+      }),
+      (err) => {
+        assert.match(err.message, /renormalised/);
+        assert.ok(
+          err.message.includes(`--expect-live-sha=${sha(normalised)}`),
+          `the refusal must name the new live sha so the re-run is runnable; got:\n${err.message}`,
+        );
+        assert.ok(err.message.includes('--accept-normalisation'));
+        return true;
+      },
+    );
+
+    // Second run: Admin already holds the normalised body, so live === remote and the freshness
+    // gate passes. This is the assertion that matters.
+    const second = makeClient({ live: liveFrom({ ...BODIES, SHIPPING_POLICY: normalised }), onMutate: (type, body, state) => {
+      state.set(type, { ...state.get(type), body: normalised });
+      return { shopPolicyUpdate: { shopPolicy: { id: 'gid://1', type, title: 'Shipping', body: normalised }, userErrors: [] } };
+    } });
+    const result = await run({
+      ...BASE,
+      now: '2026-01-02T03:04:06.000Z', // a later clock: the backup name must not collide
+      client: second,
+      root,
+      backupDir: dir,
+      options: options({
+        confirm: 'shipping_policy',
+        expectLiveSha: sha(normalised),
+        acceptNormalisation: true,
+      }),
+    });
+    assert.equal(result.mutated, true, 'the re-run was refused; the documented recovery is unreachable');
+    assert.equal(result.normalised, true);
+    assert.equal(bodyFromFileText(readPolicy(root, 'SHIPPING_POLICY')), normalised);
+    assert.deepEqual(checkClean(root), []);
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+  }
+});
+
 test('a stored body differing by more than entities and whitespace is never accepted', async () => {
   const root = editedRoot();
   const dir = backupDir();
@@ -725,7 +800,6 @@ test('a stored body differing by more than entities and whitespace is never acce
       state.set(type, { ...state.get(type), body: mangled });
       return { shopPolicyUpdate: { shopPolicy: { id: 'gid://1', type, title: 'Shipping', body: mangled }, userErrors: [] } };
     } });
-    const before = snapshotTree(policiesDir(root));
     await assert.rejects(
       () =>
         run({
@@ -741,7 +815,7 @@ test('a stored body differing by more than entities and whitespace is never acce
         }),
       /more than entity and whitespace spelling/,
     );
-    assertTreeUnchanged(assert, before, snapshotTree(policiesDir(root)), 'a content mismatch wrote something');
+    assertBodyUntouchedRemoteRecorded(root, EDITED, mangled);
   } finally {
     cleanup(root);
     cleanup(dir);
@@ -757,7 +831,6 @@ test('a re-read whose HEADINGS differ is an anchor break: non-zero, file untouch
       state.set(type, { ...state.get(type), body: reheaded });
       return { shopPolicyUpdate: { shopPolicy: { id: 'gid://1', type, title: 'Shipping', body: reheaded }, userErrors: [] } };
     } });
-    const before = snapshotTree(policiesDir(root));
     await assert.rejects(
       () =>
         run({
@@ -773,7 +846,8 @@ test('a re-read whose HEADINGS differ is an anchor break: non-zero, file untouch
         }),
       /HEADINGS differ.*anchor break/s,
     );
-    assertTreeUnchanged(assert, before, snapshotTree(policiesDir(root)), 'an anchor break wrote something');
+    // The BODY is what must not move on an anchor break: no flag takes Shopify's headings.
+    assertBodyUntouchedRemoteRecorded(root, EDITED, reheaded);
   } finally {
     cleanup(root);
     cleanup(dir);

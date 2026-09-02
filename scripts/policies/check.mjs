@@ -129,7 +129,11 @@ export function plan(root = REPO_ROOT) {
       );
     }
 
-    const hygiene = hygieneProblems(body);
+    // Hygiene runs on the RAW file text, not the canonical body. Run against the body, the CR and
+    // BOM rules are structurally unreachable, because `canonicalise` has already stripped both:
+    // they would be dead code dressed as a contract. The canonical-form check above still fires
+    // too, and two messages for one cause is the right trade: one names the rule, one names the fix.
+    const hygiene = hygieneProblems(text);
     if (hygiene.length) {
       // Refusals are scoped to writable entries. If Shopify rewrites the auto-managed privacy body
       // to contain an em dash, CI must warn rather than go permanently red on something unfixable.

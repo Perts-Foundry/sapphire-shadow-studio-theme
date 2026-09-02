@@ -167,7 +167,17 @@ async function main(argv) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv).then((code) => {
-    process.exitCode = code;
-  });
+  // The .catch is not decoration. `createAdminClient()` reads MYSHOPIFY_DOMAIN eagerly, so an
+  // unset variable throws synchronously out of main() and would surface as an unhandled promise
+  // rejection instead of this tool's ordinary `error:` + exit 1. The message carries no secret at
+  // that point (no token has been minted), so printing it raw is safe.
+  main(process.argv)
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      console.error(`error: ${err && err.message ? err.message : String(err)}`);
+      console.error('policies:pull failed');
+      process.exitCode = 1;
+    });
 }

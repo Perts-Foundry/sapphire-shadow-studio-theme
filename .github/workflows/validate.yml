@@ -723,28 +723,47 @@ jobs:
           set +e
           OUTPUT=$(npm run notifications:check 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # A check script, not `node --test`, so there is no test count to
-          # assert on. Require its explicit success marker instead: an exit 0
-          # with no marker means the script did not run its comparison.
-          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qF 'notifications:check ok'; then
+          # assert on. Require its explicit success marker instead, matched as a
+          # WHOLE LINE (-qxF): an exit 0 with no marker means the script did not
+          # run its comparison, and an error line that quoted the marker would
+          # satisfy a substring match.
+          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qxF 'notifications:check ok'; then
             echo "::error::notifications:check exited 0 without printing 'notifications:check ok'. The check script has probably stopped running its comparison."
             EXIT_CODE=1
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          # A random per-run delimiter, and stop-commands around the raw echo: this
-          # step's mismatch output quotes template bodies, so a body line that is
-          # exactly `GHEOF` would close the heredoc early and let the rest forge an
-          # `exit_code=0` line, and a line beginning `::error::` would be executed as
-          # a workflow command. Same treatment as the policy steps below.
-          DELIM="GHEOF_${RANDOM}${RANDOM}"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
             echo "output<<${DELIM}"
-            echo "::stop-commands::${DELIM}"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "::${DELIM}::"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
@@ -758,7 +777,16 @@ jobs:
           set +e
           OUTPUT=$(npm run notifications:test 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # Same "green on zero tests" guard as the suites above: `node --test <glob>`
           # exits 0 when the glob matches nothing, so assert the suite actually ran.
@@ -769,17 +797,25 @@ jobs:
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          # A random per-run delimiter, and stop-commands around the raw echo: this
-          # step's mismatch output quotes template bodies, so a body line that is
-          # exactly `GHEOF` would close the heredoc early and let the rest forge an
-          # `exit_code=0` line, and a line beginning `::error::` would be executed as
-          # a workflow command. Same treatment as the policy steps below.
-          DELIM="GHEOF_${RANDOM}${RANDOM}"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
             echo "output<<${DELIM}"
-            echo "::stop-commands::${DELIM}"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "::${DELIM}::"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
@@ -804,7 +840,16 @@ jobs:
           set +e
           OUTPUT=$(npm run --silent policies:check 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # A check script, not `node --test`, so there is no test count to assert on.
           # Require its explicit success marker instead, matched as a WHOLE LINE: an
@@ -815,17 +860,25 @@ jobs:
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          # A random per-run delimiter: this step prints policy HTML in its mismatch
-          # output, and a body line that is exactly the delimiter would close the
-          # heredoc early and let the rest forge an `exit_code=0` line.
-          DELIM="GHEOF_${RANDOM}${RANDOM}"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
             echo "output<<${DELIM}"
-            # stop-commands wraps the untrusted body text, so a policy line beginning
-            # `::error::` or `::add-mask::` is data, not a workflow command.
-            echo "::stop-commands::${DELIM}"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "::${DELIM}::"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
@@ -839,7 +892,16 @@ jobs:
           set +e
           OUTPUT=$(npm run --silent policies:test 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # Same "green on zero tests" guard as the suites above: `node --test <glob>`
           # exits 0 when the glob matches nothing, so assert the suite actually ran.
@@ -850,12 +912,25 @@ jobs:
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          DELIM="GHEOF_${RANDOM}${RANDOM}"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
             echo "output<<${DELIM}"
-            echo "::stop-commands::${DELIM}"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "::${DELIM}::"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
@@ -1458,7 +1533,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$SITE_CHECK_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$NOTIFICATIONS_CHECK_EXIT" "$NOTIFICATIONS_TESTS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$SITE_CHECK_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$NOTIFICATIONS_CHECK_EXIT" "$NOTIFICATIONS_TESTS_EXIT" "$POLICIES_CHECK_EXIT" "$POLICIES_TESTS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft

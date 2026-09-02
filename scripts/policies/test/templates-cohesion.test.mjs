@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { REPO_ROOT } from '../check.mjs';
@@ -20,17 +20,35 @@ const POLICY_PATH = 'marketing/policies/shipping_policy.html';
 /** The accordion row id every product template gives its "Shipping & Turnaround" section. */
 const ROW_ID = 'accordion_row_st001';
 
-/** Templates carrying that row. Discovered, not listed: a new product must not be able to opt out. */
-function templatesWithShippingRow() {
-  const out = [];
+/**
+ * Product templates that are expected to carry no shipping accordion, each with its reason. A
+ * product with no shipping section at all is conceivable (a digital product); making that an
+ * explicit, reasoned entry is what keeps "cannot opt out" true.
+ */
+const NO_SHIPPING_ROW = new Map([
+  // The gift card is delivered by email. Its accordion is headed "Delivery", not "Shipping &
+  // Turnaround", and it carries a different block id; docs/theme-settings-contracts.md covers it.
+  ['product.gift-card.json', 'delivered by email; it has its own Delivery accordion'],
+]);
+
+/**
+ * Every product template, partitioned into those carrying the row and those exempted.
+ *
+ * ENUMERATE FIRST, then assert coverage. Discovering only the templates that happen to carry the
+ * row is what let a new product opt out silently: a template without it was simply not discovered,
+ * and a `rows.length >= 6` floor still passed.
+ */
+function partitionProductTemplates() {
+  const withRow = [];
+  const withoutRow = [];
   for (const name of readdirSync(TEMPLATES_DIR).sort()) {
     if (!/^product\.[^/]+\.json$/.test(name)) continue;
     const json = parseShopifyJson(readFileSync(join(TEMPLATES_DIR, name), 'utf8'));
-    for (const block of walkBlocks(json)) {
-      if (block.id === ROW_ID) out.push({ name, block, json });
-    }
+    const block = [...walkBlocks(json)].find((b) => b.id === ROW_ID);
+    if (block) withRow.push({ name, block, json });
+    else withoutRow.push(name);
   }
-  return out;
+  return { withRow, withoutRow };
 }
 
 /** The `text` of every child block under one accordion row, joined. */
@@ -43,12 +61,27 @@ function rowText(json, rowId) {
   return parts.join('\n');
 }
 
-const rows = templatesWithShippingRow();
+const { withRow: rows, withoutRow } = partitionProductTemplates();
 
-test('the shipping accordion is present on every product template that had it', () => {
-  // Six at the time of writing. A drop below that means a template lost the row, which is a
-  // content regression, not a passing test.
+test('EVERY product template carries the shipping accordion, or is exempted with a reason', () => {
+  const unexplained = withoutRow.filter((name) => !NO_SHIPPING_ROW.has(name));
+  assert.deepEqual(
+    unexplained,
+    [],
+    `these product templates carry no "${ROW_ID}" block, so they state nothing about shipping and ` +
+      'are invisible to every other test in this file. Add the accordion, or add the template to ' +
+      `NO_SHIPPING_ROW with the reason.\n${unexplained.map((n) => `  ${n}`).join('\n')}`,
+  );
   assert.ok(rows.length >= 6, `only ${rows.length} product templates carry ${ROW_ID}`);
+});
+
+test('the no-shipping-row exemption list still matches reality', () => {
+  for (const [name, reason] of NO_SHIPPING_ROW) {
+    assert.ok(
+      withoutRow.includes(name) || !existsSync(join(TEMPLATES_DIR, name)),
+      `${name} now carries ${ROW_ID}; drop it from NO_SHIPPING_ROW (${reason})`,
+    );
+  }
 });
 
 test('the accordion heading is unchanged across every template', () => {

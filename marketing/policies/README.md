@@ -93,6 +93,11 @@ partial run look clean; that would hide a half-applied pull.
 
 ## Pushing a wording change
 
+**Steps 1 to 3 are repo work. Steps 4 and 5 are OPERATOR-ONLY: they are the live write, and
+`policies:push` refuses without a TTY on stdin, so no agent can run them, dry run included.** That
+refusal is the rule working; do not wrap it in a pty. An agent's job ends at step 3, handing the
+operator the commands for 4 and 5.
+
 1. Run `npm run policies:pull -- --check` first, to be sure Admin has not moved under you.
 2. Edit `<type>.html` in a branch, then run `npm run policies:restamp`. It rewrites `sha256`,
    `length` and `headings` from what you wrote, and **shouts if a heading moved**, because that is
@@ -119,11 +124,13 @@ name means one run's confirmation cannot be reused for a different policy by acc
    action, never a CI one.
 2. `policies:check` clean, a clean working tree under `marketing/policies/`, and `HEAD` an ancestor
    of `origin/main`, so the bytes that reach customers are bytes a reviewer saw.
-   `--allow-unreviewed` is the deliberate escape hatch for a pre-merge canary.
+   The recovery is to merge the PR. `--allow-unreviewed` exists for the case where **the operator**
+   is deliberately running a pre-merge canary, and for nothing else.
 3. Fetch live. Identical to the repo body means exit 0 with no mutation.
 4. **Freshness:** live sha must equal `remote.sha256`. This is the control that turns "silently
    clobber an Admin edit made three months ago" into a refusal, and it costs one manifest field.
-   `--force-overwrite-live` discards the Admin edit on purpose.
+   The recovery is `npm run policies:pull`, re-review the diff, then push again. Only if the
+   operator has decided the Admin edit should be thrown away does `--force-overwrite-live` apply.
 5. **Without `--confirm` this is the dry run.**
 6. Backup, verified: written, fsynced, read back, and its sha compared to the live body just
    fetched. A write with no verified backup is a write with no way back.
@@ -134,7 +141,10 @@ name means one run's confirmation cannot be reused for a different policy by acc
    renormalisation at the comparison point). If the stored body still differs: a **heading** change
    is an anchor break, never normalisation, so it exits non-zero and leaves the file alone; an
    entity- or whitespace-only difference needs `--accept-normalisation` to be taken into the repo;
-   anything else is refused outright, flag or no flag.
+   anything else is refused outright, flag or no flag. Either way the manifest's `remote` token is
+   recorded before the refusal, because the write landed and Admin has moved; that is what makes the
+   `--accept-normalisation` re-run reachable instead of tripping the freshness gate. The refusal
+   prints the exact re-run command with the new live sha.
 9. Print the exact `--restore` command.
 
 ### Backups and restore
@@ -155,18 +165,28 @@ npm run policies:push -- --restore ~/.local/state/shop-policies/<type>.<timestam
 ```
 
 A restore reuses the same gating, minus the repo gates and the freshness gate: its bytes come from
-the backup file rather than the tree, and it exists precisely to overwrite what is live now. It does
-not touch the repo copy, so run `policies:pull` afterwards to reconcile.
+the backup file rather than the tree, and it exists precisely to overwrite what is live now.
+
+It leaves the `<type>.html` **body** untouched, but it does move the manifest's `remote` token,
+because Admin now holds the restored bytes and `remote` is the record of that. So a restore leaves
+`marketing/policies/` dirty, and the **next** push's clean-tree gate will refuse until you commit
+it. Commit the manifest, then run `policies:pull` if you want the body reconciled too.
 
 ## Hygiene rules (fail closed)
 
-A **writable** policy is refused on: a sha or length mismatch, a carriage return, a byte-order mark,
+The **hygiene** rules, which are what `writable` downgrades: a carriage return, a byte-order mark,
 a `<script>` or `<style>` tag, and an em dash in any form (`U+2014`, `&mdash;`, `&#8212;`,
-`&#x2014;`). `U+2013` (en dash) passes; the shipping policy uses ten of them. A refusal writes
-nothing. Enforcement lives in `check.mjs` only, and the tests prove the enforcement rather than
-reimplementing the rules.
+`&#x2014;`, `&#X2014;`). `U+2013` (en dash) passes; the shipping policy uses 17 of them. On
+`privacy_policy` these become notes rather than refusals, per `writable` above.
 
-For `privacy_policy` those become notes, per `writable` above.
+`check.mjs` also refuses, for **every** policy including `privacy_policy`, on: a sha or length
+mismatch, a heading list that disagrees with the body, two `h2` headings that slugify alike, a file
+that is not in canonical form (BOM, CRLF, trailing whitespace, a missing final newline), and an
+unexpected file under `marketing/policies/`. Those are not hygiene rules and are **not** downgraded;
+if Shopify rewrites the auto-managed privacy body, the fix is `npm run policies:pull`.
+
+A refusal writes nothing. Hygiene enforcement lives in `check.mjs` only, and the tests prove the
+enforcement rather than reimplementing the rules.
 
 ## Live drift detection is manual
 

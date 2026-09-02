@@ -23,6 +23,14 @@
 //   8. re-read and verify; a heading change is never accepted as normalisation
 //   9. print the exact --restore command
 //
+// ONE REFINEMENT TO "no mutation on a failure": that holds absolutely for every gate BEFORE the
+// mutation, and those refusals leave the tree byte-identical. AFTER the mutation has landed, a
+// refusal still leaves the repo BODY untouched, but it does record the manifest's `remote` token,
+// because `remote` means "what Admin was last seen holding" and Admin has demonstrably moved.
+// Leaving it stale is not neutrality, it is a false record, and it is what made the documented
+// `--accept-normalisation` recovery unreachable: the re-run tripped the freshness gate at step 4
+// and was pointed at `--force-overwrite-live` to fix a whitespace difference.
+//
 // `run({ client, root, ... })` takes NO defaults for `client` or `root`: real-client construction
 // and root defaulting live in `main` only, so a test that forgets to inject the fake cannot reach
 // the live store.
@@ -380,6 +388,9 @@ export async function run({ client, root, now, options, backupDir, domain, log =
   // it is an anchor break, so leave the repo file alone and let the operator look.
   const verifiedHeadings = diffHeadings(key, extractHeadings(sendBody), extractHeadings(verified.body));
   if (verifiedHeadings.length) {
+    // Same reasoning as the write-back path below: the write landed, so `remote` records what
+    // Admin holds. The repo BODY is deliberately left alone, because this is an anchor break.
+    updateManifest(root, key, { remoteBody: verified.body, now });
     throw new PolicyError(
       key,
       'Admin stored a body whose HEADINGS differ from what was sent. That is an anchor break, not ' +
@@ -394,6 +405,15 @@ export async function run({ client, root, now, options, backupDir, domain, log =
   });
   log(writeBackDiff);
 
+  // Record what Admin now holds BEFORE refusing. The write landed; `remote` is the record of the
+  // last observed Admin body, and it would be a lie to leave it pointing at the pre-push value.
+  //
+  // It is also what makes the `--accept-normalisation` instruction below reachable. Without this,
+  // the re-run trips the freshness gate at step 4 (live has moved, `remote` has not), and its
+  // message sends the operator to `--force-overwrite-live`: two documented instructions in
+  // sequence landing on the most dangerous flag in the set, to fix a whitespace difference.
+  updateManifest(root, key, { remoteBody: verified.body, now });
+
   // Only an entity- or whitespace-level difference may ever be taken back into the repo. Anything
   // else is Shopify storing different CONTENT, which no flag here accepts.
   if (!differsOnlyByEntitiesAndWhitespace(sendBody, verified.body, decodeEntities)) {
@@ -401,20 +421,24 @@ export async function run({ client, root, now, options, backupDir, domain, log =
       key,
       `Admin stored a body that differs from what was sent by more than entity and whitespace spelling ` +
         `(sent ${sendSha}, stored ${verifiedSha}). The repo file is untouched and --accept-normalisation ` +
-        `does not cover this. Look at the diff above.\nRestore with: ${restoreCommand}`,
+        `does not cover this. Look at the diff above.\nRestore with: ${restoreCommand}\n` +
+        'The manifest\'s remote token now records what Admin holds, so commit that before anything else.',
     );
   }
   if (!options.acceptNormalisation) {
     throw new PolicyError(
       key,
       `Admin renormalised the body it stored (sent ${sendSha}, stored ${verifiedSha}); the difference is ` +
-        'entity and whitespace spelling only. The repo file is untouched. Re-run with --accept-normalisation ' +
-        "to take Shopify's version into the repo.",
+        'entity and whitespace spelling only. The repo file is untouched, and the manifest\'s remote token ' +
+        'now records what Admin holds, so the re-run below passes the freshness gate. Re-run with ' +
+        `--accept-normalisation to take Shopify's version into the repo:\n` +
+        `  npm run policies:push -- --type ${key} --expect-live-sha=${verifiedSha} --confirm=${key} --accept-normalisation`,
     );
   }
 
+  // `remote` was already recorded above, before the two refusals; only the body fields move here.
   writePolicyFile(root, type, verified.body);
-  updateManifest(root, key, { remoteBody: verified.body, storedBody: verified.body, now });
+  updateManifest(root, key, { storedBody: verified.body, now });
   log(`${SUCCESS_MARKER} ${key} (sha ${verifiedSha}, write-back accepted)`);
   log('Commit the write-back on its own branch; it is a change to marketing/policies/ like any other.');
   log(`to undo: ${restoreCommand}`);
@@ -447,7 +471,7 @@ function updateManifest(root, key, { remoteBody, storedBody, now }) {
   const manifest = readManifest(root);
   const entry = manifest.policies[key];
   if (!entry) throw new PolicyError(key, 'has no manifest entry to update');
-  entry.remote = remoteToken(remoteBody, now);
+  if (remoteBody !== undefined) entry.remote = remoteToken(remoteBody, now);
   if (storedBody !== undefined) {
     const canonical = canonicalise(storedBody);
     entry.sha256 = sha256(canonical);
@@ -513,7 +537,17 @@ async function main(argv) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv).then((code) => {
-    process.exitCode = code;
-  });
+  // The .catch is not decoration. `createAdminClient()` reads MYSHOPIFY_DOMAIN eagerly, so an
+  // unset variable throws synchronously out of main() and would surface as an unhandled promise
+  // rejection instead of this tool's ordinary `error:` + exit 1. The message carries no secret at
+  // that point (no token has been minted), so printing it raw is safe.
+  main(process.argv)
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      console.error(`error: ${err && err.message ? err.message : String(err)}`);
+      console.error('policies:push failed');
+      process.exitCode = 1;
+    });
 }
