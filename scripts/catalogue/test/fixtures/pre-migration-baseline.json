@@ -668,6 +668,11 @@
       "template": "templates/product.shift-fuel-crewneck.json"
     },
     {
+      "path": "/products/shift-fuel-tote",
+      "label": "product (shift fuel tote)",
+      "template": "templates/product.shift-fuel-tote.json"
+    },
+    {
       "path": "/products/sapphire-shadow-studio-gift-card",
       "label": "product (gift card)",
       "template": "templates/product.gift-card.json"

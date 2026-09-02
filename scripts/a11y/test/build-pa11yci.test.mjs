@@ -253,7 +253,7 @@ test('FAIL CLOSED: a plain entry with no path throws rather than auditing "/unde
   assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /neither a "path" nor a recognised "marker"/);
 });
 
-test('MATCHES PRODUCTION: the resolved product entries equal the six the file used to spell out', () => {
+test('MATCHES PRODUCTION: the resolved product entries equal the frozen list (the six the file used to spell out, plus every product added since)', () => {
   // Byte-compared against the frozen pre-migration capture, so "derived" had to mean "identical".
   const baseline = JSON.parse(
     readFileSync(join(REPO_ROOT, 'scripts/catalogue/test/fixtures/pre-migration-baseline.json'), 'utf8')

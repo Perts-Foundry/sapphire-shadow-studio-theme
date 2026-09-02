@@ -33,7 +33,7 @@ test('the frozen baseline is not vacuous', async () => {
   assert.equal(Object.keys(baseline.sizeChartAccordionRows).length, 5, 'the five garment product templates');
   assert.equal(baseline.appliquePatternsRegistry.patterns.length, 18);
   assert.equal(baseline.appliqueDropdownInTemplate.length, 1);
-  assert.equal(baseline.a11yProductEntries.length, 6);
+  assert.equal(baseline.a11yProductEntries.length, 7);
 });
 
 test('the committed repo still matches the frozen baseline, byte for byte', async () => {
@@ -43,7 +43,7 @@ test('the committed repo still matches the frozen baseline, byte for byte', asyn
   assert.equal(serializeBaseline(await captureBaseline(repoRoot)), await readFile(path.join(repoRoot, BASELINE_PATH), 'utf8'));
 });
 
-test('the six accessibility labels are frozen as a LIST, because their order is a contract', async () => {
+test('the seven accessibility labels are frozen as a LIST, because their order is a contract', async () => {
   // Product declaration order in catalogue.json drives this block once the a11y path list is
   // derived from it. Freezing a set rather than a list would let the derivation reorder the audit
   // with nothing failing.
@@ -54,13 +54,14 @@ test('the six accessibility labels are frozen as a LIST, because their order is 
     'product (lead ii quarter zip)',
     'product (lead ii vest womens)',
     'product (shift fuel crewneck)',
+    'product (shift fuel tote)',
     'product (gift card)',
   ]);
 });
 
 test('the a11y label rule is TEMPLATE-derived, which the gift card is the one product that proves', async () => {
   // Deriving the label from the handle gives "product (sapphire shadow studio gift card)", which is
-  // not what ships. Deriving it from the template suffix reproduces all six exactly. This is the
+  // not what ships. Deriving it from the template suffix reproduces all seven exactly. This is the
   // whole reason `template` earns a place in the manifest, asserted against the frozen bytes rather
   // than against the manifest the rule reads.
   const baseline = await frozen();

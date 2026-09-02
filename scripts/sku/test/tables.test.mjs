@@ -100,6 +100,7 @@ test('MATCHES PRODUCTION: the committed tables cover exactly the manifest census
     'lead-ii-vest-womens',
     'sapphire-shadow-studio-gift-card',
     'shift-fuel-crewneck',
+    'shift-fuel-tote',
   ]);
 });
 
@@ -232,10 +233,14 @@ test('segment kinds are the manifest option axes, not a hardcoded list', () => {
   assert.deepEqual(validateTables(kind, withFabric), []);
 });
 
-test('a product with no segments or a repeated axis is refused', () => {
+test('a product with no segments array or a repeated axis is refused; an empty array is a bare code', () => {
   const none = clone();
-  none.products['shift-fuel-crewneck'].segments = [];
+  delete none.products['shift-fuel-crewneck'].segments;
   assert.match(problems(none), /no segments array/);
+
+  const bare = clone();
+  bare.products['shift-fuel-crewneck'].segments = [];
+  assert.doesNotMatch(problems(bare), /segments/);
 
   const twice = clone();
   twice.products['shift-fuel-crewneck'].segments = [{ kind: 'color' }, { kind: 'color' }];

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "comment": "Single source of truth for the catalogue's shape. It declares the option axis names, every colour and size value with its Admin spelling, which garment bodies exist and what each is made in, and the complete six-product census with each product's body, product line, title, GID and theme template suffix. A product with \"body\": null is not a garment; \"line\" is null with it. TWO ORDER CONTRACTS, both load-bearing and neither obvious from the data: (1) PRODUCT DECLARATION ORDER drives the accessibility audit's product block and photo-naming's line list, and is set to the current a11y audit order; (2) COLOUR AND SIZE KEY ORDER must equal the first-seen union across \"bodies\", which is itself the reorder matrix's row order, so a reshuffle here silently reorders a printed count sheet. This file holds FACTS. It never holds SKU codes (scripts/sku/tables.json), policy numbers such as minimums or budgets (scripts/blank-inventory/thresholds.json), theme file paths, garment measurements, silhouette names, photo filename tokens, supplier names or blank ids. Hand-edited in a reviewed PR only; no command and no agent writes it.",
+  "comment": "Single source of truth for the catalogue's shape. It declares the option axis names, every colour and size value with its Admin spelling, which garment bodies exist and what each is made in, and the complete seven-product census with each product's body, product line, title, GID and theme template suffix. A product with \"body\": null is not a garment; \"line\" is null with it. TWO ORDER CONTRACTS, both load-bearing and neither obvious from the data: (1) PRODUCT DECLARATION ORDER drives the accessibility audit's product block and photo-naming's line list, and is set to the current a11y audit order; (2) COLOUR AND SIZE KEY ORDER must equal the first-seen union across \"bodies\", which is itself the reorder matrix's row order, so a reshuffle here silently reorders a printed count sheet. This file holds FACTS. It never holds SKU codes (scripts/sku/tables.json), policy numbers such as minimums or budgets (scripts/blank-inventory/thresholds.json), theme file paths, garment measurements, silhouette names, photo filename tokens, supplier names or blank ids. Hand-edited in a reviewed PR only; no command and no agent writes it.",
   "options": {
     "color": "Color",
     "size": "Size",
@@ -69,6 +69,13 @@
       "template": "shift-fuel-crewneck",
       "title": "Shift Fuel Crewneck",
       "gid": "gid://shopify/Product/10231499882796"
+    },
+    "shift-fuel-tote": {
+      "line": null,
+      "body": null,
+      "template": "shift-fuel-tote",
+      "title": "Shift Fuel Tote",
+      "gid": "gid://shopify/Product/10446619935020"
     },
     "sapphire-shadow-studio-gift-card": {
       "line": null,

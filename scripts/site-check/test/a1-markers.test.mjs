@@ -43,6 +43,12 @@ test('every product template has a rule keyed by its template file', () => {
       assert.ok(rule.markers.some((m) => m.includes('SizeChart')), `${t} must assert the size-chart anchor`);
       continue;
     }
+    // The tote has no size chart and no acknowledgment block either; its Product Details row
+    // carries a committed anchor id for this probe.
+    if (t === 'templates/product.shift-fuel-tote.json') {
+      assert.ok(rule.markers.some((m) => m.includes('ProductDetails')), `${t} must assert the product-details anchor`);
+      continue;
+    }
     assert.ok(rule.markers.some((m) => m.includes('properties[')), `${t} must assert an acknowledgment input`);
   }
   for (const t of Object.keys(MARKER_TABLE.byTemplate)) {

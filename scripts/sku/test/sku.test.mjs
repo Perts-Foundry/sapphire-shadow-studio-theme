@@ -37,7 +37,7 @@ test('this tool asks for write_products and nothing wider', () => {
 
 test('the offline tables lint passes on the committed tables and counts what it checked', async () => {
   const { codes, products } = await checkTables();
-  assert.equal(products, 6);
+  assert.equal(products, 7);
   assert.ok(codes >= 20);
 });
 

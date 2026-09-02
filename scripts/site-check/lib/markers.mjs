@@ -25,6 +25,9 @@ const SIZE_CHART_ANCHOR = 'id="SizeChart"';
 const GARMENT_ACK_INPUT = 'name="properties[Customer confirm size guide';
 const GIFT_CARD_ACK_INPUT = 'name="properties[Customer confirm final sale]"';
 const APPLIQUE_INPUT = 'name="properties[Applique Pattern]"';
+// The option-less tote has neither a size chart nor an acknowledgment input; its Product Details
+// accordion row is given an anchor id in the template so the page still has a committed marker.
+const TOTE_DETAILS_ANCHOR = 'id="ProductDetails"';
 
 const GARMENT_MARKERS = [SIZE_CHART_ANCHOR, GARMENT_ACK_INPUT];
 
@@ -43,6 +46,9 @@ export const MARKER_TABLE = Object.freeze({
     // so only the size-chart row is a stable marker there.
     'templates/product.shift-fuel-crewneck.json': { markers: [SIZE_CHART_ANCHOR] },
     'templates/product.gift-card.json': { markers: [GIFT_CARD_ACK_INPUT] },
+    // The tote is a single-variant non-garment: no size chart and no acknowledgment block, so its
+    // Product Details accordion row carries a committed anchor id instead, for exactly this probe.
+    'templates/product.shift-fuel-tote.json': { markers: [TOTE_DETAILS_ANCHOR] },
     // The render pass sees an EMPTY cart, and sections/main-cart.liquid renders the summary
     // (and with it snippets/shipping-info.liquid) only inside `unless cart.empty?`. The page
     // shell class is what an empty render always carries; the shipping sentence is asserted by
