@@ -28,10 +28,11 @@
   <meta name="viewport" content="width=device-width">
   <link rel="stylesheet" type="text/css" href="/assets/notifications/styles.css">
   <style>
-    .body { background-color: #e1edf5; }
+    .body { background-color: #e1edf5; color-scheme: light only; }
     .body td, .body p, .body h1, .body h2, .body h3, .body h4, .body span, .body a { font-family: Helvetica, Arial, sans-serif; }
     .container { width: 600px; border-collapse: separate; border-left: 32px solid #ffffff; border-right: 32px solid #ffffff; }
     .header { margin: 0; }
+    .shop-name__cell img { max-width: 100%; height: auto; }
     .header__cell { padding: 24px 12px 0 12px; }
     .header__cell .container { border: 28px solid #071e3f; border-left-width: 32px; border-right-width: 32px; border-radius: 4px 4px 0 0; background-color: #071e3f; }
     .header__cell .row td { display: block; width: 100%; text-align: center; }
@@ -70,6 +71,10 @@
     .footer .disclaimer__subtext { color: #c9d8ea; font-size: 12px; line-height: 18px; text-align: center; }
     .footer .disclaimer__subtext a, .footer .disclaimer__subtext a:hover, .footer .disclaimer__subtext a:active, .footer .disclaimer__subtext a:visited { color: #ffffff; text-decoration: underline; }
     .footer .ssb-social a, .footer .ssb-social a:hover, .footer .ssb-social a:active, .footer .ssb-social a:visited { color: #c9d8ea; }
+    @media (max-width: 600px) {
+      .container { table-layout: fixed !important; }
+      .footer .ssb-social td { padding: 0 5px !important; }
+    }
   </style>
 </head>
 

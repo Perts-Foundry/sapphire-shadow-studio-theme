@@ -80,6 +80,22 @@ invisible where the nesting is sound and restores the surround where it is not. 
 wave-2 preview of `pending_payment_failure`; the static stock files balance their tables, so a
 count of open and close tags would not have caught it. Only a render does.
 
+**On a phone, each card is its own table, so each card can end up its own width.** A test send
+opened in the Proton Mail Android app showed the header, the body cards and the footer at three
+different widths, stepped against each other, where the web preview shows one column. The app
+overrides table widths to auto (capped at the screen), so a card ends at the larger of the stock
+94% mobile width and its own unshrinkable content: the header at the logo image's fixed width, an
+order card at a nowrap price row, the footer at the social row. Reproduced in Chrome with a
+411px mobile viewport and `table { width: auto !important; max-width: 100% !important }`
+injected; the squeeze test (force each card to 200px, list what stays wider) named the culprits.
+The stylesheet now lets the logo scale inside its cell (`max-width: 100%`), and a media block
+gives `.container` a fixed table layout under 600px so content wraps inside the card instead of
+stretching it, with the social row's cell padding trimmed to fit. Every card then measures the
+same width at the same left edge. The dark surfaces in the same screenshots are the app's dark
+mode recolouring the white and pale-blue cards; `color-scheme: light only` on the page table is
+Shopify's own technique for its Shop-app button and is applied as an opt-out hint, with no
+guarantee every client honours it.
+
 **Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
 them delta-compressed and the generated file differs from its stock twin by three hunks, so the
 packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated
