@@ -1,0 +1,48 @@
+    .body { background-color: #e1edf5; color-scheme: light only; }
+    .body td, .body p, .body h1, .body h2, .body h3, .body h4, .body span, .body a { font-family: Helvetica, Arial, sans-serif; }
+    .container { width: 600px; border-collapse: separate; border-left: 32px solid #ffffff; border-right: 32px solid #ffffff; }
+    .header { margin: 0; }
+    .shop-name__cell img { max-width: 100%; height: auto; }
+    .header__cell { padding: 24px 12px 0 12px; }
+    .header__cell .container { border: 28px solid #071e3f; border-left-width: 32px; border-right-width: 32px; border-radius: 4px 4px 0 0; background-color: #071e3f; }
+    .header__cell .row td { display: block; width: 100%; text-align: center; }
+    .shop-name__cell { display: block; text-align: center; }
+    .shop-name__text { text-align: center; }
+    .shop-name__text a { color: #ffffff; }
+    .order-po-number__container { margin: 0 auto; }
+    .order-number__cell, .po-number__cell { display: block; text-align: center; padding-top: 20px; font-size: 12px; font-weight: bold; letter-spacing: 3px; color: #3aa0e6; }
+    .order-number__text, .po-number__text { display: inline-block; background-color: #0c2c56; border-radius: 4px; padding: 10px 18px; font-size: 12px; line-height: 16px; font-weight: bold; letter-spacing: 3px; color: #c9d8ea; }
+    .content__cell { padding: 0 12px; border-width: 0; }
+    .content__cell .container { border-top: 36px solid #ffffff; border-bottom: 8px solid #ffffff; background-color: #ffffff; }
+    .section__cell { padding: 0 12px; }
+    .section__cell .container { border-top: 24px solid #ffffff; border-bottom: 24px solid #ffffff; background-color: #ffffff; }
+    .body p { color: #333333; font-size: 16px; line-height: 24px; }
+    .body h2 { color: #071e3f; font-size: 30px; line-height: 36px; font-weight: bold; margin: 0 0 12px 0; }
+    .body h3 { color: #071e3f; font-size: 20px; line-height: 26px; font-weight: bold; margin: 0 0 20px 0; }
+    .body h4 { color: #0071C2; font-size: 12px; line-height: 18px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; }
+    .order-list__item-title { color: #071e3f; }
+    .order-list__item-variant { color: #555555; }
+    .order-list__estimated-delivery { color: #555555; font-size: 14px; line-height: 20px; }
+    .order-list__item-price { color: #071e3f; }
+    .subtotal-line__title p { color: #555555; }
+    .subtotal-table--total .subtotal-line__title p, .subtotal-table--total .subtotal-line__value strong { color: #071e3f; }
+    .customer-info__item-content { color: #333333; font-size: 15px; line-height: 22px; }
+    .button__cell { background: #0071C2; border-radius: 4px; }
+    .actions-buttons .button__cell--primary { background-color: #0071C2; border-radius: 4px; }
+    .button__text { font-weight: bold; padding: 14px 32px; }
+    .button__text--shop-app { font-weight: normal; padding: 20px 25px; }
+    .actions__cell { padding-bottom: 20px; }
+    a, a:hover, a:active, a:visited { color: #0071C2; }
+    body, .header, .content, .section { background-color: #e1edf5; }
+    .footer { margin: 0; border-top-width: 0; background-color: #e1edf5; }
+    .footer__cell { padding: 0 12px 24px 12px; }
+    .footer__cell .container { border: 28px solid #071e3f; border-left-width: 32px; border-right-width: 32px; border-radius: 0 0 4px 4px; background-color: #071e3f; text-align: center; }
+    .footer .ssb-shop-name { color: #ffffff; font-size: 14px; line-height: 20px; margin: 0 0 10px 0; text-align: center; }
+    .footer .disclaimer__subtext { color: #c9d8ea; font-size: 12px; line-height: 18px; text-align: center; }
+    .footer .disclaimer__subtext a, .footer .disclaimer__subtext a:hover, .footer .disclaimer__subtext a:active, .footer .disclaimer__subtext a:visited { color: #ffffff; text-decoration: underline; }
+    .footer .ssb-social a, .footer .ssb-social a:hover, .footer .ssb-social a:active, .footer .ssb-social a:visited { color: #c9d8ea; }
+    @media (max-width: 600px) {
+      .container { table-layout: fixed !important; }
+      .header { margin-top: 0 !important; margin-bottom: 0 !important; }
+      .footer .ssb-social td { padding: 0 5px !important; }
+    }

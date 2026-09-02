@@ -1,0 +1,112 @@
+{% assign has_note = false %}
+{% if note != blank %}
+  {% assign has_note = true %}
+{% endif %}
+{% capture email_title %}Thank you for your purchase!{% endcapture %}
+{% capture email_body %}
+  {% if has_note %}
+    <p>We’ve noted your request: “{{ note }}”.</p>
+  {% else %}
+    <p>We’re getting your order ready to be shipped.</p>
+  {% endif %}
+{% endcapture %}
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <title>{{ email_title }}</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" type="text/css" href="/assets/notifications/styles.css">
+  <style>
+    .button__cell { background: {{ shop.email_accent_color }}; }
+    .actions-buttons .button__cell--primary { background-color: {{ shop.email_accent_color }}; }
+    a, a:hover, a:active, a:visited { color: {{ shop.email_accent_color }}; }
+  </style>
+</head>
+
+  <body>
+    <table class="body">
+      <tr>
+        <td>
+          <table class="header row">
+  <tr>
+    <td class="header__cell">
+      <center>
+        <table class="container">
+          <tr>
+            <td>
+              <table class="row">
+                <tr>
+                  <td class="shop-name__cell">
+                    <h1 class="shop-name__text">
+                      <a href="{{ shop.url }}">{{ shop.name }}</a>
+                    </h1>
+                  </td>
+                  <td class="order-number__cell">
+                    <span class="order-number__text">Order {{ order_name }}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
+    </td>
+  </tr>
+</table>
+
+          <table class="row content">
+  <tr>
+    <td class="content__cell">
+      <center>
+        <table class="container">
+          <tr>
+            <td>
+              <h2>{{ email_title }}</h2>
+              {{ email_body }}
+              <table class="row actions">
+                <tr>
+                  <td class="actions__cell">
+                    <table class="button main-action-cell">
+                      <tr>
+                        <td class="button__cell"><a href="{{ order_status_url }}" class="button__text">View your order</a></td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <p>Thread colour: 🧵 Sapphire blue (#1).</p>
+              <p>Every piece is made to order, so allow 2 to 4 weeks. Questions? Just reply.</p>
+            </td>
+          </tr>
+        </table>
+      </center>
+    </td>
+  </tr>
+</table>
+
+          <table class="row footer">
+  <tr>
+    <td class="footer__cell">
+      <center>
+        <table class="container">
+          <tr>
+            <td>
+
+              <p class="disclaimer__subtext">If you have any questions, reply to this email or contact us at <a href="mailto:{{ shop.email }}">{{ shop.email }}</a>. © {{ 'now' | date: '%Y' }} {{ shop.name }}.</p>
+            </td>
+          </tr>
+        </table>
+      </center>
+    </td>
+  </tr>
+</table>
+
+<img src="{{ 'notifications/spacer.png' | shopify_asset_url }}" class="spacer" height="1" />
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

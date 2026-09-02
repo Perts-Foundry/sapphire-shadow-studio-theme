@@ -328,6 +328,10 @@ transpiler to begin with, and Shopify Email would not resolve a partial anyway, 
 pasted document and nothing else. The header, footer, social row, and palette are therefore copied
 into every template. **A palette or footer change has to be made in every file in this directory.**
 
+The palette also lives in a fourth place: `marketing/notifications/lib/brand-style.css`, the
+stylesheet behind the 46 branded Shopify notification templates, documented in
+`marketing/notifications/README.md`. A palette change goes there too, followed by a regenerate.
+
 The palette is the resolved-hex token set in `scripts/size-chart/lib/svg-shared.mjs`, which already
 solved this problem for the size-chart PNGs: a renderer outside Liquid cannot read a colour scheme,
 so the storefront's "Sapphire Shadow" scheme is written out there as literal hexes. The email uses

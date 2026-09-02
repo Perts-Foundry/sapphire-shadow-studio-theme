@@ -1,5 +1,116 @@
 # Release Notes
 
+## Branded notification templates, generated from committed stock (unreleased)
+
+The 46 customer notification templates (Admin > Settings > Notifications) now have branded,
+ready-to-paste copies under `marketing/notifications/`, restyled to the welcome email's look. The
+README there documents the surface; this entry records the decisions.
+
+**The restyle lives in the template's own `<style>` block, and the body stays byte-identical to
+stock.** Shopify's notification inliner applies the template's stylesheet by class at send time
+(verified on the `order_confirmation` pilot: every rule in `lib/brand-style.css` was inlined and
+the Shop-app button text stayed stock). That means the brand can ride on a stylesheet swap plus one
+footer insertion, with no markup rewrite. The payoff is reviewability: a generated file is stock
+plus exactly three mechanical edits (style block replaced, social row inserted before the footer
+disclaimer, a generator comment prepended), so a future upstream change to a stock template shows
+up as a plain diff against `stock/<id>.liquid` rather than a three-way merge across hand-edited
+markup.
+
+**There is no API.** Notification templates are read and written only through the Admin editor,
+so the repo file is the source of truth and Admin holds a pasted copy, the same model as
+`marketing/emails/`. Nothing reconciles the two.
+
+**Customising opts each template out of Shopify's stock updates.** That is accepted. The drift
+procedure is: revert the one template to default in Admin (a short window of stock sends), copy the
+editor's text to a file, `record-stock.mjs` it, diff the snapshot, regenerate, re-paste. The
+snapshots in `stock/` are what the editor held when recorded, with "Revert changes" disabled as the
+only stock signal Shopify offers; they are not certified stock.
+
+**Committing Shopify's stock templates is merchant use of merchant-editable templates.** The
+templates are handed to every store as editable source in the store's own admin, and are already
+served in full to every customer who receives one; they are committed here so the branded output
+can be generated, checked and reviewed, not redistributed as a product.
+
+**Overrides, ten of them.** The generator is manifest-driven and fail-closed: an anchor that does
+not occur exactly once is a refusal, never a guess. Six templates (`local_delivered`, `order_link`,
+`shipment_delivered`, `shipment_out_for_delivery`, `shipping_confirmation`, `shipping_update`)
+carry two `disclaimer__subtext` paragraphs, one in the body and the stock one in the footer, so
+their manifest entry names the footer paragraph by its opening text (`footerAnchor`). One
+(`pos_send_cart`) carries a fourth rule in its stock style block, a `.top-border` hairline, so its
+entry names the whole block (`styleAnchor`) and the hairline is dropped on purpose. Three
+(`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`) ship with no header
+table and the logo inside the white card, so no stylesheet could give them the navy band; their
+entry sets `header`, which inserts `lib/header.html` (the stock logo-only header) before the
+content row and removes the in-body logo block, the only override that touches body markup. It was
+added during the paste session after the first gift-card preview showed a bare white card where
+every other template has the band; the "stock plus a stylesheet" principle gave way to the brand
+reading the same on all 46. A `skip` field exists for a template that should stay stock; none uses
+it.
+
+**A mistake those six templates caught, corrected before release.** The first draft of
+`brand-style.css` coloured `.disclaimer__subtext` for the navy footer without scoping it to the
+footer, so the body-side paragraph in those six (the tracking-number line, or the email-safety
+message) would have rendered light grey on white with a white link. The pilot had no body-side
+disclaimer, so its preview could not show this; a verification pass over the stock files did. Every
+rule naming `disclaimer__subtext` or an inserted `ssb-` class is now scoped under `.footer`, and a
+suite test refuses an unscoped one. The lesson for the next stylesheet change: a stock class is
+not a location, so check where else the stock templates use it before restyling it.
+
+**Two findings from the wave-1 paste session (order lifecycle, ten templates).** First, the editor
+preview for `ready_for_pickup` and `pickup_receipt` renders the stored template and ignores the
+unsaved editor contents. The preview mutation was sent with the branded body and returned no error,
+yet the HTML that came back carried the stock accent-colour rule and no brand CSS, and pasting a
+different template's body produced the same stock render, so it is the server ignoring the input,
+not a paste or timing fault. The other eight wave-1 templates previewed their unsaved paste. For
+those two the procedure is save first, then preview the stored version; both rendered correctly
+once saved. Second, `.order-list__item-price` renders `#333333` rather than the `#071e3f` the
+stylesheet asks for, in every template that has a price column; Shopify's inliner applies its
+default paragraph colour after the class rule. Cosmetic, consistent, and left alone: fixing it means
+a higher-specificity rule, a regeneration of all 46 files and a re-paste of every saved template,
+so it is a decision for after the paste waves, not during them.
+
+**The page background is painted on the row tables and the body, not only on the `.body`
+table.** In `order_invoice` and `pending_payment_failure`, the stock "Amount to pay" block puts a
+`<table>` directly inside a `<tr>` with no `<td>` in the branch where nothing has been paid yet.
+HTML parsers recover by closing the enclosing tables early, so the `.body` table (the one that
+carried the pale-blue background) ended before the footer and the navy footer sat on plain white.
+The stock markup is Shopify's and the body stays byte-identical, so the fix is the stylesheet:
+`body`, `.header`, `.content`, `.section` and `.footer` all carry the page colour, which is
+invisible where the nesting is sound and restores the surround where it is not. Found on the
+wave-2 preview of `pending_payment_failure`; the static stock files balance their tables, so a
+count of open and close tags would not have caught it. Only a render does. The same recovery
+leaves an empty `subtotal-lines` table behind, and its 15px top margin and 1px top border draw a
+hairline under the card, faint on white and bright under a dark-mode recolour. That one cannot be
+styled away, since the class is shared with the real subtotal table, so the generator gained a
+`replace` override (exact substring, exactly once, refused on overlap) and the two templates'
+manifest entries give the broken branch the cell it lacks. The page-colour rules stay: they cost
+nothing and cover any similar stock bug not yet found.
+
+**On a phone, each card is its own table, so each card can end up its own width.** A test send
+opened in the Proton Mail Android app showed the header, the body cards and the footer at three
+different widths, stepped against each other, where the web preview shows one column. The app
+overrides table widths to auto (capped at the screen), so a card ends at the larger of the stock
+94% mobile width and its own unshrinkable content: the header at the logo image's fixed width, an
+order card at a nowrap price row, the footer at the social row. Reproduced in Chrome with a
+411px mobile viewport and `table { width: auto !important; max-width: 100% !important }`
+injected; the squeeze test (force each card to 200px, list what stays wider) named the culprits.
+The stylesheet now lets the logo scale inside its cell (`max-width: 100%`), and a media block
+gives `.container` a fixed table layout under 600px so content wraps inside the card instead of
+stretching it, with the social row's cell padding trimmed to fit. Every card then measures the
+same width at the same left edge. A second test send showed one more seam, a thin line between
+the header and the body card: Shopify's own mobile stylesheet gives `.header` a 2px bottom margin
+under 600px, so the brand media block zeroes it. The dark surfaces in the same screenshots are the app's dark
+mode recolouring the white and pale-blue cards; `color-scheme: light only` on the page table is
+Shopify's own technique for its Shop-app button and is applied as an opt-out hint, with no
+guarantee every client honours it.
+
+**Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
+them delta-compressed and the generated file differs from its stock twin by three hunks, so the
+packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated
+file that drifts from what the generator would produce, and `npm run notifications:test` covers the
+generator itself; `.gitattributes` pins LF for the directory because the generator refuses a
+carriage return.
+
 ## Gift cards are emailed, and do not count toward the free-shipping threshold (unreleased)
 
 Checkout excludes digital gift card value from price-based shipping rate conditions. This is

@@ -1,0 +1,300 @@
+{
+  "templates": {
+    "buy_online": {
+      "stockSha256": "756a62136d955510bedf751370bf263af3f9e22791a562420e233970c30ab8a0",
+      "stockLength": 40387,
+      "subject": "Buy online from {{ shop_name }} when you're ready!"
+    },
+    "change_requested": {
+      "stockSha256": "1466f15e09927a6da497135d1a7439348ebf24dde2747a392681c62d18c4c883",
+      "stockLength": 10330,
+      "subject": "{% if requested_edit and return %}Change requested for order {{ order.name }}{% elsif requested_edit %}Cancellation requested for order {{ order.name }}{% else %}Return requested for order {{ order.name }}{% endif %}"
+    },
+    "company_contact_welcome_email": {
+      "stockSha256": "065ff05e14ec39c5d3ce47e05f5dfae3c5e2a5eb6b419b2e2d01a00fd79cb28c",
+      "stockLength": 3374,
+      "subject": "Welcome to B2B ordering with {{shop.name}}"
+    },
+    "company_location_update_payment_method": {
+      "stockSha256": "2399eb81e4e41fe00646ce17c7e7ad0d370fabd5836420003ebb9d4654e24149",
+      "stockLength": 3499,
+      "subject": "Update your payment method for {{ shop.name }}'s {{ location_name }} location"
+    },
+    "contact_buyer": {
+      "stockSha256": "2d759c667aaab793b94afd93b47d08e03155b49f9d4e54ec2d7715e2d0c5dce0",
+      "stockLength": 2346,
+      "subject": "Message from {{ shop.name }}"
+    },
+    "customer_account_activate": {
+      "stockSha256": "5962d602ee0e4b34eea1e08d431c2b44823f525e061e7468ded96310ed6edce9",
+      "stockLength": 3658,
+      "subject": "Customer account activation"
+    },
+    "customer_account_reset": {
+      "stockSha256": "efa9f4792f8252f5c0d65b51ddd84cf69d1ca79d4e86d85cdf924f4e990752b9",
+      "stockLength": 3566,
+      "subject": "Customer account password reset"
+    },
+    "customer_account_welcome": {
+      "stockSha256": "32481b8a17c925827125da0fc28a73e328c34b53d74523c35ff3cc195609d9c3",
+      "stockLength": 3082,
+      "subject": "Customer account confirmation"
+    },
+    "customer_add_payment_method": {
+      "stockSha256": "74824a1a17fd9933df4284adaa96111021328b9f26d5e2f68acaff98d5f73f87",
+      "stockLength": 3248,
+      "subject": "Add a payment method for {{ shop.name }}"
+    },
+    "customer_email_address_changed_confirmation": {
+      "stockSha256": "e02cfecc605e048be197ed82031c6c5f4b36cc5d968b547a03036909d805c828",
+      "stockLength": 3154,
+      "subject": "Your email address has been changed"
+    },
+    "customer_marketing_confirmation": {
+      "stockSha256": "7c9e9db7ebb7d3184201b1b135a67114bc57488431752e2fcf2b38b0dd737678",
+      "stockLength": 3227,
+      "subject": "Confirm you want to receive email marketing"
+    },
+    "customer_restore_payment_method": {
+      "stockSha256": "a8728c5bf0f04f18bc94e26884d380f31058d89476d1bd9d4c2d1ebb793483f7",
+      "stockLength": 3328,
+      "subject": "Verify your payment information for {{ shop.name }}"
+    },
+    "customer_update_payment_method": {
+      "stockSha256": "06012b50d766969a322bbdb267838dfa1773346af6c99279fff21550d3bdf210",
+      "stockLength": 3293,
+      "subject": "Update your payment method for {{ shop.name }}"
+    },
+    "draft_order_invoice": {
+      "stockSha256": "506c2985808c82cea8fe88642a3117265fd62a1b69ddb7606c583da6f80518ad",
+      "stockLength": 30380,
+      "subject": "Invoice {{name}}"
+    },
+    "failed_payment_processing": {
+      "stockSha256": "862fe9bd5f7fdb55eea737646cb92a9a8c3f4378063462bf2a7486c9174b1f9d",
+      "stockLength": 3956,
+      "subject": "[{{shop.name}}] Payment couldn’t be processed"
+    },
+    "gift_card_confirmation": {
+      "stockSha256": "61fc3c5b4a551b9943691417e9e188841664dc232bd810331e192b2b87be13e9",
+      "stockLength": 4825,
+      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient %} for {% if gift_card.recipient.nickname != blank %}{{ gift_card.recipient.nickname }}{% elsif gift_card.recipient.name != blank %}{{ gift_card.recipient.name }}{% else %}{{ gift_card.recipient.email }}{% endif %}{% endif %}",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
+    },
+    "gift_card_notification": {
+      "stockSha256": "0a58fb052ac19edcfa30186080bfc54667c19680e530e8173a7c3d6a8065414a",
+      "stockLength": 7509,
+      "subject": "{{ shop.name }} {{ gift_card.initial_value | money_without_trailing_zeros }} gift card{% if gift_card.recipient and gift_card.customer %} from {% if gift_card.customer.name != blank %}{{ gift_card.customer.name }}{% elsif gift_card.customer.email != blank %}{{ gift_card.customer.email }}{% else %}{{ gift_card.customer.phone }}{% endif %}{% endif %}",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
+    },
+    "local_delivered": {
+      "stockSha256": "2788ac13d634b9588cf75f327fd65860f1ebed1678489bc6aeadbac155cfd41e",
+      "stockLength": 18445,
+      "subject": "Order {{ name }} has been delivered",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "local_missed_delivery": {
+      "stockSha256": "671fc78e68220759387ef714a1720a80804da5cdaadd083f036019e22b87991f",
+      "stockLength": 17541,
+      "subject": "Delivery from order {{ name }} has been missed"
+    },
+    "local_out_for_delivery": {
+      "stockSha256": "d450960be1ca45eb146947675bb56520602e6da961e6b3c5004df639ebd9167a",
+      "stockLength": 17439,
+      "subject": "Order {{ name }} is out for delivery"
+    },
+    "order_cancelled": {
+      "stockSha256": "5de7f3f10037b512ed87aeede5425e6776b3f545b48144ce0b802d577daed5d0",
+      "stockLength": 42159,
+      "subject": "Order {{ name }} has been canceled"
+    },
+    "order_confirmation": {
+      "stockSha256": "1baa081f3f1890ade7fc506ec887feb5c95265fee59b2bab238e2ca45de9fe6e",
+      "stockLength": 160331,
+      "subject": "Order {{name}} confirmed"
+    },
+    "order_edited": {
+      "stockSha256": "d22f55c66093440b81874d016d67d121bc0f7cd4e7a2be47deaafb72c5e359fc",
+      "stockLength": 43653,
+      "subject": "Order {{name}} updated"
+    },
+    "order_invoice": {
+      "stockSha256": "eff0440d1b51f5249a5bf772393c6eec944fc32b5d80c95a67b79822cd504d4b",
+      "stockLength": 141005,
+      "subject": "Invoice {{name}}",
+      "override": {
+        "reason": "Stock bug: in the branch where nothing has been paid yet, the Amount to pay table sits directly inside a table row with no cell. Parsers recover by closing the enclosing tables early (the page background ended before the footer) and leave an empty subtotal-lines table whose top border draws a hairline under the card. The replacements give the else-branch the spacer and cell the if-branch has.",
+        "replace": [
+          {
+            "from": "      {% else %}\n        <table class=\"row subtotal-table subtotal-table--total\">",
+            "to": "      {% else %}\n      <td class=\"subtotal-spacer\"></td>\n        <td>\n        <table class=\"row subtotal-table subtotal-table--total\">"
+          },
+          {
+            "from": "        </table>\n      {% endif %}\n  </tr>\n</table>",
+            "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
+          }
+        ]
+      }
+    },
+    "order_link": {
+      "stockSha256": "e948c4308acc0250dc366ea48b5cf62032211d701bcaca32d1b27367cde7ce87",
+      "stockLength": 3437,
+      "subject": "Link to order {{ order_name }}",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "order_payment_receipt": {
+      "stockSha256": "7fbe990573d484dfe1a79b94e1f4bdbc49a21f9af62f35a42986444b4f325a56",
+      "stockLength": 7981,
+      "subject": "[{{ shop.name }}] Payment receipt for order {{ name }}"
+    },
+    "payment_reminder": {
+      "stockSha256": "c2ce7d4c8ec1db17d8b7f66a53b2bef118a3e6a4210f4369dcecf2e5939131ad",
+      "stockLength": 5502,
+      "subject": "Payment reminder for order {{ name }}"
+    },
+    "pending_payment_failure": {
+      "stockSha256": "73ed5c29d6bfdf5f0ef8a8a7341a4031930a5f45d70f70e3a83c5e060fc3968f",
+      "stockLength": 44476,
+      "subject": "[{{shop.name}}] Payment couldn’t be processed for order {{ name }}",
+      "override": {
+        "reason": "Stock bug: in the branch where nothing has been paid yet, the Amount to pay table sits directly inside a table row with no cell. Parsers recover by closing the enclosing tables early (the page background ended before the footer) and leave an empty subtotal-lines table whose top border draws a hairline under the card. The replacements give the else-branch the spacer and cell the if-branch has.",
+        "replace": [
+          {
+            "from": "      {% else %}\n        <table class=\"row subtotal-table subtotal-table--total\">",
+            "to": "      {% else %}\n      <td class=\"subtotal-spacer\"></td>\n        <td>\n        <table class=\"row subtotal-table subtotal-table--total\">"
+          },
+          {
+            "from": "        </table>\n      {% endif %}\n  </tr>\n</table>",
+            "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
+          }
+        ]
+      }
+    },
+    "pending_payment_success": {
+      "stockSha256": "81a1c84293778c1b39090ff389fa699b7a5195b1b27bb73c3b3ff873d1de059c",
+      "stockLength": 61718,
+      "subject": "[{{ shop.name }}] Payment for {{ name }} has been received"
+    },
+    "pickup_receipt": {
+      "stockSha256": "337de4e1bf6cb4eba4cda57b267232aadc75dc42062add466e646c83f6fb2df7",
+      "stockLength": 52160,
+      "subject": "Your order has been picked up ({{ name }})"
+    },
+    "pos_exchange_v2_receipt": {
+      "stockSha256": "9c47e23fd99fc5d700256cd18a8128fdbcc1867701032373f156a2ae4453720f",
+      "stockLength": 17379,
+      "subject": "Exchange receipt from {{ shop.name }}"
+    },
+    "pos_send_cart": {
+      "stockSha256": "2b5c1affb10d0be7f8c30dfccd0f96bf55bae50d280efe9e7f614863a144c2f6",
+      "stockLength": 13213,
+      "subject": "Buy online from {{ shop_name }} when you're ready!",
+      "override": {
+        "styleAnchor": "<style>\n    .button__cell { background: {{ shop.email_accent_color }}; }\n    .actions-buttons .button__cell--primary { background-color: {{ shop.email_accent_color }}; }\n    a, a:hover, a:active, a:visited { color: {{ shop.email_accent_color }}; }\n    .top-border { border-top-width: 1px; border-top-color: #e5e5e5; border-top-style: solid; }\n  </style>",
+        "reason": "Stock style block carries an extra .top-border rule (1px #e5e5e5 hairline above sections). The whole block is replaced; the hairline is dropped on purpose, the branded card layout supplies its own separation."
+      }
+    },
+    "ready_for_pickup": {
+      "stockSha256": "a509e1f430e32aa46015ee084a7feb00a79e7309358580ec2ea05e4eca159d20",
+      "stockLength": 54292,
+      "subject": "A package from order {{ name }} is ready for pickup"
+    },
+    "refund_notification": {
+      "stockSha256": "6ce979d5c52f603c52bb32f7ec7d9607d089b2fca650b5cfb821822ae34b715f",
+      "stockLength": 31869,
+      "subject": "Refund notification"
+    },
+    "requested_edit_declined": {
+      "stockSha256": "0e0ace6c3117dae621cf9e0ca615d498eab06e645194a50e96fba2f2473f90a5",
+      "stockLength": 6302,
+      "subject": "Cancellation request declined for order {{ order.name }}"
+    },
+    "return_approved": {
+      "stockSha256": "b6457345847ae057759fc20531db87f07f5b14b5217919808f0d0ec526ebc56d",
+      "stockLength": 19694,
+      "subject": "Return approved for order {{ order.name }}"
+    },
+    "return_created": {
+      "stockSha256": "ee136a1823a4815d95b76a3864779f3da50f352d85e4c0cdb89d1ae17d6dc33d",
+      "stockLength": 18773,
+      "subject": "Complete your return for Order {{ order.name }}"
+    },
+    "return_declined": {
+      "stockSha256": "f8b614a30d254d0cf657b70450ca860cc715223fee07f959da4e44bbc53cf2ab",
+      "stockLength": 6999,
+      "subject": "Return request declined for order {{ order.name }}"
+    },
+    "return_label_notification": {
+      "stockSha256": "9633f3ed453994ca7066625a9de0d1873618663e9208ceca6641af070841040b",
+      "stockLength": 4938,
+      "subject": "Return label for order {{ order.name }}"
+    },
+    "return_receipt": {
+      "stockSha256": "cb047744b4f90db8230f04a18f929f0e6e955af2b30a6bd3d2809d6df03b9a97",
+      "stockLength": 17043,
+      "subject": "{% if return.exchange_line_items.size > 0 %}Exchange{% else %}Return{% endif %} receipt from {{ shop.name }}"
+    },
+    "shipment_delivered": {
+      "stockSha256": "ca012178d4a312a7719bd0f0785ccf5c75c7caa85f5290441786c6aacc9b7419",
+      "stockLength": 19975,
+      "subject": "A shipment from order {{ name }} has been delivered",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "shipment_out_for_delivery": {
+      "stockSha256": "bd965cb013d84b733b092d01a24ab7dbb4212520c9e0f7b0c0505f99ffe0259a",
+      "stockLength": 19862,
+      "subject": "A shipment from order {{ name }} is out for delivery",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "shipping_confirmation": {
+      "stockSha256": "59e2529021baeaa81718058c71b1357cc9d8811e510d2a8807c1bf0fa068dfe5",
+      "stockLength": 22427,
+      "subject": "A shipment from order {{ name }} is on the way",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "shipping_update": {
+      "stockSha256": "264710eb358f365a401a213bc8a261f70d47b95f9552bfe00ae5761d89131357",
+      "stockLength": 21068,
+      "subject": "Shipping update for order {{ name }}",
+      "override": {
+        "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
+        "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
+      }
+    },
+    "store_credit_issued": {
+      "stockSha256": "cdbfeefd91c0d650d0ace88c832d5ca6df20517143186da84d5700339b3acd3b",
+      "stockLength": 3904,
+      "subject": "{{ shop.name }} {{ issued_store_credit.amount | money_without_trailing_zeros }} store credit",
+      "override": {
+        "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
+        "header": true
+      }
+    },
+    "store_receipt": {
+      "stockSha256": "5eaf44b9dfac057a0b4c60bb4c3eddcf5e975c06b45443d14aa12ae96b1a671f",
+      "stockLength": 184997,
+      "subject": "Receipt for order {{name}}"
+    }
+  }
+}
