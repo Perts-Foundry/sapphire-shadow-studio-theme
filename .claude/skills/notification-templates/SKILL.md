@@ -23,10 +23,12 @@ the editor's document (length plus 32-bit FNV-1a, the contract in `scripts/notif
 this skill drives it. Nothing here is theme code: never `shopify theme push` or `pull`.
 
 Unlike `add-product`, which never commits, this skill **commits, pushes and opens PRs**, and it
-**clicks Save in Admin itself** once every check passes; both by the operator's decision. And
-unlike the sibling skills' one-STOP-per-write, a `sync` run has **one STOP for the whole batch**:
-the operator's reason is that the batch is up to one write per manifest id, each byte-verified
-before Save and again after reload, and a failed check stops the run before Save.
+**clicks Save in Admin itself** once the paste is byte-verified; both by the operator's decision.
+And unlike the sibling skills' one-STOP-per-write, a `sync` run has **one STOP for the whole
+batch**: the operator's reason is that the batch is up to one paste per manifest id, each
+byte-verified before Save and again after reload and then render-checked on the stored version,
+plus at most one restoring Save in the whole run, which undoes a failed render (byte-verified,
+covered by the same approval) before the run stops.
 
 ## Arguments
 
@@ -51,14 +53,14 @@ it is a request the operator makes during or after a run, handled per `browser.m
 | Mode | File | Reads | Writes | Gates |
 |---|---|---|---|---|
 | `change` | `change.md` | the operator's description, `lib/`, `manifest.json` | the repo (branch, commit, push, PR); an unsaved paste in one editor | browser opt-in; the pre-PR gate; one STOP on a green PR |
-| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save), the state file | browser opt-in; one STOP with the plan table |
+| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save; one restoring Save on a failed render), the state file | browser opt-in; one STOP with the plan table |
 | `audit` | `audit.md` | every Admin editor in scope | the state file, a table in the scratchpad | browser opt-in |
 | `record` | `record.md` | one Admin editor | `stock/<id>.liquid`, `manifest.json` (then `change`) | browser opt-in; one STOP before Revert to default (that approval covers the Save that follows) |
 | `rollback` | `rollback.md` | git history, one Admin editor | Admin (Save), the state file | browser opt-in; one STOP before the paste; a second before Revert to default |
 
 `browser.md` holds everything shared by the browser modes: the editor URL, the probes, the paste
-loop, the dirty-editor rule, the pickup rule, the mobile procedure and the test send. Read it
-before any browser step. Mode files say "return to SKILL.md and run `<mode>`", never point into
+loop, the dirty-editor rule, the previews that ignore unsaved edits, the mobile procedure and the
+test send. Read it before any browser step. Mode files say "return to SKILL.md and run `<mode>`", never point into
 each other.
 
 ## Gate contract
@@ -91,7 +93,9 @@ any violation, because an id from it flows into a navigation URL.
 
 - Never hand-edit `<id>.liquid` or `stock/<id>.liquid`. Edit `lib/` or `manifest.json` and run
   `npm run notifications:generate`; the generator seeds and bumps versions itself.
-- Never Save on a failed check. Never proceed on a byte mismatch.
+- Never Save on a failed byte check, and never proceed on a byte mismatch. In `sync` the render
+  check runs after Save, on the stored version; a failed render is followed by the restore in
+  `sync.md`, never by Revert to default.
 - **Revert to default** (the editor's "Revert changes" button) is allowed only in `record`, after
   its own STOP, for the single id named, and in `rollback` as the last resort after its own STOP.
   Never as a reaction to a failed `sync` check.

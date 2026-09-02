@@ -69,6 +69,19 @@ default paragraph colour after the class rule. Cosmetic, consistent, and left al
 a higher-specificity rule, a regeneration of all 46 files and a re-paste of every saved template,
 so it is a decision for after the paste waves, not during them.
 
+**A third such template, and what `sync` does about it (2026-09-02).** The first full `sync` found
+`change_requested` ignoring unsaved edits the same way (the preview mutation carried the stamped
+branded body; the render came back unstamped and stock-coloured) and stopped on its render check
+with nothing saved, as the mode was written to. That was the rule working against a non-fault:
+the check gated Save on a preview that, for an unknown subset of ids, cannot see the paste. `sync`
+now saves first on every id and render-checks the stored version, so the check sees the paste
+everywhere; if the render fails, it pastes back the document the editor held before the paste and
+saves that, byte-verified against a dump taken from the editor at the start of the id's loop. The
+restore source is the editor's own document rather than git or `stock/` because 18 of the 46
+editors held a pre-merge paste that exists in no commit. The cost is a window of one preview's
+length during which a bad render is live, bounded by a byte-verified restore; the batch approval
+covers that one extra Save. "Revert to default" stays out of `sync`.
+
 **The page background is painted on the row tables and the body, not only on the `.body`
 table.** In `order_invoice` and `pending_payment_failure`, the stock "Amount to pay" block puts a
 `<table>` directly inside a `<tr>` with no `<td>` in the branch where nothing has been paid yet.
@@ -118,7 +131,7 @@ a version backwards on purpose; the skill clicks Save itself but only after the 
 byte-verified, and re-verifies after a reload, because the first session found that an unsaved
 paste and a saved one look the same in the editor; one STOP covers a whole `sync` batch, the
 operator's call, since the batch is up to 46 identical mechanical writes each verified before and
-after; and the render checker is a tag-stack walker rather than regex, which is what produced three
+after (plus, since 2026-09-02, at most one restoring Save, see above); and the render checker is a tag-stack walker rather than regex, which is what produced three
 false positives in the first checker (the navy test matched the row tables, not the containers).
 The browser probes are committed files run under `node:vm` by the tests so the FNV in the browser
 is provably the FNV in Node. The first end-to-end run of the `change` mode paid for the byte check at

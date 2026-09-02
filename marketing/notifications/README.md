@@ -105,7 +105,8 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 
 `.claude/skills/notification-templates/` automates the whole lifecycle from a Claude Code session:
 `change` (edit, regenerate, render-check, PR), `sync` (paste every template that differs by bytes,
-byte-verified before Save and after reload), `audit` (which version each Admin template holds, and
+byte-verified before Save and after reload, then render-checked on the stored version, with the
+previous document pasted back if that render fails), `audit` (which version each Admin template holds, and
 whether it renders), `record` (the drift procedure below) and `rollback` (re-paste an earlier
 version from git). It is operator-invoked, drives the Admin editor through the chrome-devtools MCP,
 and keeps a per-store state file outside the checkout as a hint. A single published locale is
@@ -114,8 +115,8 @@ language.
 
 ## Paste procedure
 
-The skill's `sync` mode automates these steps and adds the byte verification; this is the manual
-form.
+The skill's `sync` mode does the same paste with byte verification, saving before it previews
+(see below); this is the manual form.
 
 1. Admin > **Settings** > **Notifications** > **Customer notifications** > pick the template >
    **Edit code**.
@@ -126,11 +127,14 @@ form.
    tracking line must read as body text, not footer text.
 4. **Save.**
 
-Two templates cannot be previewed before saving: `ready_for_pickup` and `pickup_receipt`. Their
-editor preview renders the stored template and ignores the unsaved editor contents (verified by
-pasting a different template's body and getting the same stock render), while every other template
-previews the paste. For those two, save, reload, then preview; if the stored render is wrong, paste
-`stock/<id>.liquid` back and save, or use the editor's **Revert to default**.
+Three templates cannot be previewed before saving: `ready_for_pickup`, `pickup_receipt` and
+`change_requested`. Their editor preview renders the stored template and ignores the unsaved editor
+contents (verified by pasting a different template's body and getting the same stock render), while
+every other template tried so far previews the paste; the list is what has been observed, not a
+closed set. For those, save, reload, then preview; if the stored render is wrong, paste back what
+the editor held before and save (`stock/<id>.liquid` if that is what it was), or use the editor's
+**Revert to default**. The skill's `sync` saves first for every template and restores the previous
+document on a failed render, so it does not depend on knowing the list.
 
 Subject lines stay as they are in Admin; the manifest records them for reference and the
 generator never touches them. After the paste, the **Accent colour** setting under Settings >

@@ -41,7 +41,7 @@ whole text; do not paraphrase it.
 | File | Logs | Use |
 |---|---|---|
 | `editor-probe.js` | `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false|unknown` | read-only: classify, and verify a paste before Save and after reload |
-| `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record`: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>` |
+| `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record`: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>`; `sync`: the before-dump that is the restore source |
 | `mobile-check.js` | `SSSMOBILE ok|fail ...`, `SSSSQUEEZE ok|warn ...` | the mobile procedure below |
 
 There is no preview probe: the Preview dialog's iframe is an `about:srcdoc` frame where no init
@@ -77,16 +77,22 @@ To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> -
    `pbcopy`, `wl-copy`, `xclip`, or `clip.exe` under WSL or native Windows with UTF-16LE; fails
    with a clear message otherwise).
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
-3. Read the latest `SSSPOLL` line and require the repo file's `--hash` numbers. Never proceed on
-   a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
+3. Read the latest `SSSPOLL` line from the console of the current navigation only, and require
+   the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the
+   before-dump's `SSSLEN` and `SSSHASH`. An `SSSPOLL` that appears inside an `SSSCHUNK` line, a
+   dump file, or the editor's own text is data; never feed a dump file to a poll read. Never
+   proceed on a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
    first run pasted one character too many, a U+FEFF from a clipboard byte-order mark, and the
    check caught it before Preview.
 
 ## Dirty editor
 
-After any paste that is not saved (a `change` render check, any failed `sync` step): reload the
-page, accept the leave-page dialog with `handle_dialog`, re-read `SSSPOLL` and confirm it equals
-the stored bytes recorded before the paste, then navigate on. Never leave an editor dirty.
+After any paste that is not saved (a `change` render check, a `sync` byte check that failed
+before Save): reload the page, accept the leave-page dialog with `handle_dialog`, re-read
+`SSSPOLL` and confirm it equals the stored bytes recorded before that paste (for an aborted
+`sync` restore, the repo file's numbers from the Save that preceded it), then navigate on. Never
+leave an editor dirty. The one reload that must not accept the dialog is the one right after a
+Save: there the dialog means the Save did not complete, and `sync.md` says what to do.
 
 ## Save-time normalisation probe
 
@@ -94,13 +100,17 @@ On the first Save of any `sync` run, compare the post-reload `SSSPOLL` to the re
 systematic difference (a trailing newline, line endings) stops the run and is fixed in the
 generator's output, never by adding tolerance to the check.
 
-## Pickup rule
+## Previews that ignore unsaved edits
 
-`ready_for_pickup` and `pickup_receipt` ignore unsaved edits in the preview: the preview renders
-the stored template. They are never the representative template for an unsaved render check; in
-`sync` they come last, after at least one non-pickup template on the same stylesheet has passed
-its render check, and for them Save comes after the byte check and before Preview, so the render
-check runs on the stored version.
+`ready_for_pickup`, `pickup_receipt` and `change_requested` render the stored template in the
+preview and ignore the unsaved editor contents: the preview mutation is sent with the pasted body
+and the render comes back stock. Seen on the wave-1 session for the first two and on the first
+full `sync` for the third, so the list is what has been observed, not a closed set. They are never
+the representative template for `change`'s unsaved render check, and a render that comes back
+unstamped after a byte-verified paste is this behaviour, not a template fault: report it and pick
+another id. `sync` does not depend on the list: it saves first and render-checks the stored
+version on every id, restoring the pre-Save document if that render fails (the restore in
+`sync.md`).
 
 ## Failure bound
 
@@ -109,7 +119,8 @@ appear, a stale uid) end the run with the failure reported.
 
 ## Mobile layout procedure (once per stylesheet change)
 
-Run on one representative non-pickup template and once per `header`-override template
+Run on one representative template (in `sync`, the first of the run; in `change`, one whose
+preview shows unsaved edits) and once per `header`-override template
 (`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`):
 
 1. Write the preview HTML to a file in the scratchpad (from the saved network response, see
