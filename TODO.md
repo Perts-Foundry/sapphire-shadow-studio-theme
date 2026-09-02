@@ -14,23 +14,23 @@ right now, and an empty heading with a live index entry is the residue this file
 
 ## Product and storefront
 
-- [ ] **Paste the branded notification templates in waves.** Procedure and per-template caveats in
-  `marketing/notifications/README.md`. Delete an id from this list once it is pasted and saved in
-  Admin, and delete the whole item when the list is empty.
-  - Wave 2 (money): gift cards (`gift_card_confirmation`, `gift_card_notification`), store credit
-    (`store_credit_issued`), invoices (`order_invoice`, `draft_order_invoice`), payments
-    (`order_payment_receipt`, `payment_reminder`, `pending_payment_success`,
-    `pending_payment_failure`, `failed_payment_processing`, `store_receipt`), returns
-    (`return_created`, `return_approved`, `return_declined`, `return_label_notification`,
-    `return_receipt`, `change_requested`, `requested_edit_declined`).
-  - Wave 3 (everything else): accounts (`customer_account_activate`, `customer_account_reset`,
-    `customer_account_welcome`, `customer_email_address_changed_confirmation`,
-    `customer_add_payment_method`, `customer_update_payment_method`,
-    `customer_restore_payment_method`), contact (`contact_buyer`, `order_link`), marketing
-    confirmation (`customer_marketing_confirmation`), POS (`pos_send_cart`, `buy_online`,
-    `pos_exchange_v2_receipt`), B2B (`company_contact_welcome_email`,
-    `company_location_update_payment_method`), local delivery (`local_out_for_delivery`,
-    `local_delivered`, `local_missed_delivery`).
+- [ ] **Sync the branded notification templates into Admin.** Run
+  `/notification-templates sync` with the ids in wave order (the skill never reads this file);
+  delete this item when the first full sync lands and `/notification-templates audit` reports all
+  46 in sync. Wave 2 (money): `gift_card_confirmation`, `gift_card_notification`,
+  `store_credit_issued`, `order_invoice`, `draft_order_invoice`, `order_payment_receipt`,
+  `payment_reminder`, `pending_payment_success`, `pending_payment_failure`,
+  `failed_payment_processing`, `store_receipt`, `return_created`, `return_approved`,
+  `return_declined`, `return_label_notification`, `return_receipt`, `change_requested`,
+  `requested_edit_declined`. Wave 3 (everything else): `customer_account_activate`,
+  `customer_account_reset`, `customer_account_welcome`,
+  `customer_email_address_changed_confirmation`, `customer_add_payment_method`,
+  `customer_update_payment_method`, `customer_restore_payment_method`, `contact_buyer`,
+  `order_link`, `customer_marketing_confirmation`, `pos_send_cart`, `buy_online`,
+  `pos_exchange_v2_receipt`, `company_contact_welcome_email`,
+  `company_location_update_payment_method`, `local_out_for_delivery`, `local_delivered`,
+  `local_missed_delivery`. The wave-1 order-lifecycle ids are already saved but pre-date the
+  version stamp, so the sync pastes them too.
 
 - [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
   `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the

@@ -104,6 +104,25 @@ mode recolouring the white and pale-blue cards; `color-scheme: light only` on th
 Shopify's own technique for its Shop-app button and is applied as an opt-out hint, with no
 guarantee every client honours it.
 
+**Per-template versions, auto-bumped, stamped twice, and a skill that owns the lifecycle.** During
+the first paste session the shared stylesheet changed four times and the generator twice, and every
+change regenerated all 46 files and silently put every already-saved template one step behind the
+repo, with nothing in Admin to say which bytes a template held. Each manifest entry now carries a
+`version` and a `brandedSha256`; `generate` seeds and bumps them itself and `check` refuses
+disagreement, so an un-bumped change cannot merge. Decisions worth keeping: the hash is of the
+generated output, not the inputs, so a `reason` edit or a byte-identical re-record does not bump;
+the stamp lives in two places because the Liquid comment is what the editor shows and the HTML
+comment is what survives into a sent email; `sync` decides what to paste by bytes (length plus
+FNV-1a of the editor document) and treats the version as information, because a `git revert` moves
+a version backwards on purpose; the skill clicks Save itself but only after the paste is
+byte-verified, and re-verifies after a reload, because the first session found that an unsaved
+paste and a saved one look the same in the editor; one STOP covers a whole `sync` batch, the
+operator's call, since the batch is up to 46 identical mechanical writes each verified before and
+after; and the render checker is a tag-stack walker rather than regex, which is what produced three
+false positives in the first checker (the navy test matched the row tables, not the containers).
+The browser probes are committed files run under `node:vm` by the tests so the FNV in the browser
+is provably the FNV in Node.
+
 **Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
 them delta-compressed and the generated file differs from its stock twin by three hunks, so the
 packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated
