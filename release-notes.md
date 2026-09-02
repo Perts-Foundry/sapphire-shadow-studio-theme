@@ -69,6 +69,17 @@ default paragraph colour after the class rule. Cosmetic, consistent, and left al
 a higher-specificity rule, a regeneration of all 46 files and a re-paste of every saved template,
 so it is a decision for after the paste waves, not during them.
 
+**The page background is painted on the row tables and the body, not only on the `.body`
+table.** In `order_invoice` and `pending_payment_failure`, the stock "Amount to pay" block puts a
+`<table>` directly inside a `<tr>` with no `<td>` in the branch where nothing has been paid yet.
+HTML parsers recover by closing the enclosing tables early, so the `.body` table (the one that
+carried the pale-blue background) ended before the footer and the navy footer sat on plain white.
+The stock markup is Shopify's and the body stays byte-identical, so the fix is the stylesheet:
+`body`, `.header`, `.content`, `.section` and `.footer` all carry the page colour, which is
+invisible where the nesting is sound and restores the surround where it is not. Found on the
+wave-2 preview of `pending_payment_failure`; the static stock files balance their tables, so a
+count of open and close tags would not have caught it. Only a render does.
+
 **Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
 them delta-compressed and the generated file differs from its stock twin by three hunks, so the
 packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated
