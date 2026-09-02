@@ -73,6 +73,7 @@ That stays a manual check:
 | `npm run policies:check` | **Offline.** Proves the repo agrees with itself. What CI runs. |
 | `npm run policies:pull` | Reads Admin through the read-only client and rewrites the files and manifest. |
 | `npm run policies:pull -- --check` | Reports drift against Admin, writes nothing. Exit 0 clean, 2 drift found, 1 the tool failed. |
+| `npm run policies:restamp` | **Offline.** After a deliberate local wording edit, recomputes the derived manifest fields (`sha256`, `length`, `headings`) from the committed bodies. `--check` reports what would change and exits 2. |
 | `npm run policies:push -- --type <type>` | Dry run: prints the diff and the exact command to apply it. |
 | `npm run policies:test` | The tooling's own suite. |
 
@@ -92,13 +93,19 @@ partial run look clean; that would hide a half-applied pull.
 
 ## Pushing a wording change
 
-1. Edit `<type>.html` in a branch, run `npm run policies:pull -- --check` first to be sure Admin has
-   not moved under you, and update the manifest by hand (`sha256`, `length`, `headings`) or let
-   `policies:check` tell you what is stale.
-2. Open the PR, review the diff, merge it.
-3. Dry run: `npm run policies:push -- --type shipping_policy`. It prints the unified diff, calls out
+1. Run `npm run policies:pull -- --check` first, to be sure Admin has not moved under you.
+2. Edit `<type>.html` in a branch, then run `npm run policies:restamp`. It rewrites `sha256`,
+   `length` and `headings` from what you wrote, and **shouts if a heading moved**, because that is
+   an anchor break. It deliberately does NOT touch `remote` or `pulledAt`, so `policies:check` then
+   reports the outstanding push rather than pretending Admin already has it.
+
+   `restamp` is the counterpart to `pull`, and the distinction matters: `pull` answers "what does
+   Admin hold?" and would overwrite your edit with the live body; `restamp` answers "I meant that,
+   make the manifest agree".
+3. Open the PR, review the diff, merge it.
+4. Dry run: `npm run policies:push -- --type shipping_policy`. It prints the unified diff, calls out
    any heading change as an anchor break, and prints the exact next command.
-4. Apply it: `npm run policies:push -- --type shipping_policy --expect-live-sha=<sha> --confirm=shipping_policy`.
+5. Apply it: `npm run policies:push -- --type shipping_policy --expect-live-sha=<sha> --confirm=shipping_policy`.
 
 `--confirm` must equal the `--type` value. A bare boolean `--confirm` is copy-pasteable out of shell
 history and is exactly the shape an agent reproduces from a README example; requiring the policy

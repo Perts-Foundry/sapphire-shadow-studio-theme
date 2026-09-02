@@ -70,6 +70,8 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   [`applique-grid/README.md`](applique-grid/README.md).
 - `policies/`: pull, check and push the five shop policies tracked at `marketing/policies/`.
   `check.mjs` is **offline and CI-safe** and proves only that the repo agrees with itself;
+  `restamp.mjs` is offline too and recomputes the derived manifest fields after a deliberate local
+  wording edit, leaving `remote` and `pulledAt` alone so the outstanding push stays visible;
   `pull.mjs` reads through the read-only Admin client; `push.mjs` writes a legal policy on the
   **live store** behind nine gates (writable type, not CI, TTY, clean check, clean tree, HEAD
   merged, freshness against the last observed Admin body, a dry run, a verified out-of-tree

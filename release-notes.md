@@ -61,6 +61,15 @@ before a newline is significant between inline elements, and tidying it would ch
 storefront renders. The file on disk is the canonical body plus one newline, so the file is
 POSIX-clean while the bytes sent to Shopify stay exactly what Admin returned.
 
+**`restamp` exists because the plan's workflow had a hole.** `pull` answers "what does Admin
+hold?" and would overwrite a local wording edit with the live body, so after editing a policy in a
+branch there was nothing to recompute the derived manifest fields but a hand edit of a sha256. That
+is exactly the kind of hand edit that goes wrong quietly. `policies:restamp` recomputes `sha256`,
+`length` and `headings` from the committed bodies, refuses if the bodies themselves are unusable,
+and shouts when a heading moved. It deliberately does NOT touch `remote` or `pulledAt`: those are
+what say Admin has not received the edit yet, which is what `check` reports as an outstanding push
+and what push's freshness gate reads.
+
 **Both manifest timestamps are carried forward when nothing moved.** A timestamp rewritten on every
 pull churns all five entries, guarantees a conflict between two branches that both pulled, trains
 reviewers to skim the file that carries the anchor contract, and (found while testing) would make
@@ -77,6 +86,12 @@ drift sites permanently" would be aspirational.
 The plan for this change named five templates. `templates/product.shift-fuel-tote.json` was added
 after the plan was written and carried the same string, which the Part 0 evidence sweep caught. The
 sweep is the reason the count is right; recall would have missed it.
+
+The cohesion test discovers the templates carrying the row rather than listing them, so a seventh
+product cannot opt out of the rule by being new. Its duration sweep exempts two templates by name
+with the reason inline (`page.faq.json`, response times rather than a turnaround;
+`page.custom-orders.json`, the separate 2-to-3-week track), and a second test asserts each exemption
+still states a duration, so a stale exemption cannot quietly hide a regression.
 
 **A knowingly accepted cost:** no customer now sees a turnaround before add-to-cart unless they
 click through to the policy, in the same change that lengthens production. That copy is also the

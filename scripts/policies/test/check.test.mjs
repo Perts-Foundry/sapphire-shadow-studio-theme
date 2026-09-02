@@ -210,7 +210,7 @@ test('a repo body ahead of the last observed Admin body is a NOTE saying a push 
     const { problems, mismatches, notes } = check(root);
     assert.deepEqual(problems, []);
     assert.deepEqual(mismatches, []);
-    assert.ok(notes.some((n) => n.includes('a push is outstanding') && n.includes('SHIPPING_POLICY')));
+    assert.ok(notes.some((n) => n.includes('a push is outstanding') && n.includes('--type shipping_policy')));
   });
 });
 

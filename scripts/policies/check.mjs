@@ -198,7 +198,7 @@ export function plan(root = REPO_ROOT) {
     if (remote && typeof remote.sha256 === 'string' && remote.sha256 !== entry.sha256) {
       notes.push(
         `${key}: the repo body differs from the last observed Admin body; a push is outstanding ` +
-          `(npm run policies:push -- --type ${type})`,
+          `(npm run policies:push -- --type ${key})`,
       );
     }
   }
