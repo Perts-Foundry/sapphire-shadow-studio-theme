@@ -202,7 +202,7 @@ export function validateTables(tables, manifest) {
       continue;
     }
     // An EMPTY array is allowed and means "no option axis at all": the product sells one variant and
-    // its SKU is the bare product code (see docs/sku-scheme.md, "Products with no options"). An
+    // its SKU is the bare product code (see docs/sku-scheme.md, "The scheme"). An
     // absent array stays refused, because that is the shape a half-written entry has.
     const seen = new Set();
     for (const [i, seg] of entry.segments.entries()) {

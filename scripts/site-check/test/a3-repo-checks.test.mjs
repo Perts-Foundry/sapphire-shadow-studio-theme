@@ -314,6 +314,9 @@ test('catalogue-template-blocks: rule table per product', () => {
   assert.ok(requiredBlockTypes(catalogue.products.get('huddle-crewneck')).has('applique-pattern-select'));
   assert.ok(requiredBlockTypes(catalogue.products.get('lead-ii-crewneck')).has('product-custom-property'));
   assert.ok(!requiredBlockTypes(catalogue.products.get('test-gift-card')).has('vacation-acknowledgment'));
+  const tote = requiredBlockTypes({ handle: 'shift-fuel-tote', line: null, body: null, template: 'shift-fuel-tote' });
+  assert.ok(tote.has('vacation-acknowledgment'), 'the made-to-order tote takes the vacation acknowledgment');
+  assert.ok(!tote.has('return-policy-acknowledgment'));
   assert.deepEqual(checkCatalogueTemplateBlocks(ctx()), []);
   const out = checkCatalogueTemplateBlocks(ctx({
     'templates/product.huddle-crewneck.json': productTemplate(GARMENT_TYPES.filter((t) => t !== 'vacation-acknowledgment')),

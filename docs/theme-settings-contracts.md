@@ -42,9 +42,9 @@ A campaign email would be a fifth source, and the only one that cannot be correc
 
 ### `show_shipping_info`: product page yes, product card no
 
-**The shipping note belongs under a product-page price and never under a product card, and nothing enforces that.** It is a per-block checkbox on `blocks/price.liquid`, so the rule lives entirely in each template's JSON. The six product templates set `show_shipping_info: true` on both their price blocks; `templates/index.json`, `collection.json`, `search.json`, `cart.json` and `404.json` set it to `false`. The schema default is `false`, so an omitted key now fails toward the card behaviour rather than the product-page one.
+**The shipping note belongs under a product-page price and never under a product card, and nothing enforces that.** It is a per-block checkbox on `blocks/price.liquid`, so the rule lives entirely in each template's JSON. The seven product templates set `show_shipping_info: true` on both their price blocks; `templates/index.json`, `collection.json`, `search.json`, `cart.json` and `404.json` set it to `false`. The schema default is `false`, so an omitted key now fails toward the card behaviour rather than the product-page one.
 
-**Ticking it has three outcomes, not two.** `blocks/price.liquid` derives `is_gift_card` from `product_resource.gift_card?` and forwards it, so a gift card product renders a delivery line (`content.gift_card_delivery`, "Delivered by email • No shipping") rather than the flat-rate or free-shipping sentence. That is why `templates/product.gift-card.json` sets the key `true` like the five garment templates but does not show what they show.
+**Ticking it has three outcomes, not two.** `blocks/price.liquid` derives `is_gift_card` from `product_resource.gift_card?` and forwards it, so a gift card product renders a delivery line (`content.gift_card_delivery`, "Delivered by email • No shipping") rather than the flat-rate or free-shipping sentence. That is why `templates/product.gift-card.json` sets the key `true` like the five garment templates and the tote but does not show what they show.
 
 Two consequences worth knowing before changing either side:
 

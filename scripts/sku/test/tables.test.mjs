@@ -69,6 +69,7 @@ function manifestWith(mutate) {
       'huddle-crewneck': { line: 'huddle', body: 'crewneck', template: 'huddle-crewneck', title: 'Huddle Crewneck', gid: 'gid://shopify/Product/2' },
       'shift-fuel-crewneck': { line: 'shift-fuel', body: 'crewneck', template: 'shift-fuel-crewneck', title: 'Shift Fuel Crewneck', gid: 'gid://shopify/Product/3' },
       'sapphire-shadow-studio-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/4' },
+      'shift-fuel-tote': { line: null, body: null, template: 'shift-fuel-tote', title: 'Shift Fuel Tote', gid: 'gid://shopify/Product/5' },
     },
   };
   mutate(doc);
@@ -240,7 +241,11 @@ test('a product with no segments array or a repeated axis is refused; an empty a
 
   const bare = clone();
   bare.products['shift-fuel-crewneck'].segments = [];
-  assert.doesNotMatch(problems(bare), /segments/);
+  assert.deepEqual(validateTables(bare, MANIFEST), []);
+  const merged = effectiveTables(bare, MANIFEST);
+  assert.deepEqual(merged.products['shift-fuel-crewneck'].segments, []);
+  assert.deepEqual(EFFECTIVE.products['shift-fuel-tote'].segments, []);
+  assert.equal(EFFECTIVE.products['shift-fuel-tote'].sizes, null, 'option-less and non-garment: no size axis');
 
   const twice = clone();
   twice.products['shift-fuel-crewneck'].segments = [{ kind: 'color' }, { kind: 'color' }];
@@ -314,8 +319,8 @@ test('parseTables returns the merged tables, not the raw ones', () => {
 });
 
 test('loadTables accepts an injected manifest and does not read catalogue.json', async () => {
-  // The injected manifest declares four products; the committed tables declare six, so the census
-  // check has to fire. That it does is the proof the injected manifest was the one used.
+  // The injected manifest declares five products; the committed tables declare seven, so the
+  // census check has to fire. That it does is the proof the injected manifest was the one used.
   await assert.rejects(loadTables({ manifest: MANIFEST }), /is not declared in catalogue\.json/);
 });
 

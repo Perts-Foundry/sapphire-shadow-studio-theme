@@ -21,6 +21,23 @@ test('the gift card encodes its zero-padded denomination', () => {
   assert.equal(skuProblem(got.sku), null, 'a segment may start with 0; the SKU does not');
 });
 
+test('an option-less product is its bare code, and Shopify\'s "Default Title" option is ignored', () => {
+  // A single-variant product carries the synthetic `Title: Default Title` option, which maps to
+  // no segment; the SKU is the product code alone and has no hyphen.
+  const got = deriveSku(TABLES, variant('shift-fuel-tote', { Title: 'Default Title' }));
+  assert.deepEqual(got, { ok: true, sku: 'SFTB', segments: ['SFTB'] });
+  assert.equal(skuProblem(got.sku), null);
+  assert.equal(deriveSku(TABLES, variant('shift-fuel-tote', {})).sku, 'SFTB');
+});
+
+test('a stray option on an option-less product is ignored, not derived into a segment', () => {
+  // Pinned as a decision: the tables entry, not the variant, says which axes a product reads. A
+  // Color option that appears on the tote later is a tables change (and `sku audit` reports the
+  // resulting duplicate SKUs across variants), never a segment invented from the variant.
+  const got = deriveSku(TABLES, variant('shift-fuel-tote', { Color: 'Black', Size: 'M' }));
+  assert.deepEqual(got, { ok: true, sku: 'SFTB', segments: ['SFTB'] });
+});
+
 test('design codes are namespaced per product family', () => {
   // "Nurse" exists only in the huddle namespace; the lead-ii namespace must not see it.
   assert.equal(deriveSku(TABLES, variant('huddle-crewneck', { Design: 'Nurse', Color: 'Black', Size: 'S' })).sku, 'HDCN-NRS-BLK-S');
