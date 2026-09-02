@@ -260,11 +260,20 @@ test('every committed branded file is exactly stock + comment + css + social (+ 
 
   for (const id of ids) {
     const entry = manifest.templates[id];
-    const stock = readFileSync(p.stock(id), 'utf8');
+    let stock = readFileSync(p.stock(id), 'utf8');
     assert.equal(stock.length, entry.stockLength, `${id}: stock length drifted from manifest`);
     assert.equal(sha256(stock), entry.stockSha256, `${id}: stock sha256 drifted from manifest`);
     if (skipped.includes(id)) continue;
     const override = entry.override || {};
+
+    // The replace override: each `from` exactly once, swapped for `to`, before anything else is
+    // located. Disjoint from the other edits by construction (the generator refuses an overlap).
+    for (const r of override.replace || []) {
+      const at = stock.indexOf(r.from);
+      assert.notEqual(at, -1, `${id}: replace anchor ${JSON.stringify(r.from.slice(0, 40))} not found`);
+      assert.equal(stock.indexOf(r.from, at + 1), -1, `${id}: replace anchor ${JSON.stringify(r.from.slice(0, 40))} found more than once`);
+      stock = stock.slice(0, at) + r.to + stock.slice(at + r.from.length);
+    }
 
     // Style region: the <style> block holding the accent reference, or the override's literal.
     let styleStart;
@@ -941,6 +950,65 @@ test('header override: changing lib header html is a mismatch until regenerate, 
   assert.match(c.mismatches[0], /^card: /);
   generate(root);
   assert.deepEqual(check(root).mismatches, []);
+});
+
+// --- 6. the replace override ---------------------------------------------------------------------
+
+test('replace override: each entry is swapped exactly once and the output equals branding the patched stock', () => {
+  const stock = makeStock();
+  const replace = [
+    { from: '<p>{{ greeting }}</p>', to: '<p class="greeting">{{ greeting }}</p>' },
+    { from: 'Questions? Reply to this email.', to: 'Questions? Just reply.' },
+  ];
+  const { output } = brandTemplate(stock, { ...brandOpts, override: { replace } });
+  let patched = stock;
+  for (const r of replace) patched = patched.replace(r.from, r.to);
+  assertBytesEqual(output, brandTemplate(patched, brandOpts).output, 'replace output differs from branding the patched stock');
+  assert.ok(output.includes('<p class="greeting">{{ greeting }}</p>'));
+  assert.ok(!output.includes('<p>{{ greeting }}</p>'));
+});
+
+test('replace override composes with the header override', () => {
+  const stock = makeStock({ contentTable: true });
+  const override = { header: true, replace: [{ from: '<p>{{ greeting }}</p>', to: '<p class="greeting">{{ greeting }}</p>' }] };
+  const { output } = brandTemplate(stock, { ...brandOpts, override });
+  assert.ok(output.includes(fixtureHeader.trimEnd()));
+  assert.ok(!output.includes(LOGO_IF_TAG));
+  assert.ok(output.includes('<p class="greeting">{{ greeting }}</p>'));
+});
+
+const replaceRefusals = [
+  ['from not found', { replace: [{ from: '<p>nowhere</p>', to: 'x' }] }, { anchor: 'replace[0]', detail: /not found/ }],
+  ['from found twice', { replace: [{ from: '<tr>', to: '<tr class="x">' }] }, { anchor: 'replace[0]', detail: /found \d+ times/ }],
+  ['an empty list', { replace: [] }, { anchor: 'replace', detail: /non-empty array/ }],
+  ['not an array', { replace: { from: 'a', to: 'b' } }, { anchor: 'replace', detail: /non-empty array/ }],
+  ['an entry without to', { replace: [{ from: '<p>{{ greeting }}</p>' }] }, { anchor: 'replace', detail: /entry 0 needs/ }],
+  ['an entry with an empty from', { replace: [{ from: '', to: 'x' }] }, { anchor: 'replace', detail: /entry 0 needs/ }],
+  ['a replacement inside the style block', { replace: [{ from: '.button__cell { background: {{ shop.email_accent_color }}; }', to: '' }] }, { anchor: 'replace', detail: /overlaps another edit/ }],
+  ['a replacement inside the footer disclaimer paragraph', { replace: [{ from: DISCLAIMER_ANCHOR, to: '<p class="disclaimer__subtext x">' }] }, { anchor: 'replace', detail: /overlaps another edit/ }],
+];
+
+for (const [name, override, expected] of replaceRefusals) {
+  test(`replace override refuses: ${name}`, () => {
+    assertRefuses(makeStock(), expected, { override });
+  });
+}
+
+test('replace override refuses an anchor that sits inside a Liquid comment', () => {
+  const stock = makeStock().replace('<!DOCTYPE html>', '{% comment %}<p>{{ greeting }}</p>{% endcomment %}\n<!DOCTYPE html>');
+  assertRefuses(stock, { anchor: 'replace[0]', detail: /inside a Liquid comment/ }, { override: { replace: [{ from: '<p>{{ greeting }}</p>', to: 'x' }] } });
+});
+
+test('replace override: a root entry generates, checks clean, and drifts when the manifest entry changes', () => {
+  const replace = [{ from: '<p>{{ greeting }}</p>', to: '<p class="greeting">{{ greeting }}</p>' }];
+  const root = cleanRoot({ patched: { stock: makeStock(), override: { replace } } });
+  const p = paths(root);
+  assert.ok(readFileSync(p.branded('patched'), 'utf8').includes('class="greeting"'));
+  assert.deepEqual(check(root).mismatches, []);
+  const manifest = JSON.parse(readFileSync(p.manifest, 'utf8'));
+  manifest.templates.patched.override.replace[0].to = '<p class="hello">{{ greeting }}</p>';
+  writeFileSync(p.manifest, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  assert.equal(check(root).mismatches.length, 1);
 });
 
 test('header override: a carriage return in lib/header.html is a problem', () => {

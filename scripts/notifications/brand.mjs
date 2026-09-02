@@ -216,7 +216,32 @@ export function brandTemplate(stock, { id, css, social, header, override }) {
     edits.push([contentStart, contentStart, header.replace(/\s+$/, '') + '\n\n' + lineIndent(stock, contentStart)]);
     for (const [a, b] of logos) edits.push([a, b, '']);
   }
-  edits.sort((x, y) => x[0] - y[0]);
+  // The `replace` override: exact substrings swapped for exact substrings, each found exactly once
+  // outside a Liquid comment. For a stock markup bug the template must carry as long as Shopify
+  // ships it; the manifest entry's reason says which.
+  if (override && override.replace !== undefined) {
+    if (!Array.isArray(override.replace) || override.replace.length === 0) {
+      throw new BrandError(id, 'replace', 'override.replace must be a non-empty array');
+    }
+    const ranges = commentRanges(stock);
+    override.replace.forEach((entry, n) => {
+      if (!entry || typeof entry.from !== 'string' || entry.from === '' || typeof entry.to !== 'string') {
+        throw new BrandError(id, 'replace', `entry ${n} needs a non-empty string "from" and a string "to"`);
+      }
+      const at = requireOnce(id, `replace[${n}]`, indexesOf(stock, entry.from), ranges);
+      edits.push([at, at + entry.from.length, entry.to]);
+    });
+  }
+  edits.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  for (let i = 1; i < edits.length; i++) {
+    const prev = edits[i - 1];
+    const cur = edits[i];
+    // Overlap, or a replacement starting on the exact spot an insertion goes: both are refusals,
+    // because the second would rewrite the anchor the insertion was located by.
+    if (cur[0] < prev[1] || (prev[0] === prev[1] && cur[0] === prev[0])) {
+      throw new BrandError(id, 'replace', 'a replacement overlaps another edit');
+    }
+  }
   let output = commentLine(id);
   let cursor = 0;
   for (const [a, b, text] of edits) {

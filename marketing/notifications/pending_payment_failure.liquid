@@ -57,6 +57,7 @@
     .footer .ssb-social a, .footer .ssb-social a:hover, .footer .ssb-social a:active, .footer .ssb-social a:visited { color: #c9d8ea; }
     @media (max-width: 600px) {
       .container { table-layout: fixed !important; }
+      .header { margin-top: 0 !important; margin-bottom: 0 !important; }
       .footer .ssb-social td { padding: 0 5px !important; }
     }
   </style>
@@ -1120,6 +1121,8 @@
           </table>
         </td>
       {% else %}
+      <td class="subtotal-spacer"></td>
+        <td>
         <table class="row subtotal-table subtotal-table--total">
           
 <tr class="subtotal-line">
@@ -1134,6 +1137,7 @@
 </tr>
 
         </table>
+        </td>
       {% endif %}
   </tr>
 </table>

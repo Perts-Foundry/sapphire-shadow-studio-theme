@@ -130,7 +130,20 @@
     "order_invoice": {
       "stockSha256": "eff0440d1b51f5249a5bf772393c6eec944fc32b5d80c95a67b79822cd504d4b",
       "stockLength": 141005,
-      "subject": "Invoice {{name}}"
+      "subject": "Invoice {{name}}",
+      "override": {
+        "reason": "Stock bug: in the branch where nothing has been paid yet, the Amount to pay table sits directly inside a table row with no cell. Parsers recover by closing the enclosing tables early (the page background ended before the footer) and leave an empty subtotal-lines table whose top border draws a hairline under the card. The replacements give the else-branch the spacer and cell the if-branch has.",
+        "replace": [
+          {
+            "from": "      {% else %}\n        <table class=\"row subtotal-table subtotal-table--total\">",
+            "to": "      {% else %}\n      <td class=\"subtotal-spacer\"></td>\n        <td>\n        <table class=\"row subtotal-table subtotal-table--total\">"
+          },
+          {
+            "from": "        </table>\n      {% endif %}\n  </tr>\n</table>",
+            "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
+          }
+        ]
+      }
     },
     "order_link": {
       "stockSha256": "e948c4308acc0250dc366ea48b5cf62032211d701bcaca32d1b27367cde7ce87",
@@ -154,7 +167,20 @@
     "pending_payment_failure": {
       "stockSha256": "73ed5c29d6bfdf5f0ef8a8a7341a4031930a5f45d70f70e3a83c5e060fc3968f",
       "stockLength": 44476,
-      "subject": "[{{shop.name}}] Payment couldn’t be processed for order {{ name }}"
+      "subject": "[{{shop.name}}] Payment couldn’t be processed for order {{ name }}",
+      "override": {
+        "reason": "Stock bug: in the branch where nothing has been paid yet, the Amount to pay table sits directly inside a table row with no cell. Parsers recover by closing the enclosing tables early (the page background ended before the footer) and leave an empty subtotal-lines table whose top border draws a hairline under the card. The replacements give the else-branch the spacer and cell the if-branch has.",
+        "replace": [
+          {
+            "from": "      {% else %}\n        <table class=\"row subtotal-table subtotal-table--total\">",
+            "to": "      {% else %}\n      <td class=\"subtotal-spacer\"></td>\n        <td>\n        <table class=\"row subtotal-table subtotal-table--total\">"
+          },
+          {
+            "from": "        </table>\n      {% endif %}\n  </tr>\n</table>",
+            "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
+          }
+        ]
+      }
     },
     "pending_payment_success": {
       "stockSha256": "81a1c84293778c1b39090ff389fa699b7a5195b1b27bb73c3b3ff873d1de059c",

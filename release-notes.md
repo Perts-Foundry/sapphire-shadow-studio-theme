@@ -78,7 +78,13 @@ The stock markup is Shopify's and the body stays byte-identical, so the fix is t
 `body`, `.header`, `.content`, `.section` and `.footer` all carry the page colour, which is
 invisible where the nesting is sound and restores the surround where it is not. Found on the
 wave-2 preview of `pending_payment_failure`; the static stock files balance their tables, so a
-count of open and close tags would not have caught it. Only a render does.
+count of open and close tags would not have caught it. Only a render does. The same recovery
+leaves an empty `subtotal-lines` table behind, and its 15px top margin and 1px top border draw a
+hairline under the card, faint on white and bright under a dark-mode recolour. That one cannot be
+styled away, since the class is shared with the real subtotal table, so the generator gained a
+`replace` override (exact substring, exactly once, refused on overlap) and the two templates'
+manifest entries give the broken branch the cell it lacks. The page-colour rules stay: they cost
+nothing and cover any similar stock bug not yet found.
 
 **On a phone, each card is its own table, so each card can end up its own width.** A test send
 opened in the Proton Mail Android app showed the header, the body cards and the footer at three
@@ -91,7 +97,9 @@ injected; the squeeze test (force each card to 200px, list what stays wider) nam
 The stylesheet now lets the logo scale inside its cell (`max-width: 100%`), and a media block
 gives `.container` a fixed table layout under 600px so content wraps inside the card instead of
 stretching it, with the social row's cell padding trimmed to fit. Every card then measures the
-same width at the same left edge. The dark surfaces in the same screenshots are the app's dark
+same width at the same left edge. A second test send showed one more seam, a thin line between
+the header and the body card: Shopify's own mobile stylesheet gives `.header` a 2px bottom margin
+under 600px, so the brand media block zeroes it. The dark surfaces in the same screenshots are the app's dark
 mode recolouring the white and pale-blue cards; `color-scheme: light only` on the page table is
 Shopify's own technique for its Shop-app button and is applied as an opt-out hint, with no
 guarantee every client honours it.

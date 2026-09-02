@@ -110,7 +110,17 @@ do not, the manifest entry carries an `override` object with a `reason` and one 
   not be applied by stylesheet alone. A stock template that already has a header table refuses
   the override.
 
-A fourth field, `skip`, with a reason string, would leave a template stock: no branded file is
+- **`replace`** (a list of `{ "from", "to" }` pairs): exact substrings swapped for exact
+  substrings, each `from` found exactly once outside a Liquid comment, refused if it overlaps any
+  other edit. For a stock markup bug the template must carry as long as Shopify ships it. Two
+  templates carry it: `order_invoice` and `pending_payment_failure`, whose "Amount to pay" block
+  puts a table directly inside a table row with no cell in the branch where nothing has been paid
+  yet; parsers recover by closing the enclosing tables early and leave an empty table whose top
+  border draws a hairline under the card. The two replacements give that branch the spacer and
+  cell the other branch has. Because the manifest carries the exact stock text, an upstream
+  change to that block makes the generator refuse rather than patch the wrong thing.
+
+A fifth field, `skip`, with a reason string, would leave a template stock: no branded file is
 generated and the check refuses if one exists. No template is skipped today.
 
 One layout note that no override records, because the generator handles it correctly and it is
@@ -172,11 +182,11 @@ column means the manifest entry carries one (see above).
 | `order_cancelled` | Order {{ name }} has been canceled | none |
 | `order_confirmation` | Order {{name}} confirmed | none; the pilot |
 | `order_edited` | Order {{name}} updated | none |
-| `order_invoice` | Invoice {{name}} | none |
+| `order_invoice` | Invoice {{name}} | override: `replace` |
 | `order_link` | Link to order {{ order_name }} | override: `footerAnchor` |
 | `order_payment_receipt` | [{{ shop.name }}] Payment receipt for order {{ name }} | none |
 | `payment_reminder` | Payment reminder for order {{ name }} | none |
-| `pending_payment_failure` | [{{shop.name}}] Payment couldn't be processed for order {{ name }} | none |
+| `pending_payment_failure` | [{{shop.name}}] Payment couldn't be processed for order {{ name }} | override: `replace` |
 | `pending_payment_success` | [{{ shop.name }}] Payment for {{ name }} has been received | none |
 | `pickup_receipt` | Your order has been picked up ({{ name }}) | none |
 | `pos_exchange_v2_receipt` | Exchange receipt from {{ shop.name }} | none |
