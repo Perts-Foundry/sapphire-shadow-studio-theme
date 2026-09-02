@@ -3,77 +3,107 @@
     "buy_online": {
       "stockSha256": "756a62136d955510bedf751370bf263af3f9e22791a562420e233970c30ab8a0",
       "stockLength": 40387,
-      "subject": "Buy online from {{ shop_name }} when you're ready!"
+      "subject": "Buy online from {{ shop_name }} when you're ready!",
+      "version": 1,
+      "brandedSha256": "86b01e50e0dc9c128d3015830f4d7ec54091b9b5666bbabbdd59a89b6f4531c9"
     },
     "change_requested": {
       "stockSha256": "1466f15e09927a6da497135d1a7439348ebf24dde2747a392681c62d18c4c883",
       "stockLength": 10330,
-      "subject": "{% if requested_edit and return %}Change requested for order {{ order.name }}{% elsif requested_edit %}Cancellation requested for order {{ order.name }}{% else %}Return requested for order {{ order.name }}{% endif %}"
+      "subject": "{% if requested_edit and return %}Change requested for order {{ order.name }}{% elsif requested_edit %}Cancellation requested for order {{ order.name }}{% else %}Return requested for order {{ order.name }}{% endif %}",
+      "version": 1,
+      "brandedSha256": "45ec9676fa4cd0797fd1650a2464b4516d083a47738268dcdbb7c3a156655833"
     },
     "company_contact_welcome_email": {
       "stockSha256": "065ff05e14ec39c5d3ce47e05f5dfae3c5e2a5eb6b419b2e2d01a00fd79cb28c",
       "stockLength": 3374,
-      "subject": "Welcome to B2B ordering with {{shop.name}}"
+      "subject": "Welcome to B2B ordering with {{shop.name}}",
+      "version": 1,
+      "brandedSha256": "bada2dbcf72a93f8cb36e2348d6e6f8e56de8110cb29cbae7fdfe654e1d35942"
     },
     "company_location_update_payment_method": {
       "stockSha256": "2399eb81e4e41fe00646ce17c7e7ad0d370fabd5836420003ebb9d4654e24149",
       "stockLength": 3499,
-      "subject": "Update your payment method for {{ shop.name }}'s {{ location_name }} location"
+      "subject": "Update your payment method for {{ shop.name }}'s {{ location_name }} location",
+      "version": 1,
+      "brandedSha256": "6234124f9796500d9e0fc2d7b1a841be2ae8403086b3169735ebaf7c2c2c420d"
     },
     "contact_buyer": {
       "stockSha256": "2d759c667aaab793b94afd93b47d08e03155b49f9d4e54ec2d7715e2d0c5dce0",
       "stockLength": 2346,
-      "subject": "Message from {{ shop.name }}"
+      "subject": "Message from {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "a0e6fa263bf9829fb5527f0656ac8ef5c8ae1490604b302c1e2256820615e74c"
     },
     "customer_account_activate": {
       "stockSha256": "5962d602ee0e4b34eea1e08d431c2b44823f525e061e7468ded96310ed6edce9",
       "stockLength": 3658,
-      "subject": "Customer account activation"
+      "subject": "Customer account activation",
+      "version": 1,
+      "brandedSha256": "635e033baf64c96834f97322fec723da93fa47c42412d268f346928b24ed4e2e"
     },
     "customer_account_reset": {
       "stockSha256": "efa9f4792f8252f5c0d65b51ddd84cf69d1ca79d4e86d85cdf924f4e990752b9",
       "stockLength": 3566,
-      "subject": "Customer account password reset"
+      "subject": "Customer account password reset",
+      "version": 1,
+      "brandedSha256": "2c38dd57567b2adeb3eeed65bc964209f2e8f9c8896860ef5e77a09dd291378b"
     },
     "customer_account_welcome": {
       "stockSha256": "32481b8a17c925827125da0fc28a73e328c34b53d74523c35ff3cc195609d9c3",
       "stockLength": 3082,
-      "subject": "Customer account confirmation"
+      "subject": "Customer account confirmation",
+      "version": 1,
+      "brandedSha256": "99e4277fd88228bc785a51e5b2cfbf0a59205d0189e43012d2863abc8672f828"
     },
     "customer_add_payment_method": {
       "stockSha256": "74824a1a17fd9933df4284adaa96111021328b9f26d5e2f68acaff98d5f73f87",
       "stockLength": 3248,
-      "subject": "Add a payment method for {{ shop.name }}"
+      "subject": "Add a payment method for {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "0e0a74b7b22d5273f941f08d2dd61b0001c942efa7e8adb0a81711d93d7e4f38"
     },
     "customer_email_address_changed_confirmation": {
       "stockSha256": "e02cfecc605e048be197ed82031c6c5f4b36cc5d968b547a03036909d805c828",
       "stockLength": 3154,
-      "subject": "Your email address has been changed"
+      "subject": "Your email address has been changed",
+      "version": 1,
+      "brandedSha256": "723db31ed9ea12b497d031661436fbb4d33ef67c4637e555a503ffd56b2a2a2d"
     },
     "customer_marketing_confirmation": {
       "stockSha256": "7c9e9db7ebb7d3184201b1b135a67114bc57488431752e2fcf2b38b0dd737678",
       "stockLength": 3227,
-      "subject": "Confirm you want to receive email marketing"
+      "subject": "Confirm you want to receive email marketing",
+      "version": 1,
+      "brandedSha256": "cfdfd64cd16757c0fca6b3da28aef03e526dd3f2601fad58eaa574cf4129d268"
     },
     "customer_restore_payment_method": {
       "stockSha256": "a8728c5bf0f04f18bc94e26884d380f31058d89476d1bd9d4c2d1ebb793483f7",
       "stockLength": 3328,
-      "subject": "Verify your payment information for {{ shop.name }}"
+      "subject": "Verify your payment information for {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "36c442e635e48d8614dc434f0a71c0207c9d476abe43eff7647423ecb06c4174"
     },
     "customer_update_payment_method": {
       "stockSha256": "06012b50d766969a322bbdb267838dfa1773346af6c99279fff21550d3bdf210",
       "stockLength": 3293,
-      "subject": "Update your payment method for {{ shop.name }}"
+      "subject": "Update your payment method for {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "24ca2f36c77b7c0c073ac02aa651691348aedbe66f3ff5aca7b3b1f3462b7c46"
     },
     "draft_order_invoice": {
       "stockSha256": "506c2985808c82cea8fe88642a3117265fd62a1b69ddb7606c583da6f80518ad",
       "stockLength": 30380,
-      "subject": "Invoice {{name}}"
+      "subject": "Invoice {{name}}",
+      "version": 1,
+      "brandedSha256": "2e9681bcbc28d763511ea003676a1caa8fa2adb84d61a44ce9cd7054149d22ab"
     },
     "failed_payment_processing": {
       "stockSha256": "862fe9bd5f7fdb55eea737646cb92a9a8c3f4378063462bf2a7486c9174b1f9d",
       "stockLength": 3956,
-      "subject": "[{{shop.name}}] Payment couldn’t be processed"
+      "subject": "[{{shop.name}}] Payment couldn’t be processed",
+      "version": 1,
+      "brandedSha256": "c3872ee6274f30540a96ca6c7d484eb201de2e92f2bbb3e1a0d02894aa5258f8"
     },
     "gift_card_confirmation": {
       "stockSha256": "61fc3c5b4a551b9943691417e9e188841664dc232bd810331e192b2b87be13e9",
@@ -82,7 +112,9 @@
       "override": {
         "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
         "header": true
-      }
+      },
+      "version": 1,
+      "brandedSha256": "b4dc0f23eae3fa6dc91eb5b8954b7e593107984571cc4f49233c8128ac3ce737"
     },
     "gift_card_notification": {
       "stockSha256": "0a58fb052ac19edcfa30186080bfc54667c19680e530e8173a7c3d6a8065414a",
@@ -91,7 +123,9 @@
       "override": {
         "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
         "header": true
-      }
+      },
+      "version": 1,
+      "brandedSha256": "82819536d1297e39875711a2c359d493e2912b0047f6a2fce2118e9a448f7feb"
     },
     "local_delivered": {
       "stockSha256": "2788ac13d634b9588cf75f327fd65860f1ebed1678489bc6aeadbac155cfd41e",
@@ -100,32 +134,44 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "6b684cc3c9871c4dadb1ed2fb38b178e66acb6f743546327aa2d3cf805a3bb45"
     },
     "local_missed_delivery": {
       "stockSha256": "671fc78e68220759387ef714a1720a80804da5cdaadd083f036019e22b87991f",
       "stockLength": 17541,
-      "subject": "Delivery from order {{ name }} has been missed"
+      "subject": "Delivery from order {{ name }} has been missed",
+      "version": 1,
+      "brandedSha256": "0ced3aa358d8c25bc41f9ed3521f175e305287c624278784a01899d15946d7fe"
     },
     "local_out_for_delivery": {
       "stockSha256": "d450960be1ca45eb146947675bb56520602e6da961e6b3c5004df639ebd9167a",
       "stockLength": 17439,
-      "subject": "Order {{ name }} is out for delivery"
+      "subject": "Order {{ name }} is out for delivery",
+      "version": 1,
+      "brandedSha256": "b55d4cc67806e6e77149f18e5f9a9b79123359b48f4c95cf040bcc2a1b576b23"
     },
     "order_cancelled": {
       "stockSha256": "5de7f3f10037b512ed87aeede5425e6776b3f545b48144ce0b802d577daed5d0",
       "stockLength": 42159,
-      "subject": "Order {{ name }} has been canceled"
+      "subject": "Order {{ name }} has been canceled",
+      "version": 1,
+      "brandedSha256": "cc1905699c9b2577ee09ea632c1e7471e96978e14636d9f35e3d00c7fa053c61"
     },
     "order_confirmation": {
       "stockSha256": "1baa081f3f1890ade7fc506ec887feb5c95265fee59b2bab238e2ca45de9fe6e",
       "stockLength": 160331,
-      "subject": "Order {{name}} confirmed"
+      "subject": "Order {{name}} confirmed",
+      "version": 1,
+      "brandedSha256": "ab7d5270dd5f39934826ddbae5eb058ede21e156e52ed56769208d9460e0b358"
     },
     "order_edited": {
       "stockSha256": "d22f55c66093440b81874d016d67d121bc0f7cd4e7a2be47deaafb72c5e359fc",
       "stockLength": 43653,
-      "subject": "Order {{name}} updated"
+      "subject": "Order {{name}} updated",
+      "version": 1,
+      "brandedSha256": "5275e7fc2699b1c4bfe1f0bdde78a80b3b8c5dd49a359ddda78779b0c0487ede"
     },
     "order_invoice": {
       "stockSha256": "eff0440d1b51f5249a5bf772393c6eec944fc32b5d80c95a67b79822cd504d4b",
@@ -143,7 +189,9 @@
             "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
           }
         ]
-      }
+      },
+      "version": 1,
+      "brandedSha256": "d36d7391964da30e86e0706fd66279b30c771235440e107197e30a1952962de6"
     },
     "order_link": {
       "stockSha256": "e948c4308acc0250dc366ea48b5cf62032211d701bcaca32d1b27367cde7ce87",
@@ -152,17 +200,23 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "891b161f725c61d692debde45390c152cb3705674006ea5796ae50d40edbf69d"
     },
     "order_payment_receipt": {
       "stockSha256": "7fbe990573d484dfe1a79b94e1f4bdbc49a21f9af62f35a42986444b4f325a56",
       "stockLength": 7981,
-      "subject": "[{{ shop.name }}] Payment receipt for order {{ name }}"
+      "subject": "[{{ shop.name }}] Payment receipt for order {{ name }}",
+      "version": 1,
+      "brandedSha256": "2fa7d8a0ecaaec8a74e4c206d24ee5085f2114f4a5c78205845ecfc5a31be279"
     },
     "payment_reminder": {
       "stockSha256": "c2ce7d4c8ec1db17d8b7f66a53b2bef118a3e6a4210f4369dcecf2e5939131ad",
       "stockLength": 5502,
-      "subject": "Payment reminder for order {{ name }}"
+      "subject": "Payment reminder for order {{ name }}",
+      "version": 1,
+      "brandedSha256": "86cc31e467cb490e9dfe5f98a74a3f114b9724333da95b10290ef6182ee08cd8"
     },
     "pending_payment_failure": {
       "stockSha256": "73ed5c29d6bfdf5f0ef8a8a7341a4031930a5f45d70f70e3a83c5e060fc3968f",
@@ -180,22 +234,30 @@
             "to": "        </table>\n        </td>\n      {% endif %}\n  </tr>\n</table>"
           }
         ]
-      }
+      },
+      "version": 1,
+      "brandedSha256": "9470c7d35a2d7aa5fd6f3b309b0c78d16cdfbc8f206bdf8db7869e04e98e5e71"
     },
     "pending_payment_success": {
       "stockSha256": "81a1c84293778c1b39090ff389fa699b7a5195b1b27bb73c3b3ff873d1de059c",
       "stockLength": 61718,
-      "subject": "[{{ shop.name }}] Payment for {{ name }} has been received"
+      "subject": "[{{ shop.name }}] Payment for {{ name }} has been received",
+      "version": 1,
+      "brandedSha256": "924d6dfe9acee212a499083d9d59d4f5482d0c765df405d7b5302bd6b608b53c"
     },
     "pickup_receipt": {
       "stockSha256": "337de4e1bf6cb4eba4cda57b267232aadc75dc42062add466e646c83f6fb2df7",
       "stockLength": 52160,
-      "subject": "Your order has been picked up ({{ name }})"
+      "subject": "Your order has been picked up ({{ name }})",
+      "version": 1,
+      "brandedSha256": "fd4283206299b607552083c75b591472f77c4deba7f2a996cc55a067c492fb60"
     },
     "pos_exchange_v2_receipt": {
       "stockSha256": "9c47e23fd99fc5d700256cd18a8128fdbcc1867701032373f156a2ae4453720f",
       "stockLength": 17379,
-      "subject": "Exchange receipt from {{ shop.name }}"
+      "subject": "Exchange receipt from {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "21c6521692b3d7816c61aa98de2d5837f581f4699814b3ac24b68c386e282be6"
     },
     "pos_send_cart": {
       "stockSha256": "2b5c1affb10d0be7f8c30dfccd0f96bf55bae50d280efe9e7f614863a144c2f6",
@@ -204,47 +266,65 @@
       "override": {
         "styleAnchor": "<style>\n    .button__cell { background: {{ shop.email_accent_color }}; }\n    .actions-buttons .button__cell--primary { background-color: {{ shop.email_accent_color }}; }\n    a, a:hover, a:active, a:visited { color: {{ shop.email_accent_color }}; }\n    .top-border { border-top-width: 1px; border-top-color: #e5e5e5; border-top-style: solid; }\n  </style>",
         "reason": "Stock style block carries an extra .top-border rule (1px #e5e5e5 hairline above sections). The whole block is replaced; the hairline is dropped on purpose, the branded card layout supplies its own separation."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "0c541dd50eb689b7e6a8d7508fd0204c12530a8d1ff6502021aa51101cddb78e"
     },
     "ready_for_pickup": {
       "stockSha256": "a509e1f430e32aa46015ee084a7feb00a79e7309358580ec2ea05e4eca159d20",
       "stockLength": 54292,
-      "subject": "A package from order {{ name }} is ready for pickup"
+      "subject": "A package from order {{ name }} is ready for pickup",
+      "version": 1,
+      "brandedSha256": "6c69b441e67608247642598f3127bb2a9ad0a07551954cfd45f84bb8de23270d"
     },
     "refund_notification": {
       "stockSha256": "6ce979d5c52f603c52bb32f7ec7d9607d089b2fca650b5cfb821822ae34b715f",
       "stockLength": 31869,
-      "subject": "Refund notification"
+      "subject": "Refund notification",
+      "version": 1,
+      "brandedSha256": "999605e53e0e3843c7cfd4b6df7bb3a990f03fe82a627ffbaaf55dcd0ba3e831"
     },
     "requested_edit_declined": {
       "stockSha256": "0e0ace6c3117dae621cf9e0ca615d498eab06e645194a50e96fba2f2473f90a5",
       "stockLength": 6302,
-      "subject": "Cancellation request declined for order {{ order.name }}"
+      "subject": "Cancellation request declined for order {{ order.name }}",
+      "version": 1,
+      "brandedSha256": "e489e6e285cfe672d04b300643222fe8cf454cc110003a417eb2e6d4238a70be"
     },
     "return_approved": {
       "stockSha256": "b6457345847ae057759fc20531db87f07f5b14b5217919808f0d0ec526ebc56d",
       "stockLength": 19694,
-      "subject": "Return approved for order {{ order.name }}"
+      "subject": "Return approved for order {{ order.name }}",
+      "version": 1,
+      "brandedSha256": "d1ef574109724976e466cdd34d5c07494a4ba7478b44ff057d5311dac460073a"
     },
     "return_created": {
       "stockSha256": "ee136a1823a4815d95b76a3864779f3da50f352d85e4c0cdb89d1ae17d6dc33d",
       "stockLength": 18773,
-      "subject": "Complete your return for Order {{ order.name }}"
+      "subject": "Complete your return for Order {{ order.name }}",
+      "version": 1,
+      "brandedSha256": "dc89157af3c62c052219f9f0892712124f50f58aa58286191e046f15780b92fb"
     },
     "return_declined": {
       "stockSha256": "f8b614a30d254d0cf657b70450ca860cc715223fee07f959da4e44bbc53cf2ab",
       "stockLength": 6999,
-      "subject": "Return request declined for order {{ order.name }}"
+      "subject": "Return request declined for order {{ order.name }}",
+      "version": 1,
+      "brandedSha256": "38cb430acc33ec511a15a267905da0848d2cf0ab573bde0f5cb61f75581bf70b"
     },
     "return_label_notification": {
       "stockSha256": "9633f3ed453994ca7066625a9de0d1873618663e9208ceca6641af070841040b",
       "stockLength": 4938,
-      "subject": "Return label for order {{ order.name }}"
+      "subject": "Return label for order {{ order.name }}",
+      "version": 1,
+      "brandedSha256": "f074467c7995a4da86a45cc551faa14eaca304119baa89de708f1faf575596ef"
     },
     "return_receipt": {
       "stockSha256": "cb047744b4f90db8230f04a18f929f0e6e955af2b30a6bd3d2809d6df03b9a97",
       "stockLength": 17043,
-      "subject": "{% if return.exchange_line_items.size > 0 %}Exchange{% else %}Return{% endif %} receipt from {{ shop.name }}"
+      "subject": "{% if return.exchange_line_items.size > 0 %}Exchange{% else %}Return{% endif %} receipt from {{ shop.name }}",
+      "version": 1,
+      "brandedSha256": "4ebc89acef46e7318e3bbae020d8383b22f56a82e9098b464ce5a92e2fc9fcc5"
     },
     "shipment_delivered": {
       "stockSha256": "ca012178d4a312a7719bd0f0785ccf5c75c7caa85f5290441786c6aacc9b7419",
@@ -253,7 +333,9 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "cca6ef9da9b965e1b2f2683ec00b15df3e030ff944a77de5b83d7b668ee8872c"
     },
     "shipment_out_for_delivery": {
       "stockSha256": "bd965cb013d84b733b092d01a24ab7dbb4212520c9e0f7b0c0505f99ffe0259a",
@@ -262,7 +344,9 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "d61f53cfc44d081fb3fb9434baa3c72bc51c774ce8f063c91a1066ef5c9cb2a1"
     },
     "shipping_confirmation": {
       "stockSha256": "59e2529021baeaa81718058c71b1357cc9d8811e510d2a8807c1bf0fa068dfe5",
@@ -271,7 +355,9 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "a31f5c957e9eddbbe90b3e9c6fe2cf07ac259bed0aeb514a288d6f183274e243"
     },
     "shipping_update": {
       "stockSha256": "264710eb358f365a401a213bc8a261f70d47b95f9552bfe00ae5761d89131357",
@@ -280,7 +366,9 @@
       "override": {
         "footerAnchor": "<p class=\"disclaimer__subtext\">If you have any questions, reply to this email or contact us at",
         "reason": "Two disclaimer__subtext paragraphs: one in the body and the stock one in the footer table. The anchor names the footer paragraph by its opening text."
-      }
+      },
+      "version": 1,
+      "brandedSha256": "b82ba07c1e421eb849b71454cecc572ca61312b6bebf9c9824b9ce7d60b8d4b8"
     },
     "store_credit_issued": {
       "stockSha256": "cdbfeefd91c0d650d0ace88c832d5ca6df20517143186da84d5700339b3acd3b",
@@ -289,12 +377,16 @@
       "override": {
         "reason": "No header table in stock: the logo sits inside the white card, so the brand band could not be applied by stylesheet alone. The override inserts lib/header.html before the content row and removes the in-body logo block.",
         "header": true
-      }
+      },
+      "version": 1,
+      "brandedSha256": "2373696d7bc0d888ebf3663fcf0feba95ecc509022280b82b6c25dc17ad6b8a4"
     },
     "store_receipt": {
       "stockSha256": "5eaf44b9dfac057a0b4c60bb4c3eddcf5e975c06b45443d14aa12ae96b1a671f",
       "stockLength": 184997,
-      "subject": "Receipt for order {{name}}"
+      "subject": "Receipt for order {{name}}",
+      "version": 1,
+      "brandedSha256": "34cc5a8d959d81eff50f485e1d151c9711ff34555a154e6486341fb450f3303d"
     }
   }
 }

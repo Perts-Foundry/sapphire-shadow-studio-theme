@@ -1,0 +1,28 @@
+# rollback
+
+For a saved template that misbehaves in real mail: re-paste the last synced version from git.
+`rollback <id> [--from <ref>]`.
+
+1. **Source.** `--from <ref>` if given. Otherwise the commit that last changed the template
+   before the one Admin holds: `git log -n 2 --format=%H <seen sha> -- marketing/notifications/<id>.liquid`
+   and take the second line; refuse with "no earlier version in history" if there is only one.
+   Never default to `seen[<id>].sha` itself: that is the version being rolled back. Extract the
+   template, its manifest and its stylesheet from the source commit to the scratchpad:
+   `git show <sha>:marketing/notifications/<id>.liquid > <scratch>/<id>.liquid`,
+   `git show <sha>:marketing/notifications/manifest.json > <scratch>/manifest.json` and
+   `git show <sha>:marketing/notifications/lib/brand-style.css > <scratch>/brand-style.css`. The
+   version is that manifest's entry for the id; the render check below passes that manifest and
+   stylesheet with `--manifest` and `--css`, because the checkout's carry the newer ones.
+2. **STOP** with the id, the current Admin version (read with `editor-probe.js` after the browser
+   opt-in ask, its own turn), the target version and sha.
+3. Run the `sync` per-id loop from its step 3 with the scratch file as the paste source: clipboard,
+   paste, byte check against the scratch file, Preview read from the network response,
+   `verify-render.mjs --preview-response <file> --id <id> --version <target> --manifest
+   <scratch>/manifest.json --css <scratch>/brand-style.css`, Save, reload, re-verify,
+   `state.mjs seen` with the target sha and ref.
+4. If no earlier version exists, or the target also fails its checks, a second **STOP** offers
+   Revert to default as the last resort (stock is Shopify-maintained and known-good); on approval,
+   click "Revert changes", Save, reload, confirm `SSSPOLL` equals
+   `node scripts/notifications/dump.mjs --hash marketing/notifications/stock/<id>.liquid` (a
+   mismatch means Shopify's stock moved: report it and suggest `record`); `SSSREVERT true`
+   corroborates when present. Record nothing in `seen`.

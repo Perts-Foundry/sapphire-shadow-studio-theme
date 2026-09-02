@@ -21,7 +21,7 @@ the repo catches up afterwards.
 
 | Path | What it is |
 |---|---|
-| `manifest.json` | The list of template ids. Each entry records the subject line, the sha256 and the length of the stock snapshot (UTF-16 code units, as `String.length` reports it, so `wc -c` disagrees on any file with non-ASCII text), and, where needed, an `override`. Ids come from here, never from a directory glob. |
+| `manifest.json` | The list of template ids. Each entry records the subject line, the sha256 and the length of the stock snapshot (UTF-16 code units, as `String.length` reports it, so `wc -c` disagrees on any file with non-ASCII text), the branded `version` and `brandedSha256` (see Versioning), and, where needed, an `override`. Ids come from here, never from a directory glob. |
 | `lib/brand-style.css` | The `<style>` rules that replace the stock accent-colour block. The only file that carries the palette. |
 | `lib/footer-social.html` | The social icon row and shop-name line inserted at the top of the footer. |
 | `lib/header.html` | The stock logo-only header table, inserted into the three templates that ship without one (the `header` override below). |
@@ -33,8 +33,9 @@ the repo catches up afterwards.
 1. The stock accent-colour `<style>` block (the three `email_accent_color` rules) is replaced by
    `lib/brand-style.css`.
 2. `lib/footer-social.html` is inserted immediately before the footer's
-   `<p class="disclaimer__subtext">`.
-3. A one-line `{%- comment -%}` naming the generator is prepended.
+   `<p class="disclaimer__subtext">`, followed on its own line by the footer version stamp, an
+   HTML comment `<!-- sss-notification <id> v<version> -->`.
+3. A one-line `{%- comment -%}` naming the id, the version and the generator is prepended.
 
 Every other byte is identical to the stock snapshot, so `diff stock/<id>.liquid <id>.liquid` shows
 only those three hunks, and an upstream change to a stock template stays reviewable as a plain diff.
@@ -51,7 +52,70 @@ when an anchor is not found exactly once, when the style block differs from the 
 when a stock snapshot's sha256 or length disagrees with the manifest, and on any carriage return or
 byte-order mark. A refusal writes nothing.
 
+Tooling under `scripts/notifications/`: `brand.mjs` (generate, `--check`, `--status`),
+`record-stock.mjs` (record a stock snapshot), `dump.mjs` (the console-dump and hash contract the
+browser probes use; `--hash <file>` prints a file's length and FNV), `verify-render.mjs` (checks a
+rendered preview against the brand; input is a rendered HTML file, `--dump <console dump...>`,
+or `--preview-response <file>`, the editor's EmailTemplateGeneratePreview response and the
+reliable way to get a render, since the Preview dialog's iframe is an `about:srcdoc` frame no
+script can be injected into; `--manifest` and `--css` override the checkout's for a rollback), `html-walk.mjs` (its
+parser), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
+
+## Versioning
+
+Every manifest entry carries `version` (an integer from 1) and `brandedSha256`, the sha256 of the
+generated output *before* the two stamps are added. **The generator seeds and bumps; never hand-seed
+or hand-bump.** On every generate, per entry: both fields absent, seed `version: 1` and record the
+hash; hash absent with a valid version, keep the version and record the hash; version absent with a
+hash present, seed `version: 1`; both present and the hash differs, `version + 1`; both present and
+equal, no change; a version that is not an integer >= 1 is a refusal and nothing is written. The
+hash is of the output, not the inputs, so a `reason` edit or a byte-identical re-record does not
+bump, while any change to `lib/` bumps every template it reaches (a stylesheet change bumps all 46
+by design). `generate` prints one line per seed or bump (`order_confirmation: v3 -> v4`).
+
+The version lives in two stamps, both written by the generator and both parsed with the one
+`STAMP_RE` in `brand.mjs`: the first-line Liquid comment (`sss-notification <id> v<n>. ...`), which
+the Admin editor shows and the render drops, and the HTML comment after the social row, which the
+render keeps, so a received email's source says which version produced it.
+`node scripts/notifications/brand.mjs --status` prints the committed version and hash prefix per id.
+
+`npm run notifications:check` refuses a committed file that differs from the output stamped with the
+committed version, a core hash that differs from `brandedSha256` (`bytes changed but version not
+bumped: run notifications:generate`), and a missing or invalid version. **A green check proves the
+repo is self-consistent, not that Admin is in sync**; only the skill's `audit` proves that, by
+reading each editor's first line and hashing its document. A hand-bumped version followed by a
+regenerate is indistinguishable from a real bump and is not a defect; a version edited without
+regenerating is caught as a file mismatch. A `git revert` moves a version backwards by design, which
+is why the skill's `sync` decides what to paste by bytes (length plus FNV-1a of the editor document
+against the repo file) and treats the version as information. `record-stock.mjs` carries `version`
+and `brandedSha256` across a re-record on purpose, so the next generate bumps; do not "fix" that by
+dropping them.
+
+`verify-render.mjs` checks a rendered preview (or a test send's source) for the palette on the right
+elements, the social row, the footer nesting, the empty-subtotal bug, the mobile media block and the
+version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `footer-navy`,
+`page-colour`, `content-white`, `buttons`, `shop-app-button`, `footer-disclaimer`,
+`body-disclaimer`, `headings`, `body-paragraphs`, `social-row`, `footer-inside-body`,
+`subtotal-lines`, `no-accent`, `no-liquid-error`, `no-translation-missing`, `mobile-css`,
+`header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
+(discounts, gift cards, partial fulfilment, refunds) are not exercised.
+
+## Skill
+
+`.claude/skills/notification-templates/` automates the whole lifecycle from a Claude Code session:
+`change` (edit, regenerate, render-check, PR), `sync` (paste every template that differs by bytes,
+byte-verified before Save and after reload), `audit` (which version each Admin template holds, and
+whether it renders), `record` (the drift procedure below) and `rollback` (re-paste an earlier
+version from git). It is operator-invoked, drives the Admin editor through the chrome-devtools MCP,
+and keeps a per-store state file outside the checkout as a hint. A single published locale is
+assumed; re-check `shopLocales` in Admin if that changes, since notification templates are per
+language.
+
 ## Paste procedure
+
+The skill's `sync` mode automates these steps and adds the byte verification; this is the manual
+form.
 
 1. Admin > **Settings** > **Notifications** > **Customer notifications** > pick the template >
    **Edit code**.
@@ -149,8 +213,9 @@ stock, unbranded:
    branded file back into the editor. Save.
 
 `record-stock.mjs` also accepts `--envelope <path>` (a JSON file carrying the id and text) and
-`--dump <path...>` (console output from an extraction script, reassembled and checked against its
-own length and hash), for recording without the copy-into-a-file step.
+`--dump <path...>` (console output from `scripts/notifications/browser/editor-dump.js`, reassembled
+by `dump.mjs` and checked against its own length and hash), for recording without the
+copy-into-a-file step. The skill's `record` mode is this procedure with its gates.
 
 ## Templates
 
@@ -228,8 +293,10 @@ Re-check that they return 200 to an anonymous request after changing one.
 - **No `{{ open_tracking_block }}` and no `{{ unsubscribe_url }}`.** These are transactional
   notifications, not marketing sends; neither variable exists for them and neither belongs.
 - **The `stock/` snapshots are what the editor held when recorded, not certified stock.** Every one
-  showed the editor's "Revert changes" control disabled at the time, which is the only stock signal
-  Shopify offers; treat that as the evidence, not as a guarantee.
+  showed the editor's "Revert changes" control disabled at the time; treat that as the evidence,
+  not as a guarantee. That control is not always present (a later run found a clean editor with
+  neither Save nor Revert), so the working stock signal is bytes: an editor whose document hashes
+  like `stock/<id>.liquid` holds the recorded stock.
 - `theme-check` ignores `marketing/**`, and `validate_theme_codeblocks` is syntax-only here:
   notification objects (`fulfillment`, `order_name`, `customer.reset_password_url` and the rest) are
   undefined to a theme validator, so ignore its undefined-object findings. The editor's preview is
