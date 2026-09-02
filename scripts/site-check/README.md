@@ -15,8 +15,9 @@ checklist (Tier C); these scripts are the deterministic half.
 | Script | Tier | Auth | What it checks |
 | --- | --- | --- | --- |
 | `consistency.mjs` | A3 | none (repo only) | Announcement, template and FAQ shipping amounts vs settings; vacation date sync, format and FAQ anchor; `show_shipping_info` per template; catalogue products have templates with the required blocks; social list parity; `it`/`ro` locale mirroring |
-| `probe.mjs` | A1 | `STOREFRONT_PASSWORD` (or `STORE_PW`) while the store is locked; none once public | Every `scripts/a11y/paths.json` path plus sitemap products: status, host, served theme id, gate, Liquid errors, H1 count, page-type markers, coverage; the JSON endpoints; a serial Ajax cart flow cleared in `finally` |
+| `probe.mjs` | A1 | `STOREFRONT_PASSWORD` or `STORE_PW` (`STORE_PW` wins when both are set) while the store is locked; none once public | Every `scripts/a11y/paths.json` path plus sitemap products: status, host, served theme id, gate, Liquid errors, H1 count, page-type markers, coverage; the JSON endpoints; a serial Ajax cart flow cleared in `finally` |
 | `config.mjs` | A2 | `MYSHOPIFY_DOMAIN` + `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` | Admin reads only: delivery profiles, variants, shop policies, locales, markets, shop features, products, the main menu |
+| `runfile.mjs` | C | none | `--write` renders the operator checklist from the registry into the state dir (refusing a path inside the checkout; `--lock`, `--from-a2 <config --json file>` for skipped-read rows, repeatable `--extra <check-id>` for a carried-over Tier B item) and prints its path and item count; `--read <path>` prints only checkbox state and evidence per id |
 | `tools.mjs` | A4 | `STOREFRONT_PASSWORD` for the two tools that need it, passed by name from this process's env | Runs the existing tools in a clean allow-listed env (seo-review `surface` and `crawl` with `--no-save`, the smoke `--dry-run`, `contrast:lint`, `theme check` from `--primary-root` when this is a worktree); each non-zero exit is one finding, each tool that cannot run is SKIPPED |
 
 Shared flags: `--full` (print unchanged findings and accepted risks; not on `tools.mjs`),
@@ -25,7 +26,10 @@ unaccepted ERROR, not only new ones), `--json` (machine-readable findings on std
 `probe.mjs` also takes `--theme-id <id>` (expected live id; `LIVE_THEME_ID` env is the
 fallback), `--pace <ms>` (be gentle, the storefront rate-limits), `--max <n>` (product cap),
 `--surface <id>` and `--skip-cart`; `BASE_URL` env overrides the storefront origin.
+`--full` on `probe.mjs` also runs the cart flow over every catalogue product rather than one
+garment per body plus the gift card (more session-cart writes, a longer run).
 `config.mjs`, `consistency.mjs` and `tools.mjs` take `--public` (assert the PUBLIC lock state);
+`consistency.mjs` takes `--root <path>` (repo root override, mainly for tests);
 `config.mjs` takes `--surface <id>`; `tools.mjs` takes `--primary-root <path>` (the primary
 checkout, for `theme check` from a worktree) and repeatable `--skip <check-id>`. A `--surface`
 run never saves.

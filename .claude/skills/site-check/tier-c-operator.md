@@ -65,13 +65,14 @@ inventory and every threshold crossing would page the operator. **Every test ord
 
 ## 3. Notifications (`notifications`)
 
-The list to tick is the template table in `marketing/notifications/README.md`. Each template
-sends branded (pasted) or stock (not yet pasted) as recorded there; verify the received mail
-matches the record, not the aspiration.
+The pasted-or-not record is the wave list in `TODO.md`: an id still listed there has not been
+pasted and sends stock; an id deleted from the list was pasted and sends branded. The template
+table in `marketing/notifications/README.md` gives each id's subject line. Verify the received
+mail matches that record, not the aspiration.
 
 | Id | Precondition | Steps | Expected | Evidence |
 |---|---|---|---|---|
-| `c-notifications-received` | orders from group 1 and 2 | For every template the lifecycle triggered, open the mail at `<test-email>` | Arrives; branded or stock exactly as the README records | per template: arrived, branded/stock |
+| `c-notifications-received` | orders from group 1 and 2 | For every template the lifecycle triggered, open the mail at `<test-email>` | Arrives; branded or stock exactly as the TODO.md wave list implies | per template: arrived, branded/stock |
 | `c-notifications-headers` | one received mail | View original; read `Authentication-Results`, `From`, `Reply-To` | SPF, DKIM and DMARC pass; sender and reply-to are the brand addresses | pass/fail per mechanism; sender domain |
 
 ## 4. Forms behind hCaptcha (`forms`)

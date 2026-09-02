@@ -237,7 +237,16 @@ export function classifyDeliveryProfiles({ profiles, settings, copyAmounts = [],
       }
     }
     const amountsMatch = sameSet(adminAmounts, themeAmounts);
+    // No rate-name tokens in the theme copy means the name half of the comparison has nothing to
+    // compare against. Say so as INFO rather than silently counting it as a match.
     const tokensMatch = themeTokens.size === 0 || sameSet(adminTokens, themeTokens);
+    if (themeTokens.size === 0) {
+      findings.push(makeFinding({
+        check: 'shipping-rates-mismatch', severity: 'INFO', subject: `${profile.slug}:rate-names`,
+        message: `profile ${profile.name}: rate-name comparison not performed; the theme copy carries no rate-name tokens`,
+        evidence: `Admin rate names: ${setText(adminTokens)}`,
+      }));
+    }
     if (!amountsMatch || !tokensMatch) {
       const parts = [];
       if (!amountsMatch) parts.push(`amounts Admin ${setText(adminAmounts)} vs theme ${setText(themeAmounts)}`);

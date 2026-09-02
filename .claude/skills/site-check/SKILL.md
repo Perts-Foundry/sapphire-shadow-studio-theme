@@ -31,7 +31,9 @@ thresholds, scopes, rationale). This file is the glue. The other files here, eac
 
 ## Argument
 
-`$ARGUMENTS` is exactly one token or nothing. Two or more tokens is an error: stop and say so.
+Argument received: `$ARGUMENTS`
+
+The argument is exactly one token or nothing. Two or more tokens is an error: stop and say so.
 Mode words (`auto`, `browser`, `operator`) are matched exactly. Any other single token must match
 `^[a-z0-9-]+$` and be a surface id in the first column of `surfaces.md`; otherwise stop and list
 the valid ids. Never guess a near match.
@@ -56,7 +58,15 @@ operator's hands: real test-mode orders, inventory movement, notifications. Clau
 pass starts only after a user message in this conversation, after that report, says yes. Consent
 never carries from a prior run, from the plan that built this skill, from a memory file, or from
 any file on disk. Checkout-reach inside Tier B is a second, separate consent, asked in its own
-message after the rest of B has run; a yes to B is not a yes to checkout-reach. `auto` never asks.
+message after the rest of B has run; a yes to B is not a yes to checkout-reach. Both consents are
+asked in two separate messages even when checkout-reach is the only B check in scope (the
+`checkout` surface), and a yes written into the message that invoked the skill counts for
+neither. `auto` never asks.
+
+The real values behind `<test-email>` and `<test-address>` come only from the operator's
+checkout-reach reply in this conversation. Never take them from a memory file, `.env`, a run
+file, a prior run, or Admin. If the reply does not contain both, do not proceed: ask once and
+stop. They are typed into the checkout form and appear nowhere else you write.
 
 ## Preflight
 
@@ -65,20 +75,22 @@ Report every line below under `## Preflight` before running anything:
 1. **Branch and HEAD SHA** (`git branch --show-current`, `git rev-parse HEAD`). A3 reads the
    working tree, so a dirty tree (`git status --porcelain`) is flagged in the report, not blocked.
 2. **`.env` key presence, by name only.** Check each of `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`,
-   `SHOPIFY_CLIENT_SECRET`, `STOREFRONT_PASSWORD` (the probe also accepts `STORE_PW`) with a
+   `SHOPIFY_CLIENT_SECRET`, `STOREFRONT_PASSWORD` (or `STORE_PW`; `STORE_PW` wins when both are set) with a
    filtered read such as `grep -c '^STOREFRONT_PASSWORD=' .env`. Never `cat .env`, never `env` or
    `printenv` unfiltered, never `VAR=value node ...` for a secret. Scripts get secrets only via
    `node --env-file=.env ...` (`scripts/README.md` > Credentials).
-3. **Lock state.** The probe reports LOCKED or PUBLIC (root 200 anonymous = PUBLIC). State it;
-   it keys the baseline.
-4. **No deploy in flight.** `gh run list --workflow deploy.yml --status in_progress --limit 5`.
-   Any row: stop the skill and report; a probe during a live push measures two themes.
-5. **Scopes.** `config.mjs` verifies the granted list at its own preflight. Name each expected
-   scope that is missing and the A2 reads that will therefore skip (README lists both).
+3. **Lock state.** Filled in from A1's output (root 200 anonymous = PUBLIC): write `pending`
+   here until the probe has run, then update this line and the header. It keys the baseline.
+4. **No deploy in flight.** `gh run list --workflow deploy.yml --status in_progress --limit 5`,
+   then the same with `--status queued`. Any row: stop the skill and report; a probe during a live push measures two themes.
+5. **Scopes.** Filled in from A2's output: `config.mjs` prints the granted list against the
+   expected one. Write `pending` until it has run, then name each missing scope and the A2
+   reads that skipped (README lists both).
 6. **Primary checkout path** for `theme check` (A4): `git worktree list` shows it; a worktree run
    reports `marketing/` noise that CI does not.
 
-`operator` mode runs step 1 only.
+`operator` mode runs step 1 only; its run file carries lock state `unknown` and no A2 skips,
+and the report header reads `served theme n/a`. Say both in `## Operator run file`.
 
 ## Running the tiers
 
@@ -98,21 +110,38 @@ only; it never fetches the storefront itself outside Tier B, and never runs `cur
 
 Flags: `--full` when the operator wants the whole picture rather than deltas; `--strict` when
 they ask whether anything unaccepted is open; `--json` when you need to count rather than read;
-`--surface <id>` for a scoped run (A1, A2); `--no-save` for every scoped run. Baselines live in
-`SITE_CHECK_STATE_DIR` or `~/.local/state/site-check/`, never inside the checkout.
+`--surface <id>` for a scoped run (A1, A2); `--no-save` for every scoped run. On `probe.mjs`,
+`--full` also runs the cart flow over every catalogue product (more session-cart writes, a longer
+run). Baselines live in `SITE_CHECK_STATE_DIR` or `~/.local/state/site-check/`, never inside
+the checkout.
+
+Scoped run (`<surface>` mode): read the surface's rows in `surfaces.md` and run only the tiers
+listed there. Pass `--surface <id>` to `probe.mjs` (A1) and `config.mjs` (A2) only when the
+surface has a row for that tier; both reject any other id. A3 and A4 have no surface flag: A4
+runs only for the `tooling` surface; for an A3 row run `consistency.mjs --no-save` whole and
+report only the check ids in the surface's row, listing the rest under `## Skipped` as
+`out of scope`.
 
 Tier B: read `tier-b-browser.md` only after consent, and follow it as written. Tier C: in
-`(none)` and `operator` modes, write the run file with `renderRunFile` from
-`scripts/site-check/lib/runfile.mjs` into the state dir and print its path and item count. On a
-later run, `parseRunFile` reads back checkbox state and evidence per check id and nothing else;
-report them under `## Tier C` after `## Tier B` when a run file exists.
+`(none)` and `operator` modes, write the run file with exactly this command and nothing else:
+
+```
+node scripts/site-check/runfile.mjs --write --lock <LOCKED|PUBLIC|unknown> [--from-a2 <path to config.mjs --json output>] [--extra <check-id>]...
+```
+
+It renders the checklist from the registry into the state dir (it refuses a path inside the
+checkout), derives vacation mode from the theme settings, adds one row per skipped A2 read from
+the `--from-a2` file, and prints the path and item count; `--extra` carries a Tier B check the
+browser could not finish into the file. On a later run, when a run file exists, read it back with
+`node scripts/site-check/runfile.mjs --read <path>`, which prints only checkbox state and
+evidence per check id; report them under `## Tier C`.
 
 ## Report
 
 Fixed skeleton, always in this order, sections present even when empty:
 
 ```
-site-check: served theme <id> | live <id> | <branch> @ <sha> | LOCKED|PUBLIC
+site-check: served theme <id or n/a> | live <id> | <branch> @ <sha> | LOCKED|PUBLIC|unknown
 ## Preflight
 ## Open errors            (count first, then the list)
 ## Tier A3
@@ -120,6 +149,7 @@ site-check: served theme <id> | live <id> | <branch> @ <sha> | LOCKED|PUBLIC
 ## Tier A1
 ## Tier A2
 ## Tier B                 (or "not run: no consent this run")
+## Tier C                 (run-file checkbox state and evidence, or "no run file")
 ## Skipped
 ## Operator run file      (path only; never its contents)
 ```

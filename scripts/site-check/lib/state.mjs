@@ -7,7 +7,7 @@
 // Diff rule that differs from seo-review: a previous finding absent from the current run because
 // its check was SKIPPED this run is reported as SKIPPED, never RESOLVED.
 
-import { ERROR, SKIPPED, GATE, tierOf as registryTierOf } from './registry.mjs';
+import { ERROR, SKIPPED, GATE, tierOf as registryTierOf, checksForSurface } from './registry.mjs';
 
 export const LOCK_STATES = ['LOCKED', 'PUBLIC'];
 
@@ -44,7 +44,7 @@ export function partitionAccepted(findings, accepted) {
 /**
  * Diff by finding id. Previous findings missing from `current` are RESOLVED unless the current
  * run skipped their check (a SKIPPED finding whose `check` equals theirs, or whose subject is
- * `tier:<their tier>`), in which case they are SKIPPED.
+ * `tier:<their tier>` or `surface:<their surface>`), in which case they are SKIPPED.
  * @returns {{added:Array, resolved:Array, unchanged:Array, skipped:Array}}
  */
 export function diffFindings(previous, current, tierOf = registryTierOf) {
@@ -58,6 +58,8 @@ export function diffFindings(previous, current, tierOf = registryTierOf) {
     skippedChecks.add(f.check);
     const m = /^tier:([A-Z0-9]+)$/.exec(f.subject);
     if (m) skippedTiers.add(m[1]);
+    const sm = /^surface:([a-z0-9-]+)$/.exec(f.subject);
+    if (sm) for (const c of checksForSurface(sm[1])) skippedChecks.add(c.id);
   }
   const wasSkipped = (f) => skippedChecks.has(f.check) || skippedTiers.has(tierOf(f.check));
   const missing = prev.filter((f) => !curIds.has(f.id));

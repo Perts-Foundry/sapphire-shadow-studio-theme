@@ -9,7 +9,7 @@
 // `evidence` is an extracted field, truncated to 200 chars with control characters stripped;
 // never a raw body or header.
 
-import { checkById, SEVERITIES } from './registry.mjs';
+import { checkById, SEVERITIES, TIERS, isSurfaceId } from './registry.mjs';
 
 export const EVIDENCE_MAX = 200;
 
@@ -55,7 +55,21 @@ export function makeFinding({ check, subject, message, evidence = '', severity }
   };
 }
 
-/** A SKIPPED finding for a check (or a whole tier, subject `tier:<id>`), with the reason. */
+/**
+ * Skip subjects the differ understands. A plain subject skips that check id for every subject;
+ * `tier:<id>` skips every check in the tier; `surface:<id>` skips every check on the surface.
+ * Built here rather than typed by hand so an entry script cannot spell one the differ misses.
+ */
+export function tierSkipSubject(tier) {
+  if (!TIERS.some((t) => t.id === tier)) throw new Error(`unknown tier ${JSON.stringify(tier)}`);
+  return `tier:${tier}`;
+}
+export function surfaceSkipSubject(surface) {
+  if (!isSurfaceId(surface)) throw new Error(`unknown surface ${JSON.stringify(surface)}`);
+  return `surface:${surface}`;
+}
+
+/** A SKIPPED finding for a check (or a whole tier or surface via the helpers above), with the reason. */
 export function skipFinding(check, subject, reason) {
   return makeFinding({ check, subject, message: reason, severity: 'SKIPPED' });
 }

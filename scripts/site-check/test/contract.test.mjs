@@ -194,3 +194,19 @@ test('importing smoke.mjs with an empty env has no side effects', async () => {
     Object.assign(process.env, saved);
   }
 });
+
+test('a surface skip masks every check on the surface, and the helpers refuse unknown ids', async () => {
+  const { tierSkipSubject, surfaceSkipSubject } = await import('../lib/finding.mjs');
+  const prev = ['cart-roundtrip', 'cart-clear', 'cart-threshold-predicate'].map((check) => makeFinding({ check, subject: 'h', message: 'm' }));
+  const d = diffFindings(prev, [skipFinding('cart-add', surfaceSkipSubject('cart'), '--skip-cart')]);
+  assert.deepEqual(d.resolved, []);
+  assert.equal(d.skipped.length, 3);
+  assert.equal(tierSkipSubject('A1'), 'tier:A1');
+  assert.throws(() => tierSkipSubject('A1-cart'), /unknown tier/);
+  assert.throws(() => surfaceSkipSubject('nope'), /unknown surface/);
+});
+
+test('redact strips a short literal secret too', () => {
+  assert.equal(redact('password was ab1 here', ['ab1']), 'password was [redacted] here');
+  assert.equal(redact('nothing', ['']), 'nothing');
+});

@@ -58,3 +58,11 @@ test('classifyToolResult: a throttled or password-gated tool run is GATE, not ER
   assert.equal(classifyToolResult({ ...base, exitCode: 1, stderr: 'GET /x returned 429 after 3 attempts' }).severity, 'GATE');
   assert.equal(classifyToolResult({ ...base, exitCode: 1, stdout: '3 ERROR findings' }).severity, 'ERROR');
 });
+
+test('INCONCLUSIVE_RE is anchored: a count of 429 or the word unthrottled is a real failure', () => {
+  const base = { check: 'tool-seo-crawl', subject: 'seo-review-crawl', label: 'crawl' };
+  for (const stdout of ['crawled 429 URLs; 3 ERROR findings', 'unthrottled run: 2 ERROR findings']) {
+    assert.equal(classifyToolResult({ ...base, exitCode: 1, stdout }).severity, 'ERROR', stdout);
+  }
+  assert.equal(classifyToolResult({ ...base, exitCode: 1, stdout: 'edge status 429 (throttled)' }).severity, 'GATE');
+});

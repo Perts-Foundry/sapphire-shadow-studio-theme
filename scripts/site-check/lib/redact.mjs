@@ -29,7 +29,7 @@ const PATTERNS = [
 export function redact(text, secrets = []) {
   let out = String(text ?? '');
   for (const s of secrets) {
-    if (typeof s === 'string' && s.length >= 4) out = out.split(s).join('[redacted]');
+    if (typeof s === 'string' && s.length > 0) out = out.split(s).join('[redacted]');
   }
   for (const [re, rep] of PATTERNS) out = out.replace(re, rep);
   return out;
@@ -37,6 +37,6 @@ export function redact(text, secrets = []) {
 
 /** Bind a secret list once; the orchestrator wraps its log sink with the result. */
 export function createRedactor(secrets = []) {
-  const list = secrets.filter((s) => typeof s === 'string' && s.length >= 4);
+  const list = secrets.filter((s) => typeof s === 'string' && s.length > 0);
   return (text) => redact(text, list);
 }

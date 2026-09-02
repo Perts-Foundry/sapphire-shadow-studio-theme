@@ -1,7 +1,7 @@
 # Collection differentiation runbook
 
 Admin-side work, no theme code. Read this before changing what is in `featured`, `healthcare`,
-`all-products`, or `the-vitals-collection`.
+or `the-vitals-collection` (the built-in `/collections/all` covers the whole-catalogue browse path; the `all-products` collection was deleted on 2026-08-16).
 
 **Run this before setting any `custom.breadcrumb_collection` value**
 (`docs/breadcrumb-collection-metafield.md`). That metafield names a collection per product, and
@@ -30,8 +30,8 @@ with different grids and templated everything-else still cluster. This is the mo
 work lands and still fails. `scripts/seo-review/admin.mjs` already flags the class through
 `collection-body-empty` and `collection-seo-description-missing`.
 
-**The structural answer is fewer collections.** `all-products`, `featured`, `healthcare`, and
-`the-vitals-collection` over six products is four names for one catalogue. What follows is a holding
+**The structural answer is fewer collections.** `featured`, `healthcare`, and
+`the-vitals-collection` over six products (plus the built-in `all`) is still several names for one catalogue. What follows is a holding
 action until the catalogue grows, recorded as such so it is not rediscovered as a fresh idea.
 
 ## Step 1: query before drafting
@@ -99,7 +99,7 @@ SEO titles on all four collections, and the missing collection images.
   while calling it hand-picked is a lie that will drift back to five products the next time a
   product is tagged.
 - **Discovery.** Shrinking `featured` removes two products from one browse path. With six products,
-  one nav, and `all-products` existing, the real cost is near zero, but it is a real change.
+  one nav, and the built-in `/collections/all` existing, the real cost is near zero, but it is a real change.
 - **You will not see the result for weeks.** Canonical clustering is a Google-side judgement, and
   the only genuine verification is Search Console after a re-crawl. Everything before that is a
   proxy.

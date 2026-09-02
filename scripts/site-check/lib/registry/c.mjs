@@ -21,7 +21,7 @@ export const C_CHECKS = [
   { id: 'c-lifecycle-cancel', tier: 'C', surface: 'lifecycle', severity: 'ERROR', group: 'post-order', description: 'Cancel with restock; inventory returns.' },
   { id: 'c-lifecycle-return', tier: 'C', surface: 'lifecycle', severity: 'ERROR', group: 'post-order', description: 'Return flow from the account page.' },
   { id: 'c-lifecycle-reorder', tier: 'C', surface: 'lifecycle', severity: 'ERROR', group: 'post-order', description: 'Reorder from the account order page.' },
-  { id: 'c-notifications-received', tier: 'C', surface: 'notifications', severity: 'ERROR', group: 'notifications', description: 'Every notification in the waves listed in marketing/notifications/README.md arrives, branded or stock as recorded.' },
+  { id: 'c-notifications-received', tier: 'C', surface: 'notifications', severity: 'ERROR', group: 'notifications', description: 'Every notification the lifecycle triggers arrives; branded when its id has been pasted (deleted from the wave list in TODO.md), stock while it is still listed there.' },
   { id: 'c-notifications-headers', tier: 'C', surface: 'notifications', severity: 'ERROR', group: 'notifications', description: 'Authentication-Results headers pass; sender and reply-to are the brand addresses.' },
   { id: 'c-forms-contact', tier: 'C', surface: 'forms', severity: 'ERROR', group: 'forms', description: 'Contact form submits through hCaptcha and the message arrives.' },
   { id: 'c-forms-request-combination', tier: 'C', surface: 'forms', severity: 'ERROR', group: 'forms', description: 'Request-combination submits on each of its three paths.' },

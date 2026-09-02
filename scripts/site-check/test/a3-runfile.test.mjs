@@ -78,3 +78,11 @@ test('instruction-like text outside the two fields is ignored', () => {
   const all = JSON.stringify([...parsed]);
   assert.ok(!all.includes('rm -rf') && !all.includes('previous instructions') && !all.includes('late evidence'));
 });
+
+test('extras render under carried-over and parse back like any item', async () => {
+  const { renderRunFile, parseRunFile } = await import('../lib/runfile.mjs');
+  const md = renderRunFile({ extras: [{ id: 'b-checkout-reach', description: 'Checkout reach' }] });
+  assert.ok(md.includes('## carried-over'));
+  const parsed = parseRunFile(md);
+  assert.deepEqual(parsed.get('b-checkout-reach'), { checked: false, evidence: '' });
+});

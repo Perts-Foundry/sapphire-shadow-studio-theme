@@ -92,6 +92,8 @@ test('read-only client refuses a mutation before any network call', async () => 
   await assert.rejects(client.gql('  \n mutation { x }'), /mutation/);
   await assert.rejects(client.gql('subscription { x }'), /subscription/);
   await assert.rejects(client.gql('# harmless comment\n# query { shop { name } }\nmutation { productDelete(input: {id: "x"}) { deletedProductId } }'), /mutation/);
+  await assert.rejects(client.gql('query A { shop { name } }\nmutation B { productDelete(input: {id: "x"}) { deletedProductId } }'), /mutation/);
+  await assert.rejects(client.gql('{ shop { name } } subscription S { x }'), /subscription/);
   assert.equal(calls.length, 0);
   assert.deepEqual(await client.gql('query { shop { name } }'), { ok: true });
   assert.deepEqual(await client.gql('{ shop { name } }'), { ok: true });
@@ -250,9 +252,12 @@ test('shipping: matching sets are silent, mismatches print both sets order-insen
   assert.match(info[0].evidence, /Flat Rate: price LESS_THAN 8?75\.00/);
 
   const bad = classifyDeliveryProfiles({ profiles, settings: { flat_rate_shipping: '9.00', free_shipping_threshold: '75' }, copyAmounts: [] });
-  const mm = byCheck(bad, 'shipping-rates-mismatch');
+  // With no rate-name tokens in the copy the name half is reported as INFO (not performed), never
+  // silently counted as a match; the amount mismatch is still the one WARN.
+  const all = byCheck(bad, 'shipping-rates-mismatch');
+  assert.equal(all.filter((f) => f.severity === 'INFO' && /not performed/.test(f.message)).length, 1);
+  const mm = all.filter((f) => f.severity === 'WARN');
   assert.equal(mm.length, 1);
-  assert.equal(mm[0].severity, 'WARN');
   assert.ok(mm[0].message.includes('{75.00, 8.00}') && mm[0].message.includes('{75.00, 9.00}'), mm[0].message);
 
   const tokenOnly = classifyDeliveryProfiles({ profiles, settings: SETTINGS, copyAmounts: [], copyTokens: ['expedited'] });

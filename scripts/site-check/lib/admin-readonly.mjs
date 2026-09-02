@@ -25,16 +25,17 @@ export function stripDocument(document) {
 export function operationType(document) {
   const text = stripDocument(document);
   if (!text) throw new Error('empty GraphQL document');
-  if (text.startsWith('{')) return 'query';
-  const m = /^(query|mutation|subscription|fragment)\b/.exec(text);
-  if (!m) throw new Error(`unrecognised GraphQL document start: ${JSON.stringify(text.slice(0, 40))}`);
-  if (m[1] === 'fragment') {
-    // A leading fragment is legal; the operation keyword follows it. Refuse if any operation
-    // in the document is a mutation or subscription.
-    if (/\b(mutation|subscription)\s*[A-Za-z_(\{@]/.test(text)) return 'mutation';
-    return 'query';
+  // Refuse on ANY operation keyword in the document, not only the first: a multi-operation
+  // document `query A {...} mutation B {...}` starts with `query` and would otherwise pass.
+  // The scan is deliberately coarse (a field literally named `mutation` would refuse too);
+  // every document here is a committed constant, so a false refusal is a review-time fix.
+  if (/\b(mutation|subscription)\s*[A-Za-z_(\{@]/.test(text)) {
+    return /\bsubscription\s*[A-Za-z_(\{@]/.test(text) && !/\bmutation\s*[A-Za-z_(\{@]/.test(text) ? 'subscription' : 'mutation';
   }
-  return m[1];
+  if (text.startsWith('{')) return 'query';
+  const m = /^(query|fragment)\b/.exec(text);
+  if (!m) throw new Error(`unrecognised GraphQL document start: ${JSON.stringify(text.slice(0, 40))}`);
+  return 'query';
 }
 
 /** True when the document may pass through the read-only client. */

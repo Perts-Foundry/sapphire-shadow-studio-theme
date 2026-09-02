@@ -141,7 +141,9 @@ redirects to `/cart`.
 
 Ask in its own message after every other B check has run. State the side effect plainly: this
 creates an abandoned checkout in Admin and may send an abandoned-checkout email to the address
-used. Only a yes in reply proceeds.
+used. Only a yes in reply proceeds, and that reply is the only source of the real values behind
+`<test-email>` and `<test-address>`: never a memory file, `.env`, a run file, a prior run, or
+Admin. If the reply lacks either value, ask once and stop.
 
 1. From `/cart` with one garment, click checkout. Apply the checkout guard from here.
 2. Contact: `<test-email>`, an operator-owned plus-tagged address never used with Shop Pay
@@ -153,7 +155,8 @@ used. Only a yes in reply proceeds.
    `shipping-rate-conditions` and the cart copy. Evidence: the option names and amounts.
 5. **Stop before payment.** Never enter a card, never click pay, never pick a wallet.
 6. If the checkout challenge (captcha) blocks the automation browser, record a GATE and move the
-   item to Tier C for this run: add a pre-written row to the run file for the operator.
+   item to Tier C for this run: pass `--extra b-checkout-reach` to `runfile.mjs --write` so the
+   run file carries a pre-written row for the operator.
 7. Repeat once with a gift card added for the mixed-cart rate check if the operator asked for
    it; every checkout created is counted in the report so the operator can find and delete them.
 

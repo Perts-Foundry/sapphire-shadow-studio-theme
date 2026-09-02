@@ -29,7 +29,7 @@ import {
   readCommittedCatalogue, garmentProducts, nonGarmentProducts, colorValuesFor, sizeValuesFor, optionName,
 } from '../lib/catalogue-manifest.mjs';
 
-import { makeFinding, skipFinding, sortFindings } from './lib/finding.mjs';
+import { makeFinding, skipFinding, sortFindings, tierSkipSubject, surfaceSkipSubject } from './lib/finding.mjs';
 import { createRedactor } from './lib/redact.mjs';
 import { createStore, diffFindings, partitionAccepted, exitCodeFor } from './lib/state.mjs';
 import { isSurfaceId } from './lib/registry.mjs';
@@ -49,8 +49,9 @@ const MODE = 'probe';
 const A1_SURFACES = ['storefront-render', 'json-endpoints', 'cart'];
 const GARBAGE_PATH = '/site-check-intentionally-missing-path';
 const BACKOFF = [8000, 20000];
-const CART_PACE_MIN_MS = 3000;
-const THROTTLE_COOLDOWN_MS = 30000;
+const CART_PACE_MIN_MS = 5000;
+const THROTTLE_COOLDOWN_MS = 60000;
+const FINAL_CLEAR_ATTEMPTS = 3;
 const TIMEOUT_MS = 30000;
 
 const USAGE = `Usage: node scripts/site-check/probe.mjs [options]
@@ -177,7 +178,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   if (lockState === 'LOCKED') {
     if (!password) {
-      findings.push(skipFinding('render-gate', 'tier:A1', 'storefront is LOCKED and neither STORE_PW nor STOREFRONT_PASSWORD is set'));
+      findings.push(skipFinding('render-gate', tierSkipSubject('A1'), 'storefront is LOCKED and neither STORE_PW nor STOREFRONT_PASSWORD is set'));
       return finish({ findings, lockState, opts, stateDir, log, meta: { host: expectedHost } });
     }
     const outcome = await authenticateStorefront({ baseUrl, password, jar, fetchImpl, sleep, backoff: BACKOFF, budget, onRetry: log });
@@ -340,16 +341,21 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       // the clear that already ran has a chance to have landed, then stop the cart flow here.
       if (out.findings.some((f) => f.check === 'cart-throttled')) {
         const rest = sample.slice(sample.indexOf(p) + 1);
-        for (const q of rest) findings.push(skipFinding('cart-add', q.handle, 'cart flow stopped for the run after a throttle'));
-        log(`cart flow stopped after a throttle; cooling down ${THROTTLE_COOLDOWN_MS}ms before the final clear`);
-        await sleep(THROTTLE_COOLDOWN_MS);
-        const c = await fetchJson(`${baseUrl}/cart/clear.js`, { jar, fetchImpl, method: 'POST', json: {} });
-        log(`cart final clear POST /cart/clear.js ${c.status ?? 'none'}`);
+        findings.push(skipFinding('cart-add', surfaceSkipSubject('cart'), `cart flow stopped for the run after a throttle; not attempted: ${rest.map((q) => q.handle).join(', ') || 'none'}`));
+        // The edge's throttle window outlasts one short pause (observed live: 30 s was not
+        // enough), so the final clear cools down and retries a bounded number of times.
+        for (let attempt = 1; attempt <= FINAL_CLEAR_ATTEMPTS; attempt += 1) {
+          log(`cart flow stopped after a throttle; cooling down ${THROTTLE_COOLDOWN_MS}ms before final clear attempt ${attempt}`);
+          await sleep(THROTTLE_COOLDOWN_MS);
+          const c = await fetchJson(`${baseUrl}/cart/clear.js`, { jar, fetchImpl, method: 'POST', json: {} });
+          log(`cart final clear POST /cart/clear.js ${c.status ?? 'none'}`);
+          if (c.status === 200) break;
+        }
         break;
       }
     }
   } else if (runs('cart') && opts.skipCart) {
-    findings.push(skipFinding('cart-add', 'tier:A1-cart', '--skip-cart'));
+    findings.push(skipFinding('cart-add', surfaceSkipSubject('cart'), '--skip-cart'));
   }
 
   if (runs('storefront-render')) findings.push(...coverageFindings({ ...counts, catalogueEmpty: manifest.products.size === 0 }));

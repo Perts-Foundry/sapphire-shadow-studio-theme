@@ -102,7 +102,9 @@ export function classifyToolResult({ check, subject, label, skip, exitCode, stdo
 }
 
 /** Output shapes that mean the tool never reached content: throttling or the password gate. */
-export const INCONCLUSIVE_RE = /password auth failed|storefront password (rejected|throttled)|\b429\b|throttled/i;
+// Anchored in both directions, the same rule CLAUDE.md gives for retry.sh: a bare `429` matches
+// counts ("crawled 429 URLs") and a bare `throttled` matches "unthrottled".
+export const INCONCLUSIVE_RE = /password auth failed|storefront password (rejected|throttled)|\b(status|returned|http|edge status)\s*429\b|\bthrottled\b/i;
 
 /** Last ~200 chars of a tool's output, so the evidence shows the summary line, not the banner. */
 export function tail(text, n = 200) {

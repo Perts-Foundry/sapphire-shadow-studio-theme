@@ -56,6 +56,10 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   and it runs `lib/catalogue-cohesion.mjs` so a private copy of that vocabulary cannot drift back
   into another tool. The manifest is hand-edited by the operator in a reviewed PR; no command and no
   agent creates or edits it. `npm run catalogue:lint` and `npm run catalogue:test`.
+- `site-check/`: the operator-run whole-site sanity test (storefront probe with a cleared session
+  cart, read-only Admin config reads, repo cross-checks, a clean-env runner for the existing
+  tools, the Tier C run file), driven by the `site-check` skill. See
+  [`site-check/README.md`](site-check/README.md).
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).
@@ -88,7 +92,14 @@ node --env-file=.env scripts/<tool>.mjs
 MYSHOPIFY_DOMAIN=<store>.myshopify.com
 SHOPIFY_CLIENT_ID=<custom app client id>
 SHOPIFY_CLIENT_SECRET=<custom app client secret>
+STOREFRONT_PASSWORD=<storefront password, while the store is locked>
 ```
+
+`STOREFRONT_PASSWORD` is read only by the storefront-facing tools (`site-check/probe.mjs`,
+`site-check/tools.mjs`, `seo-review/crawl.mjs`, the a11y cookie helper); they also accept
+`STORE_PW`, which wins when both are set. Delete it at public launch. Optional, site-check only:
+`SITE_CHECK_STATE_DIR` (baseline dir, default `~/.local/state/site-check`), `LIVE_THEME_ID` and
+`BASE_URL` (a preview run).
 
 `.env.example` records those names with no values. Rules that go with it:
 

@@ -20,10 +20,11 @@ const escapeCell = (s) => String(s ?? '').replace(/[\r\n]+/g, ' ').trim();
  * @param {object[]} [o.checks]          Tier C registry entries (default: checksForTier('C'))
  * @param {boolean}  [o.vacationEnabled] render the vacation group and vacationOnly items
  * @param {Array<{check:string, scope:string}>} [o.skippedReads] A2 reads skipped for a scope
+ * @param {Array<{id:string, description:string}>} [o.extras] items carried over from another tier (a Tier B check the browser could not finish), rendered under `carried-over`
  * @param {object}   [o.meta]            { branch, sha, lockState, generated }
  * @returns {string} markdown
  */
-export function renderRunFile({ checks = checksForTier('C'), vacationEnabled = false, skippedReads = [], meta = {} } = {}) {
+export function renderRunFile({ checks = checksForTier('C'), vacationEnabled = false, skippedReads = [], extras = [], meta = {} } = {}) {
   const lines = [];
   lines.push('# site-check run file');
   lines.push('');
@@ -54,6 +55,16 @@ export function renderRunFile({ checks = checksForTier('C'), vacationEnabled = f
     for (const r of extras) {
       const scope = escapeCell(r.scope).replace(/[^A-Za-z0-9_:-]/g, '');
       lines.push(`- [ ] \`${SKIPPED_READS_CHECK}:${scope}\` Verify by hand in Admin: the \`${escapeCell(r.check)}\` read was skipped because the app lacks the ${scope} scope.`);
+      lines.push('  evidence:');
+    }
+    lines.push('');
+  }
+  if (extras.length) {
+    lines.push('## carried-over');
+    lines.push('');
+    for (const e of extras) {
+      const id = String(e.id).replace(/[^A-Za-z0-9_:-]/g, '');
+      lines.push(`- [ ] \`${id}\` ${escapeCell(e.description)} (carried over: the browser pass could not finish it this run)`);
       lines.push('  evidence:');
     }
     lines.push('');
