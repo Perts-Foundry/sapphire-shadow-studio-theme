@@ -620,6 +620,36 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
+      # ── site-check tooling tests ───────────────────────────────
+      # `scripts/site-check/` is the operator-run whole-site sanity test. Its
+      # classifiers (which finding fires, how a skipped read diffs, what the
+      # redactor strips) are what make the report trustworthy, so they are
+      # gated here. Unit-only; fetch is stubbed to throw; no network access.
+      # The repo-consistency script itself (Tier A3) is deliberately NOT a CI
+      # step: it is an operator audit, not a merge gate.
+      - name: Site check tests
+        id: site-check
+        run: |
+          set +e
+          OUTPUT=$(npm run site-check:test 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Same "green on zero tests" guard as the suites above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::site-check suite reported ${TESTS_RUN:-0} tests. The glob in the site-check:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<GHEOF"
+            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── applique-grid tooling tests ────────────────────────────
       # `scripts/applique-grid/` publishes the Huddle chart gallery and owns the
       # product-page dropdown text. Its cohesion test pins the shipped template's
@@ -1302,6 +1332,7 @@ jobs:
           PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          SITE_CHECK_EXIT: ${{ steps.site-check.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
@@ -1379,6 +1410,7 @@ jobs:
           PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          SITE_CHECK_EXIT: ${{ steps.site-check.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
@@ -1402,6 +1434,7 @@ jobs:
           PRODUCT_IMAGES_OUTPUT: ${{ steps.product-images.outputs.output }}
           BLANK_INVENTORY_OUTPUT: ${{ steps.blank-inventory.outputs.output }}
           SEO_REVIEW_OUTPUT: ${{ steps.seo-review.outputs.output }}
+          SITE_CHECK_OUTPUT: ${{ steps.site-check.outputs.output }}
           SKU_OUTPUT: ${{ steps.sku.outputs.output }}
           SKU_TABLES_OUTPUT: ${{ steps.sku-tables.outputs.output }}
           CATALOGUE_OUTPUT: ${{ steps.catalogue.outputs.output }}
@@ -1457,6 +1490,7 @@ jobs:
             const skuTables = process.env.SKU_TABLES_EXIT;
             const catalogue = process.env.CATALOGUE_EXIT;
             const seoReview = process.env.SEO_REVIEW_EXIT;
+            const siteCheck = process.env.SITE_CHECK_EXIT;
             const appliqueGrid = process.env.APPLIQUE_GRID_EXIT;
             const emailIcons = process.env.EMAIL_ICONS_EXIT;
             const notificationsCheck = process.env.NOTIFICATIONS_CHECK_EXIT;
@@ -1484,6 +1518,7 @@ jobs:
             // a Markdown table, where an unescaped pipe would split the row.
             const catalogueFailing = sanitize(process.env.CATALOGUE_FAILING || '').replace(/\|/g, '/').slice(0, 200);
             const seoReviewOut = sanitize(process.env.SEO_REVIEW_OUTPUT) || 'No output';
+            const siteCheckOut = sanitize(process.env.SITE_CHECK_OUTPUT) || 'No output';
             const appliqueGridOut = sanitize(process.env.APPLIQUE_GRID_OUTPUT) || 'No output';
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
             const notificationsCheckOut = sanitize(process.env.NOTIFICATIONS_CHECK_OUTPUT) || 'No output';
@@ -1568,6 +1603,7 @@ jobs:
               `| **SKU tables** | \`npm run sku:tables\` | ${status(skuTables)} |`,
               `| **Catalogue manifest** | \`npm run catalogue:lint\` + tests${catalogueFailing ? `; ${catalogueFailing}` : ''} | ${status(catalogue)} |`,
               `| **SEO review** | \`npm run seo-review:test\` | ${status(seoReview)} |`,
+              `| **Site check** | \`npm run site-check:test\` | ${status(siteCheck)} |`,
               `| **Applique grid** | \`npm run applique-grid:test\` | ${status(appliqueGrid)} |`,
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
               `| **Notification templates: check** | \`npm run notifications:check\` | ${status(notificationsCheck)} |`,
@@ -1611,6 +1647,7 @@ jobs:
               { title: 'SKU tables', tool: 'npm run sku:tables', out: skuTablesOut, exit: skuTables },
               { title: 'Catalogue manifest', tool: 'npm run catalogue:lint + tests', out: catalogueOut, exit: catalogue },
               { title: 'SEO review', tool: 'npm run seo-review:test', out: seoReviewOut, exit: seoReview },
+              { title: 'Site check', tool: 'npm run site-check:test', out: siteCheckOut, exit: siteCheck },
               { title: 'Applique grid', tool: 'npm run applique-grid:test', out: appliqueGridOut, exit: appliqueGrid },
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
               { title: 'Notification templates: check', tool: 'npm run notifications:check', out: notificationsCheckOut, exit: notificationsCheck },
@@ -1724,6 +1761,7 @@ jobs:
           PRODUCT_IMAGES_EXIT: ${{ steps.product-images.outputs.exit_code }}
           BLANK_INVENTORY_EXIT: ${{ steps.blank-inventory.outputs.exit_code }}
           SEO_REVIEW_EXIT: ${{ steps.seo-review.outputs.exit_code }}
+          SITE_CHECK_EXIT: ${{ steps.site-check.outputs.exit_code }}
           SKU_EXIT: ${{ steps.sku.outputs.exit_code }}
           SKU_TABLES_EXIT: ${{ steps.sku-tables.outputs.exit_code }}
           CATALOGUE_EXIT: ${{ steps.catalogue.outputs.exit_code }}
@@ -1766,6 +1804,7 @@ jobs:
           check_exit "sku-tables" "$SKU_TABLES_EXIT"
           check_exit "catalogue" "$CATALOGUE_EXIT"
           check_exit "seo-review" "$SEO_REVIEW_EXIT"
+          check_exit "site-check" "$SITE_CHECK_EXIT"
           check_exit "applique-grid" "$APPLIQUE_GRID_EXIT"
           check_exit "email-icons" "$EMAIL_ICONS_EXIT"
           check_exit "notifications-check" "$NOTIFICATIONS_CHECK_EXIT"

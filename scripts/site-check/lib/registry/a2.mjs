@@ -13,7 +13,7 @@ export const A2_CHECKS = [
   { id: 'variant-requires-shipping', tier: 'A2', surface: 'products-admin', severity: 'ERROR', description: 'requiresShipping does not match the product type.' },
   { id: 'variant-sku-missing', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'A variant has no SKU.' },
   { id: 'variant-unavailable', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'A variant is not availableForSale.' },
-  { id: 'variant-inventory', tier: 'A2', surface: 'products-admin', severity: 'INFO', description: 'Per-variant inventory quantity.' },
+  { id: 'variant-inventory', tier: 'A2', surface: 'products-admin', severity: 'INFO', description: 'Inventory quantity summed per product (INFO).' },
 
   { id: 'policy-missing', tier: 'A2', surface: 'policies', severity: 'ERROR', description: 'A shop policy the theme links does not exist.' },
   { id: 'policy-empty', tier: 'A2', surface: 'policies', severity: 'ERROR', description: 'A linked shop policy has an empty body.' },
@@ -27,7 +27,7 @@ export const A2_CHECKS = [
   { id: 'digital-wallets', tier: 'A2', surface: 'checkout', severity: 'INFO', description: 'paymentSettings.supportedDigitalWallets.' },
 
   { id: 'product-template-suffix', tier: 'A2', surface: 'products-admin', severity: 'ERROR', description: 'An ACTIVE product has no templateSuffix or one the catalogue does not declare.' },
-  { id: 'product-status', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'A catalogue product is not ACTIVE.' },
+  { id: 'product-status', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'A catalogue product is not ACTIVE or absent from Admin, or an Admin product is undeclared in catalogue.json.' },
   { id: 'product-media-count', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'A product has no media.' },
   { id: 'product-breadcrumb-metafield', tier: 'A2', surface: 'products-admin', severity: 'WARN', description: 'custom.breadcrumb_collection is missing or points at a catch-all collection.' },
   { id: 'menu-catalog-children', tier: 'A2', surface: 'navigation', severity: 'ERROR', description: 'The main menu catalog link has children, which silently disables the generated collections dropdown.' },

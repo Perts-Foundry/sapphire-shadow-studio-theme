@@ -16,6 +16,7 @@
     "size-chart:test": "node --test scripts/size-chart/test/*.test.mjs",
     "blank-inventory:test": "node --test scripts/blank-inventory/test/*.test.mjs",
     "seo-review:test": "node --test scripts/seo-review/test/*.test.mjs",
+    "site-check:test": "node --test scripts/site-check/test/*.test.mjs",
     "contrast:test": "node --test scripts/contrast/test/*.test.mjs",
     "contrast:lint": "node scripts/contrast/check-contrast.mjs",
     "a11y:test": "node --test scripts/a11y/test/*.test.mjs",

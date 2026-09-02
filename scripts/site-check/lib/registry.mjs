@@ -102,7 +102,7 @@ export function registryProblems() {
     if (!tierIds.has(c.tier)) problems.push(`${c.id}: unknown tier ${c.tier}`);
     if (!surfaceIds.has(c.surface)) problems.push(`${c.id}: unknown surface ${c.surface}`);
     if (!SEVERITIES.includes(c.severity)) problems.push(`${c.id}: unknown severity ${c.severity}`);
-    if (!c.description || /—/.test(c.description)) problems.push(`${c.id}: missing description or em dash`);
+    if (!c.description || /\u2014/.test(c.description)) problems.push(`${c.id}: missing description or em dash`);
     if (c.tier === 'C' && !c.group) problems.push(`${c.id}: Tier C check without a group`);
   }
   for (const s of SURFACES) {
