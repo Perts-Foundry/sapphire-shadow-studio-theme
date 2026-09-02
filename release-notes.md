@@ -49,6 +49,19 @@ rule naming `disclaimer__subtext` or an inserted `ssb-` class is now scoped unde
 suite test refuses an unscoped one. The lesson for the next stylesheet change: a stock class is
 not a location, so check where else the stock templates use it before restyling it.
 
+**Two findings from the wave-1 paste session (order lifecycle, ten templates).** First, the editor
+preview for `ready_for_pickup` and `pickup_receipt` renders the stored template and ignores the
+unsaved editor contents. The preview mutation was sent with the branded body and returned no error,
+yet the HTML that came back carried the stock accent-colour rule and no brand CSS, and pasting a
+different template's body produced the same stock render, so it is the server ignoring the input,
+not a paste or timing fault. The other eight wave-1 templates previewed their unsaved paste. For
+those two the procedure is save first, then preview the stored version; both rendered correctly
+once saved. Second, `.order-list__item-price` renders `#333333` rather than the `#071e3f` the
+stylesheet asks for, in every template that has a price column; Shopify's inliner applies its
+default paragraph colour after the class rule. Cosmetic, consistent, and left alone: fixing it means
+a higher-specificity rule, a regeneration of all 46 files and a re-paste of every saved template,
+so it is a decision for after the paste waves, not during them.
+
 **Repo weight.** 92 template files (46 stock, 46 generated) of a few tens of KB each. Git stores
 them delta-compressed and the generated file differs from its stock twin by three hunks, so the
 packed cost is well under the on-disk size. `npm run notifications:check` in CI refuses a generated

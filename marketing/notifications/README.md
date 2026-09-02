@@ -57,6 +57,12 @@ byte-order mark. A refusal writes nothing.
    tracking line must read as body text, not footer text.
 4. **Save.**
 
+Two templates cannot be previewed before saving: `ready_for_pickup` and `pickup_receipt`. Their
+editor preview renders the stored template and ignores the unsaved editor contents (verified by
+pasting a different template's body and getting the same stock render), while every other template
+previews the paste. For those two, save, reload, then preview; if the stored render is wrong, paste
+`stock/<id>.liquid` back and save, or use the editor's **Revert to default**.
+
 Subject lines stay as they are in Admin; the manifest records them for reference and the
 generator never touches them. After the paste, the **Accent colour** setting under Settings >
 Notifications has no effect on that template: the branded file carries literal hexes and no

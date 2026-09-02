@@ -17,9 +17,6 @@ right now, and an empty heading with a live index entry is the residue this file
 - [ ] **Paste the branded notification templates in waves.** Procedure and per-template caveats in
   `marketing/notifications/README.md`. Delete an id from this list once it is pasted and saved in
   Admin, and delete the whole item when the list is empty.
-  - Wave 1 (order lifecycle): `order_confirmation`, `shipping_confirmation`, `shipping_update`,
-    `shipment_out_for_delivery`, `shipment_delivered`, `refund_notification`, `order_cancelled`,
-    `order_edited`, `ready_for_pickup`, `pickup_receipt`.
   - Wave 2 (money): gift cards (`gift_card_confirmation`, `gift_card_notification`), store credit
     (`store_credit_issued`), invoices (`order_invoice`, `draft_order_invoice`), payments
     (`order_payment_receipt`, `payment_reminder`, `pending_payment_success`,
