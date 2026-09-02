@@ -183,6 +183,13 @@ function buildLinkIcon() {
 /**
  * Turns heading text into an id-safe slug.
  *
+ * COUPLED TO `slugify` IN scripts/policies/lib/policies.mjs, which pins these ids into
+ * marketing/policies/manifest.json as the anchor contract for the shop policy bodies. The two
+ * must agree character for character, or the manifest records ids this component never assigns.
+ * scripts/policies/test/slugify-parity.test.mjs extracts this function by source and compares the
+ * two over the committed headings, so a drift is caught at CI time; keep the declaration in the
+ * form `function slugify(text) {` or that extraction stops finding it.
+ *
  * @param {string} text - The heading's visible text.
  * @returns {string} A lowercase hyphenated slug, or an empty string if nothing survived.
  */

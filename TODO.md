@@ -62,3 +62,70 @@ several of the pass's other findings.
   weight, so it is unaffected. This is the one finding that loses money per order rather than looking wrong. Fix is
   per-variant (or per-blank) weights in Admin; check the value against the blank's shipped weight, not
   the garment's fabric weight. Admin (variant weights). First recorded in the 2026-08-02 audit.
+
+- [ ] **Scheduled live-drift detection for the shop policies.** `npm run policies:check` is offline
+  and proves only that the repo agrees with itself; nothing automated notices when someone edits a
+  policy in Admin. The push-time freshness gate catches it at the one moment it can do damage
+  (`scripts/policies/push.mjs` step 4), and the manual cadence is in
+  `marketing/policies/README.md`. A scheduled `policies:pull --check` opening a sticky issue is the
+  fuller answer, and it was deliberately left out of `validate.yml`: it needs
+  `read_legal_policies` credentials, and putting them in a workflow widens the blast radius of the
+  whole subsystem to anyone who can trigger one, on a workflow that also runs for Dependabot. If
+  this is ever built, it belongs in a separate scheduled workflow with its own minimal secret, not
+  in `validate`.
+
+- [ ] **Reconcile the two delay-refund windows.** The shipping policy's "Order Delays and
+  Communication" promises a refund "within 7 business days" when a customer cancels a delayed
+  order; the refund policy states 10. Pre-existing, not introduced by the 3-5 day change, and
+  flagged rather than fixed because picking the right number is an operator decision. Both are now
+  in the repo (`marketing/policies/shipping_policy.html`,
+  `marketing/policies/refund_policy.html`), so whichever way it goes is one `policies:push` per
+  policy.
+
+- [ ] **Read the refund policy's misspellings disclaimer against the new personalisation-pause
+  copy.** The refund policy says the studio is "not responsible for misspellings" in
+  customer-provided details. The shipping policy now also promises to reach out when a
+  personalisation detail is unclear (an ambiguous spelling, a character count that will not fit, a
+  thread colour) and to pause production until the customer replies. Those are not contradictory:
+  one is about details the customer got wrong, the other about details the studio could not read.
+  Worth a read for tone, since they sit one click apart.
+
+- [ ] **Close the remaining test gaps in `scripts/policies/`.** A mutation-test pass over the
+  subsystem (93 seeded defects, 68 caught) found the survivors cluster in three places, none of
+  which is a live bug today:
+  - `lib/backups.mjs` has no test file. `FILE_MODE 0o600 -> 0o644` survives because the assertion
+    compares the observed mode against the imported constant, which holds for any value; use a
+    literal. `displayPath`, `resolveBackupDir`'s `POLICIES_BACKUP_DIR` and `path.resolve`, and the
+    timestamp in `backupFileName` are all uncovered.
+  - `push.mjs` step 8: a re-read that THROWS (a transient 5xx seconds after the write) is the one
+    post-mutation failure path that does not print the `--restore` command, and no test covers a
+    read that throws anywhere. Retry on throw, and add the restore command to that message.
+  - `main()` in `push.mjs` is untested end to end, so `PUSH_SCOPES` losing `write_legal_policies`
+    survives and the interactive/review gates are never tied to a run.
+  Also: `real-bodies.test.mjs`'s `parseWindow` silently mis-parses "3 to 5 business days" as
+  `[5,5]`, and its regex should be shared with the one in `templates-cohesion.test.mjs`; the
+  offline-by-contract source regexes are single-quote-only, static-only and non-transitive.
+
+- [ ] **Converge the remaining 14 `GHEOF` heredocs in `validate.yml`.** The four notification and
+  policy steps now use the `/dev/urandom` delimiter plus the `sed` neutraliser from the actionlint
+  step. Fourteen others still close on the literal `GHEOF`, and several echo repo-file content
+  (`theme-check`, `blank-id-guard`), so a file containing a line that is exactly `GHEOF` closes the
+  block early; because `exit_code=` is written first, an injected `exit_code=0` would win on a
+  last-write-wins parse. Same sweep should decide `if: ${{ !cancelled() }}` job-wide rather than on
+  the four-step island it is on now: as it stands, a step timeout skips every later check including
+  Gitleaks, which fails closed but is very hard to triage.
+
+- [ ] **Reconcile the anchor contract with `docs/theme-conventions.md`.** That doc recommends
+  putting an `id` on an Admin policy heading so the anchor survives rewording, and
+  `assets/policy-nav.js` does honour an existing id. But `extractHeadings` never reads attributes,
+  so such a heading would be pinned in `marketing/policies/manifest.json` under an id the runtime
+  never assigns, and nothing detects it. Either model the attribute or drop the recommendation for
+  tracked policies. Related: `uniqueId` collides against the whole document while
+  `duplicateHeadingIds` only compares h2s to each other.
+
+- [ ] **Tell `add-product` about the two new template rules.**
+  `.claude/skills/add-product/phase-1-repo-pr.md` says to clone an existing
+  `templates/product.<suffix>.json`. A seventh product now has to carry the `accordion_row_st001`
+  row byte-identically (or be added to `NO_SHIPPING_ROW` with a reason) and must state no
+  business-day duration, both enforced by `scripts/policies/test/templates-cohesion.test.mjs`. The
+  skill already names the size-chart and Product Details anchor rules for the same reason.

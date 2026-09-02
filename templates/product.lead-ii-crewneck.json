@@ -549,7 +549,7 @@
                     "text_st001": {
                       "type": "text",
                       "settings": {
-                        "text": "<p>Most orders arrive within 7-10 business days total, we need about 2 business days to create your piece, then economy shipping takes 5-8 business days.<br/><br/>Need it faster? Expedited shipping gets it to you in 3-4 business days total.<br/><br/>Check out our <a href=\"/policies/shipping-policy\" title=\"Shipping Policy\">Shipping Policy</a> for all the details!</p>",
+                        "text": "<p>Everything is embroidered to order, so your total time is production plus shipping. Our <a href=\"/policies/shipping-policy\" title=\"Shipping Policy\">Shipping Policy</a> has the current production time and the transit estimate for each shipping method, so it is always the up-to-date source.<br/><br/>Need it faster? Expedited shipping at checkout shortens the transit half.<br/><br/>Peak seasons, a question about your personalization, and larger orders can each add time; the policy says how much.</p>",
                         "width": "100%",
                         "max_width": "normal",
                         "alignment": "left",
