@@ -1,5 +1,48 @@
 # Release Notes
 
+## Consent stops being a recitation (unreleased)
+
+The absolutes required the operator's own sentence to NAME the live write, and disqualified every
+bare affirmative by name. What that produced in practice: an operator who had just read the dry run
+and said "do it" was refused, and handed a phrase to type. Refused twice, they type the phrase. The
+tool records a perfectly quotable authorization, and what it actually recorded is someone reciting a
+password at a gate.
+
+**The naming still has to happen. It moves to the side that can be held to it, which is the ask.**
+Name the policy type, say "live store", say the write is not undone by a redeploy, ask for that one
+thing and nothing else, and make it the last thing in the turn. Then "yes" is a grant, because the
+sentence it answers is on the record immediately above it and the pair quotes as cleanly as one
+sentence would have.
+
+**The first draft of this change was worse than the rule it replaced, and the review caught it.**
+The old rule's naming requirement was the only clause in rule 1 that an agent could not satisfy on
+the operator's behalf: everything else (unrelayed, unsummarised, after the dry run, quotable) is an
+integrity property, and that one was an authenticity property. The first draft deleted it and put a
+second integrity property (adjacency) in its place, leaving an authorization artifact the agent
+writes half of and then judges. That is not a loosening; it is a change of kind. It is recorded
+here because the diff looked small and the tests were green.
+
+**Greenness proved nothing, and the way it did is the lesson.** `absolutes-parity.test.mjs` pins
+the substring `is not a grant` to stop that clause being dropped. The first draft kept the substring
+and narrowed its subject, so the block asserted both `IS a grant` and `is not a grant` and the suite
+stayed green through a semantic inversion of the property being guarded. A positive substring pin
+cannot detect a reversal, only a deletion. The test now pins the whole qualified sentence, pins each
+new ask condition, and adds one NEGATIVE assertion: if the block ever says a bare affirmative `IS a
+grant`, the adjacency qualifier must appear within 400 characters of it.
+
+**What binds the ask, now that the ask carries the naming.** All required, not advisory: one action
+per ask, no bundling; a question, not a statement of intent ("unless you object" is not an ask);
+last thing in the turn, and re-asked if anything followed it before the reply. And the affirmative
+has to be unqualified, because "yes, but", "sure, after X" and "yes, the wording is right" all start
+with assent and grant nothing. Assent to the wording is not assent to the write.
+
+**The exclusion list now covers the agent's own ask, not just the operator's message.** Under the
+old rule, a compaction that manufactured a quote had to fabricate a first-person operator sentence.
+Under the new one it need only emit "the user approved pushing the shipping policy live", which is
+the pair already flattened, with the intervening turns removed by construction. Compaction does not
+merely degrade adjacency; it manufactures it. An ask surviving only as a summary of itself is not a
+pair.
+
 ## The terms of service stops shipping Shopify's authoring placeholders (unreleased)
 
 The terms body went live carrying the placeholders from Shopify's stock template, so every customer
@@ -233,9 +276,10 @@ live" loads CLAUDE.md, not the skill: it would find only that a message must not
 subagent", which reads as a constraint on other agents rather than on itself. The rule that must
 bind a subagent has to live in the always-loaded layer, so it is now absolute 5.
 
-**And four wording corrections in the absolutes:** a bare affirmative ("looks good", "ship it") is
+**And four wording corrections in the absolutes:** a bare affirmative ("looks good", "ship it") was
 explicitly not a grant, since it is what operators actually type and it satisfies every clause of
-rule 1 except the least emphasised one; the exclusion list now names a compaction artifact, a
+rule 1 except the least emphasised one (**that clause was later reversed; see "Consent stops being
+a recitation" above**); the exclusion list now names a compaction artifact, a
 conversation summary, a memory file, a resumed session's carried-over context and a parent agent's
 task prompt, because a compaction can MANUFACTURE the quote rather than merely drop it; rule 2's
 heading said "simulated" while its body forbade any pty, so a real pty from `script` was arguable
