@@ -238,14 +238,18 @@ export function previewHtmlFromResponse(jsonText) {
   return html.replace(/\r\n?/g, '\n');
 }
 
-// The STORED template inside a saved EmailTemplate response body: what Admin holds for the id,
-// as opposed to previewHtmlFromResponse's rendered output. Already LF in every response observed,
-// and normalised here anyway so the caller's hash contract holds either way.
-export function storedBodyFromResponse(jsonText) {
+// The STORED template inside a saved EmailTemplate response body: what Admin holds for the id, as
+// opposed to previewHtmlFromResponse's rendered output. Already LF in every response observed, and
+// normalised here anyway so the caller's hash contract holds either way. Returns the gid alongside
+// it (null when the response omits it), because the request URL identifies no template: its
+// variables are opaque, so the gid is the only thing that says which template the body belongs to.
+export function storedTemplateFromResponse(jsonText) {
   const parsed = JSON.parse(jsonText);
-  const body = parsed && parsed.data && parsed.data.emailTemplate && parsed.data.emailTemplate.bodyHtml;
+  const template = parsed && parsed.data && parsed.data.emailTemplate;
+  const body = template && template.bodyHtml;
   if (typeof body !== 'string' || body.length === 0) throw new Error('response carries no data.emailTemplate.bodyHtml');
-  return body.replace(/\r\n?/g, '\n');
+  const gid = template && typeof template.id === 'string' && template.id ? template.id : null;
+  return { gid, body: body.replace(/\r\n?/g, '\n') };
 }
 
 export function formatResults({ results, passed, failed }) {
@@ -274,7 +278,9 @@ function main(argv) {
   const positional = args.filter((a, i) => !a.startsWith('--') && !flagsWithValue.has(args[i - 1]) && (dumpAt === -1 || i < dumpAt));
   const sources = (positional.length === 1 ? 1 : 0) + (dumpAt !== -1 ? 1 : 0) + (previewResponse ? 1 : 0);
   if (!id || !/^\d+$/.test(String(versionArg)) || sources !== 1) {
-    console.error('usage: verify-render.mjs (<rendered.html> | --preview-response <file> | --dump <console-dump...>) --id <id> --version <n> [--manifest <path>] [--css <path>]');
+    console.error(
+      'usage: verify-render.mjs (<rendered.html> | --preview-response <file> | --dump <console-dump...>) --id <id> --version <n> [--root <dir>] [--manifest <path>] [--css <path>]',
+    );
     return 2;
   }
   let html;

@@ -29,7 +29,9 @@ function root() {
   return r;
 }
 
-const response = (bodyHtml) => JSON.stringify({ data: { emailTemplate: { id: 'gid://shopify/EmailTemplate/1', bodyHtml } } });
+const GID = 'gid://shopify/EmailTemplate/1234567890';
+const OTHER_GID = 'gid://shopify/EmailTemplate/999';
+const response = (bodyHtml, id = GID) => JSON.stringify({ data: { emailTemplate: id === null ? { bodyHtml } : { id, bodyHtml } } });
 
 test('--from-stock returns the recorded snapshot when it hashes to the approved numbers', () => {
   const r = root();
@@ -71,6 +73,48 @@ test('refuses a document that is not usable as a paste source at all', () => {
   assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, root: r }), /no data.emailTemplate.bodyHtml/, 'a preview response is a rendered document, never the stored one');
 });
 
+test('--expect-gid refuses a response for another template, however well its bytes match', () => {
+  const r = root();
+  const file = path.join(r, 'resp.json');
+  // The request URL names no template: its variables are opaque. So without the gid, a response
+  // saved from another template's in-flight request is accepted whenever the bytes happen to
+  // match, and the restore file is then that other template's body.
+  writeFileSync(file, response(STOCK, OTHER_GID), 'utf8');
+  assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: GID, root: r }), BeforeDocError);
+  assert.throws(
+    () => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: GID, root: r }),
+    /is the response for gid:\/\/shopify\/EmailTemplate\/999, not gid:\/\/shopify\/EmailTemplate\/1234567890.*do not paste or restore from it/s,
+  );
+  assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: OTHER_GID, root: r }).text, STOCK, 'the matching gid is accepted');
+  assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, root: r }).text, STOCK, 'and the check is skipped when no gid is expected');
+  // A response with no gid at all cannot satisfy the check, so it is refused rather than waved
+  // through: the point of asking is to know which template answered.
+  writeFileSync(file, response(STOCK, null), 'utf8');
+  assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: GID, root: r }), /carries no data.emailTemplate.id/);
+});
+
+test('--from-stock is validated as an id and against the manifest before it reaches a path join', () => {
+  const r = root();
+  // The same rule state.mjs applies to every id it stores. An id reaches a path join here and a
+  // navigation URL there, so it is never taken on trust because a caller passed it.
+  for (const bad of ['../../etc/passwd', 'Alpha', 'alpha.liquid', '']) {
+    assert.throws(() => beforeDoc({ fromStock: bad, expect: EXPECT, root: r }), /is not an id|exactly one of/, JSON.stringify(bad));
+  }
+  assert.throws(() => beforeDoc({ fromStock: 'gamma', expect: EXPECT, root: r }), /gamma is not in the manifest/);
+});
+
+test('the hash contract holds over astral, CRLF and non-ASCII bodies, the same inputs the probe is proven on', () => {
+  const r = root();
+  const file = path.join(r, 'resp.json');
+  for (const sample of ['caf\u00e9 \u2019   \u{1F9F5} \u00a9\n', 'line one\r\nline two\rthree\n', '{{ shop.name }}\n'.repeat(700)]) {
+    const lf = sample.replace(/\r\n?/g, '\n');
+    writeFileSync(file, response(sample), 'utf8');
+    const got = beforeDoc({ fromResponse: file, expect: { length: lf.length, hash: fnv1a(lf) }, root: r });
+    assert.equal(got.text, lf, JSON.stringify(sample.slice(0, 12)));
+    assert.equal(got.length, lf.length, 'length is UTF-16 code units, as the probe counts them');
+  }
+});
+
 test('the two sources are exclusive, and the expected numbers are required', () => {
   const r = root();
   assert.throws(() => beforeDoc({ expect: EXPECT, root: r }), /exactly one of --from-stock and --from-response/);
@@ -93,4 +137,25 @@ test('CLI: writes the file on a match, writes nothing and exits 1 on a mismatch'
   assert.equal(res.status, 1);
   assert.equal(existsSync(out2), false, 'a refused source leaves no file behind to be pasted by mistake');
   assert.equal(run().status, 2, 'no arguments prints the usage');
+
+  // The response path is the one roughly 40 of the 46 ids take, so it is exercised at CLI level
+  // too, gid check and all.
+  const resp = path.join(r, 'resp.json');
+  writeFileSync(resp, response(STOCK), 'utf8');
+  const out3 = path.join(r, 'from-response.liquid');
+  res = spawnSync(
+    process.execPath,
+    [script, '--root', r, '--out', out3, '--from-response', resp, '--expect-length', String(EXPECT.length), '--expect-fnv', EXPECT.hash, '--expect-gid', GID],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(readFileSync(out3, 'utf8'), STOCK);
+  const out4 = path.join(r, 'wrong-gid.liquid');
+  res = spawnSync(
+    process.execPath,
+    [script, '--root', r, '--out', out4, '--from-response', resp, '--expect-length', String(EXPECT.length), '--expect-fnv', EXPECT.hash, '--expect-gid', OTHER_GID],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 1);
+  assert.equal(existsSync(out4), false);
 });

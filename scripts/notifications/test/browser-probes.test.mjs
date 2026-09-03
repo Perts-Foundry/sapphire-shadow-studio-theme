@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
-import { fnv1a, parseDump, LEN_PREFIX, HASH_PREFIX, CHUNK_PREFIX } from '../dump.mjs';
+import { fnv1a, parseDump, parseStored, parseStoredStamp, parseSettled, LEN_PREFIX, HASH_PREFIX, CHUNK_PREFIX } from '../dump.mjs';
 import { STAMP_RE_SOURCE, commentLine } from '../brand.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -206,10 +206,12 @@ test('editor-probe.js logs again when the document or the revert state changes, 
 
 // The stored document. The editor renders the stock body first and swaps the saved override in a
 // moment later, so SSSPOLL under-reports on a cold navigation; SSSSTORED comes from the response
-// that carries what Admin actually holds, so it does not have that race.
+// that carries what Admin actually holds, so it does not have that race. It carries the gid too,
+// because the request URL identifies no template: its variables are opaque.
 const STORED_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplate/shopify/sapphire-shadow-studio?operationName=EmailTemplate&variables=%7B%7D';
 const PREVIEW_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplateGeneratePreview/shopify/sapphire-shadow-studio?operationName=EmailTemplateGeneratePreview';
-const storedBody = (bodyHtml) => JSON.stringify({ data: { emailTemplate: { id: 'gid://shopify/EmailTemplate/1', bodyHtml } } });
+const GID = 'gid://shopify/EmailTemplate/1234567890';
+const storedBody = (bodyHtml, id = GID) => JSON.stringify({ data: { emailTemplate: id === null ? { bodyHtml } : { id, bodyHtml } } });
 const flush = () => new Promise((r) => setImmediate(r));
 
 function fetchStub(bodyByUrl) {
@@ -225,7 +227,7 @@ function fetchStub(bodyByUrl) {
   };
 }
 
-test('editor-probe.js: SSSSTORED carries the stored document from the EmailTemplate response, once', async () => {
+test('editor-probe.js: SSSSTORED carries the stored document and its gid, once, and parseStored reads it', async () => {
   for (const sample of SAMPLES.filter((s) => s.length > 0)) {
     const lfText = sample.replace(/\r\n?/g, '\n');
     const stub = fetchStub({ [STORED_URL]: storedBody(sample) });
@@ -234,9 +236,10 @@ test('editor-probe.js: SSSSTORED carries the stored document from the EmailTempl
     await flush();
     assert.deepEqual(
       probe.logs.filter((l) => l.startsWith('SSSSTORED ')),
-      [`SSSSTORED ${lfText.length} ${fnv1a(lfText)}`],
+      [`SSSSTORED ${lfText.length} ${fnv1a(lfText)} ${GID}`],
       `${JSON.stringify(sample.slice(0, 12))}: one SSSSTORED line`,
     );
+    assert.deepEqual(parseStored(probe.logs.join('\n')), { length: lfText.length, hash: fnv1a(lfText), gid: GID });
     assert.equal(res.url, STORED_URL, 'the patched fetch still returns the response to the caller');
     assert.deepEqual(stub.calls, [STORED_URL], 'the original fetch is called exactly once');
     // A second matching response does not log again: the first is the page load's own.
@@ -244,20 +247,114 @@ test('editor-probe.js: SSSSTORED carries the stored document from the EmailTempl
     await flush();
     assert.equal(probe.logs.filter((l) => l.startsWith('SSSSTORED ')).length, 1);
   }
+  // A response without the gid still reports, with a dash, and parseStored says so.
+  const noGid = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: storedBody('body\n', null) }).impl });
+  await noGid.window.fetch(STORED_URL);
+  await flush();
+  assert.deepEqual(noGid.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED 5 ${fnv1a('body\n')} -`]);
+  assert.equal(parseStored(noGid.logs.join('\n')).gid, null);
 });
 
-test('editor-probe.js: SSSSTORED ignores the preview query and reports an unusable body', async () => {
+test('editor-probe.js: SSSSTOREDSTAMP parses the STORED document, so the classification never turns on the racy widget read', async () => {
+  const stamped = commentLine('order_confirmation', 4) + '<p>sss-notification other_id v9</p>\n';
+  const probe = makeProbe('editor-probe.js', { textarea: 'the stock body the widget is still painting\n', fetchImpl: fetchStub({ [STORED_URL]: storedBody(stamped) }).impl });
+  await probe.window.fetch(STORED_URL);
+  await flush();
+  probe.tick();
+  assert.ok(probe.logs.includes('SSSSTOREDSTAMP order_confirmation 4'));
+  assert.deepEqual(parseStoredStamp(probe.logs.join('\n')), { id: 'order_confirmation', version: 4 });
+  // The widget's own stamp, read at the same moment, is the stock body's: none. That difference is
+  // the whole reason the stored stamp exists.
+  assert.ok(probe.logs.includes('SSSSTAMP none'));
+
+  const unstamped = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: storedBody('<p>no stamp here</p>\n') }).impl });
+  await unstamped.window.fetch(STORED_URL);
+  await flush();
+  assert.ok(unstamped.logs.includes('SSSSTOREDSTAMP none'));
+  assert.equal(parseStoredStamp(unstamped.logs.join('\n')), 'none');
+  // A stamp on a later line does not count, the same rule the first-line SSSSTAMP follows.
+  const later = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: storedBody('<p>x</p>\n' + commentLine('order_link', 2)) }).impl });
+  await later.window.fetch(STORED_URL);
+  await flush();
+  assert.ok(later.logs.includes('SSSSTOREDSTAMP none'));
+});
+
+test('editor-probe.js: only the EmailTemplate operation is read, and no longer operation name matches it', async () => {
   const preview = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [PREVIEW_URL]: storedBody('<p>rendered</p>') }).impl });
   await preview.window.fetch(PREVIEW_URL);
   await flush();
   assert.deepEqual(preview.logs.filter((l) => l.startsWith('SSSSTORED')), [], 'EmailTemplateGeneratePreview is a rendered document, never the stored one');
 
+  // The lookahead has to exclude every character an operation name can continue with. A filter
+  // like this one fails silently when it is widened, so the whole shape is pinned here.
+  const base = 'https://admin.shopify.com/g?operationName=';
+  for (const op of ['EmailTemplateGeneratePreview', 'EmailTemplateUpdate', 'EmailTemplate_Update', 'EmailTemplate-List', 'EmailTemplate2', 'EmailTemplates']) {
+    const url = base + op;
+    const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [url]: storedBody('body\n') }).impl });
+    await probe.window.fetch(url);
+    await flush();
+    assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED')), [], op);
+  }
+  const wanted = base + 'EmailTemplate';
+  const hit = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [wanted]: storedBody('body\n') }).impl });
+  await hit.window.fetch(wanted);
+  await flush();
+  assert.equal(hit.logs.filter((l) => l.startsWith('SSSSTORED ')).length, 1, 'the operation itself still matches');
+  const withAmp = base + 'EmailTemplate&variables=%7B%7D';
+  const hit2 = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [withAmp]: storedBody('body\n') }).impl });
+  await hit2.window.fetch(withAmp);
+  await flush();
+  assert.equal(hit2.logs.filter((l) => l.startsWith('SSSSTORED ')).length, 1);
+});
+
+test('editor-probe.js: an unusable body reports once and does not burn the signal', async () => {
   for (const body of ['{}', '{"data":{"emailTemplate":{"bodyHtml":""}}}', 'not json at all', '{"data":{"emailTemplate":null}}']) {
     const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: body }).impl });
     await probe.window.fetch(STORED_URL);
     await flush();
-    assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED')), ['SSSSTORED unavailable'], `body ${body}`);
+    assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), ['SSSSTORED unavailable'], `body ${body}`);
+    assert.equal(parseStored(probe.logs.join('\n')), 'unavailable');
   }
+  // An aborted or empty first response must not force the run back onto the racy widget read for
+  // the rest of the navigation, which is what latching before the parse used to do.
+  const url2 = STORED_URL + '&second';
+  const stub = fetchStub({ [STORED_URL]: '{}', [url2]: storedBody('the real body\n') });
+  const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: stub.impl });
+  await probe.window.fetch(STORED_URL);
+  await flush();
+  await probe.window.fetch(url2);
+  await flush();
+  const text = 'the real body\n';
+  assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), ['SSSSTORED unavailable', `SSSSTORED ${text.length} ${fnv1a(text)} ${GID}`]);
+  assert.ok(probe.logs.includes('SSSSTOREDSTAMP none'), 'the good reading brings its stamp with it');
+  // parseStored takes the LAST line of either kind, so the good reading wins here and a stale
+  // numeric reading never answers a navigation that said unavailable.
+  assert.deepEqual(parseStored(probe.logs.join('\n')), { length: text.length, hash: fnv1a(text), gid: GID });
+  // And two unusable responses report once, not twice.
+  const twice = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: '{}', [url2]: '{}' }).impl });
+  await twice.window.fetch(STORED_URL);
+  await flush();
+  await twice.window.fetch(url2);
+  await flush();
+  assert.deepEqual(twice.logs.filter((l) => l.startsWith('SSSSTORED ')), ['SSSSTORED unavailable']);
+});
+
+test('parseStored and parseStoredStamp take the last line, so a stale reading never answers this navigation', () => {
+  const wrap = (...lines) => lines.map((l, i) => `msgid=${i + 1} [log] ${l} (1 args)`).join('\n');
+  assert.equal(parseStored(''), null, 'no line at all is null, not a guess');
+  assert.equal(parseStoredStamp(''), null);
+  assert.deepEqual(parseStored(wrap(`SSSSTORED 100 aaaaaaaa ${GID}`)), { length: 100, hash: 'aaaaaaaa', gid: GID });
+  // The console buffer can span navigations. Preferring any numeric reading anywhere would answer
+  // a navigation that said `unavailable` with the PREVIOUS template's numbers.
+  assert.equal(parseStored(wrap(`SSSSTORED 100 aaaaaaaa ${GID}`, 'SSSSTORED unavailable')), 'unavailable');
+  assert.deepEqual(parseStored(wrap('SSSSTORED unavailable', 'SSSSTORED 42 cccccccc -')), { length: 42, hash: 'cccccccc', gid: null });
+  assert.deepEqual(parseStored(wrap('SSSSTORED 1 aaaaaaaa -', 'SSSSTORED 2 bbbbbbbb -')), { length: 2, hash: 'bbbbbbbb', gid: null }, 'last numeric wins');
+  // SSSSTOREDSTAMP shares the prefix and must not be read as a reading.
+  assert.equal(parseStored(wrap('SSSSTOREDSTAMP order_link 1')), null);
+  assert.deepEqual(parseStoredStamp(wrap('SSSSTOREDSTAMP order_link 1', 'SSSSTOREDSTAMP none')), 'none');
+  assert.deepEqual(parseStoredStamp(wrap('SSSSTOREDSTAMP none', 'SSSSTOREDSTAMP order_link 7')), { id: 'order_link', version: 7 });
+  assert.deepEqual(parseSettled(wrap('SSSSETTLED 5 aaaaaaaa', 'SSSSETTLED 6 bbbbbbbb')), { length: 6, hash: 'bbbbbbbb' });
+  assert.equal(parseSettled(wrap('SSSPOLL 5 aaaaaaaa cm6')), null);
 });
 
 test('editor-probe.js: the XHR path reports SSSSTORED too', async () => {
@@ -284,24 +381,49 @@ test('editor-probe.js: the XHR path reports SSSSTORED too', async () => {
   xhr.open('GET', STORED_URL);
   xhr.send();
   const text = 'stored via xhr\n';
-  assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED ${text.length} ${fnv1a(text)}`]);
+  assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED ${text.length} ${fnv1a(text)} ${GID}`]);
   assert.deepEqual(sent, [['GET', STORED_URL]], 'the original open is still called with its arguments');
 });
 
-test('editor-probe.js: SSSSETTLED fires once the document has stopped changing, and again after a change', () => {
-  const text = 'settled document\n';
-  const logs = runProbe('editor-probe.js', { textarea: text, ticks: 6 });
-  assert.deepEqual(logs.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED ${text.length} ${fnv1a(text)}`], 'once, not once per tick');
+test('editor-probe.js: installing twice does not double-wrap the page globals', async () => {
+  const stub = fetchStub({ [STORED_URL]: storedBody('body\n') });
+  const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: stub.impl });
+  const first = probe.window.fetch;
+  vm.runInNewContext(src('editor-probe.js'), { document: { querySelector: () => null, querySelectorAll: () => [] }, window: probe.window, console: { log: () => {} }, setInterval: () => 1, clearInterval: () => {} }, { filename: 'again' });
+  assert.equal(probe.window.fetch, first, 'the second install is a no-op');
+  await probe.window.fetch(STORED_URL);
+  await flush();
+  assert.deepEqual(stub.calls, [STORED_URL], 'and the original fetch is still called exactly once per call');
+});
 
+test('editor-probe.js: SSSSETTLED fires on the tick the document goes quiet, and re-arms after a change', () => {
+  const text = 'settled document\n';
+  // SETTLE_POLLS is 3, so a document unchanged from the first poll settles on the fourth tick and
+  // says so once. Asserting the tick, not just the line, is what pins the window.
+  for (const ticks of [1, 2, 3]) {
+    assert.deepEqual(runProbe('editor-probe.js', { textarea: text, ticks }).filter((l) => l.startsWith('SSSSETTLED')), [], `${ticks} tick(s) is not a settle`);
+  }
+  assert.deepEqual(runProbe('editor-probe.js', { textarea: text, ticks: 4 }).filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED ${text.length} ${fnv1a(text)}`]);
+  assert.deepEqual(runProbe('editor-probe.js', { textarea: text, ticks: 9 }).filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED ${text.length} ${fnv1a(text)}`], 'once, not once per tick');
+
+  // A change resets the counter and re-arms the signal: two settles, with different hashes. This
+  // fails if either the counter reset or the re-arm is dropped.
   const changing = runProbe('editor-probe.js', {
     textarea: 'first',
-    ticks: 10,
+    ticks: 12,
+    between: (t, stub) => {
+      if (t === 6) stub.areas[0].value = 'second';
+    },
+  });
+  assert.deepEqual(changing.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED 5 ${fnv1a('first')}`, `SSSSETTLED 6 ${fnv1a('second')}`]);
+  // A change before the window closes resets the counter, so the settle lands three ticks after
+  // the change and reports the new document, never the old one.
+  const early = runProbe('editor-probe.js', {
+    textarea: 'first',
+    ticks: 6,
     between: (t, stub) => {
       if (t === 2) stub.areas[0].value = 'second';
     },
   });
-  assert.deepEqual(changing.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED 6 ${fnv1a('second')}`], 'a change before the settle resets it');
-  // Ticking fewer times than the settle window says nothing, which is the point: it is a positive
-  // signal, never an assumption that a fixed wait was long enough.
-  assert.deepEqual(runProbe('editor-probe.js', { textarea: text, ticks: 2 }).filter((l) => l.startsWith('SSSSETTLED')), []);
+  assert.deepEqual(early.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED 6 ${fnv1a('second')}`]);
 });

@@ -17,7 +17,12 @@
 //   node scripts/notifications/before-doc.mjs --from-stock <id> --expect-length <n>
 //        --expect-fnv <hex> --out <file> [--root <dir>]
 //   node scripts/notifications/before-doc.mjs --from-response <file> --expect-length <n>
-//        --expect-fnv <hex> --out <file>
+//        --expect-fnv <hex> --out <file> [--expect-gid <gid>]
+//
+// `--expect-gid` is the gid the probe logged on the SSSSTORED line of the same navigation. The
+// request URL names no template (its variables are opaque), so without it a response saved from a
+// different template's in-flight request would be accepted whenever its bytes happened to match:
+// the restore file would then be another template's body. Pass it whenever the reading had one.
 //
 // Exit 0 writes the file and prints "<length> <fnv> -> <path>". Any mismatch writes nothing and
 // exits 1: a restore source that is not what Admin held is worse than no restore source.
@@ -26,14 +31,15 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fnv1a, verifyText } from './dump.mjs';
-import { paths, REPO_ROOT } from './brand.mjs';
-import { storedBodyFromResponse } from './verify-render.mjs';
+import { ID_RE } from './state.mjs';
+import { paths, readManifest, REPO_ROOT } from './brand.mjs';
+import { storedTemplateFromResponse } from './verify-render.mjs';
 
 export class BeforeDocError extends Error {}
 
 // Reads the source, normalises line endings, and refuses anything that does not match `expect`.
 // `expect` is { length, hash }; both are required, because the whole point is the gate.
-export function beforeDoc({ fromStock, fromResponse, expect, root = REPO_ROOT }) {
+export function beforeDoc({ fromStock, fromResponse, expect, expectGid, root = REPO_ROOT }) {
   if ((fromStock === undefined) === (fromResponse === undefined)) {
     throw new BeforeDocError('exactly one of --from-stock and --from-response is required');
   }
@@ -43,11 +49,27 @@ export function beforeDoc({ fromStock, fromResponse, expect, root = REPO_ROOT })
   let text;
   let source;
   if (fromStock !== undefined) {
+    // The same rule state.mjs applies to every id it stores: an id reaches a path join here and a
+    // navigation URL there, so it is checked against the shape and against the manifest, never
+    // taken on trust because a caller passed it.
+    if (!ID_RE.test(String(fromStock))) throw new BeforeDocError(`--from-stock ${JSON.stringify(fromStock)} is not an id`);
+    if (!Object.prototype.hasOwnProperty.call(readManifest(root).templates, fromStock)) {
+      throw new BeforeDocError(`--from-stock ${fromStock} is not in the manifest`);
+    }
     source = paths(root).stock(fromStock);
     text = readFileSync(source, 'utf8');
   } else {
     source = fromResponse;
-    text = storedBodyFromResponse(readFileSync(source, 'utf8'));
+    const stored = storedTemplateFromResponse(readFileSync(source, 'utf8'));
+    if (expectGid !== undefined) {
+      if (stored.gid === null) throw new BeforeDocError(`refused: ${source} carries no data.emailTemplate.id, so it cannot be checked against --expect-gid ${expectGid}`);
+      if (stored.gid !== expectGid) {
+        throw new BeforeDocError(
+          `refused: ${source} is the response for ${stored.gid}, not ${expectGid}. That is another template's document; do not paste or restore from it.`,
+        );
+      }
+    }
+    text = stored.body;
   }
   text = text.replace(/\r\n?/g, '\n');
   verifyText(text);
@@ -73,11 +95,12 @@ function main(argv) {
     fromStock: get('--from-stock'),
     fromResponse: get('--from-response') ? resolve(get('--from-response')) : undefined,
     expect: { length: lengthArg === undefined ? undefined : Number(lengthArg), hash: get('--expect-fnv') },
+    expectGid: get('--expect-gid'),
     root: get('--root') ? resolve(get('--root')) : REPO_ROOT,
   };
   if (!out || lengthArg === undefined || opts.expect.hash === undefined) {
     console.error(
-      'usage: before-doc.mjs (--from-stock <id> | --from-response <file>) --expect-length <n> --expect-fnv <hex> --out <file> [--root <dir>]',
+      'usage: before-doc.mjs (--from-stock <id> | --from-response <file> [--expect-gid <gid>]) --expect-length <n> --expect-fnv <hex> --out <file> [--root <dir>]',
     );
     return 2;
   }

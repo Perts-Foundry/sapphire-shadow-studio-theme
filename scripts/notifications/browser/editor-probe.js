@@ -1,11 +1,19 @@
-// Read-only probe for the Admin notification editor, passed verbatim as the initScript of a
-// navigate_page call by the notification-templates skill. It installs a response listener before
+// Probe for the Admin notification editor, passed verbatim as the initScript of a navigate_page
+// call by the notification-templates skill. It wraps the page's fetch and XMLHttpRequest before
 // any page script runs, then polls the editor widget, and logs:
-//   SSSSTORED <length> <fnv>          the STORED document, taken from the EmailTemplate GraphQL
+//   SSSSTORED <length> <fnv> <gid>    the STORED document, taken from the EmailTemplate GraphQL
 //                                     response the editor page fetches on load. Authoritative and
 //                                     race-free: it is what Admin holds, not what is on screen.
-//                                     `SSSSTORED unavailable` if a matching response carried no
-//                                     body, and nothing at all if no such response was seen.
+//                                     <gid> is data.emailTemplate.id, or `-` when the response
+//                                     omits it; it says WHICH template the reading belongs to,
+//                                     which the request URL does not (its variables are opaque).
+//   SSSSTOREDSTAMP <id> <version>     the stamp parsed from the STORED document's first line,
+//                     | none          the race-free counterpart of SSSSTAMP. The classification
+//                                     turns on the stamp, so it must not come from the widget.
+//   SSSSTORED unavailable             a matching response carried no usable body. Logged at most
+//                                     once, and it does not stop a later good response from
+//                                     logging a real reading; nothing at all is logged when no
+//                                     matching response was seen.
 //   SSSPOLL <length> <fnv> <source>   String.length and 32-bit FNV-1a of the editor text
 //                                     (UTF-16 code units, LF-normalised), and which widget it read
 //   SSSSTAMP <id> <version> | none    the stamp parsed from the editor's FIRST LINE only
@@ -13,19 +21,26 @@
 //                                     editor shows none (observed: a clean editor shows neither
 //                                     Save nor Revert), so the stock signal that counts is the
 //                                     document's bytes equalling stock/<id>.liquid
-//   SSSSETTLED <length> <fnv>         once, when the editor document has been unchanged for
+//   SSSSETTLED <length> <fnv>         when the editor document has been unchanged for
 //                                     SETTLE_POLLS polls. A positive "done" signal, so a reader
-//                                     never has to guess a settle interval.
+//                                     never has to guess a settle interval. It re-arms: a later
+//                                     change logs a further SSSSETTLED once that settles.
 // The editor has a load race: Admin renders the STOCK body first and swaps the saved override in
 // a moment later, and SSSPOLL logs only on change, so an early read reports stock and looks stable.
-// SSSSTORED does not have that problem; SSSPOLL is the signal for a paste, which is a local edit.
-// Nothing here writes to the page. The FNV function and the stamp regex are copies of the ones in
-// scripts/notifications/dump.mjs and brand.mjs; test/browser-probes.test.mjs proves they agree.
+// The SSSSTORED family does not have that problem; SSSPOLL is the signal for a paste, which is a
+// local edit with no network round trip.
+// This writes nothing to the DOM, but it is not inert: it replaces window.fetch and patches
+// XMLHttpRequest.prototype.open/send for the life of the page, once (a second install is a no-op).
+// The FNV function and the stamp regex are copies of the ones in scripts/notifications/dump.mjs
+// and brand.mjs; test/browser-probes.test.mjs proves they agree.
 (function () {
   var STAMP_RE_SOURCE = '(?<![A-Za-z0-9_-])sss-notification ([a-z0-9_]+) v([1-9][0-9]*)(?![0-9A-Za-z_-])';
-  // The editor's own query. Anchored so EmailTemplateGeneratePreview, which carries a RENDERED
-  // document, can never be mistaken for the stored one.
-  var STORED_URL_RE = /operationName=EmailTemplate(?![A-Za-z])/;
+  // The editor's own query. Anchored so no longer operation name can be mistaken for it:
+  // EmailTemplateGeneratePreview carries a RENDERED document and EmailTemplateUpdate a write, and
+  // a digit, underscore or hyphen suffix would be a different operation too. A filter like this
+  // one fails silently when it is widened, so it excludes every character an operation name can
+  // continue with.
+  var STORED_URL_RE = /operationName=EmailTemplate(?![A-Za-z0-9_-])/;
   var POLL_MS = 500;
   var SETTLE_POLLS = 3;
   function fnv1a(text) {
@@ -58,24 +73,37 @@
     }
     return 'unknown';
   }
-  // The stored document, logged once, from the first matching response body.
+  // The stored document, logged once, from the first matching response that carries a usable body.
+  // The success latch is set only on success: a first response that is unparseable or empty (an
+  // aborted prefetch, say) must not burn the signal and force the run back onto the racy widget
+  // read, which is the whole thing this exists to avoid.
   var storedLogged = false;
+  var unavailableLogged = false;
   function logStored(bodyText) {
     if (storedLogged) return;
-    storedLogged = true;
     var body = null;
+    var gid = null;
     try {
       var parsed = JSON.parse(bodyText);
-      if (parsed && parsed.data && parsed.data.emailTemplate) body = parsed.data.emailTemplate.bodyHtml;
+      if (parsed && parsed.data && parsed.data.emailTemplate) {
+        body = parsed.data.emailTemplate.bodyHtml;
+        if (typeof parsed.data.emailTemplate.id === 'string' && parsed.data.emailTemplate.id) gid = parsed.data.emailTemplate.id;
+      }
     } catch (e) {
       body = null;
     }
     if (typeof body !== 'string' || body.length === 0) {
-      console.log('SSSSTORED unavailable');
+      if (!unavailableLogged) {
+        unavailableLogged = true;
+        console.log('SSSSTORED unavailable');
+      }
       return;
     }
+    storedLogged = true;
     var text = lf(body);
-    console.log('SSSSTORED ' + text.length + ' ' + fnv1a(text));
+    console.log('SSSSTORED ' + text.length + ' ' + fnv1a(text) + ' ' + (gid === null ? '-' : gid));
+    var m = new RegExp(STAMP_RE_SOURCE).exec(text.split('\n')[0]);
+    console.log('SSSSTOREDSTAMP ' + (m ? m[1] + ' ' + m[2] : 'none'));
   }
   function urlOf(input) {
     if (typeof input === 'string') return input;
@@ -84,6 +112,8 @@
   }
   function install(w) {
     if (!w) return;
+    if (w.sssProbeInstalled) return;
+    w.sssProbeInstalled = true;
     if (typeof w.fetch === 'function') {
       var origFetch = w.fetch;
       w.fetch = function (input) {

@@ -76,15 +76,19 @@ with nothing saved, as the mode was written to. That was the rule working agains
 the check gated Save on a preview that, for an unknown subset of ids, cannot see the paste. `sync`
 now saves first on every id and render-checks the stored version, so the check sees the paste
 everywhere; if the render fails, it pastes back the document the editor held before the paste and
-saves that, byte-verified against a dump taken from the editor at the start of the id's loop. The
-restore source is the editor's own document rather than git or `stock/` because 18 of the 46
-editors held a pre-merge paste that exists in no commit. The cost is a window of one preview's
-length during which a bad render is live, bounded by a byte-verified restore; the batch approval
-covers that one extra Save. "Revert to default" stays out of `sync`.
+saves that, byte-verified against the numbers the operator approved for that id. The restore
+source is what Admin actually held, whatever its provenance, rather than the latest commit,
+because 18 of the 46 editors held a pre-merge paste that exists in no commit; it comes from the
+editor's own `EmailTemplate` response, or from `stock/<id>.liquid` for an id whose observed bytes
+are the recorded stock snapshot (see the next entry, which replaced the console dump this
+paragraph originally described). The cost is a window of one preview's length during which a bad
+render is live, bounded by a byte-verified restore; the batch approval covers that extra Save.
+"Revert to default" stays out of `sync`.
 
 **What the first run of that `sync` cost, and what came out of it (2026-09-02).** 576 tool calls
-and four and a half hours to paste 8 of 45 templates. Almost all of the overhead was the skill's,
-not Shopify's, and the fixes are now in the skill and in `scripts/notifications/`:
+and four and a half hours to paste 8 of the 45 templates that run had in scope (the manifest holds
+46; `buy_online` was already in sync). Almost all of the overhead was the skill's, not Shopify's,
+and the fixes are now in the skill and in `scripts/notifications/`:
 
 - **The Admin editor has a load race.** It paints the stock body first and swaps the saved
   override in a moment later, and `editor-probe.js` logs only on change, so an early console read
@@ -95,6 +99,19 @@ not Shopify's, and the fixes are now in the skill and in `scripts/notifications/
   `XMLHttpRequest` before the page's own scripts run and logs `SSSSTORED` from the `EmailTemplate`
   GraphQL response, which is what Admin stores rather than what the widget is currently painting,
   and is there on the first console read.
+- **The stamp had to move with it.** Fixing the length and FNV while leaving the stamp on the
+  widget read left the hole half open: `behind`, `ahead`, `hash-mismatch` and `orphan` all turn on
+  the stamp, so one read during the race reports `none` for a stored branded template and
+  downgrades it to `unstamped-edited` in the table the operator approves. The probe now parses the
+  stored document's first line too and logs `SSSSTOREDSTAMP`. A fix that leaves the racy source
+  wired to the decision it feeds is not a fix.
+- **The reading has to say which template it is for.** The `EmailTemplate` request's `variables`
+  are opaque, so nothing in the URL names a template, and the probe took the first matching
+  response after install. In a 46-id loop through a single-page app, a prefetched or in-flight
+  response from the previous id would then be reported as this id's stored document, and the byte
+  gate would compare the wrong document against numbers derived from that same wrong document and
+  pass. `SSSSTORED` now carries `data.emailTemplate.id`, and `before-doc.mjs --expect-gid` refuses
+  a response that answers for another template however well its bytes match.
 - **The answer to a race is never a fixed wait.** The run's response was 8 to 10 second settles
   implemented as `node -e` spin loops: 39 of them, 311 seconds, a burned CPU core, and about 25
   seconds per template of pure guesswork. A fixed wait can still be too short, which is how the
@@ -119,7 +136,22 @@ not Shopify's, and the fixes are now in the skill and in `scripts/notifications/
 - **A failed render can quarantine instead of halting**, `--on-render-fail quarantine`, chosen at
   the plan STOP so the operator approves the policy rather than being asked again mid-run. It is a
   real relaxation (the set is left deliberately inconsistent) and the byte gates are untouched by
-  it: a pre-Save mismatch still never Saves, and a post-Save mismatch still stops the run.
+  it: a pre-Save mismatch still never Saves, and a post-Save mismatch still stops the run. Both
+  policies record the failing id in the run's quarantine list, and that is load-bearing rather
+  than tidy: an id left unsettled is still the run's `next`, so a halted run that stayed resumable
+  would repaste the template that just failed, under the original approval, once per resume.
+- **The post-Save proof is the stored reading, not the widget's.** Cancelling a leave-page dialog
+  cancels the navigation, so a post-Save `SSSPOLL` is read off a widget that has held the pasted
+  text since before the Save: it equals the repo file whether or not Admin stored anything. The
+  check is now `SSSSTORED`, which comes from Admin's own response and cannot be satisfied by the
+  editor's local state.
+- **One path spelling.** The plan is classified against a checkout of `--from`, and the loop used
+  to paste from the working tree, byte-check against the working tree, and read the version from
+  whichever manifest it happened to run against. On a branch worktree with the default
+  `--from origin/main` those are different files, and the pre-Save check would compare the editor
+  against the same unapproved file it had just pasted and pass. Every template path in `sync.md`
+  is now under the `--from` checkout, the byte checks name the run's approved numbers rather than
+  "the repo file", and `seen --from-file` refuses a file that is not the approved `after`.
 - **A halt is terminal for the turn.** After the run stopped for a fresh approval, something kept
   re-invoking the session and it re-emitted the same ask about a dozen times. An unmet goal is not
   an authorisation; the gate contract now says to state the ask once and stop.

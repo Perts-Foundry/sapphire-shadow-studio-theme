@@ -13,6 +13,8 @@
 //   node scripts/notifications/state.mjs --store <handle> audit <results.json>
 //   node scripts/notifications/state.mjs --store <handle> run-start <plan.json> --ref <ref> --sha <sha>
 //        [--on-render-fail halt|quarantine] [--batch <n>] [--force]
+//        (--force names what it replaces before it does, because a replaced run's quarantine list
+//         is the only record of which ids failed and why)
 //   node scripts/notifications/state.mjs --store <handle> run-quarantine <id> <verifier.txt>
 //   node scripts/notifications/state.mjs --store <handle> run-show
 //   node scripts/notifications/state.mjs --store <handle> run-end
@@ -24,7 +26,8 @@
 //     pending: [ { id, version, fnv, branch, pr } ],
 //     lastAudit: { at, results: { <id>: { adminVersion, repoVersion, match, render } } } | null,
 //     run: { startedAt, ref, sha, onRenderFail, batch,
-//            ids: [ { id, match, beforeSource, before: {length,fnv}, after: {length,fnv} }... ],
+//            ids: [ { id, match, beforeSource, version, gid, before: {length,fnv},
+//                     after: {length,fnv} }... ],
 //            done: [<id>...], quarantine: [ { id, at, verifier } ] } | null }
 // `match` is one of MATCH; `render` one of RENDER; every `at` is ISO 8601; every id is in the
 // manifest; `store` matches the handle rule.
@@ -34,8 +37,15 @@
 // the approved table itself, one entry per id in the order it was approved, because the numbers a
 // resumed run gates each paste on are exactly the numbers the operator approved; an id whose
 // Admin document no longer matches its `before` is not pasted. `seen` advances the run, so the
-// per-id loop costs no extra call. The next id is the first of `ids` in neither `done` nor
-// `quarantine`; an empty remainder means the run is finished.
+// per-id loop costs no extra call, and it refuses a file that is not the approved `after`, so the
+// one hand-typed argument left cannot record a template under another one's name. The next id is
+// the first of `ids` in neither `done` nor `quarantine`; an empty remainder means the run is
+// finished.
+//
+// A failed render records the id in `quarantine` under BOTH render-failure policies; `halt` then
+// ends the run and `quarantine` continues. That is deliberate: were a halted run to leave its
+// failed id unsettled, `nextId` would still point at it, and a later `sync --resume` would repaste
+// the template that just failed, under the original approval, for as many laps as it is resumed.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -47,10 +57,15 @@ import { hashFile } from './dump.mjs';
 export const MATCH = ['in-sync', 'behind', 'ahead', 'unstamped-stock', 'unstamped-edited', 'hash-mismatch', 'orphan'];
 export const RENDER = ['pass', 'fail', 'skipped'];
 export const ON_RENDER_FAIL = ['halt', 'quarantine'];
+
+// A refusal this file raises on its own, as opposed to one validate() raises about the file.
+export class StateError extends Error {}
 export const STORE_RE = /^[a-z0-9-]+$/;
 export const ID_RE = /^[a-z0-9_]+$/;
 const FNV_RE = /^[0-9a-f]{8}$/;
 const SHA_RE = /^[0-9a-f]{7,64}$/;
+const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[0-9]+$/;
+const VERIFIER_MAX = 20000;
 
 export function stateDir(env = process.env) {
   const base = env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
@@ -142,12 +157,14 @@ export function validate(state, store, ids) {
     };
     for (const [i, e] of r.ids.entries()) {
       if (!e || typeof e !== 'object' || Array.isArray(e)) fail(`run.ids[${i}] is not an object`);
-      for (const k of Object.keys(e)) if (!['id', 'match', 'beforeSource', 'before', 'after'].includes(k)) fail(`unknown field run.ids[${i}].${k}`);
+      for (const k of Object.keys(e)) if (!['id', 'match', 'beforeSource', 'version', 'gid', 'before', 'after'].includes(k)) fail(`unknown field run.ids[${i}].${k}`);
       checkId(e.id, `run.ids[${i}]`);
       if (inRun.has(e.id)) fail(`run.ids lists ${e.id} twice`);
       inRun.add(e.id);
       if (!MATCH.includes(e.match)) fail(`run.ids[${i}].match ${JSON.stringify(e.match)} is not one of ${MATCH.join(', ')}`);
       if (!['stock', 'network'].includes(e.beforeSource)) fail(`run.ids[${i}].beforeSource ${JSON.stringify(e.beforeSource)} is not stock or network`);
+      if (!isValidVersion(e.version)) fail(`run.ids[${i}].version is not an integer >= 1`);
+      if (e.gid !== null && !GID_RE.test(String(e.gid))) fail(`run.ids[${i}].gid is not null or gid://shopify/EmailTemplate/<n>`);
       numbers(e.before, `run.ids[${i}].before`);
       numbers(e.after, `run.ids[${i}].after`);
     }
@@ -171,6 +188,7 @@ export function validate(state, store, ids) {
       seenQ.add(q.id);
       if (!isIso(q.at)) fail(`run.quarantine[${i}].at is not ISO 8601`);
       if (typeof q.verifier !== 'string' || q.verifier.trim() === '') fail(`run.quarantine[${i}].verifier is empty`);
+      if (q.verifier.length > VERIFIER_MAX) fail(`run.quarantine[${i}].verifier is longer than ${VERIFIER_MAX} characters`);
     }
   }
   if (state.run === undefined) state.run = null;
@@ -219,7 +237,7 @@ function main(argv) {
   const store = get('--store');
   const root = get('--root') ? resolve(get('--root')) : REPO_ROOT;
   const dir = get('--state-dir') ? resolve(get('--state-dir')) : stateDir();
-  const flagsWithValue = new Set(['--store', '--root', '--state-dir', '--version', '--fnv', '--length', '--sha', '--ref', '--branch', '--pr', '--from-file', '--on-render-fail', '--batch']);
+  const flagsWithValue = new Set(['--store', '--root', '--state-dir', '--version', '--fnv', '--length', '--sha', '--ref', '--branch', '--pr', '--from-file', '--on-render-fail', '--batch', '--reason']);
   const positional = args.filter((a, i) => !a.startsWith('--') && !flagsWithValue.has(args[i - 1]));
   const [command, ...rest] = positional;
   if (!store || !command) {
@@ -235,6 +253,10 @@ function main(argv) {
   }
   if (command === 'seen') {
     const [id] = rest;
+    if (!id) throw new StateError('seen needs an id');
+    if (get('--from-file') === undefined && (get('--version') === undefined || get('--fnv') === undefined || get('--length') === undefined)) {
+      throw new StateError('seen needs --from-file, or all of --version, --fnv and --length');
+    }
     // --from-file derives version, length and fnv from the file that was pasted, so the per-id
     // loop retypes none of them; --sha and --ref fall back to the run in flight for the same
     // reason. Every one of these was a hand-typed flag, and a slip writes a wrong hint.
@@ -242,14 +264,30 @@ function main(argv) {
     let fnv = get('--fnv');
     let length = get('--length') === undefined ? undefined : Number(get('--length'));
     const fromFile = get('--from-file');
+    const runRow = state.run ? state.run.ids.find((e) => e.id === id) : undefined;
     if (fromFile) {
-      const entry = readManifest(root).templates[id];
-      if (!entry) {
-        console.error(`refused: ${id} is not in the manifest`);
-        return 1;
-      }
       const h = hashFile(resolve(fromFile));
-      version = entry.version;
+      // With a run in flight the approved `after` is the authority, not the manifest under
+      // whatever root this happens to run from: it is the number the operator approved pasting,
+      // and checking the file against it is what stops one hand-typed path from recording another
+      // template's bytes under this id and marking it done.
+      if (runRow) {
+        if (h.length !== runRow.after.length || h.hash !== runRow.after.fnv) {
+          console.error(
+            `refused: ${resolve(fromFile)} is ${h.length} ${h.hash}, but the run approved ${runRow.after.length} ${runRow.after.fnv} for ${id}. ` +
+              'That is not the file this id was approved to hold; nothing recorded.',
+          );
+          return 1;
+        }
+        version = runRow.version;
+      } else {
+        const entry = readManifest(root).templates[id];
+        if (!entry) {
+          console.error(`refused: ${id} is not in the manifest`);
+          return 1;
+        }
+        version = entry.version;
+      }
       fnv = h.hash;
       length = h.length;
     }
@@ -260,7 +298,7 @@ function main(argv) {
     // A `seen` write is what finishes an id, so it advances the run in flight rather than costing
     // the loop a second call.
     let advanced = '';
-    if (state.run && state.run.ids.some((e) => e.id === id) && !state.run.done.includes(id) && !state.run.quarantine.some((q) => q.id === id)) {
+    if (runRow && !state.run.done.includes(id) && !state.run.quarantine.some((q) => q.id === id)) {
       state.run.done.push(id);
       advanced = `, run ${state.run.done.length}/${state.run.ids.length}`;
     }
@@ -292,8 +330,21 @@ function main(argv) {
   }
   if (command === 'run-start') {
     if (state.run && !args.includes('--force')) {
-      console.error(`refused: a run started ${state.run.startedAt} is still in flight (${state.run.done.length}/${state.run.ids.length} done). Finish it, or pass --force to replace it.`);
+      console.error(
+        `refused: a run started ${state.run.startedAt} is still in flight (${state.run.done.length}/${state.run.ids.length} done, ` +
+          `${state.run.quarantine.length} quarantined). End it with run-end, or pass --force to replace it.`,
+      );
       return 1;
+    }
+    if (state.run) {
+      // Say what --force is about to destroy. The quarantine list is the only record of which ids
+      // failed and why, and it does not survive the replacement.
+      const q = state.run.quarantine.map((e) => e.id);
+      console.log(
+        `--force replaces the run started ${state.run.startedAt}: ${state.run.done.length} done, ` +
+          `${q.length} quarantined${q.length ? ` (${q.join(', ')})` : ''}, ` +
+          `${state.run.ids.length - state.run.done.length - q.length} not attempted. That record is discarded.`,
+      );
     }
     // The plan file is classify.mjs's --json output: the approved table, rows and all. Only the
     // rows it marks `paste` become the run; an in-sync id is not a write and an `ahead` id is not
@@ -304,9 +355,34 @@ function main(argv) {
       console.error('refused: the plan file carries no rows');
       return 1;
     }
+    // Every row must say what it is for. Accepting an action-less row as a paste meant a run-show
+    // dump, whose rows carry no action, could be fed back in and resurrect the done and quarantined
+    // ids as fresh pastes.
+    for (const [i, e] of list.entries()) {
+      if (!e || typeof e !== 'object' || Array.isArray(e)) throw new StateError(`plan row ${i} is not an object`);
+      if (!['paste', 'skip', 'flag'].includes(e.action)) {
+        throw new StateError(`plan row ${i} (${e.id}) has action ${JSON.stringify(e.action)}; expected paste, skip or flag. Pass classify.mjs --json output.`);
+      }
+    }
     const ids = list
-      .filter((e) => e && (e.action === undefined || e.action === 'paste'))
-      .map((e) => ({ id: e.id, match: e.match, beforeSource: e.beforeSource, before: { length: e.before.length, fnv: e.before.fnv }, after: { length: e.after.length, fnv: e.after.fnv } }));
+      .filter((e) => e.action === 'paste')
+      .map((e, i) => {
+        for (const field of ['id', 'match', 'beforeSource', 'version']) {
+          if (e[field] === undefined) throw new StateError(`plan row ${i} (${e.id}) has no ${field}`);
+        }
+        for (const field of ['before', 'after']) {
+          if (!e[field] || typeof e[field] !== 'object') throw new StateError(`plan row ${i} (${e.id}) has no ${field} numbers`);
+        }
+        return {
+          id: e.id,
+          match: e.match,
+          beforeSource: e.beforeSource,
+          version: e.version,
+          gid: e.gid === undefined ? null : e.gid,
+          before: { length: e.before.length, fnv: e.before.fnv },
+          after: { length: e.after.length, fnv: e.after.fnv },
+        };
+      });
     if (ids.length === 0) {
       console.error('refused: the plan file has no row whose action is paste');
       return 1;
@@ -332,6 +408,14 @@ function main(argv) {
       return 1;
     }
     const [id, verifierPath] = rest;
+    if (!state.run.ids.some((e) => e.id === id)) {
+      console.error(`refused: ${id} is not in the run (${state.run.ids.map((e) => e.id).join(', ')})`);
+      return 1;
+    }
+    if (state.run.done.includes(id)) {
+      console.error(`refused: ${id} is already recorded done; a template cannot be both done and quarantined`);
+      return 1;
+    }
     const verifier = readFileSync(resolve(verifierPath), 'utf8');
     state.run.quarantine = state.run.quarantine.filter((q) => q.id !== id);
     state.run.quarantine.push({ id, at: now, verifier });
@@ -349,6 +433,8 @@ function main(argv) {
     return 0;
   }
   if (command === 'run-end') {
+    const reason = get('--reason') || 'done';
+    if (!['done', 'halt'].includes(reason)) throw new StateError(`--reason ${JSON.stringify(reason)} is not done or halt`);
     if (!state.run) {
       console.log('no run in flight');
       return 0;
@@ -356,13 +442,29 @@ function main(argv) {
     const { done, quarantine, ids } = state.run;
     state.run = null;
     save(state, store, opts);
-    console.log(`run ended: ${done.length} done, ${quarantine.length} quarantined, ${ids.length - done.length - quarantine.length} not attempted -> ${file}`);
+    console.log(
+      `run ended (${reason}): ${done.length} done, ${quarantine.length} quarantined, ` +
+        `${ids.length - done.length - quarantine.length} not attempted -> ${file}`,
+    );
     return 0;
   }
   console.error(`unknown command ${command}`);
   return 2;
 }
 
+// Every refusal in this file, whether it comes from validate() or from a command's own check,
+// reaches the operator as one sentence and exit 1. A stack trace here would be the validator's
+// carefully worded message buried under five frames, on a tool whose entire job is refusing.
+export function run(argv) {
+  try {
+    return main(argv);
+  } catch (err) {
+    const message = String(err && err.message ? err.message : err);
+    console.error(message.startsWith('refused') ? message : `refused: ${message}`);
+    return 1;
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = main(process.argv);
+  process.exitCode = run(process.argv);
 }

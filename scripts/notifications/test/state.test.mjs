@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { validate, load, save, emptyState, statePath, stateDir, isIso, nextId, MATCH, RENDER } from '../state.mjs';
 import { paths } from '../brand.mjs';
+import { hashFile } from '../dump.mjs';
 import { pickTool, encodeFor } from '../clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,8 @@ function goodState() {
   };
 }
 
-const row = (id, beforeSource = 'stock') => ({ id, match: 'unstamped-stock', beforeSource, before: { length: 10, fnv: 'deadbeef' }, after: { length: 20, fnv: '01234567' } });
+const GID = 'gid://shopify/EmailTemplate/1234567890';
+const row = (id, beforeSource = 'stock') => ({ id, match: 'unstamped-stock', beforeSource, version: 1, gid: null, before: { length: 10, fnv: 'deadbeef' }, after: { length: 20, fnv: '01234567' } });
 
 function goodRun() {
   return {
@@ -192,6 +194,13 @@ const runRefusals = [
   ['run ids unknown field', (r) => ({ ...r, ids: [{ ...row('alpha'), cursor: 1 }], done: [] }), /unknown field run.ids\[0\].cursor/],
   ['run ids bad match', (r) => ({ ...r, ids: [{ ...row('alpha'), match: 'maybe' }], done: [] }), /run.ids\[0\].match "maybe" is not one of/],
   ['run ids bad beforeSource', (r) => ({ ...r, ids: [{ ...row('alpha'), beforeSource: 'console' }], done: [] }), /run.ids\[0\].beforeSource "console" is not stock or network/],
+  ['run ids version zero', (r) => ({ ...r, ids: [{ ...row('alpha'), version: 0 }], done: [] }), /run.ids\[0\].version is not an integer >= 1/],
+  ['run ids bad gid', (r) => ({ ...r, ids: [{ ...row('alpha'), gid: 'gid://shopify/Product/1' }], done: [] }), /run.ids\[0\].gid is not null or gid:/],
+  ['run ids missing before', (r) => ({ ...r, ids: [{ ...row('alpha'), before: undefined }], done: [] }), /run.ids\[0\].before is not an object/],
+  ['run ids unknown numbers field', (r) => ({ ...r, ids: [{ ...row('alpha'), after: { length: 5, fnv: 'deadbeef', source: 'x' } }], done: [] }), /unknown field run.ids\[0\].after.source/],
+  ['run done not an array', (r) => ({ ...r, done: 'alpha' }), /run.done is not an array/],
+  ['run quarantine not an array', (r) => ({ ...r, quarantine: {} }), /run.quarantine is not an array/],
+  ['run quarantine verifier too long', (r) => ({ ...r, quarantine: [{ id: 'beta', at: '2026-09-02T12:00:00Z', verifier: 'x'.repeat(20001) }] }), /run.quarantine\[0\].verifier is longer than 20000 characters/],
   ['run ids before length zero', (r) => ({ ...r, ids: [{ ...row('alpha'), before: { length: 0, fnv: 'deadbeef' } }], done: [] }), /run.ids\[0\].before.length is not a positive integer/],
   ['run ids after fnv short', (r) => ({ ...r, ids: [{ ...row('alpha'), after: { length: 5, fnv: 'dead' } }], done: [] }), /run.ids\[0\].after.fnv is not eight hex digits/],
   ['run done outside ids', (r) => ({ ...r, ids: [row('beta')], done: ['alpha'] }), /run.done lists alpha, which is not in run.ids/],
@@ -210,6 +219,11 @@ for (const [name, mutate, re] of runRefusals) {
   });
 }
 
+test('a run row may carry a gid, and batch may be null', () => {
+  const withGid = { ...goodState(), run: { ...goodRun(), batch: null, ids: [{ ...row('alpha'), gid: GID }, row('beta', 'network')] } };
+  assert.deepEqual(validate(withGid, 'my-store', ids), withGid);
+});
+
 test('nextId is the first id that is neither done nor quarantined', () => {
   assert.equal(nextId(null), null);
   assert.equal(nextId(goodRun()), 'beta', 'alpha is done');
@@ -221,9 +235,19 @@ test('CLI: a run round-trips, seen advances it, and a second run-start is refuse
   const r = root();
   const dir = path.join(r, 'state');
   const cli = (...args) => spawnSync(process.execPath, [script, '--store', 'my-store', '--root', r, '--state-dir', dir, ...args], { encoding: 'utf8', cwd: r });
-  // classify.mjs --json output: rows carrying an action, so an `ahead` row is not pasted over.
+
+  // The plan file is classify.mjs --json output: rows carrying an action, so a skip row is not a
+  // write and never enters the run.
+  const pasted = path.join(r, 'alpha.liquid');
+  writeFileSync(pasted, 'branded alpha\n', 'utf8');
+  const after = hashFile(pasted);
   const plan = path.join(r, 'plan.json');
-  writeFileSync(plan, JSON.stringify([{ ...row('alpha'), action: 'paste' }, { ...row('beta', 'network'), action: 'paste' }, { ...row('gamma'), action: 'skip' }]), 'utf8');
+  const planRows = [
+    { ...row('alpha'), action: 'paste', after: { length: after.length, fnv: after.hash } },
+    { ...row('beta', 'network'), action: 'paste' },
+    { ...row('gamma'), action: 'skip' },
+  ];
+  writeFileSync(plan, JSON.stringify(planRows), 'utf8');
   let out = cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA, '--on-render-fail', 'quarantine', '--batch', '10');
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /run started: 2 id\(s\).*on-render-fail quarantine, next alpha/, 'the skip row is not part of the run');
@@ -233,14 +257,13 @@ test('CLI: a run round-trips, seen advances it, and a second run-start is refuse
 
   // A `seen` write finishes an id, so it advances the run without a second call, and --from-file
   // derives the version, length and fnv rather than having them retyped.
-  const pasted = path.join(r, 'alpha.liquid');
-  writeFileSync(pasted, 'branded alpha\n', 'utf8');
   out = cli('seen', 'alpha', '--from-file', pasted);
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /run 1\/2/);
   let state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
-  assert.equal(state.seen.alpha.length, 'branded alpha\n'.length);
-  assert.equal(state.seen.alpha.version, 1, 'the version comes from the manifest');
+  assert.equal(state.seen.alpha.length, after.length);
+  assert.equal(state.seen.alpha.fnv, after.hash);
+  assert.equal(state.seen.alpha.version, 1, 'the version comes from the approved row, not from whatever manifest this runs against');
   assert.equal(state.seen.alpha.sha, SHA, 'the sha and ref default to the run in flight');
   assert.equal(state.seen.alpha.ref, 'origin/main');
   assert.deepEqual(state.run.done, ['alpha']);
@@ -258,13 +281,83 @@ test('CLI: a run round-trips, seen advances it, and a second run-start is refuse
 
   out = cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA);
   assert.notEqual(out.status, 0);
-  assert.match(out.stderr, /still in flight \(1\/2 done\)/);
-  assert.equal(cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA, '--force').status, 0);
+  assert.match(out.stderr, /still in flight \(1\/2 done, 1 quarantined\)/);
+  // --force is allowed, but it names the record it is about to destroy: the quarantine list is the
+  // only account of which ids failed and why.
+  out = cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA, '--force');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /--force replaces the run .*1 done, 1 quarantined \(beta\).*That record is discarded/s);
 
-  assert.equal(cli('run-end').status, 0);
+  assert.match(cli('run-end', '--reason', 'halt').stdout, /run ended \(halt\)/);
   state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
   assert.equal(state.run, null);
   assert.match(cli('run-show').stdout, /no run in flight/);
+});
+
+test('CLI: seen --from-file refuses a file that is not what the run approved for that id', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = (...args) => spawnSync(process.execPath, [script, '--store', 'my-store', '--root', r, '--state-dir', dir, ...args], { encoding: 'utf8', cwd: r });
+  const alpha = path.join(r, 'alpha.liquid');
+  const beta = path.join(r, 'beta.liquid');
+  writeFileSync(alpha, 'branded alpha\n', 'utf8');
+  writeFileSync(beta, 'a different template entirely\n', 'utf8');
+  const after = hashFile(alpha);
+  const plan = path.join(r, 'plan.json');
+  writeFileSync(plan, JSON.stringify([{ ...row('alpha'), action: 'paste', after: { length: after.length, fnv: after.hash } }]), 'utf8');
+  assert.equal(cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA).status, 0);
+
+  // The flag exists to remove hand-typed values, and it leaves exactly one: the path. Unchecked,
+  // that path records another template's bytes under this id and marks it done.
+  const out = cli('seen', 'alpha', '--from-file', beta);
+  assert.notEqual(out.status, 0);
+  assert.match(out.stderr, /but the run approved \d+ [0-9a-f]{8} for alpha/);
+  assert.match(out.stderr, /nothing recorded/);
+  const state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.equal(state.seen.alpha, undefined, 'nothing is recorded');
+  assert.deepEqual(state.run.done, [], 'and the run is not advanced');
+
+  assert.equal(cli('seen', 'alpha', '--from-file', alpha).status, 0, 'the approved file is accepted');
+});
+
+test('CLI: every refusal is one sentence and exit 1, never a stack trace', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = (...args) => spawnSync(process.execPath, [script, '--store', 'my-store', '--root', r, '--state-dir', dir, ...args], { encoding: 'utf8', cwd: r });
+  const plan = path.join(r, 'plan.json');
+  const verifier = path.join(r, 'v.txt');
+  writeFileSync(verifier, 'FAIL something\n', 'utf8');
+
+  const cases = [
+    // A plan row that is not classify.mjs output. Feeding run-show's own rows back in used to
+    // resurrect the done and quarantined ids as fresh pastes, because they carry no action.
+    [[{ id: 'alpha' }], ['run-start', plan, '--ref', 'origin/main', '--sha', SHA], /has action undefined; expected paste, skip or flag/],
+    [[{ id: 'alpha', action: 'paste' }], ['run-start', plan, '--ref', 'origin/main', '--sha', SHA], /plan row 0 \(alpha\) has no match/],
+    [[{ ...row('alpha'), action: 'paste', before: undefined }], ['run-start', plan, '--ref', 'origin/main', '--sha', SHA], /has no before numbers/],
+    [[{ ...row('alpha'), action: 'skip' }], ['run-start', plan, '--ref', 'origin/main', '--sha', SHA], /no row whose action is paste/],
+    [[{ ...row('alpha'), action: 'paste' }], ['run-start', plan], /refused state file: run.ref is not a ref name/],
+  ];
+  for (const [rows, argv, re] of cases) {
+    writeFileSync(plan, JSON.stringify(rows), 'utf8');
+    const out = cli(...argv);
+    assert.equal(out.status, 1, argv.join(' '));
+    assert.match(out.stderr, re, argv.join(' '));
+    assert.ok(!/\n\s+at /.test(out.stderr), `stack trace leaked for ${argv.join(' ')}: ${out.stderr}`);
+  }
+
+  assert.match(cli('seen', 'alpha').stderr, /seen needs --from-file, or all of --version, --fnv and --length/);
+  assert.match(cli('run-quarantine', 'alpha', verifier).stderr, /no run is in flight/);
+  assert.match(cli('run-end', '--reason', 'maybe').stderr, /--reason "maybe" is not done or halt/);
+
+  // An id that is in the run but already done cannot also be quarantined: validate() refuses that
+  // state, and the command says so before it writes rather than after.
+  writeFileSync(plan, JSON.stringify([{ ...row('alpha'), action: 'paste' }]), 'utf8');
+  assert.equal(cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA).status, 0);
+  assert.equal(cli('seen', 'alpha', '--version', '1', '--fnv', 'deadbeef', '--length', '9').status, 0);
+  const both = cli('run-quarantine', 'alpha', verifier);
+  assert.equal(both.status, 1);
+  assert.match(both.stderr, /already recorded done/);
+  assert.ok(!/\n\s+at /.test(both.stderr));
 });
 
 // --- clipboard.mjs -------------------------------------------------------------------------------

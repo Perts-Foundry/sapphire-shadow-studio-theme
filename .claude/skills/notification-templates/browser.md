@@ -34,12 +34,14 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
   test email"). Read the dump instead of scrolling.
 - Console output over roughly 50 KB is persisted to a file whose path is in the tool result; feed
   that file to the scripts below, never retype it.
-- **Never transcribe a tool result into a file by hand.** `list_console_messages` has no
-  file-output option, and the harness persists a result to disk only above roughly 50 KB, so
-  anything smaller would have to be retyped into a heredoc. A document that must reach disk comes
-  from a network response (`get_network_request`'s `responseFilePath`) or from a file already in
-  the repo. An earlier `sync.md` asked for the transcription and it worked out at about 480 KB
-  across one run; `scripts/notifications/before-doc.mjs` exists so no step needs it again.
+- **Never transcribe a document out of a tool result.** `list_console_messages` has no
+  file-output option, and the harness persists a result to disk only above roughly 50 KB, so a
+  template body below that would have to be retyped into a heredoc. A document that must reach
+  disk comes from a network response (`get_network_request`'s `responseFilePath`) or from a file
+  already in the repo. An earlier `sync.md` asked for the transcription and it worked out at about
+  480 KB across one run; `scripts/notifications/before-doc.mjs` exists so no step needs it again.
+  Copying the four short readings of a console line into `observed.tsv` is not that, and is fine:
+  the rule is about documents, and a wrong reading there fails safe at the next byte gate.
 
 ## The load race, and why nothing here waits a fixed interval
 
@@ -51,13 +53,24 @@ gate still fails safe, but a classification taken from it is simply wrong.
 
 Two rules follow:
 
-- **`SSSSTORED` is the authority for what Admin holds.** The probe takes it from the
-  `EmailTemplate` GraphQL response the editor page fetches on load rather than from the widget, so
-  it is not exposed to the race, and it is there on the first console read. `SSSPOLL` is the signal
-  for a **paste**, which is a local edit with no network round trip, and for the post-Save reload.
-  Parse them with `parseStored` and `parsePoll` in `scripts/notifications/dump.mjs`. A navigation
-  that logs `SSSSTORED unavailable`, or none at all, falls back to `SSSPOLL` plus `SSSSETTLED`, and
-  the run says which reading it used.
+- **The `SSSSTORED` family is the authority for what Admin holds**, and that includes the stamp:
+  `SSSSTOREDSTAMP` is parsed from the stored document's first line, while `SSSSTAMP` is parsed
+  from the widget's. Take **both** the numbers and the stamp from the stored pair. The
+  classification's `behind`, `ahead`, `hash-mismatch` and `orphan` rows all turn on the stamp, so
+  a stamp read during the race reports `none` for a stored branded template and silently
+  downgrades it to `unstamped-edited`. `SSSPOLL` is the signal for a **paste**, which is a local
+  edit with no network round trip. Parse them with `parseStored`, `parseStoredStamp` and
+  `parsePoll` in `scripts/notifications/dump.mjs`.
+- **Read the console of the current navigation only**, for every one of these signals. The buffer
+  spans navigations, and the parsers take the last line of their kind, so a blob covering two
+  navigations answers this one with the previous template's reading. A navigation that logs
+  `SSSSTORED unavailable`, or no `SSSSTORED` line at all, falls back to `SSSPOLL` plus
+  `SSSSETTLED` for that id, and the run says which reading it used; it never reaches back to the
+  previous line.
+- **`SSSSTORED` carries the gid** (`data.emailTemplate.id`), because the request URL names no
+  template: its `variables` are opaque. Record it with the reading, and pass it to
+  `before-doc.mjs --expect-gid`, so a response saved from another template's in-flight request is
+  refused rather than becoming this id's restore document.
 - **Never wait a fixed interval.** No `sleep` (the harness blocks it in the foreground), and never
   a `node -e` spin loop: it burns a core, and the interval is a guess either way (a fixed wait can
   still be too short, which is how the race got through in the first place). Read the console and
@@ -71,7 +84,7 @@ whole text; do not paraphrase it.
 
 | File | Logs | Use |
 |---|---|---|
-| `editor-probe.js` | `SSSSTORED <length> <fnv>` once, from the `EmailTemplate` response (or `SSSSTORED unavailable`); `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false|unknown`; `SSSSETTLED <length> <fnv>` once the document stops changing | every browser mode: classify from `SSSSTORED`, verify a paste and a post-Save reload from `SSSPOLL` |
+| `editor-probe.js` | `SSSSTORED <length> <fnv> <gid>` once, from the `EmailTemplate` response (or `SSSSTORED unavailable`, which does not stop a later good response from reporting); `SSSSTOREDSTAMP <id> <version>` or `none`, from the STORED document's first line; `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the widget's first line; `SSSREVERT true|false|unknown`; `SSSSETTLED <length> <fnv>` when the document stops changing, re-arming after each change | every browser mode: classify from `SSSSTORED` and `SSSSTOREDSTAMP`, verify a paste from `SSSPOLL`, and a post-Save reload from `SSSSTORED` |
 | `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record` only: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>`. Never in `sync`, which needs no second navigation and no console chunks |
 | `mobile-check.js` | `SSSMOBILE ok|fail ...`, `SSSSQUEEZE ok|warn ...` | the mobile procedure below |
 
@@ -94,10 +107,17 @@ Two responses matter, and they are different documents: `EmailTemplate` carries 
 other.
 
 `list_network_requests` lists everything since the last navigation, newest last, and takes only
-`resourceTypes`, `pageSize` and `pageIdx`. The one wanted is always the newest `fetch`/`xhr`, so
-ask for the **last** page rather than hunting: request `pageSize: 10` with any `pageIdx`, read the
-page count the result reports, and go straight to it. Paging by guesswork cost four calls per
-template on the run that led to this note.
+`resourceTypes`, `pageSize` and `pageIdx`. Neither request is found by a filter, so find each by
+where it sits:
+
+- **The preview** is the newest `fetch`/`xhr`, because clicking Preview is the last thing that
+  happened. Ask for the **last** page rather than hunting: request `pageSize: 10` with any
+  `pageIdx`, read the page count the result reports, and go straight to it. Paging by guesswork
+  cost four calls per template on the run that led to this note.
+- **The stored document's query fires at page load**, so it is near the *front* and many Admin
+  fetches follow it. It is the request whose URL matches `operationName=EmailTemplate` with no
+  letter, digit, underscore or hyphen after it, the same anchored pattern `editor-probe.js` uses;
+  `EmailTemplateGeneratePreview` and `EmailTemplateUpdate` are different documents.
 
 **Always pass `requestFilePath` as well as `responseFilePath`.** Without it `get_network_request`
 echoes the request body back, and for a preview that body is the whole template that was just
@@ -105,9 +125,13 @@ pasted.
 
 ### The stored document
 
-`data.emailTemplate.bodyHtml` in the `EmailTemplate` response is the stored template, already LF.
-`scripts/notifications/before-doc.mjs --from-response <file>` extracts it and refuses it unless it
-hashes to the numbers the plan table was approved with.
+`data.emailTemplate.bodyHtml` in the `EmailTemplate` response is the stored template, already LF,
+and `data.emailTemplate.id` is its gid.
+`scripts/notifications/before-doc.mjs --from-response <file> --expect-gid <gid>` extracts it and
+refuses it unless it hashes to the numbers the plan table was approved with **and** answers for
+the template the probe read. Take the response and the `SSSSTORED` line from the **same
+navigation**: they are two views of one request, and pairing them across navigations is how a
+restore document ends up being another template's body.
 
 ### The preview
 
@@ -127,9 +151,11 @@ hashes to the numbers the plan table was approved with.
 
 ## Clipboard and paste
 
-1. `node scripts/notifications/clipboard.mjs marketing/notifications/<id>.liquid` (detects
-   `pbcopy`, `wl-copy`, `xclip`, or `clip.exe` under WSL or native Windows with UTF-16LE; fails
-   with a clear message otherwise).
+1. `node scripts/notifications/clipboard.mjs <file>` (detects `pbcopy`, `wl-copy`, `xclip`, or
+   `clip.exe` under WSL or native Windows with UTF-16LE; fails with a clear message otherwise).
+   `<file>` is a path the mode names: in `sync` it is always under the `--from` checkout, never the
+   working tree, because the plan was classified against that checkout and the bytes pasted have
+   to be the bytes approved.
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line from the console of the current navigation only, and require
    the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the approved
@@ -146,7 +172,12 @@ before Save): reload the page, accept the leave-page dialog with `handle_dialog`
 `SSSPOLL` and confirm it equals the stored bytes recorded before that paste (for an aborted
 `sync` restore, the repo file's numbers from the Save that preceded it), then navigate on. Never
 leave an editor dirty. The one reload that must not accept the dialog is the one right after a
-Save: there the dialog means the Save did not complete, and `sync.md` says what to do.
+Save: there the dialog means the Save did not complete, and `sync.md` says what to do. When that
+path gives up (a second dialog on the same id), the editor is still dirty and this rule applies
+again: reload once more, accept the dialog, confirm the stored bytes are the id's approved
+`before`, and report the id as **not attempted**. Admin never received the write, so it holds the
+before-document; saying it holds "bytes nobody verified" would send the operator to a rollback for
+a template that was never written.
 
 ## Save-time normalisation probe
 
@@ -178,7 +209,7 @@ preview shows unsaved edits) and once per `header`-override template
 (`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`):
 
 1. Write the preview HTML to a file in the scratchpad (from the saved network response, see
-   "Reading a preview").
+   "The preview").
 2. `emulate` viewport `411x900x2,mobile,touch`; open the file with `navigate_page` on its
    `file://` URL with `browser/mobile-check.js` as the initScript.
 3. Read the console: `SSSMOBILE ok` means every `table.container` has the same width and left

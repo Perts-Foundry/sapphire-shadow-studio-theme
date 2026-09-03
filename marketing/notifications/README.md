@@ -62,7 +62,7 @@ script can be injected into; `--manifest` and `--css` override the checkout's fo
 parser), `classify.mjs` (applies the skill's match table to a set of Admin readings and prints the
 sync plan table), `before-doc.mjs` (materialises the document Admin held before a paste, from the
 stock snapshot or from the editor's `EmailTemplate` response, refused unless it hashes to the
-expected numbers), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+expected numbers and, with `--expect-gid`, answers for the expected template), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
 state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
 ## Versioning
@@ -198,11 +198,19 @@ do not, the manifest entry carries an `override` object with a `reason` and one 
 A fifth field, `skip`, with a reason string, would leave a template stock: no branded file is
 generated and the check refuses if one exists. No template is skipped today.
 
-One layout note that no override records, because the generator handles it correctly and it is
-stock behaviour: `customer_email_address_changed_confirmation` is the only template with a second
-`<style>` block, Shopify-authored, after `</head>`. It is left in place (it references no accent
-colour), and because it comes after `brand-style.css` its bare `a` rule wins over the brand link
-colour in the body. Header and footer are unaffected. Accept it.
+**A known defect, recorded here because this paragraph used to say it was harmless.**
+`customer_email_address_changed_confirmation` is the only template with a second `<style>` block,
+Shopify-authored, after `</head>`. It is left in place, and because it comes after
+`brand-style.css` every rule in it wins on cascade order. The note here used to say that was fine
+because the block references no accent colour. It is not fine: the block sets
+`body { background-color: #ffffff; }`, which beats the branded `#e1edf5` and renders the page
+white. The first `sync` of this template failed its `page-colour` render check on exactly that,
+was restored to stock, and the id is still unsynced.
+
+The fix is a `change` run (an override in `manifest.json`, then `npm run notifications:generate`),
+not a `sync` one, and it has not been made yet. Until it is, treat any template with a second
+`<style>` block as suspect and check the render before trusting it; the generator does not
+neutralise the block and nothing offline catches it.
 
 ## Drift: catching up with a Shopify change to a stock template
 
@@ -226,7 +234,10 @@ stock, unbranded:
 `record-stock.mjs` also accepts `--envelope <path>` (a JSON file carrying the id and text) and
 `--dump <path...>` (console output from `scripts/notifications/browser/editor-dump.js`, reassembled
 by `dump.mjs` and checked against its own length and hash), for recording without the
-copy-into-a-file step. The skill's `record` mode is this procedure with its gates.
+copy-into-a-file step. The skill's `record` mode is this procedure with its gates, and it takes
+step 2 from the editor's `EmailTemplate` network response through `before-doc.mjs` rather than from
+the console, because a console dump below the harness's persist threshold would have to be retyped
+by hand.
 
 ## Templates
 
