@@ -14,6 +14,13 @@ right now, and an empty heading with a live index entry is the residue this file
 
 ## Product and storefront
 
+- [ ] **Fix the low stock alert flow to handle gift cards. Gift card should be excluded.**
+- [ ] **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
+- [ ] **Update the inventory.**
+- [ ] **Add nurse practitioner NP to the lead to collection of products for Carol Ann.**
+- [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
+- [ ] **Confirm the judge.me review setup is correct for our store at this point.**
+- [ ] **Figure out the blog skill for the store**
 - [ ] **Sync the branded notification templates into Admin.** Run
   `/notification-templates sync` with the ids in wave order (the skill never reads this file);
   delete this item when the first full sync lands and `/notification-templates audit` reports all
