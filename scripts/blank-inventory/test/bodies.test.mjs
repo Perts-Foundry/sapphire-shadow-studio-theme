@@ -134,6 +134,36 @@ test('unmappedHandles ignores untracked variants', () => {
   assert.deepEqual(out, []);
 });
 
+test('unmappedHandles skips a declared non-garment that DOES track stock', () => {
+  // The regression this closes: the exclusion used to fall out of "untracked", which held only
+  // while every non-garment happened to be a gift card. A declared non-garment carrying real
+  // inventory then failed the check, and because loadStore refuses on a non-empty unmapped list,
+  // every write path stopped on a manifest that was already correct.
+  const out = unmappedHandles(
+    bodyIndex(manifest()),
+    [variant('gift-card'), variant('a-crew')],
+    new Set(['gift-card'])
+  );
+  assert.deepEqual(out, []);
+});
+
+test('unmappedHandles still names an UNDECLARED product when an exclusion set is passed', () => {
+  // The exclusion must cover declared non-garments only. Losing this would make a newly added
+  // product silently absorbed, which is the whole failure mode the check exists to prevent.
+  const out = unmappedHandles(
+    bodyIndex(manifest()),
+    [variant('gift-card'), variant('brand-new')],
+    new Set(['gift-card'])
+  );
+  assert.deepEqual(out, ['brand-new']);
+});
+
+test('unmappedHandles keeps its pre-existing behaviour when no exclusion set is passed', () => {
+  // The parameter is optional, so the callers this change did not touch keep their old semantics.
+  const out = unmappedHandles(bodyIndex(manifest()), [variant('gift-card')]);
+  assert.deepEqual(out, ['gift-card']);
+});
+
 // --- the reversal itself -----------------------------------------------------
 
 test('bodies.mjs exports nothing from the deleted infer-then-approve workflow', async () => {

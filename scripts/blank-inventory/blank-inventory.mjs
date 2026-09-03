@@ -243,6 +243,14 @@ async function ensureBodies() {
   return bodiesIndexCache;
 }
 
+/**
+ * The handles the manifest declares as non-garments, for unmappedHandles to skip.
+ * @returns {Promise<Set<string>>}
+ */
+async function declaredNonGarmentHandles() {
+  return new Set(nonGarmentProducts(await ensureManifest()).map((p) => p.handle));
+}
+
 async function loadStore({ requireWrite }) {
   const client = createAdminClient();
   if (requireWrite) await assertScopes(client);
@@ -262,7 +270,7 @@ async function loadStore({ requireWrite }) {
   // vocabulary keyed on a colour+size that means nothing on a multi-garment catalogue.
   const index = await ensureBodies();
   const variants = attachBodies(index, catalogue.variants);
-  const unmapped = unmappedHandles(index, variants);
+  const unmapped = unmappedHandles(index, variants, await declaredNonGarmentHandles());
   if (unmapped.length && requireWrite) {
     fail(
       `${unmapped.length} product(s) have no declared body: ${unmapped.join(', ')}. A write cannot ` +

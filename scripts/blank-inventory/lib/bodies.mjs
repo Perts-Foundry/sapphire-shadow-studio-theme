@@ -87,14 +87,24 @@ export function attachBodies(index, variants) {
 
 /**
  * Products on the live store that the manifest does not cover.
+ *
+ * A declared non-garment (`"body": null`) is covered, not missing, so it must be passed in and
+ * skipped. Excluding it via `bodyIndex` alone is not possible: that index holds garments only. The
+ * exclusion used to fall out of "has no tracked variants", which held while the gift card was the
+ * only non-garment; the tote is a declared non-garment that DOES track stock, so it fell through and
+ * every write path refused on a manifest that was already correct. An UNDECLARED product still
+ * lands here, which is the loudness this check exists for.
+ *
  * @param {Map<string, string>} index
  * @param {object[]} variants
+ * @param {Set<string>|null} declaredNonGarment product handles the manifest declares with no body
  * @returns {string[]} product handles
  */
-export function unmappedHandles(index, variants) {
+export function unmappedHandles(index, variants, declaredNonGarment = null) {
   const seen = new Set();
   for (const v of variants) {
     if (v.tracked === false) continue;
+    if (declaredNonGarment?.has(v.productHandle)) continue;
     if (!index.has(v.productHandle)) seen.add(v.productHandle);
   }
   return [...seen].sort();
