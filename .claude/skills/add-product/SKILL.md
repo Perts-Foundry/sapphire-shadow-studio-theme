@@ -5,9 +5,9 @@ description: >-
   PR (catalogue.json, SKU tables, template, size chart, locales), the Admin completion (template
   suffix, SKUs, inventory, media, metafields, collections, ACTIVE, sales channels), and the
   verification pass, routing each surface to the skill that owns it and tracking progress in a
-  resumable per-product
-  state file. Use for a wholly new product, a new colour, a new size, or a new design value, from
-  first declaration to live and verified. Operator-invoked; it is a router and checklist that never
+  resumable per-product state file. Use for a wholly new product, a new colour, a new size, or a
+  new design value (a credential such as RN or NP on the Lead II line's Design option), from first
+  declaration to live and verified. Operator-invoked; it is a router and checklist that never
   writes to the live store or edits catalogue.json itself, so it is not for running any single
   surface alone (size-chart, sku, blank-inventory, product-images, applique-grid, seo-review own
   their surfaces and their own gates).
@@ -81,7 +81,7 @@ Fixed schema, nothing else:
   "version": 1,
   "handle": "", "title": "", "gid": "", "template_suffix": "",
   "body": "(the garment body key from catalogue.json, not the product description)",
-  "entry": "new-product | new-colour | new-size",
+  "entry": "new-product | new-non-garment | new-colour | new-size | new-design-value",
   "steps": { "<step-id>": { "done": true, "verified_at": "ISO date", "evidence": "" } }
 }
 ```
@@ -101,12 +101,14 @@ holds the completion check's concrete result (a path, an id, a count).
 | New non-garment (`body: null`, `line: null`; the tote is the model) | `catalogue.json` (product entry only) | catalogue.json, `scripts/sku/tables.json` (`segments: []` if option-less), `templates/product.<suffix>.json` with a `ProductDetails`-style `anchor_id`, `scripts/site-check/lib/markers.mjs` rule, the pinned-count tests listed in phase 1 | sku, product-images (the `<handle>_<shot>-<index>` filename form), seo-review; no size-chart, no blank-inventory, no photo-naming token |
 | New colour | `catalogue.json` (`colors`, and the body's colour list) | catalogue.json, `scripts/sku/tables.json` (colour code) | sku, product-images (alt text names the new colour), blank-inventory if the blank group changes, seo-review |
 | New size | `catalogue.json` (`sizes`, and the body's size list) | catalogue.json, `scripts/sku/tables.json` (size code), size-chart profile re-render | size-chart, sku, blank-inventory if shared-blank, seo-review |
-| New design value | Admin, as a product option value; no repo declaration (`catalogue.json` names only the `design` axis, never its values) | `scripts/sku/tables.json` (design code), `docs/sku-scheme.md` namespace list, `scripts/sku/test/derive.test.mjs` cross-product count | sku, blank-inventory (every new variant needs `custom.inventory_blank_sku`), product-images only if design-specific photos are wanted; **no seo-review**, since a design value adds no URL and no crawlable surface |
+| New design value | Admin, as a product option value; no repo declaration (`catalogue.json` names only the `design` axis, never its values) | `scripts/sku/tables.json` (design code), `docs/sku-scheme.md` (the namespace list AND the design count in the option-values paragraph, both hand-maintained and outside every marker region), `scripts/sku/test/derive.test.mjs` cross-product count | sku, blank-inventory (every new variant needs `custom.inventory_blank_sku`), product-images only if design-specific photos are wanted; **no seo-review**, since a design value adds no URL and no crawlable surface |
 
 All five entries start in phase 0 (Admin: create the product, or add the variants for the new
-colour/size/design, weights included) so the GID and variants exist before the repo PR; then phase 1
-covers only that entry's artifact set, and phases 2 and 3 run the sub-skills listed. Respect
-catalogue.json's two order contracts when proposing the diff (its own `comment` states them).
+colour/size/design, weights included) so the GID and variants exist before the repo PR; then
+phase 1 covers only that entry's artifact set, and phases 2 and 3 run the sub-skills listed.
+**Where a phase step and this table's Sub-skills column disagree about routing, this table wins**;
+the phase steps carry the defaults for a new product. Respect catalogue.json's two order contracts
+when proposing the diff (its own `comment` states them).
 
 ## Failure recovery
 

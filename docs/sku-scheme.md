@@ -67,7 +67,7 @@ command and by `npm run sku:tables`, so the two files cannot drift apart.
 vocabularies that happen to overlap:
 
 - `lead-ii` (Lead II Crewneck, Quarter-Zip, Vest): `RN`, `LPN`, `CNA`, `EMT`, `MDC` (Medic), `LVT`,
-  `RVT`, `CVT`, `NP` (Nurse Practitioner).
+  `RVT`, `CVT`, `NP`.
 - `huddle` (Huddle Crewneck): `NRS` (Nurse), `EMT`, `MDC` (Medic), `VTT` (Vet Tech).
 
 `EMT` and `MDC` intentionally mean the same thing in both namespaces. Codes must be unique within a

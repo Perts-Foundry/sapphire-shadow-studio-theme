@@ -41,7 +41,44 @@ disagreeing about whether the skill covers this case is the kind of gap that onl
 someone hits it, so the row went in here rather than being deferred: "New design value", named in
 full because a bare "design" collides with the Huddle applique patterns, which the SKU scheme
 explicitly excludes. The sentence after the table said "All three entries" while listing four; it
-now says five.
+now says five, and so does the state file's `entry` enum, which had named three of what were
+already four.
+
+**Adding the row was not the whole edit, and the reason generalises.** The row is a table of
+*conditionals*: no `catalogue.json` edit, no size chart, no seo-review, product-images only
+sometimes. The phase files are what a run actually reads, one step at a time, and none of them
+carried those conditions. So the table said one thing and the operative instructions said the
+opposite, in four places:
+
+- `phase-1-repo-pr.md` step 1 is "propose the `catalogue.json` diff FIRST", untagged and
+  unconditional, with a completion check the design entry cannot satisfy. Every other conditional
+  step in that file carries its condition in the tag; step 1 did not. A run reaching it with only
+  that step in context has no licence to skip, and the natural repair is to invent a design-values
+  list in `catalogue.json`, which the file's own `comment` and this repo's CLAUDE.md both forbid.
+  **A table cell in a different file is not a step tag.**
+- `phase-3-verify.md` step 3 routed `/seo-review` unconditionally; `phase-2-admin-completion.md`
+  step 4 routed `/product-images` unconditionally; `phase-1-repo-pr.md` step 5 routed
+  `/size-chart` for any garment. All three now carry the condition, and the sentence under the
+  entry-point table states which side wins when a phase step and the table disagree.
+- `phase-1-repo-pr.md` step 7 opened "**Every product addition** trips these pinned counts", which
+  a design value falsified: it adds no product, so only the `derive.test.mjs` cross-product moves.
+
+**The finding worth keeping is in `phase-0-admin-draft.md`, and it has live-store consequences.**
+That file's "Why draft-first" section explains the safety window between phases entirely in terms
+of a DRAFT product being invisible. **That window does not exist for any option-value entry.** A
+new colour, size or design value adds variants to a product that is already ACTIVE and published,
+so every new variant is purchasable the moment it is created, with no SKU until phase 2 step 2 and
+no `custom.inventory_blank_sku` until step 3: sellable stock that the SKU filters and the
+inventory-sync Flow cannot yet see. Nothing in the skill said so, and the pre-existing new-colour
+and new-size rows had the same exposure. Phase 0 now states it, along with the wrong fix it
+invites: taking the parent product back to DRAFT to close the window delists everything already
+selling on it.
+
+One small convention, recorded because it reads backwards otherwise: in the `docs/sku-scheme.md`
+design lists, a parenthetical marks a live option value that is **not** the code's expansion
+(`MDC` (Medic), `NRS` (Nurse), `VTT` (Vet Tech)). A code whose live value is already the
+`ABBREV (Expansion)` form is listed bare, which is why `NP` sits there as `NP` and not as
+`NP (Nurse Practitioner)`.
 
 **The live half is a runbook, not a follow-up nobody wrote down.** Taking NP live is in `TODO.md`,
 and its non-obvious cost is the blank-inventory backfill: 42 new variants span 42 distinct blank

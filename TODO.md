@@ -177,7 +177,7 @@ right now, and an empty heading with a live index entry is the residue this file
 - [ ] **Take the `NP (Nurse Practitioner)` design value live on the three Lead II products.** The
   repo half is done: `scripts/sku/tables.json` carries the `NP` code, `docs/sku-scheme.md` lists it,
   and the pinned cross-product in `scripts/sku/test/derive.test.mjs` is updated. The store half is
-  not. The runbook is the "live-store runbook" section of the PR that added the code row; in order:
+  not. The durable reasoning is in `release-notes.md` ("A credential costs one table row"); in order:
   add the option value in Admin on the crewneck, the quarter-zip and the women's vest (42 new
   variants, 18 + 18 + 6, the vest being Black-only), price them at $65 after confirming no active
   price list touches Lead II, set weights rather than inheriting the crewneck's known 0-lb ones, and
