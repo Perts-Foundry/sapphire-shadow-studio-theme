@@ -20,7 +20,11 @@ const script = path.join(here, '..', 'classify.mjs');
 const BRANDED = { alpha: 'branded alpha v2\n', beta: 'branded beta v1\n' };
 const STOCK = { alpha: 'stock alpha\n', beta: 'stock beta\n' };
 const VERSION = { alpha: 2, beta: 1 };
-const GID = 'gid://shopify/EmailTemplate/1234567890';
+// The shape Admin actually returns: the id segment is the template handle. The numeric one below
+// was the only shape any fixture used, which is how a numeric-only GID_RE shipped and refused all
+// 46 ids on the first sync that read them.
+const GID = 'gid://shopify/EmailTemplate/beta';
+const NUMERIC_GID = 'gid://shopify/EmailTemplate/1234567890';
 
 function root() {
   const r = mkdtempSync(path.join(tmpdir(), 'ssb-classify-'));
@@ -98,6 +102,11 @@ test('parseObserved accepts the TSV and both JSON shapes, and refuses anything i
   assert.deepEqual(parseObserved(JSON.stringify([{ id: 'alpha', length: 9, fnv: 'deadbeef' }]))[0].id, 'alpha');
   assert.deepEqual(parseObserved(JSON.stringify({ alpha: { length: 9, fnv: 'deadbeef', stamp: 'alpha 2' } }))[0].stamp, { id: 'alpha', version: 2 });
   assert.equal(parseObserved(JSON.stringify([{ id: 'alpha', length: 9, fnv: 'deadbeef', gid: GID }]))[0].gid, GID);
+  assert.equal(
+    parseObserved(`alpha\t9\tdeadbeef\tnone\t${NUMERIC_GID}`)[0].gid,
+    NUMERIC_GID,
+    'a numeric id segment is still accepted',
+  );
   const refusals = [
     ['alpha\t9', /needs at least id, length and fnv/],
     ['Alpha\t9\tdeadbeef', /is not an id/],

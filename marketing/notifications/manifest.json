@@ -67,8 +67,17 @@
       "stockSha256": "e02cfecc605e048be197ed82031c6c5f4b36cc5d968b547a03036909d805c828",
       "stockLength": 3154,
       "subject": "Your email address has been changed",
-      "version": 1,
-      "brandedSha256": "723db31ed9ea12b497d031661436fbb4d33ef67c4637e555a503ffd56b2a2a2d"
+      "version": 2,
+      "brandedSha256": "1efb7b90b03c850db1b086364b8248af56440245e9133c288861aa39f1c3548d",
+      "override": {
+        "reason": "This store copy of the stock template carries a shop-level colour block that Shopify Admin injected after </head> (Customize email templates). Being after the head it overrides the brand palette, and the render check caught it as page-colour: <body> is #ffffff. No other stock snapshot has one. Dropping it lets lib/brand-style.css be the last word.",
+        "replace": [
+          {
+            "from": "\n\n  <style>\n    body {\n      color: #212529;\n      background-color: #ffffff;\n    }\n    \n    p, td, th, div, span {\n      color: #212529;\n    }\n    \n    strong, b {\n      color: #000000;\n    }\n    \n    a {\n      color: #0056b3;\n      text-decoration: none;\n    }\n    \n    a:hover,\n    a:focus {\n      color: #004085;\n      text-decoration: underline;\n    }\n  </style>",
+            "to": ""
+          }
+        ]
+      }
     },
     "customer_marketing_confirmation": {
       "stockSha256": "7c9e9db7ebb7d3184201b1b135a67114bc57488431752e2fcf2b38b0dd737678",
