@@ -1,8 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isEffectivelyEmpty, breadcrumbCollectionFindings, breadcrumbBlankOkHandles } from '../admin.mjs';
+import {
+  isEffectivelyEmpty, breadcrumbCollectionFindings, breadcrumbBlankOkHandles,
+  breadcrumbPreferredHandleFindings,
+} from '../admin.mjs';
 import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
-import { WARN } from '../lib/checks.mjs';
+import {
+  WARN, ERROR, BREADCRUMB_PREFERRED_HANDLES, BREADCRUMB_EXCLUDED_HANDLES,
+} from '../lib/checks.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
   assert.equal(isEffectivelyEmpty(''), true);
@@ -40,6 +45,55 @@ test('every nil cause of an unset breadcrumb metafield reads the same', () => {
   assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-missing'));
   assert.deepEqual(f.map((x) => x.url), ['admin:product/a', 'admin:product/b', 'admin:product/c']);
   assert.ok(f.every((x) => x.severity === WARN));
+});
+
+// The regression this pair exists for: `healthcare` sat in the preferred list while the store's
+// collection was `healthcare-collection`. The snippet skips an unresolvable handle without error,
+// so Healthcare Collection could never win step 3 and nothing reported it.
+test('a preferred handle naming no collection is an ERROR', () => {
+  const f = breadcrumbPreferredHandleFindings([
+    { handle: 'the-vitals-collection' }, { handle: 'featured' },
+  ]);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].check, 'breadcrumb-preferred-handle-missing');
+  assert.equal(f[0].severity, ERROR);
+  assert.match(f[0].detail, /healthcare-collection/);
+});
+
+test('preferred handles that all resolve produce no finding', () => {
+  const collections = BREADCRUMB_PREFERRED_HANDLES.map((handle) => ({ handle }));
+  assert.deepEqual(breadcrumbPreferredHandleFindings([...collections, { handle: 'extra' }]), []);
+});
+
+// Absence only means something over a complete list. A truncated read would otherwise report every
+// handle sitting on an unread page as missing, burying the real fault (admin-read-truncated).
+test('a truncated collections read suppresses the check rather than guessing', () => {
+  assert.deepEqual(breadcrumbPreferredHandleFindings([], false), []);
+  assert.equal(breadcrumbPreferredHandleFindings([], true).length, BREADCRUMB_PREFERRED_HANDLES.length);
+});
+
+// checks.mjs only quotes these lists; snippets/breadcrumbs.liquid is what actually scans them. Both
+// pairs carry a "change them together" comment, and nothing enforced either. These do. Parsing the
+// Liquid is deliberate: a copy of the list in a fixture would drift in exactly the same silence.
+const liquidSource = async () => {
+  const { readFile } = await import('node:fs/promises');
+  return readFile(new URL('../../../snippets/breadcrumbs.liquid', import.meta.url), 'utf8');
+};
+const assignedList = (liquid, name) => {
+  const m = liquid.match(new RegExp(`assign ${name}\\s*=\\s*'([^']+)'\\s*\\|\\s*split:\\s*','`));
+  assert.ok(m, `could not find "assign ${name} = '...' | split: ','" in snippets/breadcrumbs.liquid`);
+  return m[1].split(',');
+};
+
+test('the preferred-handle list matches the one the snippet scans', async () => {
+  assert.deepEqual(assignedList(await liquidSource(), 'preferred_handles'), BREADCRUMB_PREFERRED_HANDLES);
+});
+
+test('the excluded-handle list matches the one the snippet scans', async () => {
+  assert.deepEqual(
+    assignedList(await liquidSource(), 'excluded_handles').sort(),
+    [...BREADCRUMB_EXCLUDED_HANDLES].sort(),
+  );
 });
 
 // A hand-authored manifest with TWO non-garment products, one whose handle and template suffix are

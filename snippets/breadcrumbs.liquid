@@ -99,11 +99,15 @@
         # "Home > All Products > ..." defect again, and it gives newly created
         # products a sane parent before anyone opens Admin. Keep it in sync when
         # collections are added, removed, or renamed: a handle that no longer
-        # exists is still skipped without error, but that quiet failure is now
-        # covered by the `product-breadcrumb-collection-missing` check in
-        # scripts/seo-review/admin.mjs rather than by nothing.
+        # exists is still skipped without error. Two checks cover that now, and
+        # neither existed when `healthcare` sat here against a store whose
+        # collection was `healthcare-collection`: seo-review's
+        # `breadcrumb-preferred-handle-missing` fails on a handle that names no
+        # collection, and an admin.test.mjs case parses this very line and
+        # asserts it equals BREADCRUMB_PREFERRED_HANDLES in
+        # scripts/seo-review/lib/checks.mjs, so the two cannot drift apart.
         if parent_collection == blank
-          assign preferred_handles = 'healthcare,the-vitals-collection,featured' | split: ','
+          assign preferred_handles = 'healthcare-collection,the-vitals-collection,featured' | split: ','
 
           for preferred_handle in preferred_handles
             for product_collection in product.collections

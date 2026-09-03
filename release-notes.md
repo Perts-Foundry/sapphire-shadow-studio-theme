@@ -1,5 +1,79 @@
 # Release Notes
 
+## ACTIVE was never the same as published (unreleased)
+
+The first `add-product` run finished with a product that was ACTIVE, media-complete, SEO-filled and
+in two collections, and that no customer could see. Status and sales-channel membership are separate
+fields in Shopify, and the skill only ever set the first. The Admin Publishing card said "This
+product is not published anywhere"; nothing else did.
+
+**What makes this class of defect worth a note is that every signal available read green.** The
+completion check was `status ACTIVE via read-only query`, and it passed. CI has no view of Admin
+state. The post-deploy smoke probes the sitemap, and an unpublished product is not in the sitemap,
+so it was not skipped or failed, it was absent, which reads identically to a store that never had
+it. `seo-review` crawls the same sitemap and was equally blind. The one tool positioned to notice,
+the phase-3 verification pass, was ordered to run the browser and crawl checks that cannot see it.
+So `publish` is now the last step of phase 2 and `published-check` is the FIRST step of phase 3,
+ahead of the checks that would otherwise green around the hole, and the ground rules say plainly
+that `status == ACTIVE` is not evidence for it.
+
+**It is Admin-only, which is why no amount of care in the API path would have caught it.**
+`publishablePublish` requires the `write_publications` scope; the app grants `write_products` and
+`write_files`. An API attempt returns ACCESS_DENIED rather than doing anything. Category metafields
+are the same shape and are now documented alongside it: their values are metaobject references under
+Shopify's reserved `shopify--*` definitions, which Admin creates the first time a value is picked,
+so on a category no product has used before there is literally nothing for `metafieldsSet` to
+reference.
+
+**The pre-PR review found the fix half-applied, and two of its findings were wrong in useful ways.**
+Four reviewers ran against the first version of this change. The doc-sync and code-review passes both
+caught the same real miss: the handle was corrected in the snippet and the constant but in none of the
+prose that quotes them, including the per-product value table in
+`docs/breadcrumb-collection-metafield.md`, which told the operator to set a **Collection reference**
+metafield to a handle that does not exist. That table was unsettable, not merely stale.
+
+Two findings were refuted by measurement, and both refutations are now recorded in the skill because
+the reasoning behind them was sound and would recur. The prompt review argued the new completion check
+was unrunnable, reasoning that `resourcePublicationsV2 { publication { name } }` needs
+`read_publications` and the app grants neither publications scope; the read in fact works, and only the
+write is denied. It then proposed `onlineStoreUrl` as a scope-free substitute, which is worse than the
+thing it replaces here: that field is null on **every** product in this store, published or not,
+because the storefront is password-protected. It would have failed the long-live `shift-fuel-crewneck`
+exactly as readily as an invisible product, and then started working silently the day the password
+comes off. Both the working check and the trap are now stated in `SKILL.md` and phase 2 step 9.
+
+**One review finding was a real hole in the fix.** "Lists the same channels as a sibling" passes
+vacuously when both sets are empty, so the check would have greened on precisely the broken product it
+was written for, compared against any other unpublished one. It now requires a non-empty set, a sibling
+that is itself reachable and named by handle, and forbids a sibling added in the same run.
+
+## A dead handle in the breadcrumb preferred list (unreleased)
+
+`snippets/breadcrumbs.liquid` scanned `healthcare,the-vitals-collection,featured` for a product's
+breadcrumb parent. The store's collection is `healthcare-collection`, so the first entry matched
+nothing, and the snippet skips an unresolvable handle without error. Healthcare Collection could
+therefore never win step 3 of the cascade, and every product in more than one collection fell
+through to step 4, whose order is whatever `product.collections` happens to return. That is the same
+arbitrary-parent defect the preferred list exists to prevent.
+
+**The comment above the list claimed the failure was covered, and it was not.** It pointed at
+`product-breadcrumb-collection-missing`, which fires on a product whose metafield is unset. It says
+nothing about whether the handles in the list resolve. Two checks now cover the real thing: a new
+`breadcrumb-preferred-handle-missing` ERROR in `scripts/seo-review/admin.mjs`, which needed no new
+query because the admin read already fetches every collection; and a unit test that parses the
+`preferred_handles` line out of the snippet and asserts it equals `BREADCRUMB_PREFERRED_HANDLES` in
+`scripts/seo-review/lib/checks.mjs`. Both files carried a "change them together" comment and nothing
+enforced it. The severity is ERROR rather than WARN deliberately: a missing metafield has a working
+fallback behind it, while a dead entry silently removes a rung from the cascade.
+
+## A `node_modules/` ignore rule does not ignore a symlink (unreleased)
+
+Working in a `.claude/worktrees/` worktree, the obvious way to get dependencies is to symlink the
+primary checkout's `node_modules`. A `node_modules/` pattern with a trailing slash matches
+directories only, so the symlink showed up as untracked and committable, and its target is an
+absolute path containing the developer's username, which the Sensitive Content rules forbid
+committing. The trailing slash is gone.
+
 ## Consent stops being a recitation (unreleased)
 
 The absolutes required the operator's own sentence to NAME the live write, and disqualified every

@@ -82,8 +82,17 @@ Admin mode also reads the `custom.breadcrumb_collection` product metafield that
 and both are keyed per product (`admin:product/<handle>`) rather than aggregated, so the baseline
 differ names which product regressed instead of moving a counter. The catch-all variant is the more
 valuable of the two: a value pointing at `all`, `frontpage`, or `all-products` is ignored by the
-theme while still looking correct in Admin. `BREADCRUMB_EXCLUDED_HANDLES` in `lib/checks.mjs`
-mirrors the snippet's exclusion list; change them together. Products documented as
+theme while still looking correct in Admin. A third breadcrumb finding,
+`breadcrumb-preferred-handle-missing`, backs a different rung: it is **ERROR**, and it is keyed
+`admin:collection/<handle>` rather than per product, because it reports on the theme's hardcoded
+preferred-handle list rather than on any one product. It fires when an entry in that list names no
+collection in the store, which the snippet skips in silence. ERROR rather than WARN because the two
+metafield findings each have a working fallback behind them, while a dead entry removes a rung from
+the cascade outright and drops every multi-collection product to the arbitrary last resort. It is
+the only breadcrumb check that can red a run. Two constants in `lib/checks.mjs` mirror the snippet
+and must change with it: `BREADCRUMB_EXCLUDED_HANDLES` mirrors `excluded_handles`, and
+`BREADCRUMB_PREFERRED_HANDLES` mirrors `preferred_handles`. Both pairs are pinned by tests in
+`test/admin.test.mjs` that parse the snippet, so drift fails the suite. Products documented as
 intentionally blank are exempt from the missing-value WARN so the check can reach zero findings.
 That set is derived: `breadcrumbBlankOkHandles()` in `admin.mjs` reads every product `catalogue.json`
 declares with `"body": null`, which is exactly the class with no parent collection to name, and

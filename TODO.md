@@ -110,3 +110,46 @@ right now, and an empty heading with a live index entry is the residue this file
   row byte-identically (or be added to `NO_SHIPPING_ROW` with a reason) and must state no
   business-day duration, both enforced by `scripts/policies/test/templates-cohesion.test.mjs`. The
   skill already names the size-chart and Product Details anchor rules for the same reason.
+
+- [ ] **Review the first two `add-product` runs for skill optimisations.** The Shift Fuel Tote run
+  (2026-09-02/03, state file `~/.local/state/add-product/shift-fuel-tote.json`, PR #149 for phase 1)
+  was the first end-to-end use and the first non-garment. It surfaced enough process defects to be
+  worth a deliberate pass over the skill rather than more one-off patches. Read the state file's
+  `evidence` strings first: they are a step-by-step record of what was actually verified and how.
+  Seed findings from that run, all still worth generalising:
+  - **A step existed nowhere and nothing caught it.** The product sat ACTIVE, media-complete and in
+    two collections while published to zero sales channels, so it was invisible and absent from the
+    sitemap. Fixed by adding `publish` to phase 2 and `published-check` to phase 3. Ask what else
+    lives in that class: an Admin field with no repo representation, no CI check, and no crawl
+    coverage, where the natural completion signal (`status == ACTIVE`) reads green.
+  - **Preflight the scopes phase 2 needs, at its start.** `publishablePublish` needs
+    `write_publications`, which the app does not grant, and that surfaced only as a mid-run
+    ACCESS_DENIED. The `admin-manual, policy` vs `admin-manual, api-blocked` tags now record which
+    steps the API cannot do, but nothing checks the granted scopes up front the way
+    `product-images` already does. That one step turns every such surprise into a phase-start fact.
+  - **Exit lines are not evidence.** `upload-product-media.mjs` printed `created=4` for a run whose
+    first attempt had died with a bare `Fatal: fetch failed`; only a read-back distinguished them.
+    Every completion check should name the read-only query that proves it, which most already do.
+  - **No retry around live Admin writes.** The uploader has none, and this run hit three transient
+    WSL2 IPv6/IPv4 connect failures. It survived because a re-run reported `skip(dupe)`, so the
+    write path is idempotent; that property is load-bearing and currently untested and undocumented.
+  - **Which checkout to run from is unstated.** The media step only worked from the branch carrying
+    the non-garment filename parser; the main checkout rejected all four files.
+  - **Approved artefacts were overwritten with no backup.** An approved final image was replaced
+    between sessions and recovered only because the operator had shared it to Discord. Consider a
+    rule that anything past an approval gate is copied aside before being rewritten.
+  Deliverable: proposed edits to `.claude/skills/add-product/*` (and the sub-skills where the defect
+  is theirs), presented for review, not applied blind. Delete this item when that pass lands.
+
+- [ ] **Give `site-check` a publication check, so "ACTIVE but invisible" is caught by a machine.**
+  `scripts/site-check/lib/admin-checks.mjs`'s `product-status` check is the one that read green on a
+  product published to zero sales channels: it tests `status === 'ACTIVE'` and stops there.
+  `scripts/site-check/lib/admin-queries.mjs` already selects per-product fields on an authenticated
+  query, so adding `resourcePublicationsV2(first: 25) { nodes { isPublished publication { name } } }`
+  and a `product-unpublished` ERROR needs no new query and no new scope; the read works today, only
+  the write scope is missing. That covers every product forever, including ones added outside
+  `add-product` and channels changed months later, which is what the skill's prose cannot do.
+  **Do not use `onlineStoreUrl` for this**, the obvious-looking field: it is null on every product
+  in this store, published or not, because the storefront is password-protected, so it would fail
+  every product until the password comes off and then silently start working. Verified 2026-09-03
+  against both `shift-fuel-tote` and the long-live `shift-fuel-crewneck`.

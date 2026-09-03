@@ -3,8 +3,9 @@ name: add-product
 description: >-
   Orchestrate adding a product to the store end to end: sequence the Admin draft, the single repo
   PR (catalogue.json, SKU tables, template, size chart, locales), the Admin completion (template
-  suffix, SKUs, inventory, media, metafields, collections, ACTIVE), and the verification pass,
-  routing each surface to the skill that owns it and tracking progress in a resumable per-product
+  suffix, SKUs, inventory, media, metafields, collections, ACTIVE, sales channels), and the
+  verification pass, routing each surface to the skill that owns it and tracking progress in a
+  resumable per-product
   state file. Use for a wholly new product, a new colour, or a new size, from first declaration to
   live and verified. Operator-invoked; it is a router and checklist that never writes to the live
   store or edits catalogue.json itself, so it is not for running any single surface alone
@@ -26,8 +27,9 @@ its steps, tags, and per-step completion checks):
 - `phase-0-admin-draft.md`: DRAFT product in Admin, full variant matrix, GID recorded.
 - `phase-1-repo-pr.md`: the one repo PR, catalogue.json through locales, ending at the operator's
   pre-PR / merge / deploy handoff.
-- `phase-2-admin-completion.md`: template suffix, sub-skill runs, metafields, collections, ACTIVE.
-- `phase-3-verify.md`: preview checks, seo-review, converging verifies.
+- `phase-2-admin-completion.md`: template suffix, sub-skill runs, metafields, collections, ACTIVE,
+  publish to sales channels.
+- `phase-3-verify.md`: published check, preview checks, seo-review, converging verifies.
 
 ## Ground rules
 
@@ -41,8 +43,13 @@ its steps, tags, and per-step completion checks):
   presents it; the edit lands only through the operator's reviewed PR, never applied by a script
   or an unattended run.
 - **Step tags.** `repo-edit`: the skill drafts, the operator reviews in the PR. `route:/<skill>`:
-  hand off to that skill and let it run to its own end. `admin-manual`: the operator performs it
-  in the Admin UI; the skill verifies afterward via read-only queries. `verify`: read-only check.
+  hand off to that skill and let it run to its own end. `verify`: read-only check.
+  `admin-manual` always carries its reason, because the two kinds recover differently:
+  `admin-manual, policy` means an API path exists and the no-live-write rule makes it a UI step;
+  `admin-manual, api-blocked` means the API cannot do it at all, and the step names the missing
+  capability. Never retry an api-blocked step through the API hoping for a different answer, and
+  never assume a policy step is api-blocked. The skill verifies both afterward via read-only
+  queries.
 - **Return contract.** A step is complete only when its named completion check passes (an
   artifact exists, a script exits clean, a read-only query returns the expected fact). Never mark
   a step done because the conversation moved on.
@@ -109,6 +116,7 @@ catalogue.json's two order contracts when proposing the diff (its own `comment` 
 | Admin fact drifted (title, variants, template suffix changed by hand) | every step whose completion check reads that fact | re-verify from phase 0's checks forward; correct state to reality |
 | Sub-skill run abandoned mid-gate | that `route:` step | re-route; the sub-skill's own re-run rules govern (its artifacts are spent, not resumable) |
 | State file lost or unreadable | all | rebuild by running every completion check from phase 0; nothing is trusted from memory |
+| Published to no channel, or a channel added store-wide since the run | `publish`, `published-check` | back to phase 2 step 9; re-read the channel list off a reachable sibling, never off the state file |
 
 ## Cross-phase traps (owned by no sub-skill)
 
@@ -117,10 +125,24 @@ catalogue.json's two order contracts when proposing the diff (its own `comment` 
 - **Draft first.** The Admin DRAFT (phase 0) precedes the repo PR so `catalogue.json` ships with
   the real GID in one PR; a DRAFT product is fully visible to the Admin API, so the cohesion
   gate's live checks pass while the storefront shows nothing.
-- **ACTIVE last, and only after the template deploy is verified.** The post-deploy smoke probes
-  every published product from the sitemap; a product set ACTIVE before its template exists on the
-  live theme breaks every later deploy. A DRAFT product is not in the sitemap, which is why the
-  whole flow is safe in between.
+- **ACTIVE is not the end, and not before the template deploy is verified.** The post-deploy smoke
+  probes every published product from the sitemap; a product set ACTIVE before its template exists
+  on the live theme breaks every later deploy. Sitemap presence needs ACTIVE **and** an Online Store
+  publication, so DRAFT keeps a product out and so, accidentally, does an unpublished ACTIVE one.
+  That accident is the next bullet.
+- **Never report a product as live on `status == ACTIVE` alone; ACTIVE and published are
+  independent fields.** A product can be ACTIVE, media-complete, in collections, and published to
+  nothing, in which case it is invisible to every customer and absent from the sitemap. Nothing
+  catches this: not CI, not the deploy smoke, not `seo-review` (its crawl reads the sitemap the
+  product is missing from), and not `site-check`, whose `product-status` check reads Admin status
+  and treats ACTIVE as healthy with no publication awareness. The Admin Publishing card reading
+  "This product is not published anywhere" is the only signal, and it is easy to walk past.
+  The check is `resourcePublicationsV2`, phrased identically in phase 2 step 9 and phase 3 step 1.
+  Publishing itself is Admin-only: `publishablePublish` needs `write_publications`, which this app
+  does not grant, though the matching **read** does work.
+  **Do not substitute `onlineStoreUrl` for it.** It reads null on every product in this store,
+  published or not, because the storefront is password-protected, so a null tells you nothing until
+  the password comes off.
 
 Everything surface-specific is a pointer, and the owning document is authoritative when they
 disagree: template cloning and the product-card block (`docs/theme-conventions.md`), structured
