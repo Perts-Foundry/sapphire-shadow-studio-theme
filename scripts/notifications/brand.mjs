@@ -303,8 +303,11 @@ export function brandCore(stock, { id, css, social, header, override }) {
     for (const [a, b] of logos) edits.push([a, b, '']);
   }
   // The `replace` override: exact substrings swapped for exact substrings, each found exactly once
-  // outside a Liquid comment. For a stock markup bug the template must carry as long as Shopify
-  // ships it; the manifest entry's reason says which.
+  // outside a Liquid comment. For markup the template must carry as long as the store's copy ships
+  // it; the manifest entry's reason says which. That covers two cases, and they are not the same:
+  // a stock markup bug Shopify ships (order_invoice, pending_payment_failure), and a block Admin
+  // INJECTS into this store's copy, which is what customer_email_address_changed_confirmation's
+  // colour block is (marketing/notifications/README.md explains it).
   if (override && override.replace !== undefined) {
     if (!Array.isArray(override.replace) || override.replace.length === 0) {
       throw new BrandError(id, 'replace', 'override.replace must be a non-empty array');

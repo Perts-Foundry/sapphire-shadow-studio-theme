@@ -34,14 +34,17 @@ STOP, and it accepts the short window during which that template sends stock, un
      on: turn it off and re-record, or record it and expect to carry an `override.replace` that
      drops the block. Do not sync a template in that state (`marketing/notifications/README.md`
      has the whole explanation).
-   - **A dropped `override` is a decision to re-make, not a diff to wave through.**
-     `record-stock.mjs` deliberately drops any `override` whose anchored stock content changed
-     (`record-stock.mjs:53-64`) and says so on stderr; the next `generate` then refuses rather
-     than resolving a stale anchor against text that moved. When that happens, the fix that
-     override encoded must be re-decided before the next `generate`: work out what the override
-     was for, whether the change removes the need for it, and re-add it against the new anchor if
-     it does not. Report the dropped field and what it was for; never re-add it unchanged just to
-     make the refusal go away.
+   - **A dropped `override` or `skip` is a decision to re-make, not a diff to wave through.**
+     `record-stock.mjs`'s stale-override block in `record()` drops **both** fields whenever the
+     snapshot's hash changed at all, not only when the change touched an anchor, and says so on
+     stderr. **Do not rely on the next `generate` to refuse.** It refuses only where an anchor it
+     must resolve has gone (`footerAnchor`, `styleAnchor`); a dropped `header` or `replace` simply
+     brands from the stock anchors and produces a differently-branded file with no error, and a
+     dropped `skip` silently starts branding a template that had been excluded. Those are the
+     dangerous ones, because nothing announces them. When a field is dropped, re-decide what it
+     encoded before the next `generate`: work out what it was for, whether the change removes the
+     need for it, and re-add it against the new anchor if it does not. Report the dropped field and
+     what it was for; never re-add it unchanged just to make a refusal go away.
 
 4. Return to SKILL.md and run `change` from its step 2: the generator refuses if an anchor moved
    (re-add the override per the README), otherwise regenerate, verify, PR. Then `sync` for that id.

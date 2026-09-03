@@ -35,16 +35,35 @@ test('GID_RE lives in brand.mjs and no other module defines a gid shape of its o
   // agree and all three would be wrong, which is the incident's structure reproduced inside its own
   // regression test.
   assert.equal(CLASSIFY_GID_RE, GID_RE, 'classify.mjs re-exports brand.mjs\'s regex object, not a copy of it');
-  const dir = path.join(here, '..');
+  // Recursive and not limited to .mjs, because browser/ holds the probes and a future subdirectory
+  // would otherwise be outside the scan. The detector covers a regex literal, a RegExp built around
+  // EmailTemplate, and a string-prefix test, which is the copy that looks least like a regex and so
+  // is the one most likely to be written without noticing it is one.
   const offenders = [];
-  for (const name of readdirSync(dir).filter((f) => f.endsWith('.mjs'))) {
-    const text = readFileSync(path.join(dir, name), 'utf8');
-    // A regex literal or a RegExp construction that mentions EmailTemplate. brand.mjs is the one
-    // place allowed to build it.
-    const defines = /\/\^?gid:\\?\/\\?\/shopify/.test(text) || /new RegExp\([^)]*EmailTemplate/.test(text);
-    if (defines && name !== 'brand.mjs') offenders.push(name);
-  }
-  assert.deepEqual(offenders, [], 'a second copy of the gid shape is exactly the defect this file exists for; import brand.mjs\'s');
+  const walk = (d) => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(full);
+        continue;
+      }
+      if (!/\.(mjs|js)$/.test(entry.name)) continue;
+      const rel = path.relative(path.join(here, '..'), full);
+      if (rel === 'brand.mjs') continue;
+      const text = readFileSync(full, 'utf8');
+      const defines =
+        /\/\^?gid:\\?\/\\?\/shopify/.test(text) ||
+        /new RegExp\([^)]*EmailTemplate/.test(text) ||
+        /(startsWith|includes|indexOf)\(\s*['"`]gid:\/\/shopify/.test(text);
+      if (defines) offenders.push(rel);
+    }
+  };
+  walk(path.join(here, '..'));
+  assert.deepEqual(
+    offenders.filter((f) => !f.startsWith('test' + path.sep)),
+    [],
+    'a second copy of the gid shape is exactly the defect this file exists for; import brand.mjs\'s',
+  );
 });
 
 test('the gid shape and its example agree with each other', () => {
@@ -55,6 +74,14 @@ test('the gid shape and its example agree with each other', () => {
   assert.ok(GID_RE.source.startsWith('^gid:'), GID_RE.source);
   assert.ok(GID_RE.source.endsWith(`${GID_HANDLE_RE_SOURCE}$`), GID_RE.source);
   assert.ok(GID_RE.test(GID_EXAMPLE), 'the documented example must be accepted by the regex that documents it');
+  // Accepted by the regex is not enough. The example is the human-facing artifact of this whole
+  // incident: a refusal message showing a NUMERIC id segment is what sent a reader looking for a
+  // number that does not exist, and `gid://shopify/EmailTemplate/1234567890` would satisfy the
+  // line above perfectly well. Pin it to a template that actually exists.
+  assert.ok(
+    MANIFEST_GIDS.includes(GID_EXAMPLE),
+    `GID_EXAMPLE ${GID_EXAMPLE} names no template in manifest.json; the documented example must be a real handle`,
+  );
   assert.ok(GID_EXPECTED.includes(GID_EXAMPLE));
   assert.ok(GID_EXPECTED.includes(GID_HANDLE_RE_SOURCE), 'the refusal names the actual handle pattern, not a prose paraphrase');
 });
@@ -232,7 +259,12 @@ test('no tracked source or skill file still describes the gid as EmailTemplate/<
   // Every other site that encodes the shape, enumerated rather than assumed: the two callers, the
   // probe (which takes the gid by JSON path and imposes no pattern), and the prose that tells an
   // operator what to expect. A doc-surface grep is diff-scoped in review, so it lives here too.
-  const roots = [path.join(here, '..'), path.join(REPO_ROOT, '.claude', 'skills', 'notification-templates')];
+  const roots = [
+    path.join(here, '..'),
+    path.join(REPO_ROOT, '.claude', 'skills', 'notification-templates'),
+    // The README is the operator-facing half of the same explanation, so it is swept too.
+    path.join(REPO_ROOT, 'marketing', 'notifications'),
+  ];
   const offenders = [];
   for (const root of roots) {
     if (!existsSync(root)) continue;

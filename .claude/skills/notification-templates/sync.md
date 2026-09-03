@@ -22,7 +22,10 @@ pasted and pass.
    (`node scripts/notifications/state.mjs --store <store> show`); a refusal ends the run and is
    reported as such. For each `pending` entry, confirm `--status` on `--from` still carries that
    version and the repo file still has that FNV (`node scripts/notifications/dump.mjs --hash`);
-   drop stale entries with `pending-remove` and say so.
+   drop stale entries with `pending-remove` and say so. Check `state.mjs --store <store>
+   audit-show` here too: an `audit` run left in flight by an earlier session makes step 5's
+   recording step refuse, and the moment to discover that is now, not after 46 pastes. Clear it with
+   `audit-end --abandon` (it records nothing) or finish it first.
 
    **`--resume`** picks up a run recorded in the state file instead of planning a new one:
    `state.mjs --store <store> run-show`, confirm the recorded `sha` still resolves
@@ -242,12 +245,28 @@ pasted and pass.
    quarantined id still needs syncing, so it keeps its `pending` entry and its place on the
    backlog. Report the quarantine list in full with each verifier output verbatim, in an adaptive
    fence, and say plainly which ids are branded and which are still on their previous document,
-   because a quarantined run leaves the set inconsistent on purpose. Then `state.mjs --store
-   <store> run-end`. State plainly that `sync` proves Admin holds the bytes, and that the
-   sample-data render is what the render check proves.
+   because a quarantined run leaves the set inconsistent on purpose. State plainly that `sync` proves
+   Admin holds the bytes, and that the sample-data render is what the render check proves.
 
-   **Those readings are an `audit`'s readings, so record them instead of discarding them.** Write
-   them to an observed file and classify in one pass, exactly as `audit.md` step 1 does:
+   **Those readings are an `audit`'s readings, so record them instead of discarding them.**
+   Confirming a sync otherwise costs a second full browser pass, roughly 100 tool calls for 46 ids,
+   to re-read what this pass just read. Do this **before `run-end`**: the command below needs the
+   run's `startedAt`, `run-end` sets `run` to null, and nothing prints that value afterwards. Take
+   it from `run-show` while the run is still in flight.
+
+   **The rows have to cover the whole manifest, and the run alone does not.** `run.ids` holds only
+   the ids whose action was `paste`, so on any sync after the first most templates are already
+   `in-sync` and the run settles a handful. Build the observed file from **both** halves of this
+   run's own reading:
+
+   - **step 2's plan reading** for every manifest id the run did not settle. Those are genuine
+     Admin readings from this run, taken minutes earlier; nothing needs re-reading.
+   - **this step's fresh re-reading** for every id the run settled, which is `run.done` plus
+     `run.quarantine`.
+
+   That is one row per manifest id, in `audit.md` step 1's six-column row format. **Do not run
+   `audit-start` for this**; `sync`'s own `run` record is this run's resume record, and an
+   `auditRun` in flight makes the command below refuse.
 
    ```
    node scripts/notifications/classify.mjs --root <scratch> --observed <scratch>/observed-end.tsv \
@@ -256,15 +275,15 @@ pasted and pass.
      --source sync --started-at <the run's startedAt>
    ```
 
-   Confirming a sync afterwards otherwise costs a second full browser pass, roughly 100 tool calls
-   for 46 ids, to re-read what this pass just read. Three terms decide whether it records, and the
-   guard is in `state.mjs audit`, not in this file, because a rule in prose is one an agent can
-   skip and the subcommand can be invoked directly:
+   Three terms decide whether it records, and the guard is in `state.mjs audit`, not in this file,
+   because a rule in prose is one an agent can skip and the subcommand can be invoked directly:
 
-   - **scope**: the run targeted the **full manifest set**, not that the ids it happened to cover
-     added up to everything. A `sync` of a named id list never records a `lastAudit`, by design.
-   - **done**: `done` plus `quarantine`, which is every id the run settled. Read both; the
-     `render` for a quarantined id is `fail`.
+   - **scope**: the **results** must carry a row for every manifest id. The guard reads the results
+     file, not the run, so a `sync` over a named id list records nothing unless those names were
+     the whole manifest.
+   - **coverage**: the ids needing a fresh re-reading are `run.done` plus `run.quarantine`, which is
+     every id the run settled. (`pending-remove` above takes `run.done` alone; these are different
+     sets on purpose, because a quarantined id still needs syncing and keeps its backlog entry.)
    - **quarantine**: a first-class value in the recorded result, never a disqualifier. A
      quarantined id gets a row like any other. Were it a disqualifier, one permanently quarantined
      template would mean `sync` silently never records an audit again, with nothing said about why.
@@ -273,17 +292,20 @@ pasted and pass.
    block the record, and is named in the report. Suppressing a render check that ran and failed is
    worse than storing it.
 
-   When the run did not cover the whole manifest, `state.mjs audit --partial` prints the reason and
-   records nothing. Put that line in the report verbatim, as it prints:
+   Run it without `--partial` first. If the rows do not cover the manifest it refuses at exit 1;
+   re-run with `--partial`, which records nothing and prints the reason on stdout. Report that line
+   in full, including the `Missing:` list it continues with, which is the actionable half:
 
    ```
-   lastAudit not recorded: run covered n of m manifest ids. Run audit for a full verification.
+   lastAudit not recorded: run covered n of m manifest ids. Run audit for a full verification. Missing: <ids>.
    ```
 
    **A sync-recorded `lastAudit` is a self-attestation**: the same agent, in the same browser
    session, verifying its own writes. It is recorded with `source: "sync"`, everything that
    surfaces a `lastAudit` prints that source, and it does not substitute for a cold `audit` when
    the question is whether Admin has drifted since.
+
+   Then `state.mjs --store <store> run-end`.
 
    Report the re-paste count with those: how many ids needed a second paste attempt at step 3.4 or
    3.7, and which. Zero is worth stating too, because it is what makes a later non-zero mean

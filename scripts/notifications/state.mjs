@@ -15,6 +15,9 @@
 //   node scripts/notifications/state.mjs --store <handle> audit-start --ref <ref> --sha <sha>
 //        [--quick] [--batch <n>] [--force] [<id>...]
 //   node scripts/notifications/state.mjs --store <handle> audit-show
+//   node scripts/notifications/state.mjs --store <handle> audit-observed [--out <file>]
+//        (one row per id, complete rows only, duplicates resolved: classify.mjs refuses a
+//         duplicate id, which a resumed pass can legitimately produce)
 //   node scripts/notifications/state.mjs --store <handle> audit-end <results.json> | --abandon
 //   node scripts/notifications/state.mjs --store <handle> run-start <plan.json> --ref <ref> --sha <sha>
 //        [--on-render-fail halt|quarantine] [--batch <n>] [--force]
@@ -22,7 +25,7 @@
 //         is the only record of which ids failed and why)
 //   node scripts/notifications/state.mjs --store <handle> run-quarantine <id> <verifier.txt>
 //   node scripts/notifications/state.mjs --store <handle> run-show
-//   node scripts/notifications/state.mjs --store <handle> run-end
+//   node scripts/notifications/state.mjs --store <handle> run-end [--reason done|halt]
 //     [--root <dir>]   the checkout whose manifest defines the valid ids (tests)
 //     [--state-dir <dir>]   override the state directory (tests)
 //
@@ -65,7 +68,7 @@
 // failed id unsettled, `nextId` would still point at it, and a later `sync --resume` would repaste
 // the template that just failed, under the original approval, for as many laps as it is resumed.
 
-import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, lstatSync, realpathSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, lstatSync, renameSync } from 'node:fs';
 import { join, resolve, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -166,25 +169,24 @@ export function checkObservedPath(value, { store, token, dir, fail }) {
   if (!isAbsolute(value)) fail(`auditRun.observedPath ${JSON.stringify(value)} is not absolute`);
   const segments = value.split(sep);
   if (segments.includes('..') || segments.includes('.')) fail(`auditRun.observedPath ${JSON.stringify(value)} has a . or .. segment`);
+  // The path is not sanitised, it is REBUILT: there is exactly one accepted value per store and
+  // token, both of which are shape-checked, so the string equality is what holds the boundary. A
+  // realpath comparison against the state directory used to sit here too and was unreachable: the
+  // two sides resolve the same prefix by construction, so it could never differ.
   const expected = observedPathFor(store, token, dir);
   if (value !== expected) fail(`auditRun.observedPath ${JSON.stringify(value)} is not this run's file ${JSON.stringify(expected)}`);
-  if (existsSync(value)) {
-    const st = lstatSync(value);
+  // lstat rather than existsSync, because existsSync FOLLOWS the link and answers false for a
+  // dangling symlink. That skipped every check below, and the write that follows would then have
+  // followed the link and created its target, wherever that pointed.
+  let st = null;
+  try {
+    st = lstatSync(value);
+  } catch (err) {
+    if (err.code !== 'ENOENT') fail(`auditRun.observedPath ${JSON.stringify(value)} cannot be inspected: ${err.message}`);
+  }
+  if (st) {
     if (st.isSymbolicLink()) fail(`auditRun.observedPath ${JSON.stringify(value)} is a symlink`);
     if (!st.isFile()) fail(`auditRun.observedPath ${JSON.stringify(value)} is not a regular file`);
-    // The equality above already pins the basename and the directory string; realpath is what
-    // catches a symlinked ancestor pointing the whole directory somewhere else.
-    let real;
-    let realDir;
-    try {
-      real = realpathSync(value);
-      realDir = realpathSync(dir);
-    } catch (err) {
-      fail(`auditRun.observedPath ${JSON.stringify(value)} does not resolve: ${err.message}`);
-    }
-    if (real !== join(realDir, `observed-${store}-${token}.tsv`)) {
-      fail(`auditRun.observedPath ${JSON.stringify(value)} resolves to ${JSON.stringify(real)}, outside the state directory`);
-    }
   }
   return value;
 }
@@ -214,7 +216,11 @@ export function parseObservedProgress(text, { auditRun, fail = (m) => { throw ne
   if (typeof text !== 'string' || text.trim() === '') fail(`the observed file ${auditRun.observedPath} is empty; end this run with audit-end --abandon rather than starting the pass over`);
   if (Buffer.byteLength(text, 'utf8') > OBSERVED_MAX_BYTES) fail(`the observed file ${auditRun.observedPath} is larger than ${OBSERVED_MAX_BYTES} bytes, which is not this file`);
   const lines = text.split('\n');
-  const torn = lines[lines.length - 1] !== '' ? lines.pop() : null;
+  // The final element is always popped: on a well-formed file it is the empty string a trailing
+  // newline leaves, and on an interrupted one it is the torn row. Leaving the empty one in place
+  // counted it as a line, which put the row cap off by one against a file exactly at the cap.
+  const last = lines.pop();
+  const torn = last === '' ? null : last;
   if (lines.length > OBSERVED_MAX_ROWS) fail(`the observed file ${auditRun.observedPath} holds more than ${OBSERVED_MAX_ROWS} lines, which is not this file`);
   const header = observedHeader(auditRun.token, auditRun.startedAt, auditRun.sha).trimEnd();
   const firstLine = (lines[0] === undefined ? '' : lines[0]).replace(/\r$/, '');
@@ -230,7 +236,10 @@ export function parseObservedProgress(text, { auditRun, fail = (m) => { throw ne
     if (i === 0) continue;
     const line = raw.replace(/\r$/, '');
     if (line.trim() === '' || line.startsWith('#')) continue;
-    const cols = line.split('\t');
+    // Trimmed, because classify.mjs trims the same columns of the same file (classify.mjs's
+    // parseObserved). Untrimmed here, a row with incidental whitespace classified fine and was then
+    // hard-refused by audit-show, which is two readers of one format disagreeing.
+    const cols = line.split('\t').map((c) => c.trim());
     const where = `${auditRun.observedPath} line ${i + 1}`;
     if (cols.length !== OBSERVED_FIELDS) fail(`${where} has ${cols.length} tab-separated field(s), not ${OBSERVED_FIELDS}: ${JSON.stringify(line)}`);
     const [id, lengthText, fnv, stamp, gid, readAt] = cols;
@@ -298,9 +307,12 @@ export function validate(state, store, ids, { dir = stateDir() } = {}) {
     if (typeof p.branch !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(p.branch)) fail(`pending[${i}].branch is not a branch name`);
     if (!Number.isInteger(p.pr) || p.pr < 1) fail(`pending[${i}].pr is not a PR number`);
   }
-  if (state.lastAudit !== undefined && state.lastAudit !== null) {
+  if (state.lastAudit !== null) {
     const a = state.lastAudit;
-    if (typeof a !== 'object' || Array.isArray(a)) fail('lastAudit is not an object or null');
+    // An absent key is a refusal, as it was before schemaVersion 2: `lastAudit` is one of the four
+    // fields every state file this tool writes carries, and a file missing one is not a file it
+    // wrote. (`run` and `auditRun` are the deliberate exceptions, each having been added later.)
+    if (!a || typeof a !== 'object' || Array.isArray(a)) fail('lastAudit is not an object or null');
     const knownAudit = new Set(['at', 'source', 'startedAt', 'results']);
     for (const k of Object.keys(a)) if (!knownAudit.has(k)) fail(`unknown field lastAudit.${k}`);
     if (!isIso(a.at)) fail('lastAudit.at is not ISO 8601');
@@ -526,7 +538,7 @@ function main(argv) {
   const store = get('--store');
   const root = get('--root') ? resolve(get('--root')) : REPO_ROOT;
   const dir = get('--state-dir') ? resolve(get('--state-dir')) : stateDir();
-  const flagsWithValue = new Set(['--store', '--root', '--state-dir', '--version', '--fnv', '--length', '--sha', '--ref', '--branch', '--pr', '--from-file', '--on-render-fail', '--batch', '--reason', '--source', '--started-at']);
+  const flagsWithValue = new Set(['--store', '--root', '--state-dir', '--version', '--fnv', '--length', '--sha', '--ref', '--branch', '--pr', '--from-file', '--on-render-fail', '--batch', '--reason', '--source', '--started-at', '--out']);
   const positional = args.filter((a, i) => !a.startsWith('--') && !flagsWithValue.has(args[i - 1]));
   const [command, ...rest] = positional;
   if (!store || !command) {
@@ -534,8 +546,8 @@ function main(argv) {
       'usage: state.mjs --store <handle> (show | seen <id> ... | pending-add <id> ... | pending-remove <id...> | ' +
         'audit <results.json> [--source sync|audit] [--started-at <iso>] [--partial] | ' +
         'audit-start --ref <ref> --sha <sha> [--quick] [--batch <n>] [--force] [<id>...] | audit-show | ' +
-        'audit-end <results.json> | audit-end --abandon | ' +
-        'run-start <plan.json> ... | run-quarantine <id> <verifier.txt> | run-show | run-end)',
+        'audit-observed [--out <file>] | audit-end <results.json> | audit-end --abandon | ' +
+        'run-start <plan.json> ... | run-quarantine <id> <verifier.txt> | run-show | run-end [--reason done|halt])',
     );
     return 2;
   }
@@ -698,6 +710,11 @@ function main(argv) {
     const ref = get('--ref');
     const sha = get('--sha');
     if (!ref || !sha) throw new StateError('audit-start needs --ref and --sha');
+    // Checked here as well as in validate(), because the observed file is stamped before the record
+    // is saved: without this, a refusal on either leaves a stamped file behind for a run that never
+    // started, and this file's rule is that a refused write leaves no artifact.
+    if (!/^[A-Za-z0-9._/-]+$/.test(ref)) throw new StateError(`--ref ${JSON.stringify(ref)} is not a ref name`);
+    if (!SHA_RE.test(sha)) throw new StateError(`--sha ${JSON.stringify(sha)} is not a commit sha`);
     // Sorted, so `next` cannot depend on the order the ids happened to be typed in: two sittings
     // of one pass have to agree about where to carry on.
     const requested = rest.length ? [...new Set(rest)].sort() : [...ids].sort();
@@ -759,6 +776,38 @@ function main(argv) {
     return 0;
   }
 
+  if (command === 'audit-observed') {
+    // The resume ledger tolerates a duplicate row for one id (the last one wins, which is what a
+    // re-read after an interruption produces); classify.mjs REFUSES a duplicate id outright, and
+    // deliberately so, because two readings for one id in a sync plan means the operator approves a
+    // table with the same template in it twice. Two readers of one file disagreeing is the drift
+    // shape this whole change exists to remove, so the resolution happens here, in code, rather
+    // than by an agent hand-editing an evidence file: this writes one row per id, complete rows
+    // only, in auditRun.ids order, ready for classify.mjs --observed.
+    if (!state.auditRun) {
+      console.log('no audit run in flight');
+      return 0;
+    }
+    const progress = parseObservedProgress(readObserved(state.auditRun), { auditRun: state.auditRun });
+    const lines = progress.done.map((id) => {
+      const r = progress.rows.get(id);
+      return `${r.id}\t${r.length}\t${r.fnv}\t${r.stamp}\t${r.gid}\t${r.readAt}`;
+    });
+    const text = lines.length ? lines.join('\n') + '\n' : '';
+    const out = get('--out');
+    if (out) {
+      writeFileSync(resolve(out), text, 'utf8');
+      console.log(
+        `${lines.length} row(s) -> ${resolve(out)}` +
+          (progress.duplicates.length ? `\nid(s) read more than once, latest row kept: ${progress.duplicates.join(', ')}` : '') +
+          (progress.remaining.length ? `\n${progress.remaining.length} id(s) not yet read: ${progress.remaining.join(', ')}` : ''),
+      );
+    } else {
+      process.stdout.write(text);
+    }
+    return 0;
+  }
+
   if (command === 'audit-end') {
     if (!state.auditRun) {
       console.log('no audit run in flight');
@@ -802,11 +851,16 @@ function main(argv) {
     state.lastAudit = { at: now, source: 'audit', startedAt: run.startedAt, results };
     state.auditRun = null;
     save(state, store, opts);
-    const carried = [...progress.rows.values()].filter((r) => r.readAt < run.startedAt).length;
+    // The read-time span, not a count of "carried-over" rows. Nothing here can tell which sitting
+    // read which row: every row is appended after the header is stamped, so a readAt earlier than
+    // startedAt is impossible and the check that looked for one was dead. The span is the honest
+    // signal, and it is what the report's provenance sentence is built from.
+    const readTimes = [...progress.rows.values()].map((r) => r.readAt).sort();
     console.log(
       `audit of ${Object.keys(results).length} id(s) recorded at ${now}, source audit, started ${run.startedAt} -> ${file}` +
         (progress.duplicates.length ? `\nid(s) read more than once, latest row used: ${progress.duplicates.join(', ')}` : '') +
-        (carried ? `\n${carried} row(s) predate this run's start; every row's readAt is in ${run.observedPath}` : ''),
+        `\nreadings span ${readTimes[0]} to ${readTimes[readTimes.length - 1]}; a row read before this sitting is inherited ` +
+        `evidence about that id as of its own read time, and every row's readAt is in ${run.observedPath}`,
     );
     return 0;
   }
@@ -932,7 +986,7 @@ function main(argv) {
   }
   console.error(
     `unknown command ${command}; expected one of show, seen, pending-add, pending-remove, audit, ` +
-      'audit-start, audit-show, audit-end, run-start, run-quarantine, run-show, run-end',
+      'audit-start, audit-show, audit-observed, audit-end, run-start, run-quarantine, run-show, run-end',
   );
   return 2;
 }

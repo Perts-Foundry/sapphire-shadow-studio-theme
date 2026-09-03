@@ -34,7 +34,9 @@ would have been green throughout):
   points, not just the exported regex, with a negative corpus on the other side (wrong resource,
   empty segment, whitespace, traversal, uppercase, a non-ASCII homoglyph, a full URL), because a
   regex widened to fix a false refusal is exactly when over-widening happens. Narrowing `GID_RE`
-  back to `[0-9]+` fails 10 tests across four files; that is the acceptance criterion.
+  back to `[0-9]+` fails 12 tests across three files; that is the acceptance criterion. Dropping
+  either anchor, allowing a slash or an uppercase letter, or writing a fresh copy of the shape into
+  `classify.mjs` each fail it too.
 
 **The refusal messages are coupled to the regex mechanically.** Both still said
 `EmailTemplate/<n>` after the regex was widened, which is the sentence a human read while 46 ids
@@ -89,8 +91,9 @@ Step 5 now classifies those readings and records them. Three things make that sa
   quarantined template would mean `sync` silently never records an audit again, with nothing said
   about why. `render` is `pass | fail | skipped`, and a `fail` is recorded and named in the
   report, because suppressing a render check that ran and failed is worse than storing it.
-- **`lastAudit` records its `source`.** It now has three writers, and a `sync`-recorded one is a
-  self-attestation: the same agent, in the same browser session, verifying its own writes.
+- **`lastAudit` records its `source`.** It now has two writers and three callers, and a
+  `sync`-recorded one is a self-attestation: the same agent, in the same browser session, verifying
+  its own writes.
   Everything that surfaces a `lastAudit` prints the source, and a `sync`-recorded one does not
   substitute for a cold `audit` when the question is whether Admin has drifted.
 
@@ -134,6 +137,25 @@ timestamp, the report says that carried-over rows are inherited evidence as of t
 time, and those timestamps are the compensating control. A bound would throw away a half-finished
 46-id pass on a clock rather than on anything about the readings.
 
+### One ledger, two readers, and the rule that they must agree
+
+The observed file is both the resume ledger and `classify.mjs`'s `--observed` input. The two
+readers disagreed twice, and both were caught in review rather than in use:
+
+- **Duplicates.** The ledger tolerates a second complete row for one id (the last wins), because a
+  torn row re-read is exactly what an interruption produces. `classify.mjs` refuses a duplicate id
+  outright, and rightly: two readings for one id in a `sync` plan would mean the operator approves a
+  table with the same template in it twice. So the resolution moved into code, `audit-observed`,
+  which writes one row per id in run order and names what it resolved. The alternative was telling
+  an agent to hand-edit the run's own evidence file, which is the kind of hand-step this subsystem
+  exists to remove.
+- **Whitespace.** `classify.mjs` trims each column; the ledger parser did not, so a row with
+  incidental whitespace classified fine and was then hard-refused by `audit-show`. It trims now.
+
+Two readers of one format disagreeing is the gid incident's shape, one layer up, and worth naming
+as a rule: **when a file has two readers, a tolerance in one of them is a defect until the other
+agrees or the difference is resolved in code.**
+
 ### `schemaVersion 2`, and why it migrates rather than refusing
 
 The `auditRun` field needs `schemaVersion 2` (`validate` refuses unknown fields and pinned
@@ -149,6 +171,36 @@ migration is driven in tests off a committed `schemaVersion 1` fixture, so it is
 every run rather than once, including the case that would silently destroy an in-flight record: a
 `schemaVersion 2` file with a populated `auditRun` must round-trip byte-identically, which is what
 catches "set `auditRun: null` on every read".
+
+### What review caught that the change had got wrong
+
+Recorded because each was a claim the code or the docs made about themselves that was not true:
+
+- **`sync`'s end-of-run recording barely worked.** `run.ids` holds only the ids whose action was
+  `paste`, so on any sync after the first most templates are already `in-sync`, the run settles a
+  handful, and the completeness guard refused. The feature would have recorded once in its life.
+  Step 5 now builds its rows from both halves of the run's own reading: step 2's plan reading for
+  the ids it did not settle, and the fresh re-reading for the ids it did.
+- **The observed file was stamped before its own record was validated**, so a refused `audit-start`
+  left a file behind for a run that never started.
+- **A provenance check that could never fire.** `audit-end` compared each row's `readAt` to the
+  run's `startedAt` to count carried-over rows, but every row is appended after the header is
+  stamped, so none can predate it. Nothing in `state.mjs` can tell which sitting read which row; it
+  reports the read-time span instead, which is the honest signal.
+- **An off-by-one in the row cap**, from counting the empty element a trailing newline leaves: a
+  file exactly at the cap was refused as over it.
+- **A path check that was dead code, and a hole beside it.** The realpath comparison against the
+  state directory could never differ, because the path is rebuilt from a shape-checked store and
+  token rather than sanitised, so the string equality is what holds that boundary. It is gone. What
+  did matter was `existsSync`, which follows a link and answers false for a **dangling** symlink,
+  skipping the symlink check entirely; the write that followed would have created the link's
+  target. It uses `lstat` now.
+- **A loosened validation nobody asked for**: an absent `lastAudit` had always been a refusal and
+  was quietly made acceptable while the provenance fields were added. Restored.
+
+Two of these (the dead provenance check, the dead path branch) are the same lesson from opposite
+directions: a check that cannot fail is not a weak check, it is an untrue statement about the code,
+and it reads to the next person as protection that is not there.
 
 (`schemaVersion 2` and the template `version: 2` on
 `customer_email_address_changed_confirmation` are unrelated twos in the same change; both are

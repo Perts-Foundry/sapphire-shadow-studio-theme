@@ -31,12 +31,14 @@ import {
   SUPPORTED_SCHEMA_VERSIONS,
 } from '../state.mjs';
 import { gidFor, NUMERIC_GID, ALL_LEGAL_GIDS, ILLEGAL_GIDS } from './gid-fixtures.mjs';
+import { parseObserved } from '../classify.mjs';
 import { paths } from '../brand.mjs';
 import { hashFile, fnv1a } from '../dump.mjs';
 import { pickTool, encodeFor, copy, readClipboard, verifyCopy, measure, main as clipboardMain, READERS } from '../clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'state.mjs');
+const classifyScript = path.join(here, '..', 'classify.mjs');
 const SHA = 'a'.repeat(40);
 
 function root() {
@@ -814,9 +816,13 @@ test('CLI audit-start: the state-machine edges, the flags, and the ids it accept
   assert.match(cli('audit-start', '--ref', 'origin/main').stderr, /audit-start needs --ref and --sha/);
   assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'gamma').stderr, /not manifest ids: gamma/);
   assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'alpha', 'alpha').stderr, /a duplicate id: alpha, alpha/);
-  assert.match(cli('audit-start', '--ref', 'origin main', '--sha', SHA).stderr, /auditRun.ref is not a ref name/);
-  assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', 'nope').stderr, /auditRun.sha is not a commit sha/);
+  // Refused by audit-start's own check, before the observed file is stamped. Validate would refuse
+  // these too, but only after the file existed, which left a stamped file behind for a run that
+  // never started.
+  assert.match(cli('audit-start', '--ref', 'origin main', '--sha', SHA).stderr, /--ref "origin main" is not a ref name/);
+  assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', 'nope').stderr, /--sha "nope" is not a commit sha/);
   assert.ok(!existsSync(path.join(dir, 'my-store.json')), 'not one refusal wrote a state file');
+  assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [], 'and not one left an observed file behind either');
 
   const out = cli('audit-start', '--ref', 'origin/main', '--sha', SHA, '--quick', '--batch', '10');
   assert.equal(out.status, 0, out.stderr);
@@ -1001,6 +1007,264 @@ test('CLI: the usage line and the unknown-command message name every subcommand'
   const unknown = cli('nonsense');
   assert.equal(unknown.status, 2);
   for (const c of commands) assert.ok(unknown.stderr.includes(c), `the unknown-command message does not name ${c}`);
+});
+
+// --- gaps mutation testing found -----------------------------------------------------------------
+// Each of these covers a mutant that survived the suite: the code could be broken in the named way
+// and every test still passed.
+
+test('the migration bumps the version BEFORE validating, so the write that triggers it can add a v2 field', () => {
+  // The mutant: validate before the bump. It survives every other test because no other test
+  // performs a migrating write that ADDS a schemaVersion 2 field, which is the usual way a
+  // migration is triggered. This is the defect the ordering was written for: validating first
+  // refuses the auditRun as "a schemaVersion 1 file carrying a schemaVersion 2 field".
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const out = cliIn(r, dir)('audit-start', '--ref', 'origin/main', '--sha', SHA);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stderr, /migrating .* from schemaVersion 1 to schemaVersion 2/);
+  const after = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(after.schemaVersion, 2);
+  assert.ok(after.auditRun, 'the schemaVersion 2 field the migrating write was adding is there');
+  assert.deepEqual(after.seen, JSON.parse(original).seen, 'and the v1 facts survived it');
+});
+
+test('a backup is never clobbered, and a migrating write that fails validation leaves no artifact', () => {
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const backup = `${file}.v1.already-here.bak`;
+  // save() derives the backup name from a timestamp, so two migrations in the same millisecond are
+  // the collision this refuses. Forced here by writing the name it will pick.
+  const state = load('my-store', { root: r, dir }).state;
+  const realName = () => readdirSync(dir).filter((f) => f.endsWith('.bak'));
+  writeFileSync(backup, 'not the original\n', 'utf8');
+  save(state, 'my-store', { root: r, dir });
+  assert.equal(readFileSync(backup, 'utf8'), 'not the original\n', 'an unrelated .bak is untouched');
+  assert.equal(realName().length, 2);
+
+  // A migrating write that fails validation copies nothing and writes nothing: the backup is taken
+  // only after validate() passes.
+  const { r: r2, dir: dir2, file: file2 } = seeded(original);
+  const bad = load('my-store', { root: r2, dir: dir2 }).state;
+  bad.pending = 'not an array';
+  assert.throws(() => save(bad, 'my-store', { root: r2, dir: dir2 }), /pending is not an array/);
+  assert.deepEqual(readdirSync(dir2), [path.basename(file2)], 'no backup, and no new file');
+  assert.equal(readFileSync(file2, 'utf8'), original, 'the v1 file is untouched');
+});
+
+test('the state file is written atomically, through a temp file and a rename', () => {
+  // The mutant: write straight to `file`. It survives a "no leftover .tmp" assertion, which also
+  // holds when no temp file is ever used. Watching the rename is what distinguishes them.
+  const { r, dir, file } = seeded();
+  save(goodState(), 'my-store', { root: r, dir });
+  const original = readFileSync(file, 'utf8');
+  // Blocking <file>.tmp with a directory makes the temp write fail. An implementation that writes
+  // through the temp file cannot get past it and leaves the previous file intact; one that writes
+  // straight to `file` would sail through and replace it. That is the difference, observed rather
+  // than asserted about the source.
+  const tmp = `${file}.tmp`;
+  mkdirSync(tmp);
+  const mutated = { ...goodState(), pending: [] };
+  assert.throws(() => save(mutated, 'my-store', { root: r, dir }), /EISDIR|illegal operation on a directory/);
+  assert.equal(readFileSync(file, 'utf8'), original, 'the previous file survives a failed write whole');
+  rmSync(tmp, { recursive: true });
+  save(mutated, 'my-store', { root: r, dir });
+  assert.ok(!existsSync(tmp), 'and the temp file never outlives a successful write');
+  assert.deepEqual(load('my-store', { root: r, dir }).state.pending, []);
+});
+
+test('a v1 file carrying only the optional schemaVersion 2 lastAudit fields is accepted', () => {
+  // Deliberate asymmetry against auditRun, which a v1 file may NOT carry: `source` and `startedAt`
+  // are optional on any version (a record predating them is never backfilled), so their presence on
+  // a v1 file says nothing about the schema. auditRun's presence does.
+  const v1 = JSON.parse(readFileSync(V1_FIXTURE, 'utf8'));
+  v1.lastAudit.source = 'audit';
+  v1.lastAudit.startedAt = '2026-09-01T10:30:00Z';
+  const { r, dir } = seeded(JSON.stringify(v1));
+  const loaded = load('my-store', { root: r, dir });
+  assert.equal(loaded.state.schemaVersion, 1);
+  assert.equal(loaded.state.lastAudit.source, 'audit');
+});
+
+test('auditToken varies with the sha as well as the time, so two runs at one instant differ', () => {
+  // The mutant: derive from startedAt alone. Two passes started in the same millisecond against
+  // different refs would then share a token, and so share an observed file.
+  const at = '2026-09-02T12:00:00Z';
+  assert.notEqual(auditToken(at, 'a'.repeat(40)), auditToken(at, 'b'.repeat(40)), 'the sha is part of the derivation');
+  assert.notEqual(auditToken(at, SHA), auditToken('2026-09-02T12:00:01Z', SHA), 'and so is the time');
+  assert.equal(auditToken(at, SHA), auditToken(at, SHA), 'pure, so a record can be re-derived and checked');
+  assert.match(auditToken(at, SHA), /^[0-9a-f]{16}$/);
+  assert.throws(() => observedPathFor('my-store', 'not-a-token', '/d'), /does not match/, 'and the shape is enforced where the path is built');
+});
+
+test('the parsed observed row carries the values the file held, not just its read time', () => {
+  // Every field but readAt used to be unasserted, so replacing any of them with a constant passed.
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const gid = gidFor('alpha');
+  const p = parseObservedProgress(`${head}alpha\t4321\t0123abcd\talpha 7\t${gid}\t${READ_AT}\nbeta\t9\tdeadbeef\tnone\t-\t${READ_AT}\n`, { auditRun: run });
+  assert.deepEqual(p.rows.get('alpha'), { id: 'alpha', length: 4321, fnv: '0123abcd', stamp: 'alpha 7', gid, readAt: READ_AT });
+  assert.deepEqual(p.rows.get('beta'), { id: 'beta', length: 9, fnv: 'deadbeef', stamp: 'none', gid: '-', readAt: READ_AT });
+  assert.equal(typeof p.rows.get('alpha').length, 'number', 'length is a number, as classify.mjs expects');
+});
+
+test('the observed parser trims columns exactly as classify.mjs does on the same file', () => {
+  // The two readers of one file must agree about whitespace, or a row classifies fine and is then
+  // hard-refused by audit-show.
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const padded = `  alpha \t 100 \t deadbeef \t none \t - \t ${READ_AT} \n`;
+  const p = parseObservedProgress(head + padded, { auditRun: run });
+  assert.deepEqual(p.done, ['alpha']);
+  assert.deepEqual(p.rows.get('alpha'), { id: 'alpha', length: 100, fnv: 'deadbeef', stamp: 'none', gid: '-', readAt: READ_AT });
+  assert.deepEqual(parseObserved(padded)[0], { id: 'alpha', length: 100, fnv: 'deadbeef', stamp: null, gid: null }, 'classify.mjs reads the same row');
+});
+
+test('duplicate ids are reported once each however many times they repeat', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  // Three rows for one id, and two for another: the mutant that drops the Set survives a two-row
+  // case, because one repeat reports one duplicate either way.
+  const p = parseObservedProgress(
+    head + rowFor('alpha', '2026-09-02T12:00:00Z') + rowFor('alpha', '2026-09-02T12:01:00Z') + rowFor('alpha', '2026-09-02T12:02:00Z') + rowFor('beta') + rowFor('beta'),
+    { auditRun: run },
+  );
+  assert.deepEqual(p.duplicates, ['alpha', 'beta'], 'each id named once, not once per repeat');
+  assert.equal(p.rows.get('alpha').readAt, '2026-09-02T12:02:00Z', 'the last complete row wins');
+});
+
+test('the observed-file caps are boundaries, not approximations', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  // Exactly at the cap is accepted; one over is refused. `> ` vs `>= ` survived without this.
+  const atCap = head + Array.from({ length: 999 }, () => rowFor('alpha')).join('');
+  assert.equal(atCap.split('\n').length - 1, 1000, 'the header plus 999 rows is exactly 1000 lines');
+  assert.doesNotThrow(() => parseObservedProgress(atCap, { auditRun: run }));
+  assert.throws(() => parseObservedProgress(atCap + rowFor('alpha'), { auditRun: run }), /holds more than 1000 lines/);
+  const underBytes = head + 'x'.repeat((1 << 20) - head.length - 1) + '\n';
+  assert.equal(Buffer.byteLength(underBytes, 'utf8'), 1 << 20);
+  assert.throws(() => parseObservedProgress(underBytes, { auditRun: run }), /line 2 has 1 tab-separated/, 'at the cap it is read, and refused on its content');
+  assert.throws(() => parseObservedProgress(underBytes + 'x', { auditRun: run }), /is larger than 1048576 bytes/);
+});
+
+test('auditScope counts only manifest ids as covered, which is the number the refusal prints', () => {
+  const foreign = auditScope({ alpha: {}, gamma: {}, delta: {} }, ids);
+  assert.equal(foreign.covered, 1, 'three keys, one of them a manifest id');
+  assert.deepEqual(foreign.foreign, ['gamma', 'delta']);
+  assert.deepEqual(foreign.missing, ['beta']);
+  assert.equal(foreign.complete, false);
+});
+
+test('run-start refuses a run-show dump fed back in, in the shape run-show actually emits', () => {
+  // The incident the action guard exists for: run-show's own rows carry no `action`, so feeding its
+  // output back in used to resurrect the done and quarantined ids as fresh pastes. The regression
+  // test used a bare array; run-show emits an OBJECT with an `ids` key, which is the shape that
+  // reaches the unwrap, and that path was untested.
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const plan = path.join(r, 'plan.json');
+  writeFileSync(plan, JSON.stringify([{ ...row('alpha'), action: 'paste' }]), 'utf8');
+  assert.equal(cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA).status, 0);
+  assert.equal(cli('seen', 'alpha', '--version', '1', '--fnv', 'deadbeef', '--length', '9').status, 0);
+  const dump = JSON.parse(cli('run-show').stdout);
+  assert.ok(Array.isArray(dump.ids) && dump.ids.length, 'run-show emits an object carrying ids');
+  assert.equal(dump.ids[0].action, undefined, 'whose rows carry no action');
+  const fed = path.join(r, 'dump.json');
+  writeFileSync(fed, JSON.stringify(dump), 'utf8');
+  const out = cli('run-start', fed, '--ref', 'origin/main', '--sha', SHA, '--force');
+  assert.equal(out.status, 1);
+  assert.match(out.stderr, /has action undefined; expected paste, skip or flag/);
+});
+
+test('seen --from-file with no run in flight takes the version from the manifest, and refuses an unknown id', () => {
+  // Every other --from-file test has a run in flight, so the branch that decides which version is
+  // recorded WITHOUT one was untested in both directions.
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const file = path.join(r, 'beta.liquid');
+  writeFileSync(file, 'some branded bytes\n', 'utf8');
+  const h = hashFile(file);
+  const out = cli('seen', 'beta', '--from-file', file, '--sha', SHA, '--ref', 'origin/main');
+  assert.equal(out.status, 0, out.stderr);
+  const state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.deepEqual(
+    [state.seen.beta.version, state.seen.beta.length, state.seen.beta.fnv],
+    [2, h.length, h.hash],
+    'version 2 is beta\'s manifest version, not a default and not another id\'s',
+  );
+  const unknown = cli('seen', 'gamma', '--from-file', file, '--sha', SHA, '--ref', 'origin/main');
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /gamma is not in the manifest/);
+});
+
+// --- audit-observed -------------------------------------------------------------------------------
+
+// classify.mjs reads the branded and stock file for every manifest id, which `root()` does not
+// write because nothing else in this file classifies.
+function rootWithTemplates() {
+  const r = root();
+  const p = paths(r);
+  for (const id of ['alpha', 'beta']) {
+    writeFileSync(p.branded(id), `branded ${id}\n`, 'utf8');
+    writeFileSync(p.stock(id), `stock ${id}\n`, 'utf8');
+  }
+  return r;
+}
+
+test('audit-observed resolves duplicates so classify.mjs, which refuses them, can read the same pass', () => {
+  const r = rootWithTemplates();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  assert.match(cli('audit-observed').stdout, /no audit run in flight/);
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  const run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  // The shape a resumed pass leaves: beta read twice (a torn row re-read), and out of order.
+  appendFileSync(run.observedPath, rowFor('beta', '2026-09-02T12:00:00Z'));
+  appendFileSync(run.observedPath, rowFor('alpha', '2026-09-02T12:01:00Z'));
+  appendFileSync(run.observedPath, rowFor('beta', '2026-09-02T12:02:00Z'));
+
+  // classify.mjs refuses that file outright, which is the contradiction this subcommand removes.
+  const direct = spawnSync(process.execPath, [classifyScript, '--observed', run.observedPath, '--root', r], { encoding: 'utf8' });
+  assert.equal(direct.status, 1);
+  assert.match(direct.stderr, /observed lists beta twice; one reading per id/);
+
+  const out = path.join(r, 'resolved.tsv');
+  const res = cli('audit-observed', '--out', out);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /2 row\(s\) -> /);
+  assert.match(res.stdout, /id\(s\) read more than once, latest row kept: beta/);
+  const lines = readFileSync(out, 'utf8').trimEnd().split('\n');
+  assert.equal(lines.length, 2, 'one row per id');
+  assert.deepEqual(lines.map((l) => l.split('\t')[0]), ['alpha', 'beta'], 'in auditRun.ids order, not file order');
+  assert.equal(lines[1].split('\t')[5], '2026-09-02T12:02:00Z', 'the last reading for beta');
+  // And the resolved file is what classify.mjs accepts.
+  const ok = spawnSync(process.execPath, [classifyScript, '--observed', out, '--root', r], { encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stderr);
+
+  // Without --out it goes to stdout, so it can be piped or read directly.
+  const piped = cli('audit-observed');
+  assert.equal(piped.stdout, readFileSync(out, 'utf8'));
+});
+
+test('audit-observed reports the ids still to read, and never invents a row for one', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  const run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha'));
+  const out = path.join(r, 'resolved.tsv');
+  const res = cli('audit-observed', '--out', out);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /1 row\(s\) -> /);
+  assert.match(res.stdout, /1 id\(s\) not yet read: beta/);
+  assert.equal(readFileSync(out, 'utf8'), rowFor('alpha'), 'only what was actually read');
 });
 
 // --- clipboard.mjs -------------------------------------------------------------------------------

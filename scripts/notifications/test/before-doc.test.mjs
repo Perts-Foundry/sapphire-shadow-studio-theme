@@ -94,10 +94,15 @@ test('--expect-gid refuses a response for another template, however well its byt
   assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: OTHER_GID, root: r }).text, STOCK, 'the matching gid is accepted');
   // The pairing is string equality, so it holds for every legal shape and nothing here depends on
   // which one the fixtures happen to use.
-  for (const gid of ALL_LEGAL_GIDS) {
+  for (const [i, gid] of ALL_LEGAL_GIDS.entries()) {
     writeFileSync(file, response(STOCK, gid), 'utf8');
     assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: gid, root: r }).text, STOCK, `matching ${gid}`);
-    assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: NUMERIC_GID + '0', root: r }), BeforeDocError, `mismatched against ${gid}`);
+    // The mismatch half is drawn from the corpus too, not held at one fixed constant, so this is N
+    // distinct pairs rather than N matches against one invented non-match.
+    const other = ALL_LEGAL_GIDS[(i + 1) % ALL_LEGAL_GIDS.length];
+    if (other !== gid) {
+      assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: other, root: r }), BeforeDocError, `${gid} must not answer for ${other}`);
+    }
   }
   assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, root: r }).text, STOCK, 'and the check is skipped when no gid is expected');
   // A response with no gid at all cannot satisfy the check, so it is refused rather than waved
