@@ -40,7 +40,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Fix the low stock alert flow to handle gift cards. Gift card should be excluded.**
 - [ ] **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
 - [ ] **Update the inventory.**
-- [ ] **Add nurse practitioner NP to the lead to collection of products for Carol Ann.**
 - [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
 - [ ] **Confirm the judge.me review setup is correct for our store at this point.**
 - [ ] **Figure out the blog skill for the store**

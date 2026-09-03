@@ -22,15 +22,25 @@ say the attach is required and manual, and phase 2 carries the completion check 
 at least one media, and each colour resolves to exactly ONE media id, since the one-media-per-variant
 cap otherwise hides a second).
 
-**`--attach-heroes` cannot do it, which is not obvious from its name.** Three independent reasons,
-recorded so the next person does not spend the time working them out: it builds `heroPlan` only from
-manifest rows the run is processing, so with no batch there is nothing to attach; running it over an
-older batch is the `admin_color` / `alt` drift trap `docs/product-media-alt-text.md` already warns
-about, where a stale alt makes `fileUpdate` overwrite correct live alt text; and it appends to EVERY
-variant of a colour, so the ones that already have media reject the second attachment and the local
-`gql` helper throws on the userErrors, abandoning that whole colour. The tool is built for "new
-photos, new product, attach as you go". The opposite case, media already live and variants newly
-created around it, is Admin work or a one-off scoped `productVariantAppendMedia`.
+**Whether `--attach-heroes` can do it turns on one question, and the answer is not the one the name
+suggests.** `variantsByColor` in `scripts/upload-product-media.mjs` is keyed by the Color option
+value ALONE, and the run makes one `productVariantAppendMedia` call per colour carrying every
+variant of that colour. So the question is whether the new variants land under a colour that already
+has attached variants:
+
+- **A new colour, or a new product: the tool works.** That colour key holds only new variants, none
+  with media, so the append succeeds. This is the case it was built for.
+- **A new size or design value: it cannot.** Those land under EXISTING colours, so the call also
+  carries the variants that already have media; they reject the second attachment, the local `gql`
+  helper throws on the userErrors, and that whole colour is abandoned. Two further reasons it does
+  not fit anyway: it builds `heroPlan` only from manifest rows the run is processing, so with no
+  batch there is nothing to attach, and running it over an older batch is the `admin_color` / `alt`
+  drift trap `docs/product-media-alt-text.md` already warns about, where a stale alt makes
+  `fileUpdate` overwrite correct live alt text.
+
+That distinction is the whole finding, and the first draft of this entry got it wrong by
+generalising from NP to every entry point. A new size has the same problem NP had; a new colour does
+not. The entry-point table now says so per row rather than once in prose.
 
 **What did NOT need doing, confirmed rather than assumed.** Collection membership is product-level,
 so all three products stayed in Featured, Healthcare Collection and The Vitals Collection with no
