@@ -23,8 +23,11 @@ the admin Preview link).
    filters by colour selection (the alt-text binding, checkable nowhere in the repo), the size
    chart accordion renders and its `#SizeChart` anchor works, the variant picker behaves with any
    collapsed option, and the page has exactly one h1 (nothing in CI checks heading structure).
-3. `seo-review` (route:/seo-review): the full read-only audit; adding products is one of its named
-   triggers.
+3. `seo-review` (route:/seo-review; skip for a new design value): the full read-only audit; adding
+   products is one of its named triggers.
+   - The skip is on the merits, not for speed: a design value mints no URL and no sitemap entry,
+     and nothing this audit reads changes. Record it as not-applicable with that reason. Every
+     other entry runs it, including a new colour, which does change what a crawl sees.
    - Completion check: its report exists and any finding is presented to the operator.
 4. `converge` (verify): the sku skill's verify and, where run, blank-inventory's verify both
    report convergence (propagation is not atomic).

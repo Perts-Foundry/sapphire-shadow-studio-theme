@@ -1,5 +1,92 @@
 # Release Notes
 
+## A credential costs one table row, because the vocabulary lives in Admin (unreleased)
+
+`NP (Nurse Practitioner)` joins the eight credentials the Lead II line already embroiders. The
+interesting part is how little of the repo had to move: three files, one of which is a doc and one a
+pinned test constant.
+
+**Design values are an Admin-side product option, and the repo deliberately does not restate them.**
+`catalogue.json` declares the axis *name* (`"design": "Design"`) and stops there, so it needed no
+edit. The three `templates/product.lead-ii-*.json` name no credential. The variant picker is
+threshold-based rather than value-aware, and `snippets/variant-main-picker.liquid` says so in its own
+comment: adding a design or a colour needs no settings change. `config/settings_schema.json` leaves
+`variant_dropdown_threshold` at 4, so Design was already a dropdown at eight values and stays one at
+nine. The locale files carry no option values, the blank-inventory thresholds are keyed on
+body+colour+size, and the photo-naming design token is an open kebab string by design.
+
+That leaves exactly two committed places where the credential vocabulary is written down, plus one
+count derived from them: `scripts/sku/tables.json` (the code row), `docs/sku-scheme.md` (the
+`lead-ii` namespace list), and the pinned cross-product in `scripts/sku/test/derive.test.mjs`. Worth
+knowing before the next credential, because the instinct is to go looking for a longer list.
+
+**The test count and the live variant count disagree, on purpose.** The test now pins
+`486 + 72 + 18 + 5 + 1`, where the Lead II term is `3 x (9 designs x 3 colours x 6 sizes)`: all
+three products at all three colours. The live catalogue is smaller, because `catalogue.json`
+declares `"vest-womens": { "colors": ["black"] }`, so taking NP live adds 18 + 18 + 6 = 42 variants,
+not 54. Both numbers are right in their own frame. `scripts/sku/tables.json` carries no per-product
+colour availability, deliberately, so that giving the vest a second colour later needs no scheme
+change; the test therefore walks the full table cross-product and is expected to exceed the store.
+This was re-litigated once during plan review and will be again, which is why the comment above the
+assertion states it and this entry repeats it: do not "reconcile" the two by editing either.
+
+**The doc paragraph about option values carried a third number that matched neither.** It said one
+new colour on the crewneck "creates 48 variants (8 designs x 6 sizes) ... the tool then fills all
+36". The 36 was stale and wrong before NP existed. Both numbers now read 54, matching the nine
+designs. That fix is incidental to this change, not caused by it.
+
+**`.claude/skills/add-product/SKILL.md` had no entry-point row for a design value**, while
+`phase-1-repo-pr.md` already told the reader to add "any new colour/design/size codes". Two files
+disagreeing about whether the skill covers this case is the kind of gap that only surfaces when
+someone hits it, so the row went in here rather than being deferred: "New design value", named in
+full because a bare "design" collides with the Huddle applique patterns, which the SKU scheme
+explicitly excludes. The sentence after the table said "All three entries" while listing four; it
+now says five, and so does the state file's `entry` enum, which had named three of what were
+already four.
+
+**Adding the row was not the whole edit, and the reason generalises.** The row is a table of
+*conditionals*: no `catalogue.json` edit, no size chart, no seo-review, product-images only
+sometimes. The phase files are what a run actually reads, one step at a time, and none of them
+carried those conditions. So the table said one thing and the operative instructions said the
+opposite, in four places:
+
+- `phase-1-repo-pr.md` step 1 is "propose the `catalogue.json` diff FIRST", untagged and
+  unconditional, with a completion check the design entry cannot satisfy. Every other conditional
+  step in that file carries its condition in the tag; step 1 did not. A run reaching it with only
+  that step in context has no licence to skip, and the natural repair is to invent a design-values
+  list in `catalogue.json`, which the file's own `comment` and this repo's CLAUDE.md both forbid.
+  **A table cell in a different file is not a step tag.**
+- `phase-3-verify.md` step 3 routed `/seo-review` unconditionally; `phase-2-admin-completion.md`
+  step 4 routed `/product-images` unconditionally; `phase-1-repo-pr.md` step 5 routed
+  `/size-chart` for any garment. All three now carry the condition, and the sentence under the
+  entry-point table states which side wins when a phase step and the table disagree.
+- `phase-1-repo-pr.md` step 7 opened "**Every product addition** trips these pinned counts", which
+  a design value falsified: it adds no product, so only the `derive.test.mjs` cross-product moves.
+
+**The finding worth keeping is in `phase-0-admin-draft.md`, and it has live-store consequences.**
+That file's "Why draft-first" section explains the safety window between phases entirely in terms
+of a DRAFT product being invisible. **That window does not exist for any option-value entry.** A
+new colour, size or design value adds variants to a product that is already ACTIVE and published,
+so every new variant is purchasable the moment it is created, with no SKU until phase 2 step 2 and
+no `custom.inventory_blank_sku` until step 3: sellable stock that the SKU filters and the
+inventory-sync Flow cannot yet see. Nothing in the skill said so, and the pre-existing new-colour
+and new-size rows had the same exposure. Phase 0 now states it, along with the wrong fix it
+invites: taking the parent product back to DRAFT to close the window delists everything already
+selling on it.
+
+One small convention, recorded because it reads backwards otherwise: in the `docs/sku-scheme.md`
+design lists, a parenthetical marks a live option value that is **not** the code's expansion
+(`MDC` (Medic), `NRS` (Nurse), `VTT` (Vet Tech)). A code whose live value is already the
+`ABBREV (Expansion)` form is listed bare, which is why `NP` sits there as `NP` and not as
+`NP (Nurse Practitioner)`.
+
+**The live half is a runbook, not a follow-up nobody wrote down.** Taking NP live is in `TODO.md`,
+and its non-obvious cost is the blank-inventory backfill: 42 new variants span 42 distinct blank
+groups, and the inventory-sync Flow's burst limit is roughly four groups per batch, so seeding them
+in one run strands most of them. It is about eleven batched runs with a convergence check between
+each. Ordering matters too: the tables row must merge first, because `sku audit` reports an
+`unmapped-value` for any live option value with no code.
+
 ## An exclusion that held only by coincidence, and the write path it blocked (unreleased)
 
 `unmappedHandles` in `scripts/blank-inventory/lib/bodies.mjs` names every live product the manifest

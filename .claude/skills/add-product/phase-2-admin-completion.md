@@ -17,7 +17,9 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
    thresholds entry for a new blank. The Flow pause offer and the ~4-group batch limit are that
    skill's rules.
    - Completion check: that skill's verify converges.
-4. `media` (route:/product-images): stage 0 (studio enhance) for raw shots, then the normal
+4. `media` (route:/product-images; for a new design value, only if design-specific photos are
+   wanted: the gallery filters media by the COLOUR option, so existing colour-matched shots already
+   serve a new design correctly): stage 0 (studio enhance) for raw shots, then the normal
    naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
    `docs/product-media-alt-text.md`. Include the size-chart PNG upload with its descriptive alt.
    A non-garment product uses the `<handle>_<shot>-<index>` filename form; it has no Color option,

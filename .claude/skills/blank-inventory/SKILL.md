@@ -5,12 +5,12 @@ description: >-
   custom.inventory_blank_sku variant metafield on existing or recently added variants. Writes to the live
   Shopify store through gated, reviewed plans and lets the inventory-sync Flow fan each change out
   to sibling variants. Use when the operator is adjusting stock for shared blanks or tagging
-  variants into a blank group; for a wholly new product, colour, or size, start from add-product,
-  which routes here in order. Also runs the read-only reorder review (shared-blank on-hand vs
-  committed thresholds) and the orders-history demand pass for shared blanks; live inventory writes
-  remain operator-gated while reorder and demand are read-only and advisory. Applies only to shared
-  blank bodies: not for general inventory questions, stock reporting, or demand analysis on any SKU
-  outside shared blanks.
+  variants into a blank group; for a wholly new product, colour, size or design value, start from
+  add-product, which routes here in order. Also runs the read-only reorder review (shared-blank
+  on-hand vs committed thresholds) and the orders-history demand pass for shared blanks; live
+  inventory writes remain operator-gated while reorder and demand are read-only and advisory.
+  Applies only to shared blank bodies: not for general inventory questions, stock reporting, or
+  demand analysis on any SKU outside shared blanks.
 ---
 
 # Blank inventory

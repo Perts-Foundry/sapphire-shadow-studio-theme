@@ -67,7 +67,7 @@ command and by `npm run sku:tables`, so the two files cannot drift apart.
 vocabularies that happen to overlap:
 
 - `lead-ii` (Lead II Crewneck, Quarter-Zip, Vest): `RN`, `LPN`, `CNA`, `EMT`, `MDC` (Medic), `LVT`,
-  `RVT`, `CVT`.
+  `RVT`, `CVT`, `NP`.
 - `huddle` (Huddle Crewneck): `NRS` (Nurse), `EMT`, `MDC` (Medic), `VTT` (Vet Tech).
 
 `EMT` and `MDC` intentionally mean the same thing in both namespaces. Codes must be unique within a
@@ -142,8 +142,8 @@ it.
    not.
 
 New **option values on an existing product** are the real ongoing cost, not new products. One new
-colour on `lead-ii-crewneck` creates 48 variants (8 designs x 6 sizes) and needs exactly one new
-table row; the tool then fills all 36. A half-populated SKU field is worse than an empty one,
+colour on `lead-ii-crewneck` creates 54 variants (9 designs x 6 sizes) and needs exactly one new
+table row; the tool then fills all 54. A half-populated SKU field is worse than an empty one,
 because a SKU filter silently returns an incomplete set, so run `audit` after any option change.
 
 ## Applique patterns are not in the SKU
