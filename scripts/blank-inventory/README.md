@@ -217,6 +217,18 @@ the next batch. Four rules, each of which fails silently if it is "simplified" a
 - **`--resume` drains before it writes.** It re-checks every group a prior halted batch recorded as
   unconverged and refuses while any still is. Without that, a halt followed by a resume reproduces
   the incident one group at a time, since the halted group's re-triggered runs are still draining.
+  The drain runs even under `--no-batch`: refusing to write on top of an unsettled group is an
+  absolute, not a pacing preference.
+- **A gate call that THROWS still records its batch.** The gate reads the catalogue through the Admin
+  API, so it fails most readily when the Flow is already struggling. Its rows are durably `applied`
+  by then, so if the throw escaped before the batch entry was written the receipt would record no
+  entry, `unsettledBlankIds` would find nothing outstanding, and the next `--resume` would walk
+  straight past the drain into the following batch. The entry is persisted with a `gate-failed`
+  verdict first, and the error is re-thrown after.
+
+`backfill --stage seed` is paced the same way and by the same code. A seed write fires the same
+trigger and fans out through the same Flow, so leaving it on the raw unpaced loop would have left the
+incident reachable through a second command.
 
 The gate and `verify` go through **one** helper, `waitForGroups`. That is a correctness property, not
 deduplication: two bars for "converged" would let the gate pass a batch that `verify` then fails.
@@ -600,7 +612,8 @@ are each refused by name. `cmdRepair`'s promise of zero store writes is asserted
 runtime against a client whose `gql` fails the test if called, and once structurally against its own
 source.
 
-`test/flow-runs.test.mjs` covers the Flow run-list console parser (Tranche 4's only testable half):
+`test/flow-runs.test.mjs` covers the Flow run-list console parser, which is the only testable half
+of the browser diagnostic:
 dedupe across responses, an unrecognised status counted and named rather than folded into "finished",
 malformed lines reported rather than dropped, and the difference between "the Flow is quiet" and "the
 probe matched nothing", which look identical in a count of zero. Every input there is synthetic and

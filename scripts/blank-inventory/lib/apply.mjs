@@ -89,13 +89,19 @@ export async function applyPlan({ artifact, receipt, readGroup, write, persist, 
   let skipped = 0;
 
   for (const group of artifact.groups) {
+    // `only` is checked FIRST, before the already-applied short-circuit. The other order is
+    // quadratic under batching: every batch re-walks the whole artifact, so each batch re-emitted an
+    // `applied` event for every row an earlier batch had finished. At the default batch size of 1 a
+    // 27-group run printed roughly 350 spurious lines, which is exactly the output that buries the
+    // HALTED line during the incident this pacing exists for.
+    if (allowed && !allowed.has(group.blankId)) continue;
+
     const row = receipt.rows.find((r) => r.blankId === group.blankId);
     if (row?.status === ROW_APPLIED) {
       onRow({ blankId: group.blankId, status: ROW_APPLIED, resumed: true });
       applied++;
       continue;
     }
-    if (allowed && !allowed.has(group.blankId)) continue;
 
     let members;
     try {
@@ -200,6 +206,17 @@ export async function applyPlan({ artifact, receipt, readGroup, write, persist, 
  * becomes required work rather than a deferred option.
  */
 export const DEFAULT_BATCH_SIZE = 1;
+
+/**
+ * The verdict recorded for a batch whose gate call THREW rather than returning a verdict.
+ *
+ * A distinct value rather than reusing STALE, because the two say different things: STALE means the
+ * store was read and the group had not converged; this means the store could not be read at all, so
+ * convergence is unknown. Both are treated identically by `unsettledBlankIds` (anything that is not
+ * CONVERGED is outstanding), which is the fail-closed behaviour, but an operator reading a receipt
+ * afterwards can tell a slow fan-out from a broken connection.
+ */
+export const GATE_FAILED = 'gate-failed';
 
 /** Split a list into fixed-size chunks, in order. `Infinity` yields one chunk (the --no-batch path). */
 function chunk(items, size) {
@@ -327,12 +344,31 @@ export async function applyPlanInBatches({
     /** @type {Map<string, string>} */
     let verdicts = new Map();
     let gated = false;
+    let gateError = null;
     if (gate && appliedBlankIds.length) {
-      verdicts = (await awaitBatch(appliedBlankIds)).verdicts;
+      try {
+        verdicts = (await awaitBatch(appliedBlankIds)).verdicts;
+      } catch (err) {
+        // THE BATCH ENTRY MUST REACH DISK EVEN WHEN THE GATE ITSELF FAILS, and this try/catch is
+        // the only thing that makes that true. The rows are already durably `applied` (applyPlan
+        // persists per row), so the writes happened and their fan-out is in flight. If the throw
+        // escaped before `receipt.batches.push` below, the receipt would record no entry for this
+        // batch at all, `unsettledBlankIds` would find nothing outstanding, and the next `--resume`
+        // would sail past the drain straight into the following batch's writes: the original
+        // incident, reproduced through the mechanism built to prevent it.
+        //
+        // The gate throwing is not exotic. It reads the catalogue through the Admin API, so a
+        // transient failure there is likeliest precisely when the Flow is already struggling, which
+        // is when this batch most needs to be recorded as unsettled.
+        gateError = err;
+      }
       gated = true;
     }
-    // Fails closed: a gated batch with a verdict MISSING from the map is stale, not converged.
-    const stale = gated ? appliedBlankIds.filter((blankId) => verdicts.get(blankId) !== CONVERGED) : [];
+    // Fails closed twice over: a verdict MISSING from the map is stale rather than converged, and a
+    // gate that threw leaves every id of the batch marked unsettled rather than unrecorded.
+    const stale = gated
+      ? appliedBlankIds.filter((blankId) => (gateError ? true : verdicts.get(blankId) !== CONVERGED))
+      : [];
     halted = stale.length > 0;
 
     const entry = {
@@ -341,12 +377,26 @@ export async function applyPlanInBatches({
       appliedBlankIds,
       startedAt,
       finishedAt: new Date().toISOString(),
-      verdicts: Object.fromEntries(verdicts),
+      verdicts: gateError
+        ? Object.fromEntries(appliedBlankIds.map((blankId) => [blankId, GATE_FAILED]))
+        : Object.fromEntries(verdicts),
       halted,
+      ...(gateError ? { gateError: gateError.message } : {}),
     };
     receipt.batches.push(entry);
     await persist(receipt);
     onBatch({ ...entry, stale });
+
+    // Re-thrown only after the record is safely on disk. The caller still sees the real failure;
+    // what changes is that a later `--resume` now has something to drain.
+    if (gateError) {
+      throw new Error(
+        `The convergence gate failed after batch ${index + 1} was written ` +
+          `(${appliedBlankIds.join(', ')}): ${gateError.message}. Those writes LANDED and their ` +
+          `fan-out was never confirmed, so they are recorded as unsettled. Re-run with --resume, ` +
+          `which drains them first, or repair them.`
+      );
+    }
 
     // Every later row stays ROW_NOT_ATTEMPTED. Nothing was tried, so nothing failed, and `--resume`
     // (after a `repair`) picks them up unchanged.

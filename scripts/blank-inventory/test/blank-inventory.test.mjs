@@ -14,6 +14,8 @@ import {
   outOfArtifactUnconverged,
   waitForGroups,
   cmdRepair,
+  cmdApply,
+  cmdVerify,
 } from '../blank-inventory.mjs';
 import { MODE_ABSOLUTE, MODE_DELTA } from '../lib/input.mjs';
 import { createArtifact, verifyArtifact, receiptArtifactMismatch, writeJsonAtomic, readJson, ROW_APPLIED } from '../lib/receipt.mjs';
@@ -222,6 +224,247 @@ test('verify and the batch gate classify identically, because they are the same 
   assert.deepEqual([...fromVerify.verdicts], [['A', CONVERGED], ['B', STALE], ['C', MISSING]]);
 });
 
+// --- cmdApply: the live-write entry point -----------------------------------
+//
+// Every case here asserts that a refusal happened BEFORE the apply engine was reached. The engine
+// itself is covered in apply.test.mjs; what was previously untested is the CLI layer standing
+// between an operator's flags and a live inventory write.
+
+/** Writes an artifact and (optionally) a receipt to a temp dir, and returns a runner. */
+async function applyFixture({ groups = new Map(), receipt = null, blanks = [A_BLANK] } = {}) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-apply-'));
+  const artifact = createArtifact({ plans: blanks.map(planRow), mode: MODE_ABSOLUTE, planId: 'plan-a' });
+  const planPath = path.join(dir, 'plan.json');
+  const receiptPath = path.join(dir, 'receipt.json');
+  await writeJsonAtomic(planPath, artifact);
+  if (receipt) await writeJsonAtomic(receiptPath, receipt);
+
+  const refusals = [];
+  const engineCalls = [];
+  return {
+    dir,
+    artifact,
+    planPath,
+    receiptPath,
+    refusals,
+    engineCalls,
+    run: (opts) =>
+      cmdApply(
+        { plan: planPath, receipt: receiptPath, ...opts },
+        {
+          load: async () => ({ client: { gql: () => assert.fail('no Admin call expected') }, locationId: 'gid://shopify/Location/1', groups }),
+          refuse: (msg) => {
+            refusals.push(msg);
+            throw Object.assign(new Error('refused'), { refused: true });
+          },
+          runBatches: async (params) => {
+            engineCalls.push(params);
+            return { receipt: params.receipt, applied: 0, failed: 0, skipped: 0, batches: [], halted: false };
+          },
+        }
+      ),
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+const swallowRefusal = async (fn) => {
+  try {
+    await fn();
+  } catch (err) {
+    if (!err.refused) throw err;
+  }
+};
+
+test('cmdApply refuses a non-whole --batch-size before it reads the store', async () => {
+  const f = await applyFixture();
+  try {
+    for (const batchSize of ['0', '-1', '1.5']) {
+      f.refusals.length = 0;
+      await swallowRefusal(() => f.run({ batchSize }));
+      assert.equal(f.refusals.length, 1, `--batch-size ${batchSize} must refuse`);
+      assert.match(f.refusals[0], /positive whole number/);
+    }
+    assert.deepEqual(f.engineCalls, [], 'the apply engine is never reached');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply refuses a bare --batch-size rather than reading it as 1', async () => {
+  const f = await applyFixture();
+  try {
+    await swallowRefusal(() => f.run({ batchSize: true }));
+    assert.match(f.refusals[0], /needs a number/);
+    assert.deepEqual(f.engineCalls, []);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply refuses --resume against a receipt belonging to another plan, before any write', async () => {
+  const f = await applyFixture({
+    receipt: { planId: 'some-other-plan', contentHash: 'x', rows: [], batches: [] },
+  });
+  try {
+    await swallowRefusal(() => f.run({ resume: true }));
+    assert.match(f.refusals[0], /does not belong to this plan/);
+    assert.deepEqual(f.engineCalls, [], 'a mismatched receipt never reaches the engine');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply refuses when an unconverged group OUTSIDE the artifact exists', async () => {
+  // The pre-write store-state check, exercised end to end rather than only through its helper.
+  resetSeq(900);
+  const f = await applyFixture({
+    groups: new Map([[B_BLANK, strandedGroup({ target: 12, stale: 11, color: 'Black', size: 'M' })]]),
+  });
+  try {
+    await swallowRefusal(() => f.run({}));
+    assert.match(f.refusals[0], /OUTSIDE this artifact are not converged/);
+    assert.deepEqual(f.engineCalls, []);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply does NOT refuse when the only unconverged group is inside the artifact', async () => {
+  // A repair artifact targets non-uniform groups on purpose; refusing here would make the one case
+  // that most needs applying unappliable.
+  resetSeq(910);
+  const f = await applyFixture({
+    groups: new Map([[A_BLANK, strandedGroup({ target: 12, stale: 11 })]]),
+  });
+  try {
+    await f.run({});
+    assert.deepEqual(f.refusals, []);
+    assert.equal(f.engineCalls.length, 1, 'the engine runs');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply passes the pacing through to the engine, and --no-batch turns the gate off', async () => {
+  const f = await applyFixture();
+  try {
+    await f.run({});
+    assert.equal(f.engineCalls[0].batchSize, 1, 'the default is one group per batch');
+    assert.equal(f.engineCalls[0].gate, true);
+
+    await f.run({ noBatch: true });
+    assert.equal(f.engineCalls[1].batchSize, Infinity);
+    assert.equal(f.engineCalls[1].gate, false, '--no-batch means no convergence gate');
+
+    await f.run({ batchSize: '4' });
+    assert.equal(f.engineCalls[2].batchSize, 4);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cmdApply --dry-run reaches no engine and reports the out-of-artifact groups instead of refusing', async () => {
+  resetSeq(920);
+  const f = await applyFixture({
+    groups: new Map([[B_BLANK, strandedGroup({ target: 12, stale: 11, color: 'Black', size: 'M' })]]),
+  });
+  const realLog = console.log;
+  const printed = [];
+  console.log = (...a) => printed.push(a.join(' '));
+  try {
+    await f.run({ dryRun: true });
+    assert.deepEqual(f.refusals, [], 'a dry run reports rather than refuses');
+    assert.deepEqual(f.engineCalls, [], 'and writes nothing');
+    assert.match(printed.join('\n'), /a real run would refuse/);
+  } finally {
+    console.log = realLog;
+    await f.cleanup();
+  }
+});
+
+test('cmdApply refuses --input/--mode outright', async () => {
+  const f = await applyFixture();
+  try {
+    await swallowRefusal(() => f.run({ mode: MODE_ABSOLUTE }));
+    assert.match(f.refusals[0], /never --input\/--mode/);
+    assert.deepEqual(f.engineCalls, []);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+// --- cmdVerify --------------------------------------------------------------
+
+test('cmdVerify watches ONLY applied rows, never a skipped or failed one', async () => {
+  // A skipped row was already at target and a failed row never fired, so waiting on either means
+  // waiting for a fan-out that is never coming and calling a healthy store stale.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-verify-'));
+  try {
+    const receiptPath = path.join(dir, 'receipt.json');
+    await writeJsonAtomic(receiptPath, {
+      planId: 'plan-a',
+      rows: [
+        { blankId: 'applied-1', target: 12, status: ROW_APPLIED },
+        { blankId: 'skipped-1', target: 12, status: 'skipped' },
+        { blankId: 'failed-1', target: 12, status: 'failed' },
+        { blankId: 'untouched-1', target: 12, status: 'not-attempted' },
+      ],
+    });
+    let seen;
+    await cmdVerify(
+      { receipt: receiptPath },
+      {
+        wait: async ({ targets }) => {
+          seen = targets;
+          return { verdicts: new Map([['applied-1', CONVERGED]]), converged: new Set(['applied-1']), stale: new Set(), missing: new Set(), reads: 2, elapsedMs: 20_000 };
+        },
+      }
+    );
+    assert.deepEqual([...seen.keys()], ['applied-1']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdVerify sets a failing exit code for a stale group AND for a missing one', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-verify-'));
+  const realCode = process.exitCode;
+  try {
+    const receiptPath = path.join(dir, 'receipt.json');
+    await writeJsonAtomic(receiptPath, { planId: 'p', rows: [{ blankId: 'a', target: 12, status: ROW_APPLIED }] });
+    const result = (over) => ({ verdicts: new Map(), converged: new Set(), stale: new Set(), missing: new Set(), reads: 1, elapsedMs: 1, ...over });
+
+    process.exitCode = 0;
+    await cmdVerify({ receipt: receiptPath }, { wait: async () => result({ stale: new Set(['a']) }) });
+    assert.equal(process.exitCode, 1, 'a stale group fails the command');
+
+    process.exitCode = 0;
+    await cmdVerify({ receipt: receiptPath }, { wait: async () => result({ missing: new Set(['a']) }) });
+    assert.equal(process.exitCode, 1, 'so does a group with no tagged members left');
+
+    process.exitCode = 0;
+    await cmdVerify({ receipt: receiptPath }, { wait: async () => result({ converged: new Set(['a']) }) });
+    assert.equal(process.exitCode, 0, 'a clean verify does not');
+  } finally {
+    process.exitCode = realCode;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdVerify returns early, without watching anything, when no row was applied', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-verify-'));
+  try {
+    const receiptPath = path.join(dir, 'receipt.json');
+    await writeJsonAtomic(receiptPath, { planId: 'p', rows: [{ blankId: 'a', target: 12, status: 'failed' }] });
+    let called = false;
+    const res = await cmdVerify({ receipt: receiptPath }, { wait: async () => { called = true; } });
+    assert.equal(called, false, 'nothing fired, so there is nothing to wait for');
+    assert.equal(res.verdicts.size, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // --- repair writes nothing to the store -------------------------------------
 
 test('cmdRepair issues no Admin call at all, against a client that fails the test if used', async () => {
@@ -345,6 +588,47 @@ test('cmdRepair refuses a receipt older than 24 hours', async () => {
     );
     assert.match(refusals[0], /past the 24h bound/);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdRepair WARNS on a receipt between 1h and 24h old and still proceeds', async () => {
+  // The refuse band is covered above. The warn band is the one an operator actually meets, and a
+  // regression that turned the warning into silence would leave them approving a repair whose
+  // numbers may have been overtaken by an hour of store activity.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-repair-'));
+  const realWarn = console.warn;
+  const realLog = console.log;
+  const warned = [];
+  try {
+    resetSeq(930);
+    const groups = new Map([[A_BLANK, strandedGroup({ target: 12, stale: 11 })]]);
+    const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+    await writeJsonAtomic(path.join(dir, 'plan-plan-a.json'), artifact);
+    const at = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const receiptPath = path.join(dir, 'receipt-plan-a.json');
+    await writeJsonAtomic(receiptPath, {
+      planId: 'plan-a',
+      contentHash: artifact.contentHash,
+      startedAt: at,
+      finishedAt: at,
+      rows: [{ blankId: A_BLANK, target: 12, status: ROW_APPLIED, at }],
+    });
+
+    console.warn = (...a) => warned.push(a.join(' '));
+    console.log = () => {};
+    const out = await cmdRepair(
+      { receipt: receiptPath, out: path.join(dir, 'repair.json') },
+      {
+        load: async () => ({ client: { gql: () => assert.fail('no Admin call') }, locationId: 'l', groups }),
+        refuse: (msg) => assert.fail(`must warn, not refuse: ${msg}`),
+      }
+    );
+    assert.match(warned.join('\n'), /warn past 1h, refused past 24h/);
+    assert.equal(out.groups.length, 1, 'and the repair is still produced');
+  } finally {
+    console.warn = realWarn;
+    console.log = realLog;
     await rm(dir, { recursive: true, force: true });
   }
 });

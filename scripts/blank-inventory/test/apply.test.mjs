@@ -6,6 +6,7 @@ import {
   unsettledBlankIds,
   checkDrift,
   DEFAULT_BATCH_SIZE,
+  GATE_FAILED,
   DRIFT_TARGET_MOVED,
   DRIFT_BASELINE_MOVED,
   ALREADY_CONVERGED,
@@ -528,6 +529,124 @@ test('the receipt hits disk at every batch boundary, not once at the end', async
   assert.ok(boundary, 'a persist carrying the first batch entry exists');
   assert.deepEqual(boundary.rows.map((r) => r.status), [ROW_APPLIED, ROW_NOT_ATTEMPTED]);
   assert.equal(h.persisted.at(-1).batches.length, 2, 'and the last write on disk carries both batches');
+});
+
+test('a gate that THROWS still records the batch, so a later resume has something to drain', async () => {
+  // The hole this closes: the rows are already durably `applied` (applyPlan persists per row), so
+  // the writes landed and their fan-out is in flight. If the throw escaped before the batch entry
+  // was pushed, the receipt would record no entry at all, `unsettledBlankIds` would find nothing,
+  // and the next --resume would sail past the drain into the following batch's writes: the original
+  // incident, reproduced through the mechanism built to prevent it.
+  const artifact = artifactOf(['B1', 'B2']);
+  const receipt = createReceipt(artifact);
+  const persisted = [];
+  const writes = [];
+  await assert.rejects(
+    applyPlanInBatches({
+      artifact,
+      receipt,
+      readGroup: async () => asPlanned(),
+      write: async (g) => {
+        writes.push(g.blankId);
+        return { ok: true, noop: false };
+      },
+      persist: async (r) => persisted.push(structuredClone(r)),
+      awaitBatch: async () => {
+        throw new Error('Admin API read failed');
+      },
+      batchSize: 1,
+    }),
+    /convergence gate failed[\s\S]*--resume/
+  );
+
+  assert.deepEqual(writes, ['B1'], 'the run stops at the batch whose gate failed');
+  assert.equal(receipt.rows[0].status, ROW_APPLIED, 'that write DID land and must stay recorded');
+  assert.equal(receipt.batches.length, 1, 'the batch entry reached the receipt despite the throw');
+  assert.equal(receipt.batches[0].verdicts.B1, GATE_FAILED);
+  assert.equal(receipt.batches[0].halted, true);
+  assert.match(receipt.batches[0].gateError, /Admin API read failed/);
+  assert.ok(
+    persisted.some((r) => r.batches?.length === 1),
+    'and it reached DISK, not just the in-memory receipt'
+  );
+  assert.deepEqual(unsettledBlankIds(receipt), ['B1'], 'so the next resume drains it');
+});
+
+test('a gate-failed verdict is distinct from stale but treated the same way by the drain', () => {
+  // Different meanings: STALE means the store was read and had not converged; GATE_FAILED means the
+  // store could not be read, so convergence is unknown. Both are outstanding.
+  assert.notEqual(GATE_FAILED, STALE);
+  assert.deepEqual(unsettledBlankIds({ batches: [{ verdicts: { B1: GATE_FAILED } }] }), ['B1']);
+});
+
+test('the resume drain runs even with gate:false, because it is an absolute and not a pacing preference', async () => {
+  // An operator could reasonably expect --no-batch to skip all waiting. It does not skip THIS wait:
+  // refusing to write on top of a group an earlier batch left unconverged is not pacing.
+  const artifact = artifactOf(['B1', 'B2']);
+  const receipt = createReceipt(artifact);
+  receipt.rows[0].status = ROW_APPLIED;
+  receipt.batches = [{ index: 0, blankIds: ['B1'], appliedBlankIds: ['B1'], verdicts: { B1: STALE }, halted: true }];
+  const writes = [];
+  await assert.rejects(
+    applyPlanInBatches({
+      artifact,
+      receipt,
+      readGroup: async () => asPlanned(),
+      write: async (g) => {
+        writes.push(g.blankId);
+        return { ok: true, noop: false };
+      },
+      persist: async () => {},
+      awaitBatch: async (ids) => ({ verdicts: new Map(ids.map((b) => [b, STALE])) }),
+      batchSize: Infinity,
+      gate: false,
+      only: pendingBlankIds(receipt),
+    }),
+    /still not converged/
+  );
+  assert.deepEqual(writes, []);
+});
+
+test('a resume against a fully applied receipt writes nothing and still finalizes cleanly', async () => {
+  const artifact = artifactOf(['B1', 'B2']);
+  const receipt = createReceipt(artifact);
+  receipt.rows.forEach((r) => (r.status = ROW_APPLIED));
+  const calls = [];
+  const writes = [];
+  const res = await applyPlanInBatches({
+    artifact,
+    receipt,
+    readGroup: async () => asPlanned(),
+    write: async (g) => {
+      writes.push(g.blankId);
+      return { ok: true, noop: false };
+    },
+    persist: async () => {},
+    awaitBatch: convergingGate(calls),
+    only: pendingBlankIds(receipt),
+  });
+  assert.deepEqual(writes, []);
+  assert.deepEqual(calls, [], 'nothing fired, so nothing is waited on');
+  assert.equal(res.applied, 2);
+  assert.ok(res.receipt.finishedAt, 'every row is terminal, so the run really is finished');
+});
+
+test('an already-applied row is NOT re-announced by every later batch', async () => {
+  // Quadratic output: each batch re-walks the whole artifact, so the `only` filter has to be checked
+  // BEFORE the already-applied short-circuit. At batch size 1 a 27-group run printed roughly 350
+  // spurious APPLIED lines, which is exactly what buries the HALTED line during an incident.
+  const artifact = artifactOf(['B1', 'B2', 'B3', 'B4']);
+  const events = [];
+  const h = batchHarness({
+    artifact,
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: convergingGate([]),
+  });
+  await h.run({ batchSize: 1, onRow: (e) => events.push(e) });
+  assert.equal(events.length, 4, 'one event per group, not one per group per remaining batch');
+  assert.deepEqual(events.map((e) => e.blankId), ['B1', 'B2', 'B3', 'B4']);
+  assert.ok(!events.some((e) => e.resumed), 'and none of them is a resumed re-announcement');
 });
 
 test('a non-whole or non-positive batch size is refused rather than silently producing no chunks', async () => {

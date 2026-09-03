@@ -298,6 +298,36 @@ exit reporting "finished" with the last group mid-storm, since `finishedAt` trac
 is orthogonal to convergence. There is deliberately no `--force`: a flag that exists gets used at
 11pm.
 
+**The pre-PR review caught three defects in the pacing itself, and all three were the same mistake:
+the new safety property held only on the happy path.**
+
+The gate call was not wrapped. `awaitBatch` reads the catalogue through the Admin API, so it throws
+most readily when the Flow is already struggling, which is exactly when its batch most needs
+recording. Its rows are durably `applied` by then, so a throw escaping before the batch entry was
+pushed left the receipt with no entry at all; `unsettledBlankIds` reads only `receipt.batches`, so
+the next `--resume` found nothing outstanding and walked straight past the drain into the next
+batch's writes. The drain, the thing built to stop the incident recurring, was bypassable by a
+network blip. The entry is now persisted with a distinct `gate-failed` verdict before the error is
+re-thrown.
+
+`backfill --stage seed` still called the raw `applyPlan`, whose import this change had removed, so
+the seed stage did not run unpaced: it threw `ReferenceError` and did not run at all. It fails
+closed, so nothing was written wrongly, but the command was broken and 480 green tests did not
+notice, because nothing in the suite reaches `cmdBackfill`. It is now paced through the same engine
+as `apply`, which is what it should have been from the start: a seed write fires the same trigger and
+fans out through the same Flow, so pacing one write path and not the other leaves the incident
+reachable through the other door.
+
+And `applyPlan` checked its already-applied short-circuit before the `only` filter, so every batch
+re-announced every row an earlier batch had finished. At the default batch size of one, a 27-group
+run printed roughly 350 spurious `APPLIED` lines: cosmetic in isolation, except that the output it
+buries is the `HALTED` line, during the incident this whole change exists for.
+
+The lesson worth keeping is narrower than "add tests". All three passed every test because the tests
+drove the gate by *returning* values, never by *throwing*, and because the two commands that actually
+touch the store, `cmdApply` and `cmdVerify`, had no tests at all while the pure engine beneath them
+had thirty. Both now take injected dependencies the way `cmdRepair` already did.
+
 **Two things were quietly broken and are now enforced.** `applyPlan` ended with an unconditional
 `receipt.finishedAt = ...` while its own module header promised that "a half-applied run never looks
 finished"; that held only because a crash never reached the line, and batching gives a run a

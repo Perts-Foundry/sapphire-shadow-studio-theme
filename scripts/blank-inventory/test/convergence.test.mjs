@@ -185,6 +185,18 @@ test('a group with no members is MISSING and terminal, not five minutes of waiti
   assert.equal(res.reads, 2, 'the missing group never held the watch open');
 });
 
+test('a group that loses its last member MID-WATCH becomes MISSING, not pending until timeout', async () => {
+  // The other half of the sticky-in-both-directions claim in the module comment, and the one a
+  // "missing from the first tick" fixture never reaches: present with quantities at tick 1, gone at
+  // tick 2. A regression that left it pending would sit out the full five minutes and then blame
+  // the Flow for what is actually a tag that was removed.
+  const w = fakeWatch([{ A: [11, 12] }, {}]);
+  const res = await watchToConvergence(w.deps, { targets: new Map([['A', 12]]) });
+  assert.equal(res.verdicts.get('A'), MISSING);
+  assert.equal(res.reads, 2, 'it went terminal on the tick it vanished, not at the timeout');
+  assert.ok(res.elapsedMs < 300_000);
+});
+
 test('a group absent from the read entirely is MISSING too, not silently pending forever', async () => {
   const w = fakeWatch([{ ok: [12, 12] }]);
   const res = await watchToConvergence(w.deps, { targets: new Map([['ok', 12], ['never-tagged', 12]]) });

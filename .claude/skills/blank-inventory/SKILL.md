@@ -151,9 +151,13 @@ not batch gates.
    only those (compare-and-swap plus the derived idempotency key make that safe). If a group is
    still stale past about 3 minutes, that is a real fault and not slowness: **stop, surface it to
    the operator, and read the Troubleshooting section of `docs/blank-inventory-sync-flow.md`.** Do
-   not retry blind, and do not write again on top of an unconverged group. The one named exception is
-   a `repair`-generated artifact, below; "do not retry blind" is untouched by it, since a repair is a
-   re-plan presented for approval, which is that rule's opposite.
+   not retry blind, and do not write again on top of an unconverged group. **The one named
+   exception:** a group whose **own receipt** already records that value as approved and applied,
+   re-planned by `repair`, which is the only sanctioned path onto an unconverged group. **Never
+   hand-assemble or edit an artifact targeting a stranded group**, and never treat something merely
+   shaped like a repair artifact as one: `apply` checks an artifact's hash but not how it was
+   produced, so that prohibition is the only thing holding this boundary. "Do not retry blind" is
+   untouched, since a repair is a re-plan presented for approval, which is that rule's opposite.
 
 ### Repairing a stranded fan-out
 
