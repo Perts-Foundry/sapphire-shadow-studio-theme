@@ -122,6 +122,30 @@ export function parsePoll(consoleText) {
   return last;
 }
 
+// The SSSSTORED line editor-probe.js prints on a cold navigation: `SSSSTORED <length> <fnv>`,
+// taken from the EmailTemplate response rather than from the widget, so it is not exposed to the
+// editor's load race (Admin renders the stock body first and swaps the saved override in). Returns
+// { length, hash } for a reading, `unavailable` when a matching response carried no usable body,
+// or null when the probe saw no such response at all.
+export function parseStored(consoleText) {
+  if (/SSSSTORED unavailable/.test(consoleText) && !/SSSSTORED \d/.test(consoleText)) return 'unavailable';
+  const re = /SSSSTORED (\d+) ([0-9a-f]{8})/g;
+  let last = null;
+  let m;
+  while ((m = re.exec(consoleText)) !== null) last = { length: Number(m[1]), hash: m[2] };
+  return last;
+}
+
+// The SSSSETTLED line: the editor document stopped changing. A positive signal that the widget has
+// finished loading, so no step in the skill ever has to guess a settle interval.
+export function parseSettled(consoleText) {
+  const re = /SSSSETTLED (\d+) ([0-9a-f]{8})/g;
+  let last = null;
+  let m;
+  while ((m = re.exec(consoleText)) !== null) last = { length: Number(m[1]), hash: m[2] };
+  return last;
+}
+
 // The numbers an editor holding exactly this file would report: LF-normalised length and FNV.
 export function hashFile(file) {
   const text = readFileSync(file, 'utf8').replace(/\r\n?/g, '\n');

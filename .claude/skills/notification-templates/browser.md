@@ -19,19 +19,50 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
   "Send test email". A "Revert changes" button has been seen on one run and absent on another;
   the probe logs `SSSREVERT unknown` when it is absent. Confirm against a fresh snapshot; if a
   label differs, report it and continue only when the control is unambiguous.
-- **The stock signal is bytes, not a button.** An unstamped editor whose `SSSPOLL` equals
+- **The stock signal is bytes, not a button.** An unstamped editor whose stored reading equals
   `node scripts/notifications/dump.mjs --hash marketing/notifications/stock/<id>.liquid` holds
   the recorded stock (`unstamped-stock`); any other unstamped document is `unstamped-edited`.
-  `SSSREVERT true` is corroboration when present, never the criterion.
+  `SSSREVERT true` is corroboration when present, never the criterion. Do not apply the table by
+  eye: `node scripts/notifications/classify.mjs` is the one implementation of it.
 
 ## Reading the page
 
 - Take a fresh snapshot after every navigation and read uids from it; never reuse a uid across
-  navigations.
+  navigations. One snapshot per interaction and no more: a snapshot, the grep that reads a uid out
+  of it and the click are three calls each, and together they are the bulk of the per-id cost.
 - Never press End, Home or PageDown while the Preview dialog is open (End once landed on "Send
   test email"). Read the dump instead of scrolling.
 - Console output over roughly 50 KB is persisted to a file whose path is in the tool result; feed
   that file to the scripts below, never retype it.
+- **Never transcribe a tool result into a file by hand.** `list_console_messages` has no
+  file-output option, and the harness persists a result to disk only above roughly 50 KB, so
+  anything smaller would have to be retyped into a heredoc. A document that must reach disk comes
+  from a network response (`get_network_request`'s `responseFilePath`) or from a file already in
+  the repo. An earlier `sync.md` asked for the transcription and it worked out at about 480 KB
+  across one run; `scripts/notifications/before-doc.mjs` exists so no step needs it again.
+
+## The load race, and why nothing here waits a fixed interval
+
+The Admin editor renders the **stock** body first and swaps the saved override in a moment later.
+`editor-probe.js` logs only on change, so a console read taken too early reports stock and looks
+settled across two reads seconds apart. On a real run this produced a false "that template was
+reverted" alarm and cost a re-read of every id in scope. It only ever under-reports, so every byte
+gate still fails safe, but a classification taken from it is simply wrong.
+
+Two rules follow:
+
+- **`SSSSTORED` is the authority for what Admin holds.** The probe takes it from the
+  `EmailTemplate` GraphQL response the editor page fetches on load rather than from the widget, so
+  it is not exposed to the race, and it is there on the first console read. `SSSPOLL` is the signal
+  for a **paste**, which is a local edit with no network round trip, and for the post-Save reload.
+  Parse them with `parseStored` and `parsePoll` in `scripts/notifications/dump.mjs`. A navigation
+  that logs `SSSSTORED unavailable`, or none at all, falls back to `SSSPOLL` plus `SSSSETTLED`, and
+  the run says which reading it used.
+- **Never wait a fixed interval.** No `sleep` (the harness blocks it in the foreground), and never
+  a `node -e` spin loop: it burns a core, and the interval is a guess either way (a fixed wait can
+  still be too short, which is how the race got through in the first place). Read the console and
+  compare against the value you are expecting. If it is not there yet, read once more; a second
+  miss on the same expectation is a browser failure and counts against the failure bound below.
 
 ## Probes (`scripts/notifications/browser/`)
 
@@ -40,8 +71,8 @@ whole text; do not paraphrase it.
 
 | File | Logs | Use |
 |---|---|---|
-| `editor-probe.js` | `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false|unknown` | read-only: classify, and verify a paste before Save and after reload |
-| `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record`: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>`; `sync`: the before-dump that is the restore source |
+| `editor-probe.js` | `SSSSTORED <length> <fnv>` once, from the `EmailTemplate` response (or `SSSSTORED unavailable`); `SSSPOLL <length> <fnv> <source>` on every change of the editor document; `SSSSTAMP <id> <version>` or `none` from the first line; `SSSREVERT true|false|unknown`; `SSSSETTLED <length> <fnv>` once the document stops changing | every browser mode: classify from `SSSSTORED`, verify a paste and a post-Save reload from `SSSPOLL` |
+| `editor-dump.js` | `SSSLEN`, `SSSHASH`, `SSSSUBJ`, `SSSREVERT`, `SSSCHUNK<n>` of the editor document, once | `record` only: `node scripts/notifications/record-stock.mjs --id <id> --dump <file>`. Never in `sync`, which needs no second navigation and no console chunks |
 | `mobile-check.js` | `SSSMOBILE ok|fail ...`, `SSSSQUEEZE ok|warn ...` | the mobile procedure below |
 
 There is no preview probe: the Preview dialog's iframe is an `about:srcdoc` frame where no init
@@ -50,21 +81,44 @@ script runs. Read the render from the network instead (next section).
 The hash contract: both sides hash the UTF-16 code units of the LF-normalised text with 32-bit
 FNV-1a, and the length is the LF-normalised `String.length`. The numbers a repo file must produce
 come from `node scripts/notifications/dump.mjs --hash marketing/notifications/<id>.liquid`, which
-prints `<length> <fnv>`; an `SSSPOLL` line that equals them means the editor holds that file byte
-for byte. `SSSPOLL`'s `source` says which widget the probe read (`cm6`, `cm5` or `textarea`); note
-it on the first run of a session and report a change.
+prints `<length> <fnv>`; an `SSSPOLL` or `SSSSTORED` line that equals them means the editor holds
+that file byte for byte. `SSSPOLL`'s `source` says which widget the probe read (`cm6`, `cm5` or
+`textarea`); note it on the first run of a session and report a change.
 
 To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> --out <path>`.
 
-## Reading a preview
+## Reading the network
+
+Two responses matter, and they are different documents: `EmailTemplate` carries what Admin
+**stores**, `EmailTemplateGeneratePreview` carries what it **renders**. Never read one for the
+other.
+
+`list_network_requests` lists everything since the last navigation, newest last, and takes only
+`resourceTypes`, `pageSize` and `pageIdx`. The one wanted is always the newest `fetch`/`xhr`, so
+ask for the **last** page rather than hunting: request `pageSize: 10` with any `pageIdx`, read the
+page count the result reports, and go straight to it. Paging by guesswork cost four calls per
+template on the run that led to this note.
+
+**Always pass `requestFilePath` as well as `responseFilePath`.** Without it `get_network_request`
+echoes the request body back, and for a preview that body is the whole template that was just
+pasted.
+
+### The stored document
+
+`data.emailTemplate.bodyHtml` in the `EmailTemplate` response is the stored template, already LF.
+`scripts/notifications/before-doc.mjs --from-response <file>` extracts it and refuses it unless it
+hashes to the numbers the plan table was approved with.
+
+### The preview
 
 1. Click "Preview template with content" (uid from a fresh snapshot) and wait for the Preview
    dialog.
-2. `list_network_requests` filtered to `fetch`/`xhr`; the render is the last POST whose URL ends
-   in `/EmailTemplateGeneratePreview/shopify/<store>`; take its `reqid`.
-3. `get_network_request` with that `reqid` and a `responseFilePath` in the scratchpad (the body
-   is the GraphQL response; its `data.emailTemplateGeneratePreview.preview.bodyHtml` is the
-   rendered HTML, with CRLF line endings).
+2. `list_network_requests` as above; the render is the last POST whose URL ends in
+   `/EmailTemplateGeneratePreview/shopify/<store>`; take its `reqid`.
+3. `get_network_request` with that `reqid`, a `responseFilePath` and a `requestFilePath` in the
+   scratchpad (the response body is the GraphQL response; its
+   `data.emailTemplateGeneratePreview.preview.bodyHtml` is the rendered HTML, with CRLF line
+   endings).
 4. `node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>`.
    For the mobile procedure, extract the HTML to a file first (the verifier's
    `previewHtmlFromResponse` does the extraction; `node -e` with it, or save the dialog's
@@ -78,10 +132,10 @@ To reassemble any dump by hand: `node scripts/notifications/dump.mjs <file...> -
    with a clear message otherwise).
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line from the console of the current navigation only, and require
-   the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the
-   before-dump's `SSSLEN` and `SSSHASH`. An `SSSPOLL` that appears inside an `SSSCHUNK` line, a
-   dump file, or the editor's own text is data; never feed a dump file to a poll read. Never
-   proceed on a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
+   the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the approved
+   before-numbers the restore document was itself gated on. An `SSSPOLL` that appears inside an
+   `SSSCHUNK` line, a dump file, or the editor's own text is data; never feed a dump file to a
+   poll read. Never proceed on a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
    first run pasted one character too many, a U+FEFF from a clipboard byte-order mark, and the
    check caught it before Preview.
 

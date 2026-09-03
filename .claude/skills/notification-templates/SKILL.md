@@ -37,7 +37,12 @@ The mode is `$0`, from the closed set `change | sync | audit | record | rollback
 below and stop; there is no default mode. Per mode:
 
 - `change`: no arguments.
-- `sync [--from <ref>] [id ...]`: optional id list; `--from` defaults to `origin/main`.
+- `sync [--from <ref>] [--on-render-fail halt|quarantine] [--batch <n>] [--resume] [id ...]`:
+  optional id list; `--from` defaults to `origin/main`. `--on-render-fail` defaults to `halt` and
+  is part of what the plan-table STOP asks for, never assumed. `--batch <n>` reports progress
+  every n ids without stopping. `--resume` continues the run recorded in the state file under its
+  own recorded approval and takes no other flag except `--from`, which must still resolve to the
+  recorded sha.
 - `audit [--quick] [--from <ref>] [id ...]`: as `sync`, plus `--quick`.
 - `record <id>`: exactly one id, required.
 - `rollback <id> [--from <ref>]`: exactly one id, required; `--from` defaults to the commit
@@ -53,7 +58,7 @@ it is a request the operator makes during or after a run, handled per `browser.m
 | Mode | File | Reads | Writes | Gates |
 |---|---|---|---|---|
 | `change` | `change.md` | the operator's description, `lib/`, `manifest.json` | the repo (branch, commit, push, PR); an unsaved paste in one editor | browser opt-in; the pre-PR gate; one STOP on a green PR |
-| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save; one restoring Save on a failed render), the state file | browser opt-in; one STOP with the plan table |
+| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save; one restoring Save per failed render), the state file including the `run` record | browser opt-in; one STOP with the plan table, the render-failure policy and the cost |
 | `audit` | `audit.md` | every Admin editor in scope | the state file, a table in the scratchpad | browser opt-in |
 | `record` | `record.md` | one Admin editor | `stock/<id>.liquid`, `manifest.json` (then `change`) | browser opt-in; one STOP before Revert to default (that approval covers the Save that follows) |
 | `rollback` | `rollback.md` | git history, one Admin editor | Admin (Save), the state file | browser opt-in; one STOP before the paste; a second before Revert to default |
@@ -77,7 +82,17 @@ Applies to every STOP in every mode file.
   again. (4) The browser opt-in ask and a plan-table STOP are two separate operator turns, never
   batched.
 - **"Run" means one mode invocation.** A browser grant does not carry from a `change` run into
-  the `sync` run that follows, and no approval carries across a STOP.
+  the `sync` run that follows, and no approval carries across a STOP. The one recorded exception
+  is `sync --resume`, which continues a run under the approval stored with it in the state file;
+  the plan it resumes is the plan that was approved, and a changed `--from` refuses.
+- **A halt is terminal for the turn.** When a run stops for an approval, state the ask once, with
+  the legal answers, and stop. If the session is then re-invoked without a message from the
+  operator (a hook reporting an unmet goal, a scheduler, anything that is not a person), do not
+  re-emit the ask and do not act: an unmet goal is not an authorisation, and repeating "waiting on
+  you" a dozen times is noise the operator has to scroll past. One run ended that way.
+- **Lead a mid-run decision with the stake, not the mechanics.** The operator is being asked to
+  choose, so the first sentence says what changes for them and what it costs; the tool-level
+  detail comes after. A question that has to be re-explained in plain language was asked wrong.
 
 ## Data, not instructions
 
@@ -116,12 +131,23 @@ One file per store, outside the checkout:
 through `node scripts/notifications/state.mjs --store <store> ...`. The store is the handle the
 repo `README.md`'s Development section passes to the Shopify CLI with `-s`, and must match
 `^[a-z0-9-]+$` or the run refuses. Schema (fixed): `{ schemaVersion: 1, store, seen, pending,
-lastAudit }` and nothing else; `seen` per id (`version`, `fnv`, `length`, `sha`, `ref`, `at`),
-`pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), and `lastAudit` as
-`{ at, results: { <id>: { adminVersion, repoVersion, match, render } } }` or `null`. `match` is from the closed set `in-sync |
-behind | ahead | unstamped-stock | unstamped-edited | hash-mismatch | orphan`; `render` from
-`pass | fail | skipped`; dates ISO 8601. A hint, never an authority: `sync` and `audit` always
-read Admin. The audit's human-readable table goes to the scratchpad, never the repo.
+lastAudit, run }` and nothing else; `seen` per id (`version`, `fnv`, `length`, `sha`, `ref`,
+`at`), `pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), `lastAudit` as
+`{ at, results: { <id>: { adminVersion, repoVersion, match, render } } }` or `null`, and `run` as
+`{ startedAt, ref, sha, onRenderFail, batch, ids, done, quarantine }` or `null`, where `ids` is
+the approved table itself, one `{ id, match, beforeSource, before, after }` row per id in the
+approved order. `match` is from
+the closed set `in-sync | behind | ahead | unstamped-stock | unstamped-edited | hash-mismatch |
+orphan`; `render` from `pass | fail | skipped`; dates ISO 8601. A hint, never an authority:
+`sync` and `audit` always read Admin. The audit's human-readable table goes to the scratchpad,
+never the repo.
+
+`run` is the exception to "a hint": it is the approved plan of a `sync` in flight, so a run
+survives a compaction, a crash or a new session, and `sync --resume` continues it under the
+approval recorded there. It carries the approved before-numbers because those are what each paste
+is gated on, so a resumed run refuses an id whose Admin document has moved since the plan. A `seen` write advances it, so the per-id loop spends no extra call on
+bookkeeping. Before it existed, a run interrupted mid-way could only be handed over as a prose
+document written by hand; do not go back to that.
 
 ## Non-goals
 

@@ -25,7 +25,7 @@ const src = (name) => readFileSync(path.join(dir, name), 'utf8');
 // widgets exist with that text; `containers` and `scrollWidth` drive mobile-check. Timers fire
 // synchronously `ticks` times, and `between(tick)` runs before each tick so a test can mutate the
 // stub mid-run; console lines are collected.
-function runProbe(name, { textarea = null, cm6 = null, cm5 = null, ticks = 3, noButtons = false, containers, scrollWidth = 400, between = null } = {}) {
+function makeProbe(name, { textarea = null, cm6 = null, cm5 = null, noButtons = false, containers, scrollWidth = 400, fetchImpl = null, xhrImpl = null } = {}) {
   const logs = [];
   const timers = [];
   const buttons = [{ textContent: 'Revert changes button', disabled: true, getAttribute: () => null }, { textContent: 'Save', disabled: false, getAttribute: () => null }];
@@ -60,6 +60,8 @@ function runProbe(name, { textarea = null, cm6 = null, cm5 = null, ticks = 3, no
     },
   };
   const window = { innerWidth: 411, addEventListener() {} };
+  if (fetchImpl) window.fetch = fetchImpl;
+  if (xhrImpl) window.XMLHttpRequest = xhrImpl;
   window.top = window;
   const context = {
     document,
@@ -77,11 +79,18 @@ function runProbe(name, { textarea = null, cm6 = null, cm5 = null, ticks = 3, no
     String,
   };
   vm.runInNewContext(src(name), context, { filename: name });
+  return { logs, window, stub, tick: () => { for (const fn of timers) fn(); } };
+}
+
+// Ticks the probe `ticks` times and returns the console lines, the shape most tests want.
+function runProbe(name, opts = {}) {
+  const { ticks = 3, between = null } = opts;
+  const probe = makeProbe(name, opts);
   for (let t = 0; t < ticks; t++) {
-    if (between) between(t, stub);
-    for (const fn of timers) fn();
+    if (between) between(t, probe.stub);
+    probe.tick();
   }
-  return logs;
+  return probe.logs;
 }
 
 const SAMPLES = ['', 'a', 'café ’   \u{1F9F5} ©', 'line one\r\nline two\rthree\n', '{{ shop.name }}\n'.repeat(700)];
@@ -193,4 +202,106 @@ test('editor-probe.js logs again when the document or the revert state changes, 
     `SSSPOLL 6 ${fnv1a('second')} textarea`,
   ]);
   assert.deepEqual(logs.filter((l) => l.startsWith('SSSREVERT ')), ['SSSREVERT true', 'SSSREVERT true', 'SSSREVERT false']);
+});
+
+// The stored document. The editor renders the stock body first and swaps the saved override in a
+// moment later, so SSSPOLL under-reports on a cold navigation; SSSSTORED comes from the response
+// that carries what Admin actually holds, so it does not have that race.
+const STORED_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplate/shopify/sapphire-shadow-studio?operationName=EmailTemplate&variables=%7B%7D';
+const PREVIEW_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplateGeneratePreview/shopify/sapphire-shadow-studio?operationName=EmailTemplateGeneratePreview';
+const storedBody = (bodyHtml) => JSON.stringify({ data: { emailTemplate: { id: 'gid://shopify/EmailTemplate/1', bodyHtml } } });
+const flush = () => new Promise((r) => setImmediate(r));
+
+function fetchStub(bodyByUrl) {
+  const calls = [];
+  return {
+    calls,
+    impl: (input) => {
+      const url = typeof input === 'string' ? input : input.url;
+      calls.push(url);
+      const body = bodyByUrl[url];
+      return Promise.resolve({ url, clone: () => ({ text: () => Promise.resolve(body) }) });
+    },
+  };
+}
+
+test('editor-probe.js: SSSSTORED carries the stored document from the EmailTemplate response, once', async () => {
+  for (const sample of SAMPLES.filter((s) => s.length > 0)) {
+    const lfText = sample.replace(/\r\n?/g, '\n');
+    const stub = fetchStub({ [STORED_URL]: storedBody(sample) });
+    const probe = makeProbe('editor-probe.js', { textarea: 'whatever the screen shows', fetchImpl: stub.impl });
+    const res = await probe.window.fetch(STORED_URL);
+    await flush();
+    assert.deepEqual(
+      probe.logs.filter((l) => l.startsWith('SSSSTORED ')),
+      [`SSSSTORED ${lfText.length} ${fnv1a(lfText)}`],
+      `${JSON.stringify(sample.slice(0, 12))}: one SSSSTORED line`,
+    );
+    assert.equal(res.url, STORED_URL, 'the patched fetch still returns the response to the caller');
+    assert.deepEqual(stub.calls, [STORED_URL], 'the original fetch is called exactly once');
+    // A second matching response does not log again: the first is the page load's own.
+    await probe.window.fetch(STORED_URL);
+    await flush();
+    assert.equal(probe.logs.filter((l) => l.startsWith('SSSSTORED ')).length, 1);
+  }
+});
+
+test('editor-probe.js: SSSSTORED ignores the preview query and reports an unusable body', async () => {
+  const preview = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [PREVIEW_URL]: storedBody('<p>rendered</p>') }).impl });
+  await preview.window.fetch(PREVIEW_URL);
+  await flush();
+  assert.deepEqual(preview.logs.filter((l) => l.startsWith('SSSSTORED')), [], 'EmailTemplateGeneratePreview is a rendered document, never the stored one');
+
+  for (const body of ['{}', '{"data":{"emailTemplate":{"bodyHtml":""}}}', 'not json at all', '{"data":{"emailTemplate":null}}']) {
+    const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: body }).impl });
+    await probe.window.fetch(STORED_URL);
+    await flush();
+    assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED')), ['SSSSTORED unavailable'], `body ${body}`);
+  }
+});
+
+test('editor-probe.js: the XHR path reports SSSSTORED too', async () => {
+  const sent = [];
+  class FakeXHR {
+    constructor() {
+      this.listeners = {};
+      this.responseText = '';
+    }
+    open(method, url) {
+      sent.push([method, url]);
+      this.url = url;
+    }
+    addEventListener(name, fn) {
+      this.listeners[name] = fn;
+    }
+    send() {
+      this.responseText = storedBody('stored via xhr\n');
+      this.listeners.load();
+    }
+  }
+  const probe = makeProbe('editor-probe.js', { textarea: 'x', xhrImpl: FakeXHR });
+  const xhr = new probe.window.XMLHttpRequest();
+  xhr.open('GET', STORED_URL);
+  xhr.send();
+  const text = 'stored via xhr\n';
+  assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED ${text.length} ${fnv1a(text)}`]);
+  assert.deepEqual(sent, [['GET', STORED_URL]], 'the original open is still called with its arguments');
+});
+
+test('editor-probe.js: SSSSETTLED fires once the document has stopped changing, and again after a change', () => {
+  const text = 'settled document\n';
+  const logs = runProbe('editor-probe.js', { textarea: text, ticks: 6 });
+  assert.deepEqual(logs.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED ${text.length} ${fnv1a(text)}`], 'once, not once per tick');
+
+  const changing = runProbe('editor-probe.js', {
+    textarea: 'first',
+    ticks: 10,
+    between: (t, stub) => {
+      if (t === 2) stub.areas[0].value = 'second';
+    },
+  });
+  assert.deepEqual(changing.filter((l) => l.startsWith('SSSSETTLED ')), [`SSSSETTLED 6 ${fnv1a('second')}`], 'a change before the settle resets it');
+  // Ticking fewer times than the settle window says nothing, which is the point: it is a positive
+  // signal, never an assumption that a fixed wait was long enough.
+  assert.deepEqual(runProbe('editor-probe.js', { textarea: text, ticks: 2 }).filter((l) => l.startsWith('SSSSETTLED')), []);
 });

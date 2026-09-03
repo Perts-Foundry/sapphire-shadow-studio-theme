@@ -14,13 +14,15 @@ For a saved template that misbehaves in real mail: re-paste the last synced vers
    version is that manifest's entry for the id; the render check below passes that manifest and
    stylesheet with `--manifest` and `--css`, because the checkout's carry the newer ones.
 2. **STOP** with the id, the current Admin version (read with `editor-probe.js` after the browser
-   opt-in ask, its own turn), the target version and sha.
+   opt-in ask, its own turn, taking `SSSSTORED` rather than the first `SSSPOLL`), the target
+   version and sha.
 3. Run the `sync` per-id loop from its step 3 with the scratch file as the paste source and the
    scratch manifest and stylesheet passed to the render check
    (`verify-render.mjs --preview-response <file> --id <id> --version <target> --manifest
-   <scratch>/manifest.json --css <scratch>/brand-style.css`); the loop's before-dump, byte
+   <scratch>/manifest.json --css <scratch>/brand-style.css`); the loop's before-document, byte
    check, Save first, reload and re-verify, render check on the stored version, and restore on
-   a failed render all apply unchanged, and `state.mjs seen` records the target sha and ref.
+   a failed render all apply unchanged, and `state.mjs seen` records the target sha and ref. A
+   rollback is one id and starts no `run`, so pass `seen` its `--sha` and `--ref` explicitly.
 4. If no earlier version exists, or the target also fails its checks, a second **STOP** offers
    Revert to default as the last resort (stock is Shopify-maintained and known-good); on approval,
    click "Revert changes", Save, reload, confirm `SSSPOLL` equals

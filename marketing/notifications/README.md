@@ -59,7 +59,10 @@ rendered preview against the brand; input is a rendered HTML file, `--dump <cons
 or `--preview-response <file>`, the editor's EmailTemplateGeneratePreview response and the
 reliable way to get a render, since the Preview dialog's iframe is an `about:srcdoc` frame no
 script can be injected into; `--manifest` and `--css` override the checkout's for a rollback), `html-walk.mjs` (its
-parser), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+parser), `classify.mjs` (applies the skill's match table to a set of Admin readings and prints the
+sync plan table), `before-doc.mjs` (materialises the document Admin held before a paste, from the
+stock snapshot or from the editor's `EmailTemplate` response, refused unless it hashes to the
+expected numbers), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
 state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
 ## Versioning
@@ -109,7 +112,9 @@ byte-verified before Save and after reload, then render-checked on the stored ve
 previous document pasted back if that render fails), `audit` (which version each Admin template holds, and
 whether it renders), `record` (the drift procedure below) and `rollback` (re-paste an earlier
 version from git). It is operator-invoked, drives the Admin editor through the chrome-devtools MCP,
-and keeps a per-store state file outside the checkout as a hint. A single published locale is
+and keeps a per-store state file outside the checkout: a hint for what Admin holds, and the record
+of a `sync` in flight, so an interrupted run resumes with `sync --resume` rather than a
+hand-written handoff. A single published locale is
 assumed; re-check `shopLocales` in Admin if that changes, since notification templates are per
 language.
 
@@ -119,7 +124,9 @@ The skill's `sync` mode does the same paste with byte verification, saving befor
 (see below); this is the manual form.
 
 1. Admin > **Settings** > **Notifications** > **Customer notifications** > pick the template >
-   **Edit code**.
+   **Edit code**. The editor paints Shopify's **stock** body first and swaps the saved override in
+   a moment later, so give it a second before judging what is in there; the first thing on screen
+   is not necessarily what is stored.
 2. In the editor, select all and paste the whole repo file `<id>.liquid` over it.
 3. Use the editor's preview to check the render before saving. For the six templates with a
    body-side disclaimer paragraph (see the override list below), preview with a fulfillment that

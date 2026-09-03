@@ -82,6 +82,48 @@ editors held a pre-merge paste that exists in no commit. The cost is a window of
 length during which a bad render is live, bounded by a byte-verified restore; the batch approval
 covers that one extra Save. "Revert to default" stays out of `sync`.
 
+**What the first run of that `sync` cost, and what came out of it (2026-09-02).** 576 tool calls
+and four and a half hours to paste 8 of 45 templates. Almost all of the overhead was the skill's,
+not Shopify's, and the fixes are now in the skill and in `scripts/notifications/`:
+
+- **The Admin editor has a load race.** It paints the stock body first and swaps the saved
+  override in a moment later, and `editor-probe.js` logs only on change, so an early console read
+  reports stock and looks settled across two reads seconds apart. That produced a false "this
+  template was reverted" alarm, cost a re-read of every id in scope, and was caught by the
+  operator rather than by the run. It only ever under-reports, so every byte gate failed safe, but
+  a classification taken from it is wrong. `editor-probe.js` now patches `fetch` and
+  `XMLHttpRequest` before the page's own scripts run and logs `SSSSTORED` from the `EmailTemplate`
+  GraphQL response, which is what Admin stores rather than what the widget is currently painting,
+  and is there on the first console read.
+- **The answer to a race is never a fixed wait.** The run's response was 8 to 10 second settles
+  implemented as `node -e` spin loops: 39 of them, 311 seconds, a burned CPU core, and about 25
+  seconds per template of pure guesswork. A fixed wait can still be too short, which is how the
+  race got through in the first place. The rule now is to read and compare against the value you
+  expect, with `SSSSETTLED` as the positive signal when one is genuinely needed.
+- **No step may require transcribing a tool result into a file.** `sync.md` asked for each
+  before-dump to be written to disk "verbatim and whole", but `list_console_messages` has no file
+  output and the harness only spills above roughly 50 KB, so the instruction worked out at about
+  480 KB of hand transcription across one run. It was unimplementable at scale and the run stalled
+  on it at template 1 of 45. The restore source now comes from `data.emailTemplate.bodyHtml` in
+  the editor's own `EmailTemplate` response, or from `stock/<id>.liquid` for an id whose bytes are
+  the recorded stock, both through `before-doc.mjs` and both refused unless they hash to the
+  approved before-numbers. `editor-dump.js` is `record`-only again, which also removes a second
+  navigation per id.
+- **The match table is code now.** `classify.mjs` applies it once, with tests, instead of a run
+  hand-rolling an awk join over 46 readings and classifying by eye. It reproduces the previous
+  run's 36-row plan exactly, including the 18/18 stock-versus-hand-edited split.
+- **A run in flight lives in the state file.** `run` records the approved plan, the `--from` sha,
+  the render-failure policy, the position and the quarantine list, so `sync --resume` picks a run
+  up after a compaction or a crash. The previous run had to be handed over as a 185-line prose
+  document written by hand, twice.
+- **A failed render can quarantine instead of halting**, `--on-render-fail quarantine`, chosen at
+  the plan STOP so the operator approves the policy rather than being asked again mid-run. It is a
+  real relaxation (the set is left deliberately inconsistent) and the byte gates are untouched by
+  it: a pre-Save mismatch still never Saves, and a post-Save mismatch still stops the run.
+- **A halt is terminal for the turn.** After the run stopped for a fresh approval, something kept
+  re-invoking the session and it re-emitted the same ask about a dozen times. An unmet goal is not
+  an authorisation; the gate contract now says to state the ask once and stop.
+
 **The page background is painted on the row tables and the body, not only on the `.body`
 table.** In `order_invoice` and `pending_payment_failure`, the stock "Amount to pay" block puts a
 `<table>` directly inside a `<tr>` with no `<td>` in the branch where nothing has been paid yet.

@@ -238,6 +238,16 @@ export function previewHtmlFromResponse(jsonText) {
   return html.replace(/\r\n?/g, '\n');
 }
 
+// The STORED template inside a saved EmailTemplate response body: what Admin holds for the id,
+// as opposed to previewHtmlFromResponse's rendered output. Already LF in every response observed,
+// and normalised here anyway so the caller's hash contract holds either way.
+export function storedBodyFromResponse(jsonText) {
+  const parsed = JSON.parse(jsonText);
+  const body = parsed && parsed.data && parsed.data.emailTemplate && parsed.data.emailTemplate.bodyHtml;
+  if (typeof body !== 'string' || body.length === 0) throw new Error('response carries no data.emailTemplate.bodyHtml');
+  return body.replace(/\r\n?/g, '\n');
+}
+
 export function formatResults({ results, passed, failed }) {
   const lines = results.map((r) => (r.ok ? `PASS ${r.name}` : `FAIL ${r.name}: ${r.detail}`));
   lines.push(`verify-render: ${passed} passed, ${failed} failed`);
