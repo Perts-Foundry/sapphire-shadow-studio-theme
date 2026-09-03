@@ -62,9 +62,18 @@ The half `node --test` cannot reach is the DOM: whether `extractHeadings` derive
 TEXT that a browser's `textContent` yields, which is the entity-decoding and nested-markup half.
 That stays a manual check:
 
-- [ ] **Not yet verified in a browser.** Open `/policies/shipping-policy` (via the admin theme's
-  Preview link; the storefront is password-protected) and confirm each `h2`'s assigned `id` matches
-  the corresponding `headings[].id` here. Re-do it if either `slugify` or `extractHeadings` changes.
+**Verified in a browser on 2026-09-03** against the live `/policies/shipping-policy`: all 13 `h2`
+ids that `policy-nav.js` assigns at runtime matched the `headings[].id` values pinned here, in
+order. So `extractHeadings` does derive the same heading text a browser's `textContent` yields, for
+this body. Re-do it if either `slugify` or `extractHeadings` changes, or if a policy gains a heading
+with nested markup or an entity that the current bodies do not exercise.
+
+How, since the storefront is password-protected: open the page in a browser with a storefront
+session, and read the ids back with
+
+```js
+[...document.querySelectorAll('.shopify-policy__body h2')].map((h) => h.id)
+```
 
 ## Commands
 
