@@ -716,6 +716,55 @@ styled away, since the class is shared with the real subtotal table, so the gene
 manifest entries give the broken branch the cell it lacks. The page-colour rules stay: they cost
 nothing and cover any similar stock bug not yet found.
 
+**What the second `sync` run cost, and the three defects it surfaced (2026-09-03).** The run
+branded 18 of 46 and then stopped with 16 ids never attempted. Three separate things went wrong,
+and only one of them was the reason it stopped.
+
+- **A render check that no correct branding could satisfy.** `verify-render.mjs`'s
+  `body-paragraphs` selected body-side `<p>` elements and failed when the list was empty. Four
+  templates have no body paragraph and never will: `gift_card_confirmation`,
+  `gift_card_notification`, `store_credit_issued` and `return_label_notification` hold their whole
+  body in headings and table cells, with only the two footer paragraphs every template has. Two of
+  them failed and were quarantined on the run; the other two would have followed, and
+  `return_label_notification` is not in the header-override family, so an exemption written around
+  that family would have been wrong on the day it was written. The rule now names the four
+  (`PARAGRAPH_FREE_IDS`) and asks of them only that the white cards hold words of their own, since
+  `.body p` is the brand's one body-text colour rule and it never matches such a body. Keying it on
+  the id rather than on "this render has no paragraph" is the whole point: the lenient version
+  silently stopped checking the other 42, where a paragraph that stopped being a paragraph loses
+  the brand colour with nothing else to notice. A button label is explicitly not body copy, or any
+  layout that still rendered its CTA would satisfy the check while its content card came back
+  empty.
+- **The clipboard can report a copy that did not land.** The run halted on
+  `pos_exchange_v2_receipt`: `clipboard.mjs` reported the right file copied, and the editor settled
+  at `338 60a6b193` against an approved `23656 59aa69eb`. The pre-Save byte gate caught it and
+  nothing was saved, but the run ended. `clipboard.mjs` now reads the clipboard back and refuses to
+  report success unless it holds the file, and `sync.md` allows one re-paste before a pre-Save
+  mismatch ends the run, capped at two paste attempts per id. That is not tolerance: the paste
+  criterion is that Admin's bytes *differ* from the repo file, so a re-paste that silently does
+  nothing leaves the same mismatching reading in place and fails again. Every failure mode of the
+  retry is a false stop, never a false pass. The count of re-pastes goes in the run report, because
+  a defect a retry always clears is otherwise invisible, and this is the surface where the U+FEFF
+  byte-order-mark bug was found precisely because a clipboard defect stopped a run.
+  **The measurement boundary matters and is recorded in the file:** only the WSL pair (`clip.exe`
+  out, `powershell.exe Get-Clipboard -Raw` back) has been exercised, 35 byte-exact round trips of a
+  23 KB and a 166 KB template plus a deliberately hostile file (non-BMP surrogate pairs, CJK, RTL,
+  U+00A0, a tab), after one read came back empty on a cold interop call, which is why a mismatch is
+  read twice before it is believed. The `pbpaste`, `wl-paste` and `xclip` readers are written from
+  those tools' documented behaviour and are unverified; that is why `--no-verify` exists, and why a
+  platform with no reader is reported as unverified rather than quietly passing. A reader that
+  mangled encoding would produce a false mismatch, never a false pass.
+- **The chrome-devtools MCP can lose its browser while its own Chrome holds the profile.** Three
+  times in one session, every call failing with "The browser is already running for ...
+  chrome-profile". `browser.md` now carries the recovery, and two things about it are load-bearing.
+  Its `--isolated` suggestion is wrong here: a fresh profile has no Admin login. And the `ps`
+  filter cannot by itself tell the MCP's Chrome from the Chrome the login-loop workaround tells the
+  operator to launch on the *same* profile, which is a plausible cause of the message in the first
+  place; so the rule is to kill nothing unless exactly one match carries
+  `--remote-debugging-port`, because the other candidate is somebody's half-finished login. The
+  recovery is bounded (one per id, two per run) because it contains a successful navigation, so
+  repeated locks never register as the "two consecutive failures" the failure bound counts.
+
 **On a phone, each card is its own table, so each card can end up its own width.** A test send
 opened in the Proton Mail Android app showed the header, the body cards and the footer at three
 different widths, stepped against each other, where the web preview shows one column. The app

@@ -1,20 +1,22 @@
 // scripts/notifications/verify-render.mjs checks a rendered notification against the brand. The
 // good fixtures are built here from the real lib/brand-style.css palette (one per shape: plain,
 // a footerAnchor id with a body-side disclaimer, a header-override id, with and without the
-// Shop-app button), and each defect is a single programmatic mutation of a good fixture, asserted
+// Shop-app button, and the gift-card layout whose body copy is table cells rather than
+// paragraphs), and each defect is a single programmatic mutation of a good fixture, asserted
 // to fail exactly its own check with every other check passing. One committed fixture is derived
 // from a real preview dump (fixtures/render.order_confirmation.html, scrubbed to synthetic data
 // and patched to the current stylesheet) so the parser meets real inlined output once.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { verifyRender, parsePalette, formatResults, previewHtmlFromResponse, CHECKS, SHOP_APP_BUTTON, PALETTE_TOKENS } from '../verify-render.mjs';
+import { verifyRender, parsePalette, formatResults, previewHtmlFromResponse, CHECKS, SHOP_APP_BUTTON, PALETTE_TOKENS, PARAGRAPH_FREE_IDS } from '../verify-render.mjs';
 import { paths, readManifest, footerStamp, sha256 } from '../brand.mjs';
+import { parseHtml, select, closest, hasClass, colorOf } from '../html-walk.mjs';
 import { fnv1a } from '../dump.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -27,8 +29,10 @@ const EM_DASH = '\u2014';
 
 const CHECK_NAMES = CHECKS.map(([name]) => name);
 
-// A manifest of exactly the ids the fixtures use, at known versions.
-const manifest = { templates: { plain_id: { version: 3 }, anchored_id: { version: 1 }, banded_id: { version: 12 }, order_confirmation: { version: 1 } } };
+// A manifest of exactly the ids the fixtures use, at known versions. `gift_card_confirmation` is a
+// real id rather than a made-up one because body-paragraphs keys its paragraph-free branch on the
+// id, so the cells fixture has to name a template that really is paragraph-free.
+const manifest = { templates: { plain_id: { version: 3 }, anchored_id: { version: 1 }, banded_id: { version: 12 }, gift_card_confirmation: { version: 5 }, order_confirmation: { version: 1 } } };
 
 const ICON = (name) => `<img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-${name}.png" alt="" width="28" height="28" style="vertical-align: middle; border-width: 0;">`;
 
@@ -41,7 +45,7 @@ function mediaBlock(rules = palette.mobileRules) {
 // A rendered notification the way the inliner emits one: colours inlined as style/bgcolor, the
 // non-inlinable rules kept in the head. `shape` picks the template family; `shopApp` adds the
 // stock Shop-app button cell next to the primary one.
-function makeRender({ id = 'plain_id', version = 3, shape = 'plain', shopApp = false, stamp = true } = {}) {
+function makeRender({ id = 'plain_id', version = 3, shape = 'plain', body = 'paragraphs', copy = true, shopApp = false, stamp = true } = {}) {
   const P = palette;
   const button = `<td class="button__cell button__cell--primary" width="50%" style="border-radius: 4px;" align="center" bgcolor="${P.button.toUpperCase()}"><a href="#" class="button__text" style="color: #ffffff;">View your order</a></td>`;
   const shop = shopApp ? `<td class="button__cell--separator" style="width: 15px;"></td><td class="button__cell button__cell--shop-app" width="50%" style="border-radius: 4px; color-scheme: light only;" align="center" bgcolor="${SHOP_APP_BUTTON.toUpperCase()}"><a href="#" class="button__text button__text--shop-app" style="color: #ffffff;">Track order with Shop</a></td>` : '';
@@ -50,6 +54,39 @@ function makeRender({ id = 'plain_id', version = 3, shape = 'plain', shopApp = f
     : `<h1 class="shop-name__text" style="font-size: 30px;"><a href="#" style="color: #ffffff;">Shop</a></h1>`;
   const bodyDisclaimer = shape === 'anchored' ? `<p class="disclaimer__subtext" style="color: ${P.bodyText}; font-size: 12px;">Tracking number: <a href="#" style="color: ${P.button};">123</a></p>` : '';
   const stampLine = stamp ? `${footerStamp(id, version)}\n` : '';
+  // `body: 'cells'` is the layout the four PARAGRAPH_FREE_IDS have: an h2 the brand sheet does
+  // recolour, the rest of the copy in table cells, no body paragraph anywhere, and (as
+  // return_label_notification does) a .section row holding more cells rather than a subtotal table,
+  // whose subtotal-line__title would otherwise contribute the very paragraph this shape must not
+  // have. `copy: false` empties every one of those of its words while leaving the button standing,
+  // which is the shape of the failure that matters: a content branch that rendered nothing under a
+  // CTA that rendered fine.
+  const cells = body === 'cells';
+  const words = (t) => (copy ? t : '');
+  const contentCopy = !cells
+    ? `<h2 style="font-weight: bold; font-size: 30px; color: ${P.heading};">Thank you for your order!</h2>
+<p style="color: ${P.bodyText}; line-height: 150%; font-size: 16px;">We are getting your order ready.</p>
+${bodyDisclaimer}`
+    : `<h2 style="font-weight: bold; font-size: 30px; color: ${P.heading};">${words('Here is your gift card.')}</h2>
+<table align="center" class="giftcard__topmargin">
+<tr>
+<td class="giftcard__balance" style="font-family: Helvetica, Arial, sans-serif; font-size: 40px; color: ${P.bodyText};" align="center">${words('$50.00')}</td>
+</tr>
+<tr>
+<td class="giftcard__smalltext" style="font-family: Helvetica, Arial, sans-serif; font-size: 14px; color: #737373;" align="center">${copy ? 'Expires January 1, 2027' : '&nbsp;'}</td>
+</tr>
+</table>`;
+  const actions = `<table class="row actions" style="width: 100%;">
+<tr>
+<td class="actions__cell" style="padding-bottom: 20px;">
+<table class="button main-action-cell" style="float: left;">
+<tr>
+${button}${shop}
+</tr>
+</table>
+</td>
+</tr>
+</table>`;
   return `<html><head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <style>body {
@@ -96,18 +133,26 @@ ${headerInner}
 <table class="container" style="width: 600px; border-color: ${P.white}; border-style: solid; border-width: 36px 32px 8px;" bgcolor="${P.white}">
 <tr>
 <td>
-<h2 style="font-weight: bold; font-size: 30px; color: ${P.heading};">Thank you for your order!</h2>
-<p style="color: ${P.bodyText}; line-height: 150%; font-size: 16px;">We are getting your order ready.</p>
-${bodyDisclaimer}
-<table class="row actions" style="width: 100%;">
-<tr>
-<td class="actions__cell" style="padding-bottom: 20px;">
-<table class="button main-action-cell" style="float: left;">
-<tr>
-${button}${shop}
+${contentCopy}
+${actions}
+</td>
 </tr>
 </table>
+</center>
 </td>
+</tr>
+</table>
+${cells ? `<table class="row section" style="width: 100%;" bgcolor="${P.page}">
+<tr>
+<td class="section__cell" style="padding: 0 12px;">
+<center>
+<table class="container" style="width: 600px; border-color: ${P.white}; border-style: solid; border-width: 24px 32px;" bgcolor="${P.white}">
+<tr>
+<td>
+<h3 style="font-weight: bold; font-size: 20px; color: ${P.heading};">${words('Instructions')}</h3>
+<table align="center" class="row">
+<tr>
+<td class="giftcard__smalltext" style="font-family: Helvetica, Arial, sans-serif; font-size: 14px; color: #737373;">${words('Use the code at checkout.')}</td>
 </tr>
 </table>
 </td>
@@ -116,8 +161,7 @@ ${button}${shop}
 </center>
 </td>
 </tr>
-</table>
-<table class="row section" style="width: 100%;" bgcolor="${P.page}">
+</table>` : `<table class="row section" style="width: 100%;" bgcolor="${P.page}">
 <tr>
 <td class="section__cell" style="padding: 0 12px;">
 <center>
@@ -145,7 +189,7 @@ ${button}${shop}
 </center>
 </td>
 </tr>
-</table>
+</table>`}
 <table class="row footer" style="width: 100%; border-top-width: 0; margin: 0;" bgcolor="${P.page}">
 <tr>
 <td class="footer__cell" style="padding: 0 12px 24px;">
@@ -202,6 +246,7 @@ const good = [
   ['footerAnchor id with the Shop-app button', { id: 'anchored_id', version: 1, shape: 'anchored', shopApp: true }],
   ['header-override id', { id: 'banded_id', version: 12, shape: 'header' }],
   ['header-override id with the Shop-app button', { id: 'banded_id', version: 12, shape: 'header', shopApp: true }],
+  ['gift-card layout: body copy in cells, no body paragraph anywhere', { id: 'gift_card_confirmation', version: 5, shape: 'header', body: 'cells' }],
 ];
 
 for (const [label, opts] of good) {
@@ -270,6 +315,90 @@ for (const [label, expected, opts, fn] of mutations) {
     assertOnlyFails(run(html, { id: opts.id, version: opts.version }), expected, label);
   });
 }
+
+// --- body-paragraphs on the layouts that have no body paragraph ----------------------------------
+//
+// The four PARAGRAPH_FREE_IDS hold their whole body in headings and table cells. The rule used to
+// fail them on "no body paragraphs", which no amount of correct branding could satisfy. The
+// relaxation is keyed on the id, so the other 42 keep the FAIL they always had.
+
+const giftCard = { id: 'gift_card_confirmation', version: 5, shape: 'header', body: 'cells' };
+const gcRun = (html) => run(html, { id: giftCard.id, version: giftCard.version });
+const detailOf = (r) => r.results.find((x) => x.name === 'body-paragraphs').detail;
+
+test('the cells layout really has no body paragraph, so the good fixture is not passing by accident', () => {
+  const html = makeRender(giftCard);
+  const { root } = parseHtml(html);
+  const bodyParagraphs = select(root, (e) => e.tag === 'p' && !closest(e, (a) => hasClass(a, 'footer')));
+  assert.deepEqual(bodyParagraphs, [], 'the fixture must carry no body-side <p> at all');
+  assert.ok(select(root, (e) => e.tag === 'p').length > 0, 'the footer paragraphs are still there');
+  // The real four carry body headings and the brand sheet does recolour those, so a fixture without
+  // one would pass `headings` vacuously and would not model the layout it is named for.
+  assert.equal(select(root, (e) => e.tag === 'h2' && colorOf(e) === P.heading).length, 1, 'a branded body h2');
+  assert.equal(select(root, (e) => e.tag === 'h3' && colorOf(e) === P.heading).length, 1, 'a branded body h3');
+  // return_label_notification puts its Instructions block in a .section row, which is the half of
+  // inWhiteCard that the content row does not exercise.
+  assert.ok(html.includes('class="row section"'), 'a .section row, holding cells rather than a subtotal table');
+  assert.equal(select(root, (e) => e.tag === 'table' && hasClass(e, 'subtotal-lines')).length, 0, 'no subtotal table: its subtotal-line__title would contribute a body <p>');
+});
+
+test('the paragraph-free relaxation is keyed on the id: every other template still fails', () => {
+  // The exact regression the id gate exists for: a paragraphs-layout render whose body paragraphs
+  // stopped being paragraphs. `.body p { color }` is the only body-text colour rule, so nothing
+  // else would notice.
+  const divs = makeRender(base).replace(/<p style="color: ([^"]*)"([^>]*)>/g, '<div style="color: $1"$2>').replace(/<\/p>\n(?!<\/td>)/g, '</div>\n');
+  const { root } = parseHtml(divs);
+  assert.equal(select(root, (e) => e.tag === 'p' && !closest(e, (a) => hasClass(a, 'footer'))).length, 0, 'the mutation really removed every body paragraph');
+  const r = run(divs, { id: 'plain_id', version: 3 });
+  assert.deepEqual(r.results.filter((x) => !x.ok).map((x) => [x.name, x.detail]), [['body-paragraphs', 'no body paragraphs']]);
+  // And the same render under a paragraph-free id takes the other branch.
+  assert.ok(PARAGRAPH_FREE_IDS.has('gift_card_confirmation') && !PARAGRAPH_FREE_IDS.has('plain_id'));
+});
+
+test('an emptied white card fails even with the button still rendering, and an &nbsp; spacer is not copy', () => {
+  const html = makeRender({ ...giftCard, copy: false });
+  assert.ok(html.includes('<td class="giftcard__smalltext" style="font-family: Helvetica, Arial, sans-serif; font-size: 14px; color: #737373;" align="center">&nbsp;</td>'), 'the emptied cell holds a spacer entity');
+  assert.ok(html.includes('>View your order</a>'), 'the call to action still renders, which is the point');
+  const r = gcRun(html);
+  assertOnlyFails(r, 'body-paragraphs', 'emptied white card');
+  assert.match(detailOf(r), /^no body copy: no body paragraph, and no words of its own in any \.content or \.section container$/);
+  // One word anywhere in the card is enough to pass, and it must not be the button's.
+  assert.equal(gcRun(html.replace('align="center">&nbsp;</td>', 'align="center">x</td>')).failed, 0, 'a single word in a body cell is copy');
+});
+
+test('the colour clauses still govern the moment a cells layout grows a body paragraph', () => {
+  const anchor = '<table align="center" class="giftcard__topmargin">';
+  const withParagraph = (colour) => mutate(makeRender(giftCard), anchor, `<p style="color: ${colour}; font-size: 16px;">Redeem it whenever you like.</p>\n${anchor}`, 'cells-layout paragraph');
+  assertAllPass(gcRun(withParagraph(P.bodyText)), 'cells layout with a correct body paragraph');
+  const light = gcRun(withParagraph(P.footerText));
+  assertOnlyFails(light, 'body-paragraphs', 'cells layout with a footer-coloured body paragraph');
+  assert.match(detailOf(light), /1 body paragraph\(s\) in a footer colour/);
+  const wrong = gcRun(withParagraph('#999999'));
+  assertOnlyFails(wrong, 'body-paragraphs', 'cells layout with an off-palette body paragraph');
+  assert.match(detailOf(wrong), new RegExp(`no body paragraph is ${P.bodyText}`));
+});
+
+test('PARAGRAPH_FREE_IDS is exactly the set of templates with no body paragraph', () => {
+  const dir = path.join(repoRoot, 'marketing', 'notifications');
+  const files = readdirSync(dir).filter((f) => f.endsWith('.liquid')).sort();
+  assert.ok(files.length > 40, 'the scan found the templates');
+  const none = files
+    .filter((f) => {
+      const { root } = parseHtml(readFileSync(path.join(dir, f), 'utf8'));
+      return select(root, (e) => e.tag === 'p' && !closest(e, (a) => hasClass(a, 'footer')) && !hasClass(e, 'disclaimer__subtext')).length === 0;
+    })
+    .map((f) => f.replace(/\.liquid$/, ''));
+  assert.deepEqual(
+    none,
+    [...PARAGRAPH_FREE_IDS].sort(),
+    'a template joined or left the set whose body copy is cells and headings only. Update PARAGRAPH_FREE_IDS in verify-render.mjs to match, and check that the newcomer renders body copy the fallback can see.',
+  );
+  // The scan reads source Liquid while the check reads a render, so a body paragraph inside a
+  // branch could render away without moving this pin. Only customer_account_activate has both of
+  // its body paragraphs inside a conditional, and that one is an if/else, so a render always emits
+  // exactly one. Recorded because the day that stops being true this pin stops being sufficient.
+  assert.ok(!none.includes('customer_account_activate'));
+});
 
 test('header-row-missing also breaks header-navy when there is no header row at all', () => {
   const html = makeRender(base).replace('<table class="header row"', '<table class="row"');

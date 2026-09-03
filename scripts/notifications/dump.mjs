@@ -166,10 +166,16 @@ export function parseSettled(consoleText) {
   return last;
 }
 
+// The numbers an editor holding exactly this text would report. One definition, because three
+// places have to agree on them: `--hash` below, the browser probes' SSSPOLL/SSSSTORED lines, and
+// clipboard.mjs's read-back. The text must already be LF-normalised.
+export function measureText(text) {
+  return { length: text.length, hash: fnv1a(text) };
+}
+
 // The numbers an editor holding exactly this file would report: LF-normalised length and FNV.
 export function hashFile(file) {
-  const text = readFileSync(file, 'utf8').replace(/\r\n?/g, '\n');
-  return { length: text.length, hash: fnv1a(text) };
+  return measureText(readFileSync(file, 'utf8').replace(/\r\n?/g, '\n'));
 }
 
 function main(argv) {

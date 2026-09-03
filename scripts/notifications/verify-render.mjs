@@ -88,6 +88,47 @@ const inRow = (cls) => (e) => closest(e, (a) => isTable(a) && hasClass(a, cls)) 
 const inFooter = (e) => closest(e, (a) => hasClass(a, 'footer')) !== null;
 const describe = (e) => `<${e.tag}${e.attrs.class ? ` class="${e.attrs.class}"` : ''}>`;
 
+// The ids whose body copy is headings and table cells with no paragraph anywhere, so that
+// body-paragraphs' "no body paragraphs" FAIL can never be satisfied by correct branding. Named
+// rather than inferred from the render: nothing in a render says which layout it was meant to be,
+// so a rule that merely tolerated a paragraph-free render would stop noticing when one of the
+// other 42 templates lost its paragraphs. test/verify-render.test.mjs holds this set to the
+// templates that actually have no body paragraph, so a fifth joining them fails the suite rather
+// than being silently exempted, and one leaving does too.
+export const PARAGRAPH_FREE_IDS = new Set([
+  'gift_card_confirmation',
+  'gift_card_notification',
+  'return_label_notification',
+  'store_credit_issued',
+]);
+
+// Inside one of the white cards: a table.container that sits in a .content or .section row. Both
+// halves are load-bearing: return_label_notification puts its Instructions block in a .section row.
+// Used only by body-paragraphs, to look for copy in the layouts above.
+const inWhiteCard = (e) => closest(e, (a) => isContainer(a) && (inRow('content')(a) || inRow('section')(a))) !== null;
+
+// Tags a notification body puts words in. `td` and `th` are the catch-all: the ids above hold their
+// whole body copy in cells.
+const BODY_COPY_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th', 'li', 'div', 'span']);
+
+// A call to action is not body copy. Without this the check is satisfied by any layout that still
+// renders its button, which is the shape of the failure it most needs to catch: a content branch
+// that produced nothing while the CTA below it rendered fine.
+const inButton = (e) => hasClass(e, 'button__cell') || hasClass(e, 'link__cell')
+  || closest(e, (a) => hasClass(a, 'button__cell') || hasClass(a, 'link__cell')) !== null;
+
+// The element's OWN words, not its descendants'. Descendant text would make every wrapper cell up
+// to the container count, so one button label deep inside would answer for the whole card.
+// parseHtml decodes no entities, so a stock `empty-line` spacer arrives as the literal six
+// characters `&nbsp;` and would otherwise read as copy.
+const ownText = (e) => e.children
+  .filter((c) => c.tag === '#text')
+  .map((c) => c.text)
+  .join('')
+  .replace(/&nbsp;|&#0*160;|&#x0*a0;/gi, ' ')
+  .replace(/\u00a0/g, ' ')
+  .trim();
+
 function allHave(list, getter, expected, label) {
   const wrong = list.filter((e) => getter(e) !== expected);
   if (wrong.length === 0) return null;
@@ -159,10 +200,24 @@ export const CHECKS = [
     const h4 = select(root, (e) => e.tag === 'h4');
     return allHave(h23, colorOf, palette.heading, 'h2/h3 headings') || allHave(h4, colorOf, palette.eyebrow, 'h4 headings');
   }],
-  ['body-paragraphs', ({ root, palette }) => {
+  ['body-paragraphs', ({ root, id, palette }) => {
     // Body-side disclaimer paragraphs belong to the body-disclaimer check.
     const list = select(root, (e) => e.tag === 'p' && !inFooter(e) && !hasClass(e, 'disclaimer__subtext'));
-    if (list.length === 0) return 'no body paragraphs';
+    if (list.length === 0) {
+      // For the other 42 ids this is still the FAIL it always was: `.body p { color: #333333 }` is
+      // the only body-text colour rule the brand has, so a paragraph that stopped being a
+      // paragraph loses the brand colour with nothing else to notice.
+      if (!PARAGRAPH_FREE_IDS.has(id)) return 'no body paragraphs';
+      // For the four in that set there is no body-text colour to assert, because their body is
+      // cells: `.body p` never matches. Headings are a different matter, and the brand sheet does
+      // recolour h2/h3/h4, which is the `headings` check's business here as everywhere. What is
+      // left worth proving is that the white cards still hold words of their own, which catches a
+      // content branch that rendered nothing. The colour clauses below are untouched: they govern
+      // every render that has a body paragraph, and one of these templates growing one is checked
+      // like any other.
+      const copy = select(root, (e) => BODY_COPY_TAGS.has(e.tag) && inWhiteCard(e) && !inButton(e) && ownText(e) !== '');
+      return copy.length === 0 ? 'no body copy: no body paragraph, and no words of its own in any .content or .section container' : null;
+    }
     const light = list.filter((e) => [palette.footerText, '#ffffff', palette.shopName].includes(colorOf(e)));
     if (light.length > 0) return `${light.length} body paragraph(s) in a footer colour: ${light.slice(0, 3).map(describe).join('; ')}`;
     if (!list.some((e) => colorOf(e) === palette.bodyText)) return `no body paragraph is ${palette.bodyText}`;

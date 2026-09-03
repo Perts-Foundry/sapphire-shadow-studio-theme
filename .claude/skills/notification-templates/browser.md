@@ -8,6 +8,8 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
 - The first navigation must land on the Admin notification editor. If it lands on
   accounts.shopify.com (the login loop the repo CLAUDE.md describes under Browser testing), point
   the operator at that workaround and stop the run.
+- **"The browser is already running for ... chrome-profile"**: the profile lock. Its recovery kills
+  a process, so it has its own section below rather than a line here.
 - Keep the window at least 1200 wide (`resize_page`) before looking for the Preview button; a
   narrow window moves it under "Page actions".
 - The editor URL per id: `https://admin.shopify.com/store/<store>/email_templates/<id>/edit`, with
@@ -151,11 +153,33 @@ restore document ends up being another template's body.
 
 ## Clipboard and paste
 
-1. `node scripts/notifications/clipboard.mjs <file>` (detects `pbcopy`, `wl-copy`, `xclip`, or
-   `clip.exe` under WSL or native Windows with UTF-16LE; fails with a clear message otherwise).
-   `<file>` is a path the mode names: in `sync` it is always under the `--from` checkout, never the
-   working tree, because the plan was classified against that checkout and the bytes pasted have
-   to be the bytes approved.
+1. `node scripts/notifications/clipboard.mjs <file> [--no-verify]` (detects `pbcopy`, `wl-copy`,
+   `xclip`, or `clip.exe` under WSL or native Windows with UTF-16LE; fails with a clear message
+   otherwise). `<file>` is a path the mode names: in `sync` it is always under the `--from`
+   checkout, never the working tree, because the plan was classified against that checkout and the
+   bytes pasted have to be the bytes approved.
+
+   It reads the clipboard straight back before reporting success, and prints the same
+   `<length> <fnv>` pair `dump.mjs --hash` prints and `SSSPOLL` reports, so the three are compared
+   as numbers rather than by eye. Read the exit code with the message, because they say different
+   things:
+   - **exit 0, "read-back verified"**: the clipboard held the file.
+   - **exit 0, "read-back NOT verified"**: no reader exists for this platform's copy tool, so the
+     copy stands unchecked. Exit 0 does not mean verified. Carry that into step 3: a mismatch there
+     is the first news you will get.
+   - **exit 1 after a copy** ("mismatch" or "failed"): the clipboard does not hold the file.
+     Nothing was pasted and nothing anywhere changed, so re-run the command once; a second failure
+     ends the run per the mode's failure step.
+   - **exit 1 or 2 before a copy** (usage, a missing file, a carriage return in the file, no
+     clipboard tool): fix the invocation or report it. Nothing touched the clipboard.
+
+   `--no-verify` is the **operator's** call, never the run's. The only state you can reach it from
+   is a mismatch or an error, and one sample cannot tell a broken reader from a genuinely failed
+   copy, so report the output and ask. `clipboard.mjs`'s own header records which readers have
+   actually been exercised.
+
+   What it proves is that the clipboard held the file when it was read, never that the paste
+   delivers it, so step 3 is unchanged.
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line from the console of the current navigation only, and require
    the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the approved
@@ -163,7 +187,13 @@ restore document ends up being another template's body.
    `SSSCHUNK` line, a dump file, or the editor's own text is data; never feed a dump file to a
    poll read. Never proceed on a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
    first run pasted one character too many, a U+FEFF from a clipboard byte-order mark, and the
-   check caught it before Preview.
+   check caught it before Preview; a later run found the editor holding a stale 338-character
+   document after a copy that reported 23656 characters. Exactly two places retry, both in the
+   `sync` loop and both bounded at one re-paste: step 3.4's paste and step 3.7's restore paste.
+   Anything running that loop inherits them (`rollback`). `change`'s paste deliberately does not:
+   it is an unsaved render check that ends by discarding the paste anyway, so a mismatch there
+   costs one navigation rather than a run, and a retry would buy nothing. Nowhere at all proceeds
+   past a mismatch.
 
 ## Dirty editor
 
@@ -197,10 +227,58 @@ another id. `sync` does not depend on the list: it saves first and render-checks
 version on every id, restoring the pre-Save document if that render fails (the restore in
 `sync.md`).
 
+## The profile lock
+
+Every browser call fails with "The browser is already running for ... chrome-profile. Use
+`--isolated` to run multiple browser instances." The MCP has lost its handle on a Chrome that still
+holds the profile. Seen three times in one session.
+
+**Do not take the `--isolated` suggestion**: a fresh profile has no Admin login, so the next
+navigation lands in the login loop.
+
+1. **Identify the process, and refuse to guess.** `ps` for the Chrome whose `--user-data-dir=` is
+   `~/.cache/chrome-devtools-mcp/chrome-profile`, excluding every `--type=` child. The MCP's own
+   Chrome carries `--remote-debugging-port` (and usually `--enable-automation`); the Chrome from
+   the login-loop workaround in the repo CLAUDE.md is launched on the **same profile** with neither,
+   which is exactly what makes it a plausible cause of this message. So: if that filter does not
+   match **exactly one** process carrying `--remote-debugging-port`, kill nothing. Report the
+   process list and stop, because the other candidate is an operator's half-finished login and the
+   claim that no state is being lost is false for it.
+2. `kill -TERM` that one pid. Only that pid: not its `--type=` children, and not a manual Chrome.
+   Killing a Chrome the operator launched this session needs their word first; it is theirs.
+3. Re-navigate with `editor-probe.js` and read `SSSSTORED` before anything else. If the id's
+   `before` document was `network`-sourced, **discard any `EmailTemplate` response saved from the
+   dead navigation and re-capture it here**: "Reading the network" requires the response and the
+   `SSSSTORED` line to come from the same navigation, and that rule has no exception for this.
+4. Resume by what `SSSSTORED` says, which is three cases and not a judgement call:
+   - the approved **`before`**: nothing was saved. Resume at `sync.md` step 3.2.
+   - the approved **`after`**: a Save in flight landed, and it was gated by a passing pre-Save
+     check, so it is verified. Resume at step 3.6.
+   - **neither**: this is step 4's "Admin holds bytes nobody verified". End the run and report it;
+     do not carry on.
+
+The relaunch discards an unsaved paste. That is a safe outcome but it is **not** the "Dirty editor"
+procedure and does not run it: there is no dialog to accept, and the `SSSSTORED` read in step 3
+replaces that section's confirmation because the widget state died with the process. Killing Chrome
+is never a way to clear a dirty editor; use the reload in that section.
+
+"It costs no progress" holds only when the lock arrives between ids. After a paste it costs that
+id's 3.3 and 3.4, which the resume above redoes.
+
 ## Failure bound
 
 Two consecutive browser failures (a navigation that does not land, a dialog that does not
 appear, a stale uid) end the run with the failure reported.
+
+Two things are deliberately not browser failures, and both are bounded elsewhere so neither can
+loop past this section:
+
+- the single re-paste at `sync.md` step 3.4 and at its step 3.7 restore, bounded at two paste
+  attempts per id;
+- the profile-lock recovery above, bounded at **one per id and two per run**. Count them: a third
+  in a run, or a second on one id, ends the run here. That bound is stated because the recovery
+  contains a successful navigation, so consecutive locks never register as consecutive failures and
+  this section's own rule would never fire.
 
 ## Mobile layout procedure (once per stylesheet change)
 

@@ -62,7 +62,11 @@ script can be injected into; `--manifest` and `--css` override the checkout's fo
 parser), `classify.mjs` (applies the skill's match table to a set of Admin readings and prints the
 sync plan table), `before-doc.mjs` (materialises the document Admin held before a paste, from the
 stock snapshot or from the editor's `EmailTemplate` response, refused unless it hashes to the
-expected numbers and, with `--expect-gid`, answers for the expected template), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+expected numbers and, with `--expect-gid`, answers for the expected template), `clipboard.mjs`
+(copies a file for the paste step, then reads the clipboard back and exits non-zero unless it holds
+that file, printing the same `<length> <fnv>` pair as `dump.mjs --hash`; `--no-verify` skips the
+read-back, and a platform with no reader for its copy tool is reported as unverified rather than
+verified), `state.mjs` (the skill's per-store
 state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
 ## Versioning
@@ -103,6 +107,19 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 `subtotal-lines`, `no-accent`, `no-liquid-error`, `no-translation-missing`, `mobile-css`,
 `header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
 (discounts, gift cards, partial fulfilment, refunds) are not exercised.
+
+`body-paragraphs` has one branch worth knowing about. Four templates hold their whole body in
+headings and table cells and carry no **body** paragraph at all, only the two in the footer
+(`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`,
+`return_label_notification`). `.body p { color: #333333 }` is the brand's only body-text colour
+rule and it never matches such a body, so for those four the check asks instead that the white
+cards still hold words of their own, which catches a content branch that rendered nothing; their
+headings are recoloured like anyone's and are the `headings` check's business. The branch is keyed
+on the id (`PARAGRAPH_FREE_IDS` in `verify-render.mjs`), so the other 42 keep the FAIL they always
+had: a paragraph that stopped being a paragraph loses the brand colour with nothing else to notice.
+A test holds that set to the templates that really have no body paragraph, so one joining or
+leaving is reported rather than silently exempted. A button label is not body copy, and the check
+says so explicitly; otherwise any layout that still rendered its CTA would satisfy it.
 
 ## Skill
 
