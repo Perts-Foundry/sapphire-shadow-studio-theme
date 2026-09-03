@@ -110,3 +110,34 @@ right now, and an empty heading with a live index entry is the residue this file
   row byte-identically (or be added to `NO_SHIPPING_ROW` with a reason) and must state no
   business-day duration, both enforced by `scripts/policies/test/templates-cohesion.test.mjs`. The
   skill already names the size-chart and Product Details anchor rules for the same reason.
+
+- [ ] **Review the first two `add-product` runs for skill optimisations.** The Shift Fuel Tote run
+  (2026-09-02/03, state file `~/.local/state/add-product/shift-fuel-tote.json`, PR #149 for phase 1)
+  was the first end-to-end use and the first non-garment. It surfaced enough process defects to be
+  worth a deliberate pass over the skill rather than more one-off patches. Read the state file's
+  `evidence` strings first: they are a step-by-step record of what was actually verified and how.
+  Seed findings from that run, all still worth generalising:
+  - **A step existed nowhere and nothing caught it.** The product sat ACTIVE, media-complete and in
+    two collections while published to zero sales channels, so it was invisible and absent from the
+    sitemap. Fixed by adding `publish` to phase 2 and `published-check` to phase 3. Ask what else
+    lives in that class: an Admin field with no repo representation, no CI check, and no crawl
+    coverage, where the natural completion signal (`status == ACTIVE`) reads green.
+  - **Scope assumptions are unstated.** `publishablePublish` needs `write_publications`, which the
+    app does not grant, and that only surfaced as a mid-run ACCESS_DENIED. Category metafields are
+    worse: they need `shopify--*` metaobjects that only Admin can create. The skill should say which
+    steps are Admin-only *because the API cannot do them*, separately from those that are
+    admin-manual by policy, and ideally preflight the scopes it will need at phase-2 start the way
+    `product-images` already preflights its own.
+  - **Exit lines are not evidence.** `upload-product-media.mjs` printed `created=4` for a run whose
+    first attempt had died with a bare `Fatal: fetch failed`; only a read-back distinguished them.
+    Every completion check should name the read-only query that proves it, which most already do.
+  - **No retry around live Admin writes.** The uploader has none, and this run hit three transient
+    WSL2 IPv6/IPv4 connect failures. It survived because a re-run reported `skip(dupe)`, so the
+    write path is idempotent; that property is load-bearing and currently untested and undocumented.
+  - **Which checkout to run from is unstated.** The media step only worked from the branch carrying
+    the non-garment filename parser; the main checkout rejected all four files.
+  - **Approved artefacts were overwritten with no backup.** An approved final image was replaced
+    between sessions and recovered only because the operator had shared it to Discord. Consider a
+    rule that anything past an approval gate is copied aside before being rewritten.
+  Deliverable: proposed edits to `.claude/skills/add-product/*` (and the sub-skills where the defect
+  is theirs), presented for review, not applied blind. Delete this item when that pass lands.

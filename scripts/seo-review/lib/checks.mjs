@@ -27,7 +27,9 @@ export const BREADCRUMB_EXCLUDED_HANDLES = new Set(['all', 'frontpage', 'all-pro
 // The order that snippet scans when no metafield value applies, quoted in the
 // admin-mode finding detail so the reader knows what a product falls back to.
 // Mirrors `preferred_handles` in the same snippet; change them together.
-export const BREADCRUMB_PREFERRED_HANDLES = ['healthcare', 'the-vitals-collection', 'featured'];
+export const BREADCRUMB_PREFERRED_HANDLES = [
+  'healthcare-collection', 'the-vitals-collection', 'featured',
+];
 
 // Page types where a missing meta description is acceptable (never indexed
 // or deliberately utilitarian). Everything else should have one.

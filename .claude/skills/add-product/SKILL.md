@@ -3,7 +3,8 @@ name: add-product
 description: >-
   Orchestrate adding a product to the store end to end: sequence the Admin draft, the single repo
   PR (catalogue.json, SKU tables, template, size chart, locales), the Admin completion (template
-  suffix, SKUs, inventory, media, metafields, collections, ACTIVE), and the verification pass,
+  suffix, SKUs, inventory, media, metafields, collections, ACTIVE, sales channels), and the
+  verification pass,
   routing each surface to the skill that owns it and tracking progress in a resumable per-product
   state file. Use for a wholly new product, a new colour, or a new size, from first declaration to
   live and verified. Operator-invoked; it is a router and checklist that never writes to the live
@@ -26,8 +27,9 @@ its steps, tags, and per-step completion checks):
 - `phase-0-admin-draft.md`: DRAFT product in Admin, full variant matrix, GID recorded.
 - `phase-1-repo-pr.md`: the one repo PR, catalogue.json through locales, ending at the operator's
   pre-PR / merge / deploy handoff.
-- `phase-2-admin-completion.md`: template suffix, sub-skill runs, metafields, collections, ACTIVE.
-- `phase-3-verify.md`: preview checks, seo-review, converging verifies.
+- `phase-2-admin-completion.md`: template suffix, sub-skill runs, metafields, collections, ACTIVE,
+  publish to sales channels.
+- `phase-3-verify.md`: published check, preview checks, seo-review, converging verifies.
 
 ## Ground rules
 
@@ -121,6 +123,15 @@ catalogue.json's two order contracts when proposing the diff (its own `comment` 
   every published product from the sitemap; a product set ACTIVE before its template exists on the
   live theme breaks every later deploy. A DRAFT product is not in the sitemap, which is why the
   whole flow is safe in between.
+- **ACTIVE is not published, and the run is not finished until the channels are set.** Status and
+  sales-channel membership are independent fields. A product can be ACTIVE, media-complete, in
+  collections, and published to nothing, in which case it is invisible to every customer and absent
+  from the sitemap. Nothing catches this: not CI, not the deploy smoke, not `seo-review`, whose
+  crawl reads the sitemap the product is missing from. The Admin Publishing card reading "This
+  product is not published anywhere" is the only signal, and it is easy to walk past. Publishing is
+  Admin-only regardless: `publishablePublish` needs `write_publications`, which this app does not
+  grant. Never report a product as live on the strength of `status == ACTIVE` alone; check
+  `resourcePublicationsV2` against a sibling.
 
 Everything surface-specific is a pointer, and the owning document is authoritative when they
 disagree: template cloning and the product-card block (`docs/theme-conventions.md`), structured

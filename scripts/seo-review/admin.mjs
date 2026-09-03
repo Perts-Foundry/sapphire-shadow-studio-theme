@@ -165,6 +165,36 @@ export function breadcrumbCollectionFindings(products, { manifest } = {}) {
   return findings;
 }
 
+/**
+ * Findings for preferred-handle entries that name no existing collection.
+ *
+ * Step 3 of the cascade scans a hardcoded handle list, and the snippet skips a
+ * handle that does not resolve without any error, which is the quiet failure
+ * the list's own comment warns about. Nothing checked the entries themselves:
+ * `healthcare` sat in the list while the store's collection was
+ * `healthcare-collection`, so Healthcare Collection could never win at step 3
+ * and every multi-collection product fell through to step 4's arbitrary order.
+ *
+ * A dead entry is an ERROR, not a WARN: unlike a missing metafield, which has a
+ * working fallback behind it, this silently removes a rung from the cascade.
+ *
+ * @param {Array<{handle:string}>} collections every collection in the store
+ * @returns {Array<{check:string, severity:string, url:string, detail:string}>}
+ */
+export function breadcrumbPreferredHandleFindings(collections) {
+  const live = new Set(collections.map((c) => c.handle));
+  return BREADCRUMB_PREFERRED_HANDLES
+    .filter((h) => !live.has(h))
+    .map((h) => ({
+      check: 'breadcrumb-preferred-handle-missing', severity: ERROR,
+      url: `admin:collection/${h}`,
+      detail: `the theme's preferred-handle list names "${h}", which is not a collection in this store; `
+        + 'the snippet skips it silently, so that rung of the breadcrumb cascade never fires. '
+        + 'Fix preferred_handles in snippets/breadcrumbs.liquid and BREADCRUMB_PREFERRED_HANDLES '
+        + 'in scripts/seo-review/lib/checks.mjs together.',
+    }));
+}
+
 async function main() {
   const log = (l) => process.stdout.write(l + '\n');
   for (const v of ['MYSHOPIFY_DOMAIN', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET']) {
@@ -207,6 +237,7 @@ async function main() {
     }
   }
   findings.push(...breadcrumbCollectionFindings(products));
+  findings.push(...breadcrumbPreferredHandleFindings(collections));
   if (truncated.length > 0) {
     findings.push({
       check: 'admin-read-truncated', severity: ERROR, url: 'admin:query',

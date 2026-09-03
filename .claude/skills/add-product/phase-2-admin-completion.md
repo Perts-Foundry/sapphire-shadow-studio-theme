@@ -26,10 +26,34 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
    access setting is the silent-fail step). Fill the Admin SEO title and description; SEOInput
    replaces the whole seo object, so never partial-update it.
    - Completion check: read-only query shows the metafield and both SEO fields.
-6. `collections` (admin-manual): add the product to its collection(s). The main-menu collections
+6. `category-metafields` (admin-manual): assign the product Category, then fill the category
+   metafields it exposes. **Admin UI only, and not by choice**: the values are metaobject
+   references under Shopify's reserved `shopify--*` definitions, which Admin creates the first time
+   a value is picked and which the API cannot create. On a category no product has used before
+   there is nothing to reference yet, so `metafieldsSet` has no valid value to write. Skipping this
+   is a real cost, not cosmetic: these feed Shopify search, storefront filters, and the
+   cross-channel catalogues (Google, Facebook, TikTok, Pinterest).
+   - Completion check: a read-only query lists a non-empty `shopify.*` metafield set; compare the
+     count against a sibling product rather than against the category's total, which is always
+     larger than what a given product can answer.
+7. `collections` (admin-manual): add the product to its collection(s). The main-menu collections
    dropdown is generated; do not give the catalog link children, and no menu edit is needed.
    - Completion check: the collection lists the product.
-7. `activate` (admin-manual, LAST): set the product ACTIVE. Gated on `deploy-verified` and
+8. `activate` (admin-manual): set the product ACTIVE. Gated on `deploy-verified` and
    `template-suffix` both holding; an ACTIVE product with a missing template breaks the sitemap
    smoke for every later deploy.
-   - Completion check: status ACTIVE via read-only query; the product URL renders.
+   - Completion check: status ACTIVE via read-only query.
+9. `publish` (admin-manual, LAST): publish the product to its sales channels. **ACTIVE is not
+   published, and this is the step whose absence made a product look finished while being invisible
+   to every customer.** Status and channel membership are independent: a product can be ACTIVE,
+   fully populated, in collections, and reachable by no one, which is what "This product is not
+   published anywhere" in the Admin Publishing card means. Nothing in the repo, the smoke test, or
+   `seo-review` catches it, because an unpublished product is simply absent from the sitemap the
+   crawl reads.
+   Admin UI only: `publishablePublish` needs the `write_publications` scope, which this app does not
+   grant, so an API attempt fails with ACCESS_DENIED rather than doing anything.
+   Read the channel list off a sibling product rather than typing one from memory, so a channel
+   added to the store later cannot be silently missed.
+   - Completion check: `resourcePublicationsV2` lists the same channels as a sibling product, by
+     name. Do not accept `status == ACTIVE` as evidence for this step; it is exactly the signal that
+     misled the run this step was added after.

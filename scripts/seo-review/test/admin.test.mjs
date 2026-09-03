@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isEffectivelyEmpty, breadcrumbCollectionFindings, breadcrumbBlankOkHandles } from '../admin.mjs';
+import {
+  isEffectivelyEmpty, breadcrumbCollectionFindings, breadcrumbBlankOkHandles,
+  breadcrumbPreferredHandleFindings,
+} from '../admin.mjs';
 import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
-import { WARN } from '../lib/checks.mjs';
+import { WARN, ERROR, BREADCRUMB_PREFERRED_HANDLES } from '../lib/checks.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
   assert.equal(isEffectivelyEmpty(''), true);
@@ -40,6 +43,35 @@ test('every nil cause of an unset breadcrumb metafield reads the same', () => {
   assert.deepEqual(f.map((x) => x.check), Array(3).fill('product-breadcrumb-collection-missing'));
   assert.deepEqual(f.map((x) => x.url), ['admin:product/a', 'admin:product/b', 'admin:product/c']);
   assert.ok(f.every((x) => x.severity === WARN));
+});
+
+// The regression this pair exists for: `healthcare` sat in the preferred list while the store's
+// collection was `healthcare-collection`. The snippet skips an unresolvable handle without error,
+// so Healthcare Collection could never win step 3 and nothing reported it.
+test('a preferred handle naming no collection is an ERROR', () => {
+  const f = breadcrumbPreferredHandleFindings([
+    { handle: 'the-vitals-collection' }, { handle: 'featured' },
+  ]);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].check, 'breadcrumb-preferred-handle-missing');
+  assert.equal(f[0].severity, ERROR);
+  assert.match(f[0].detail, /healthcare-collection/);
+});
+
+test('preferred handles that all resolve produce no finding', () => {
+  const collections = BREADCRUMB_PREFERRED_HANDLES.map((handle) => ({ handle }));
+  assert.deepEqual(breadcrumbPreferredHandleFindings([...collections, { handle: 'extra' }]), []);
+});
+
+// checks.mjs only quotes the list in a finding detail; snippets/breadcrumbs.liquid is what actually
+// scans it. Their comments say "change them together", which nothing enforced. This does.
+test('the preferred-handle list matches the one the snippet scans', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const url = new URL('../../../snippets/breadcrumbs.liquid', import.meta.url);
+  const liquid = await readFile(url, 'utf8');
+  const m = liquid.match(/assign preferred_handles = '([^']+)' \| split: ','/);
+  assert.ok(m, 'could not find preferred_handles in snippets/breadcrumbs.liquid');
+  assert.deepEqual(m[1].split(','), BREADCRUMB_PREFERRED_HANDLES);
 });
 
 // A hand-authored manifest with TWO non-garment products, one whose handle and template suffix are

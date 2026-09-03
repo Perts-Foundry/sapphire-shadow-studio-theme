@@ -13,7 +13,13 @@
 !.env.example
 
 # npm
-node_modules/
+# No trailing slash: a `node_modules/` pattern matches a directory only, so a
+# SYMLINK named node_modules stays untracked-but-visible. Working in a worktree
+# under .claude/worktrees/ makes that the obvious way to get dependencies (the
+# worktree has no node_modules of its own), and the symlink's target is an
+# absolute path containing the developer's username, which the Sensitive
+# Content rules in CLAUDE.md forbid committing. This form ignores both shapes.
+node_modules
 npm-debug.log
 .npm/
 
