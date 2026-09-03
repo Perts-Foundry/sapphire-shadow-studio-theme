@@ -23,7 +23,27 @@
   assign og_title = page_title | default: shop.name
   assign og_url = canonical_url | default: request.origin
   assign og_type = 'website'
-  assign og_description = page_description | default: shop.description | default: shop.name
+
+  # Neither /search nor /collections has an Admin-editable SEO description, and
+  # Shopify fills `page_description` on both from the shop's own meta
+  # description. That put one identical description on three URLs (/, /search,
+  # /collections), which is the duplicate-description class the July 2026 audit
+  # closed on products. The homepage keeps the shop description, because it is
+  # the page that description is about; the other two are handled here.
+  #
+  # /search is noindexed below, so it needs no description at all. /collections
+  # is indexable and gets its own line. Change the copy in the locale files, not
+  # here, and remember `locales/it.json` and `locales/ro.json` mirror it.
+  assign seo_description = page_description
+  if request.page_type == 'search'
+    assign seo_description = ''
+  elsif request.page_type == 'list-collections'
+    assign seo_description = 'content.collections_list_meta_description' | t
+  endif
+
+  # og:description keeps the old fallback chain so a social card is never blank,
+  # even on the pages that deliberately emit no meta description.
+  assign og_description = seo_description | default: shop.description | default: shop.name
 
   if request.page_type == 'product'
     assign og_type = 'product'
@@ -139,14 +159,32 @@
   >
 {%- endif -%}
 
+{%- comment -%}
+  Internal search result pages are noindexed for the ordinary reason: they are
+  generated per query, so an indexable /search mints an unbounded set of thin,
+  near-duplicate URLs out of whatever anyone happens to type. `follow` again, so
+  the product links on a results page keep passing through.
+
+  Kept as its own guard rather than folded into the blog condition above so each
+  tag stays next to the reasoning for it. `search` is already in `NOINDEX_OK` in
+  `scripts/seo-review/lib/checks.mjs`, so unlike the blog tag this one needs no
+  accepted-risks entry.
+{%- endcomment -%}
+{%- if request.page_type == 'search' -%}
+  <meta
+    name="robots"
+    content="noindex, follow"
+  >
+{%- endif -%}
+
 <link
   rel="canonical"
   href="{{ canonical_url }}"
 >
 
-{% if page_description %}
+{% if seo_description != blank %}
   <meta
     name="description"
-    content="{{ page_description | escape }}"
+    content="{{ seo_description | escape }}"
   >
 {% endif %}

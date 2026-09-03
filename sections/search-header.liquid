@@ -13,8 +13,15 @@
       {% assign heading_text = 'content.search_results' | t %}
     {% endif %}
 
+    {%- comment -%}
+      `<h1>`, not the `<h3>` this shipped with: the search page is the only page
+      type on the store that rendered zero `<h1>` elements, which the seo-review
+      crawl reports as an `h1-count` ERROR and a screen reader hears as a page
+      with no title. The visual size is unaffected; that comes from the block's
+      `type_preset` in `templates/search.json`, which stays `h2`.
+    {%- endcomment -%}
     {% capture heading_text %}
-      <h3>{{ heading_text }}</h3>
+      <h1>{{ heading_text }}</h1>
     {% endcapture %}
 
     {% content_for 'block', id: 'heading', type: '_heading', text: heading_text %}

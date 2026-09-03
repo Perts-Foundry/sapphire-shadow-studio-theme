@@ -101,3 +101,51 @@ test('sitemap parsers extract locs and child sitemaps', () => {
 test('decodeEntities covers the head-metadata set', () => {
   assert.equal(decodeEntities('A &amp; B &quot;C&#39;s&quot; &lt;tag&gt;'), 'A & B "C\'s" <tag>');
 });
+
+// Built with fromCodePoint rather than written as glyphs: this repo bans the
+// literal em dash (U+2014) in every file, and naming its neighbours the same
+// way keeps the set uniform and greppable.
+const NDASH = String.fromCodePoint(0x2013);
+const MDASH = String.fromCodePoint(0x2014);
+const RSQUO = String.fromCodePoint(0x2019);
+const HELLIP = String.fromCodePoint(0x2026);
+
+test('decodeEntities decodes the typographic entities Shopify puts in titles', () => {
+  // &ndash; is the separator every <title> in this theme is built with. Missing
+  // it made the crawl over-count six real titles by 6 characters on 2026-09-03.
+  assert.equal(decodeEntities('Nurse &ndash; Studio'), `Nurse ${NDASH} Studio`);
+  assert.equal(decodeEntities('Nurse &mdash; Studio'), `Nurse ${MDASH} Studio`);
+  assert.equal(decodeEntities('Women&rsquo;s Vest'), `Women${RSQUO}s Vest`);
+  assert.equal(decodeEntities('More&hellip;'), `More${HELLIP}`);
+  // Folded to a plain space rather than U+00A0 so it cannot split a duplicate pair.
+  assert.equal(decodeEntities('Nurse&nbsp;Apparel'), 'Nurse Apparel');
+});
+
+test('decodeEntities decodes numeric entities in both bases', () => {
+  assert.equal(decodeEntities('&#8211;&#x2014;&#39;&#x27;'), `${NDASH}${MDASH}''`);
+  assert.equal(decodeEntities('&#128512;'), String.fromCodePoint(0x1f600));
+});
+
+test('decodeEntities leaves unknown and malformed entities exactly as written', () => {
+  // An unrecognised name, a bare ampersand, an unterminated entity, an
+  // out-of-range code point, and a lone surrogate all pass through untouched:
+  // a decode may shorten what it understands, never mangle what it does not.
+  assert.equal(
+    decodeEntities('&fnord; & &amp Rock &#1114112; &#xD800;'),
+    '&fnord; & &amp Rock &#1114112; &#xD800;',
+  );
+});
+
+test('decodeEntities does not double-decode', () => {
+  // A chained .replace() that decodes &amp; first turns this into '<b>'.
+  assert.equal(decodeEntities('&amp;lt;b&amp;gt;'), '&lt;b&gt;');
+});
+
+test('extractTitle measures a real store title at its rendered length', () => {
+  // Regression fixture for the phantom title-long findings: as Shopify renders
+  // it this is 62 raw characters and 56 rendered ones, against a 60 target.
+  const raw = '<title>\n  Applique Nurse &amp; Medic Crewneck &ndash; Sapphire Shadow Studio\n</title>';
+  const title = extractTitle(raw);
+  assert.equal(title, `Applique Nurse & Medic Crewneck ${NDASH} Sapphire Shadow Studio`);
+  assert.equal(title.length, 56);
+});
