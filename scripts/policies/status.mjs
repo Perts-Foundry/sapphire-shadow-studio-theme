@@ -99,7 +99,10 @@ export function nextCommand(state, key) {
     case STATES.CONFLICT:
       return 'npm run policies:pull -- --check              (read both sides; do NOT pull blind)';
     case STATES.NO_STATE:
-      return 'npm run policies:pull                         (seeds the observation state)';
+      // `--seed` and not a bare pull: a bare pull takes Admin's body into the repo on the way,
+      // which reverts a committed unpushed wording change without asking. `--seed` records the
+      // baseline and writes no repo file, so it is the right answer whether or not one is pending.
+      return 'npm run policies:pull -- --seed              (records the baseline; writes no repo file)';
     case STATES.NOT_TRACKED:
       return 'nothing: it is a leftover in the state file and is ignored';
     default:
@@ -213,8 +216,15 @@ export function format(result) {
   const lines = [];
   const { branch, state } = result;
   lines.push(`branch: ${branch.branch ?? 'unknown'}${branch.note ? ` (${branch.note})` : ''}${branch.merged === false ? ' [not merged into origin/main]' : ''}`);
-  lines.push(`state:  ${state.file}${state.exists ? '' : ' (ABSENT)'}`);
-  lines.push(`live:   ${result.live ? 'read from Admin' : 'not read; pass --live for the Admin column'}`);
+  // `display` collapses $HOME: this output is exactly what an operator pastes into a PR or an
+  // issue on a PUBLIC repo, and an absolute state path carries their username.
+  lines.push(`state:  ${state.display}${state.exists ? '' : ' (ABSENT)'}`);
+  lines.push(
+    result.live
+      ? 'live:   read from Admin'
+      : 'live:   NOT READ. Without --live this compares against the last observation, which may be ' +
+        'stale, and "Admin moved" is not a state this run can report.',
+  );
   lines.push('');
   for (const row of result.rows) {
     const version = row.version === null ? '' : ` v${row.version}${row.stamped ? '' : ' (unstamped)'}`;

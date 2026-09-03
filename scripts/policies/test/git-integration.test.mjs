@@ -1,5 +1,7 @@
 // The git-backed gates against REAL git, with nothing injected.
 //
+// THIS FILE BUILDS NO FAKE AT ALL; it is the layer below them.
+//
 // WHY A SECOND LAYER. `makeGitFake` proves the gate reacts correctly to what git says. It cannot
 // prove that the argv production code emits is one real git accepts, or that the pathspec it uses
 // actually matches the files it means to match. That gap is exactly the #154 defect: a pathspec

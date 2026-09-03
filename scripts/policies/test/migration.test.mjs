@@ -14,7 +14,7 @@
 //   A STALE BRANCH is one opened before PR A: the old manifest shape, unstamped bodies. `check`
 //   is what refuses there, not the state gate, and one pull repairs the whole checkout.
 
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,6 +27,7 @@ import { POLICY_TYPES, coreSha256, fileNameForType, keyForType, parseVersionStam
 import {
   BODIES,
   GIT_ARGV,
+  assertAllGitFakesExhausted,
   assertTreeUnchanged,
   NOW,
   cleanup,
@@ -43,8 +44,10 @@ import {
 
 /** A git fake that must never be called: this path is not expected to reach the dirty gate. */
 function noGit() {
-  // git-fake-not-exhausted: the point is that the gate never runs.
-  return makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }]);
+  return makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }], {
+    exhaustive: false,
+    why: 'this path must not reach the dirty gate; the assertion is that git is never asked',
+  });
 }
 
 const ALL_FILES = POLICY_TYPES.map(fileNameForType);
@@ -141,8 +144,10 @@ test('THE MIGRATION WINDOW: a migrated repo with no state file, seeded by one pu
     // ---- 2. a BARE pull refuses too, rather than silently reverting the wording change -----
     // Without a baseline there is no way to tell whether the repo moved or Admin did, and
     // guessing "Admin" is exactly how a merged wording change disappears.
-    // git-fake-not-exhausted: the refusal lands before the dirty gate, which is the assertion.
-    const bareGit = makeGitFake([{ args: GIT_ARGV.statusFiles(fileNameForType('SHIPPING_POLICY')), result: '' }]);
+    const bareGit = makeGitFake([{ args: GIT_ARGV.statusFiles(fileNameForType('SHIPPING_POLICY')), result: '' }], {
+      exhaustive: false,
+      why: 'the no-baseline refusal must land before the dirty gate, which is the assertion below',
+    });
     await assert.rejects(
       () => pullRun({ client: makeClient({ live }), root, now: NOW, stateDir, gitRun: bareGit }),
       /no observation state on this machine.*--seed/s,
@@ -182,8 +187,10 @@ test('THE ORDINARY MIGRATION: repo and Admin agree, so one plain pull seeds and 
   const stateDir = makeStateDir();
   try {
     const treeBefore = snapshotTree(policiesDir(root));
-    // git-fake-not-exhausted: nothing differs, so the gate has nothing to ask about.
-    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }]);
+    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }], {
+      exhaustive: false,
+      why: 'nothing differs, so the gate has nothing to ask about',
+    });
     const pull = await pullRun({ client: makeClient({ live: liveFrom() }), root, now: NOW, stateDir, gitRun });
     assert.deepEqual(pull.changed, []);
     assert.deepEqual(gitRun.calls, [], 'the gate ran with nothing to overwrite');
@@ -258,8 +265,10 @@ test('a HALF-MIGRATED manifest (a leftover remote field) is IGNORED, not refused
     assert.deepEqual(problems, [], 'a leftover observation field turned check red');
     assert.deepEqual(mismatches, []);
 
-    // git-fake-not-exhausted: only the manifest shape moves here, no body.
-    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }]);
+    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }], {
+      exhaustive: false,
+      why: 'only the manifest shape moves here, so no body is overwritten and the gate is not reached',
+    });
     await pullRun({ client: makeClient({ live: liveFrom() }), root, now: NOW, stateDir, gitRun });
     const after = JSON.parse(readManifestRaw(root)).policies.refund_policy;
     assert.equal('remote' in after, false, 'the next pull must delete the leftover');
@@ -276,8 +285,10 @@ test('reverting the migration is survivable: an orphan state file is harmless', 
   const stateDir = makeStateDir();
   const root = makeRoot();
   try {
-    // git-fake-not-exhausted: repo and Admin agree, so no body is overwritten.
-    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }]);
+    const gitRun = makeGitFake([{ args: GIT_ARGV.statusFiles(...ALL_FILES), result: '' }], {
+      exhaustive: false,
+      why: 'repo and Admin agree, so no body is overwritten and the gate is not reached',
+    });
     await pullRun({ client: makeClient({ live: liveFrom() }), root, now: NOW, stateDir, gitRun });
     assert.ok(readState({ dir: stateDir }));
     rmSync(join(stateDir, 'observed.json'));
@@ -290,4 +301,12 @@ test('reverting the migration is survivable: an orphan state file is harmless', 
     cleanup(root);
     rmSync(stateDir, { recursive: true, force: true });
   }
+});
+
+
+after(() => {
+  // Exhaustion, checked at runtime rather than by counting text: every expectation registered by
+  // every fake this file built must have been invoked, or the gate that would have invoked it did
+  // not run. A fake deliberately never reached opts out at its own call site.
+  assertAllGitFakesExhausted(assert);
 });

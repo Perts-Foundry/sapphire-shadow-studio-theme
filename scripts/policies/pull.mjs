@@ -50,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 import { assertScopes, createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import { createReadOnlyClient } from '../site-check/lib/admin-readonly.mjs';
 import { paths, readManifest, REPO_ROOT } from './check.mjs';
+import { displayPath } from './lib/backups.mjs';
 import { floorFor, readState, recordObservation, resolveStateDir, writeState, emptyState } from './lib/state.mjs';
 import {
   POLICY_TYPES,
@@ -263,23 +264,34 @@ export async function run({ client, root, now, stateDir, checkOnly = false, seed
   return { changed, written: files.map(({ file }) => file), manifestChanged, directions, stateFile };
 }
 
-async function main(argv) {
+/**
+ * The CLI. Exported, with the client and state directory injectable, so the OPERATOR-FACING TEXT is
+ * under test rather than only the `directions` map behind it.
+ *
+ * The messages are the product here: the regression this direction-naming exists to stop was a
+ * message, not a classification. `--check` used to tell the operator to run `policies:pull` for
+ * every drift, which in the repo-ahead case is the destructive action.
+ *
+ * The injection points default to the real thing, so a caller that passes nothing gets the live
+ * behaviour and a test that forgets the fake gets a client it cannot use without credentials.
+ */
+export async function main(argv, { client: injectedClient, stateDir: injectedStateDir } = {}) {
   const args = argv.slice(2);
   const checkOnly = args.includes('--check');
   const seedOnly = args.includes('--seed');
   const discardLocal = args.includes('--discard-local');
   const rootFlag = args.indexOf('--root');
   const root = rootFlag !== -1 ? resolve(args[rootFlag + 1]) : REPO_ROOT;
-  const client = createReadOnlyClient(createAdminClient());
+  const client = injectedClient ?? createReadOnlyClient(createAdminClient());
 
   let result;
   try {
-    await assertScopes(client, READ_SCOPES);
+    if (!injectedClient) await assertScopes(client, READ_SCOPES);
     result = await run({
       client,
       root,
       now: new Date().toISOString(),
-      stateDir: resolveStateDir(process.env),
+      stateDir: injectedStateDir ?? resolveStateDir(process.env),
       checkOnly,
       seedOnly,
       discardLocal,
@@ -293,7 +305,7 @@ async function main(argv) {
 
   const { changed, written, manifestChanged, directions, stateFile, seeded } = result;
   if (seeded) {
-    console.log(`wrote ${stateFile}`);
+    console.log(`wrote ${displayPath(stateFile)}`);
     console.log('policies:pull --seed recorded what Admin holds. NOTHING in the repo was touched.');
     console.log('Run npm run policies:status to see where each policy stands.');
     return 0;
@@ -339,7 +351,7 @@ async function main(argv) {
 
   for (const file of written) console.log(`wrote ${file}`);
   if (manifestChanged) console.log('wrote manifest.json');
-  if (stateFile) console.log(`wrote ${stateFile}`);
+  if (stateFile) console.log(`wrote ${displayPath(stateFile)}`);
   console.log(`policies:pull wrote ${written.length} file(s)${manifestChanged ? ' and the manifest' : ''}`);
   return 0;
 }

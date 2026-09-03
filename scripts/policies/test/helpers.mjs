@@ -254,9 +254,17 @@ export class UnexpectedGitInvocation extends Error {
  * @param {Array<{args: string[], result?: string, throws?: Error|string}>} expectations
  *        `result` is what git prints (trimmed by production code); `throws` makes the invocation
  *        fail the way `execFileSync` does on a non-zero exit.
+ * @param {object} [options]
+ * @param {boolean} [options.exhaustive]  false for a fake deliberately left unused (a test OF the
+ *        fake, or a gate the test asserts is never reached). Must carry `why`.
+ * @param {string} [options.why]  required with `exhaustive: false`, so an opt-out is a sentence a
+ *        reviewer reads rather than a flag someone added to make a failure go away.
  */
-export function makeGitFake(expectations) {
+export function makeGitFake(expectations, { exhaustive = true, why = null } = {}) {
   if (!Array.isArray(expectations)) throw new TypeError('makeGitFake takes an array of expectations');
+  if (!exhaustive && (typeof why !== 'string' || why.trim() === '')) {
+    throw new TypeError('makeGitFake({ exhaustive: false }) needs a `why` saying which gate is deliberately not reached');
+  }
   const table = expectations.map((e, i) => {
     if (!Array.isArray(e.args)) throw new TypeError(`expectation ${i} has no args array`);
     if (e.result !== undefined && typeof e.result !== 'string') {
@@ -282,9 +290,15 @@ export function makeGitFake(expectations) {
   };
 
   run.calls = calls;
+  run.exhaustive = exhaustive;
+  run.why = why;
+  REGISTERED.push(run);
+  /** The expectations nobody invoked. Empty when the gate under test made every call. */
+  run.unusedExpectations = () => table.filter((e) => e.used === 0).map((e) => e.args);
+
   /** Every registered expectation must have been used at least once. Assert this at teardown. */
   run.assertExhausted = (assert, message = 'git expectations') => {
-    const unused = table.filter((e) => e.used === 0).map((e) => e.args);
+    const unused = run.unusedExpectations();
     assert.deepEqual(
       unused,
       [],
@@ -297,6 +311,32 @@ export function makeGitFake(expectations) {
 
 function sameArgv(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/**
+ * Every fake built in this process, so exhaustion can be checked at RUNTIME rather than by counting
+ * text. A textual rule cannot follow a file-level factory (`cleanGit`, `noGit`) into the tests that
+ * call it, which left roughly three quarters of this directory's fakes outside the old rule.
+ */
+const REGISTERED = [];
+
+/**
+ * Assert that every fake this file built had all of its expectations invoked. Call it from an
+ * `after()` hook; `test/test-hygiene.test.mjs` requires every file building fakes to do so.
+ */
+export function assertAllGitFakesExhausted(assert) {
+  const unused = [];
+  for (const fake of REGISTERED) {
+    if (!fake.exhaustive) continue;
+    for (const args of fake.unusedExpectations()) unused.push(JSON.stringify(args));
+  }
+  assert.deepEqual(
+    unused,
+    [],
+    `${unused.length} git expectation(s) were registered and never invoked, so the gate that would ` +
+      'have invoked them did not run. If a fake is deliberately never reached, build it with ' +
+      `{ exhaustive: false, why: '...' }.\n${unused.map((a) => `  ${a}`).join('\n')}`,
+  );
 }
 
 /** The argv the git-backed gates emit. One place, so a pathspec change breaks loudly. */

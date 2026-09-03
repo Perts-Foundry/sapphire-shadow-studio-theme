@@ -14,24 +14,30 @@
 // would mean a "reclaim some space, delete old backups" action silently deletes the freshness
 // baseline as well, and would let one environment variable relocate both.
 //
-//   $XDG_STATE_HOME/shop-policies/state/observed.json      (default)
+//   $XDG_STATE_HOME/shop-policies-state/observed.json      (default)
 //   $POLICIES_STATE_DIR/observed.json                      (override)
+//
+// A SIBLING of the backup directory, not a child of it. `shop-policies/state/` was the obvious
+// first spelling and it defeats the whole rationale: `rm -rf ~/.local/state/shop-policies`, the
+// literal action the paragraph above names, would still take the baseline with it. Separate
+// overrides are not enough when the defaults nest.
 //
 // `check` NEVER reads this file: it stays offline and CI-safe, and a machine-local file is not
 // something CI can have an opinion about. `pull` writes it and never requires it (it is the
 // seeder, so a mutual dependency would deadlock the migration). `push` requires it, because the
 // freshness gate is the one thing standing between a push and an Admin edit nobody has seen.
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { displayPath } from './backups.mjs';
 import { PolicyError, canonicalise, coreSha256, sha256 } from './policies.mjs';
 
 /** Bumped only when the shape changes incompatibly. An unknown value is a refusal, never a guess. */
 export const STATE_SCHEMA_VERSION = 1;
 
-export const STATE_DIR_SEGMENTS = Object.freeze(['shop-policies', 'state']);
+export const STATE_DIR_BASENAME = 'shop-policies-state';
 export const STATE_FILE_BASENAME = 'observed.json';
 
 /** 0700 on the directory, 0600 on the file. It records what a legal policy said. */
@@ -45,7 +51,7 @@ export const SEED_COMMAND = 'npm run policies:pull';
 export function defaultStateDir(env = process.env) {
   const stateHome = env.XDG_STATE_HOME?.trim();
   const base = stateHome && path.isAbsolute(stateHome) ? stateHome : path.join(os.homedir(), '.local', 'state');
-  return path.join(base, ...STATE_DIR_SEGMENTS);
+  return path.join(base, STATE_DIR_BASENAME);
 }
 
 /** The state directory for this run. `POLICIES_STATE_DIR` overrides, resolved absolutely. */
@@ -58,21 +64,53 @@ export function stateFilePath(dir) {
   return path.join(dir, STATE_FILE_BASENAME);
 }
 
+/** Case-insensitive comparison is the right one where the filesystem is. */
+const CASE_INSENSITIVE = process.platform === 'darwin' || process.platform === 'win32';
+
+/**
+ * A path with every symlink in its EXISTING prefix resolved.
+ *
+ * `path.resolve` normalises `.` and `..` but knows nothing about symlinks, so a
+ * `POLICIES_STATE_DIR` pointing at a link into the checkout would pass a lexical containment
+ * check and then be written straight through the link. The state directory does not necessarily
+ * exist yet, so resolve the deepest ancestor that does and re-attach the rest.
+ */
+function realResolve(p) {
+  let current = path.resolve(p);
+  const tail = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(current), ...tail);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(p);
+      tail.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 /**
  * Refuse a state directory inside the checkout.
  *
  * This is the whole point of the change: bookkeeping that lives in the tree gets committed, and a
  * committed observation is what made every push dirty its own working tree. An override pointing
  * back into the repo would reintroduce it one `git add -A` later, in a public repo.
+ *
+ * Compared on the REAL paths, and case-insensitively where the filesystem is: a lexical
+ * `startsWith` misses both a symlink into the tree and, on macOS or Windows, a differently-cased
+ * spelling of the same directory. Both are ways to pass a check and still write into the checkout.
  */
 export function assertStateDirOutsideRepo(dir, root) {
-  const d = path.resolve(dir);
-  const r = path.resolve(root);
-  if (d === r || d.startsWith(r + path.sep)) {
+  const d = realResolve(dir);
+  const r = realResolve(root);
+  const [a, b] = CASE_INSENSITIVE ? [d.toLowerCase(), r.toLowerCase()] : [d, r];
+  if (a === b || a.startsWith(b + path.sep)) {
     throw new PolicyError(
       'POLICIES_STATE_DIR',
-      `resolves to ${d}, which is inside the checkout at ${r}. The observation state must live outside ` +
-        'the tree, or it gets committed, and a committed observation is what this file exists to remove.',
+      `resolves to ${displayPath(d)}, which is inside the checkout at ${displayPath(r)}. The ` +
+        'observation state must live outside the tree, or it gets committed, and a committed ' +
+        'observation is what this file exists to remove.',
     );
   }
 }
@@ -98,29 +136,29 @@ export function readState({ dir, root }) {
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
-    throw new PolicyError(file, `could not be read (${String(err.message).trim()}); delete it and run ${SEED_COMMAND}`);
+    throw new PolicyError(displayPath(file), `could not be read (${String(err.message).trim()}); delete it and run ${SEED_COMMAND}`);
   }
   if (text.trim() === '') {
-    throw new PolicyError(file, `is empty; delete it and run ${SEED_COMMAND}`);
+    throw new PolicyError(displayPath(file), `is empty; delete it and run ${SEED_COMMAND}`);
   }
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new PolicyError(file, `is not valid JSON (${String(err.message).trim()}); delete it and run ${SEED_COMMAND}`);
+    throw new PolicyError(displayPath(file), `is not valid JSON (${String(err.message).trim()}); delete it and run ${SEED_COMMAND}`);
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new PolicyError(file, `is not a state object; delete it and run ${SEED_COMMAND}`);
+    throw new PolicyError(displayPath(file), `is not a state object; delete it and run ${SEED_COMMAND}`);
   }
   if (parsed.schemaVersion !== STATE_SCHEMA_VERSION) {
     throw new PolicyError(
-      file,
+      displayPath(file),
       `has schemaVersion ${JSON.stringify(parsed.schemaVersion)}, but this tool understands ` +
         `${STATE_SCHEMA_VERSION}. Delete it and run ${SEED_COMMAND} to reseed.`,
     );
   }
   if (!parsed.policies || typeof parsed.policies !== 'object' || Array.isArray(parsed.policies)) {
-    throw new PolicyError(file, `has no "policies" object; delete it and run ${SEED_COMMAND}`);
+    throw new PolicyError(displayPath(file), `has no "policies" object; delete it and run ${SEED_COMMAND}`);
   }
   return parsed;
 }
@@ -195,7 +233,13 @@ export function floorFor(state, key) {
   return { highestPushed: entry.highestPushed, coreSha256: entry.highestPushedCoreSha256 ?? null };
 }
 
-/** For a report: the file, whether it exists, and its mode. Never throws. */
+/**
+ * For a report: the file, whether it exists, and its mode. Never throws.
+ *
+ * `display` is the form to PRINT. A state path contains the operator's username, which CLAUDE.md
+ * bars from the repo, from PRs and from issues, and `policies:status` output is exactly the thing
+ * an operator pastes into one.
+ */
 export function describeState(dir) {
   const file = stateFilePath(dir);
   let mode = null;
@@ -204,5 +248,5 @@ export function describeState(dir) {
   } catch {
     mode = null;
   }
-  return { dir, file, exists: existsSync(file), mode };
+  return { dir, file, display: displayPath(file), exists: existsSync(file), mode };
 }

@@ -1,7 +1,7 @@
 # Shop policies
 
 > **Doing rather than reading? Start with the skill.** `.claude/skills/shop-policies/SKILL.md`
-> holds the procedure: which command for which situation, and the four absolutes around the live
+> holds the procedure: which command for which situation, and the five absolutes around the live
 > write. This file holds the **why**: the rationale behind each gate, the anchor contract, backups,
 > and what the tests do not prove. CLAUDE.md holds the trigger and the absolutes.
 >
@@ -95,14 +95,23 @@ that policy plus reliance on the core hash.
 
 ## The observation state
 
-`$XDG_STATE_HOME/shop-policies/state/observed.json` (override: `POLICIES_STATE_DIR`), directory
+`$XDG_STATE_HOME/shop-policies-state/observed.json` (override: `POLICIES_STATE_DIR`), directory
 `0700` and file `0600`. **Its own path and its own override**, deliberately not the backup
 directory's: sharing one would mean a "reclaim some space, delete old backups" action silently
 deletes the freshness baseline.
 
+**A sibling of the backup directory, not a child of it.** `shop-policies/state/` was the obvious
+first spelling and it defeats that whole rationale: `rm -rf ~/.local/state/shop-policies`, the
+literal action the paragraph above names, would still take the baseline with it. Separate overrides
+are not enough when the defaults nest.
+
 It records, per policy: `coreSha256` (the freshness baseline, and the only field any gate compares),
 `sha256` / `length` / `observedAt` for a human reading the file, `highestPushed` and
-`highestPushedCoreSha256` (the monotonic floor), and `lastPushStamped`.
+`highestPushedCoreSha256` (the monotonic floor), `lastPushStamped`, and `lastPushedAt`.
+
+Every message that names this file prints it with `$HOME` collapsed to `~`. An absolute state path
+carries the operator's username, and a freshness refusal or a `policies:status` report is exactly
+the output that gets pasted into a PR or an issue on a public repo.
 
 Who reads it:
 
@@ -156,8 +165,10 @@ session, and read the ids back with
 
 ## Commands
 
-**Start with `npm run policies:status`.** It says which of the states below you are in and names
-the one command that leaves it.
+**Start with `npm run policies:status -- --live`.** It says which of the states below you are in and
+names the one command that leaves it. Bare, it is offline and compares the repo against the last
+observation, so `Admin moved` and `CONFLICT` are states it cannot report; that form is for a
+repo-side question, or for a machine with no credentials.
 
 | Command | What it does | Writes |
 |---|---|---|
@@ -193,6 +204,7 @@ PRs to learn.
 | A policy in the state file that the manifest does not track | `in the observation state but not the manifest` | nothing; it is ignored | |
 | Repo bodies stamped, live unstamped | `in sync` | nothing to do | the stamp reaches the store on the next real wording change |
 | After a `--restore` | `repo ahead: a push is outstanding` | `policies:push -- --type <t>` | the repo still holds its own wording; the observation follows live |
+| A policy with no body, or no manifest entry | `status could not classify this policy` | **stop and report.** Do not guess | |
 | `status` itself errors | exit 1, `policies:status failed` | **stop and report.** Do not guess a state from a tool that could not read one | |
 
 **The trap this table exists for is row four.** `policies:check` is GREEN in the merged-but-not-
@@ -282,8 +294,9 @@ The rest of this section is the **why**: what each gate is for, and which incide
    A re-read that **throws** every time is its own case: the write landed and this tool cannot say
    to what. It records the observation, refuses, and prints `--restore`. **An unknown outcome is
    not a retry:** run `policies:verify` and read what live actually says before doing anything else.
-9. Record the observation, and print the exact `--restore` command plus a commit command for a
-   working tree that moved. That commit template is deliberately body-only, with no trailer of any
+9. Record the observation, and print the exact `--restore` command plus a commit command. The
+   commit command is printed on every non-restore success and is worded conditionally, because the
+   one case it exists for (a write-back moved the tree) is the case an operator least expects. That commit template is deliberately body-only, with no trailer of any
    kind; a template printed by a tool becomes the shape of every future policy commit.
 
 ### Backups and restore
@@ -299,9 +312,18 @@ Admin actually held at the moment of the write.
 
 To undo a push:
 
+Dry run it first, exactly like any other push: without `--confirm` it prints the diff and the
+command to apply it, `--expect-live-sha` included.
+
 ```bash
-npm run policies:push -- --restore ~/.local/state/shop-policies/<type>.<timestamp>.json --confirm=<type>
+npm run policies:push -- --restore ~/.local/state/shop-policies/<type>.<timestamp>.json
+npm run policies:push -- --restore ~/.local/state/shop-policies/<type>.<timestamp>.json \
+  --expect-live-sha=<core sha from that dry run> --confirm=<type>
 ```
+
+`--expect-live-sha` is required on a restore too. The restore skips the repo gates and the
+freshness gate, because its bytes come from the backup file and it exists to overwrite what is live
+now; it does not skip the "you are overwriting exactly what you think you are" gate.
 
 A restore reuses the same gating, minus the repo gates and the freshness gate: its bytes come from
 the backup file rather than the tree, and it exists precisely to overwrite what is live now.
@@ -322,11 +344,18 @@ a `<script>` or `<style>` tag, and an em dash in any form (`U+2014`, `&mdash;`, 
 `&#x2014;`, `&#X2014;`). `U+2013` (en dash) passes; the shipping policy uses 17 of them. On
 `privacy_policy` these become notes rather than refusals, per `writable` above.
 
-`check.mjs` also refuses, for **every** policy including `privacy_policy`, on: a sha or length
-mismatch, a heading list that disagrees with the body, two `h2` headings that slugify alike, a file
-that is not in canonical form (BOM, CRLF, trailing whitespace, a missing final newline), and an
-unexpected file under `marketing/policies/`. Those are not hygiene rules and are **not** downgraded;
-if Shopify rewrites the auto-managed privacy body, the fix is `npm run policies:pull`.
+One more class is downgraded for `privacy_policy`, and it is not a hygiene rule: a body carrying a
+version stamp while the manifest says `stamped: false`. Shopify owns those bytes, so a comment
+appearing there must not turn CI permanently red; on a writable policy the same thing is a refusal,
+because there it is our mistake.
+
+`check.mjs` refuses, for **every** policy including `privacy_policy`, on: a sha, core-sha or length
+mismatch, a `version` that is not a safe integer >= 1, a missing or wrong version stamp on a
+`stamped: true` policy, a heading list that disagrees with the body, two `h2` headings that slugify
+alike, a file that is not in canonical form (BOM, CRLF, trailing whitespace, a missing final
+newline), and an unexpected file under `marketing/policies/`. Those are not hygiene rules and are
+**not** downgraded; if Shopify rewrites the auto-managed privacy body, the fix is
+`npm run policies:pull`.
 
 A refusal writes nothing. Hygiene enforcement lives in `check.mjs` only, and the tests prove the
 enforcement rather than reimplementing the rules.
@@ -347,11 +376,11 @@ live read**. A set with no hash at all is refused too, rather than falling back 
 comparison: a stale positive assertion reports PASS on wording nobody checked, which is worse output
 than none.
 
-To inspect the live store read-only without any of this, pull the live theme to a scratch path:
-
-```bash
-npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete
-```
+**A theme pull cannot show you a policy body.** Policy bodies are Admin objects written by
+`shopPolicyUpdate`; they are not theme files, and this theme carries no policy template, so
+`npx shopify theme pull` returns templates and layout and no policy HTML at all. The read-only ways
+to see what live says are `policies:verify`, `policies:pull -- --check`, `policies:pull -- --seed`
+and `policies:status -- --live`, and there are no others.
 
 ## Live drift detection is manual
 

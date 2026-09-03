@@ -3,14 +3,24 @@
 // WHY THIS EXISTS. PR #154 shipped two tests that passed vacuously. Their local git fake matched
 // with `args.some((a) => a.endsWith('*.html'))` and returned `''` for everything else, so it
 // answered "clean" to any invocation it did not recognise. The gate under test could have emitted
-// a pathspec real git rejects, or no invocation at all, and both tests would still be green: they
-// proved the fake's shape, not the gate's.
+// a pathspec real git rejects, or made no invocation at all, and both tests would still be green.
 //
-// The fix is structural rather than a review habit. `makeGitFake` in helpers.mjs matches on deep
-// equality of the full argv and throws on anything else, and this file makes it the only game in
-// town: a locally defined git fake is a test failure, whatever it returns.
+// THE FIRST VERSION OF THIS FILE WAS ITSELF BYPASSABLE, which is the whole lesson repeating one
+// level up. It keyed on the DECLARATION (`const <something with git in the name> = (`) and on the
+// literal property `run:`. So this passed every rule:
 //
-// Scope is deliberately narrow. This checks the SHAPE of the test files, by reading their source.
+//     const runner = (root, args) => (args.some((a) => a.endsWith('.html')) ? ' M x' : '');
+//     someGate('/x', { gitRun: runner });
+//
+// Twice over: the identifier avoided the name pattern, and `gitRun:` contains no `run:` with a
+// word boundary before it, which is how 31 of this directory's injection sites were invisible.
+//
+// So the rules key on the INJECTION SITE now, not on the declaration. What a fake is called does
+// not matter; what reaches a `run:` or `gitRun:` parameter does. And exhaustion is enforced at
+// RUNTIME by the fake itself rather than by counting text, because a textual rule cannot follow a
+// file-level factory into the tests that call it.
+//
+// Scope is deliberately narrow. This checks the SHAPE of the test files by reading their source.
 // It is not a lint pass and must not grow into one.
 
 import test from 'node:test';
@@ -31,90 +41,169 @@ function testFiles() {
     .map((name) => ({ name, text: readFileSync(join(TEST_DIR, name), 'utf8') }));
 }
 
-// Assembled from fragments so this file's own source does not match it. `git` in any case, bound
-// to a function by const/let/var, is a locally defined fake by definition: nothing else in a test
-// file needs one, because the real thing is `execFileSync`.
-const LOCAL_GIT_FAKE = new RegExp(
-  ['(?:const|let|var)\\s+', '\\w*[Gg]it\\w*', '\\s*=\\s*', '(?:\\(|async\\s|function\\b)'].join(''),
-  'g',
-);
+/**
+ * The source with comments blanked, line numbering preserved.
+ *
+ * Prose is full of the thing being matched, in comments AND in test names: "for a dry run: the
+ * boundary is...", "// First run: refuses...". Scanning raw text produced four false positives on
+ * the first attempt, and a rule that cries wolf gets weakened rather than obeyed.
+ */
+function withoutComments(text) {
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, before) => before + blank(m.slice(before.length)))
+    // Single-line string literals too: a test NAME is prose ("for a dry run: the boundary is..."),
+    // and it sits in code rather than in a comment.
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, blank)
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, blank);
+}
 
 /**
- * The one legitimate exception: a helper that shells out to REAL git, in an integration test.
- * It is the opposite of a fake, so it cannot answer a default to an argv it does not recognise.
- * The marker goes on the declaration or within the three lines above it.
+ * Every value handed to a git-runner parameter, with the line it is on.
+ *
+ * Both spellings, because production uses both: `assertReviewedTree(root, { run })` and
+ * `pull.run({ gitRun })`. Missing the second is exactly how the first version of this file covered
+ * none of `pull.test.mjs` or `status.test.mjs`, which between them hold 28 of the injection sites.
  */
-const REAL_GIT_MARKER = 'real-git-not-a-fake';
+function injectionSites(text) {
+  const source = withoutComments(text);
+  const out = [];
+  const re = /\b(?:gitRun|run)\s*:\s*([^,}\n]+)/g;
+  for (const m of source.matchAll(re)) {
+    out.push({
+      value: m[1].trim(),
+      line: source.slice(0, m.index).split('\n').length,
+    });
+  }
+  return out;
+}
 
-test('no test file defines its own git fake; the strict shared one is the only one', () => {
+/** A function literal: an arrow, a `function`, or an `async` one. The #154 shape exactly. */
+function isFunctionLiteral(value) {
+  // Strip a leading `async` FIRST, or the call-expression exclusion below reads `async (` as a
+  // call and lets `async (root, args) => ...` through, which is the same fake with one keyword on.
+  const v = value.replace(/^async\s+/, '');
+  if (/^function\b/.test(v)) return true;
+  if (/^[A-Za-z_$][\w$]*\s*=>/.test(v)) return true;
+  if (/^\(/.test(v)) return true;
+  return false;
+}
+
+/** The leading identifier of a value, e.g. `cleanGit` from `cleanGit(...)` or `foo` from `foo`. */
+function leadingIdentifier(value) {
+  const m = /^([A-Za-z_$][\w$]*)/.exec(value);
+  return m === null ? null : m[1];
+}
+
+/**
+ * The source of a local binding, so a rule can ask what a named fake is actually made of.
+ * Deliberately crude: from the declaration to the end of the file is enough, because the only
+ * question asked of it is whether `makeGitFake` appears before the next declaration.
+ */
+function bindingSource(text, name) {
+  const re = new RegExp(`(?:const|let|var|function)\\s+${name}\\b`);
+  const m = re.exec(text);
+  if (m === null) return null;
+  const rest = text.slice(m.index);
+  const next = /\n(?:const|let|var|function|test|export)\s/.exec(rest.slice(1));
+  return next === null ? rest : rest.slice(0, next.index + 1);
+}
+
+test('nothing but the shared strict fake is ever injected into a git-runner parameter', () => {
+  // The rule that closes #154, and the rule that closes this file's own first version. It does not
+  // care what a fake is named; it cares what reaches the parameter. A function literal is banned
+  // outright, and a named value must resolve to something built by `makeGitFake`.
   const offenders = [];
   for (const { name, text } of testFiles()) {
-    const lines = text.split('\n');
-    for (const m of text.matchAll(LOCAL_GIT_FAKE)) {
-      const lineNo = text.slice(0, m.index).split('\n').length - 1;
-      const context = lines.slice(Math.max(0, lineNo - 3), lineNo + 1).join('\n');
-      if (context.includes(REAL_GIT_MARKER)) continue;
-      offenders.push(`${name}:${lineNo + 1}: ${JSON.stringify(m[0])}`);
+    for (const { value, line } of injectionSites(text)) {
+      if (isFunctionLiteral(value)) {
+        offenders.push(`${name}:${line}: a function literal is injected directly: ${JSON.stringify(value.slice(0, 60))}`);
+        continue;
+      }
+      const id = leadingIdentifier(value);
+      if (id === null) {
+        offenders.push(`${name}:${line}: cannot tell what is injected: ${JSON.stringify(value.slice(0, 60))}`);
+        continue;
+      }
+      if (id === 'makeGitFake') continue;
+      const source = bindingSource(text, id);
+      if (source === null) {
+        offenders.push(`${name}:${line}: \`${id}\` is injected but not defined in this file`);
+        continue;
+      }
+      if (!source.includes('makeGitFake(')) {
+        offenders.push(`${name}:${line}: \`${id}\` is injected but is not built by makeGitFake`);
+      }
     }
   }
   assert.deepEqual(
     offenders,
     [],
-    'a locally defined git fake returns a default for every argv it does not recognise, which makes ' +
-      'an absent gate indistinguishable from a passing one. Use makeGitFake from ./helpers.mjs, ' +
-      'which matches on deep argv equality and throws otherwise. A helper that shells out to REAL ' +
-      `git in an integration test is the one exception: mark it \`${REAL_GIT_MARKER}\`.\n` +
-      offenders.map((o) => `  ${o}`).join('\n'),
+    'a git runner that is not the shared strict fake answers a default for every argv it does not ' +
+      'recognise, which makes an absent gate indistinguishable from a passing one. Build it with ' +
+      `makeGitFake from ./helpers.mjs, which matches on deep argv equality and throws otherwise.\n${offenders.join('\n')}`,
   );
+});
+
+test('the injection-site rule sees BOTH spellings, and would catch the shape that defeated its first version', () => {
+  // A test of the rule, because a rule with a blind spot is worse than no rule: the first version
+  // matched `run:` with a word boundary, so `gitRun:` (31 of this directory's injection sites, and
+  // every one in pull and status) was invisible to all of it.
+  const planted = [
+    "someGate('/x', { gitRun: (root, args) => (args.some((a) => a.endsWith('.html')) ? ' M x' : '') });",
+    "someGate('/x', { run: (root, args) => '' });",
+    "someGate('/x', { gitRun: async (root, args) => '' });",
+    "someGate('/x', { gitRun: function (root, args) { return ''; } });",
+  ];
+  for (const line of planted) {
+    const sites = injectionSites(line);
+    assert.equal(sites.length, 1, `not seen at all: ${line}`);
+    assert.equal(isFunctionLiteral(sites[0].value), true, `not recognised as a literal: ${line}`);
+  }
+
+  // And the named-binding form, which is the bypass the reviewer demonstrated.
+  const namedBypass = "const runner = (root, args) => '';\ntest('x', () => { someGate('/x', { gitRun: runner }); });";
+  const site = injectionSites(namedBypass).at(-1);
+  assert.equal(site.value, 'runner');
+  assert.equal(bindingSource(namedBypass, 'runner').includes('makeGitFake('), false, 'the bypass would be accepted');
+
+  // The sanctioned forms must NOT be flagged, or the rule is just noise.
+  for (const value of ['makeGitFake([])', 'cleanGit(...ALL_FILES)', 'noGit()', 'mergedGit()', 'gitRun']) {
+    assert.equal(isFunctionLiteral(value), false, `sanctioned form flagged as a literal: ${value}`);
+  }
 });
 
 test('every test file that injects a git runner imports the shared fake', () => {
   const offenders = [];
   for (const { name, text } of testFiles()) {
-    if (!/\brun:\s/.test(text)) continue;
+    if (injectionSites(text).length === 0) continue;
     if (!/\bmakeGitFake\b/.test(text)) offenders.push(name);
   }
   assert.deepEqual(
     offenders,
     [],
-    `these files inject a \`run:\` but never import makeGitFake:\n${offenders.map((o) => `  ${o}`).join('\n')}`,
+    `these files inject a git runner but never import makeGitFake:\n${offenders.join('\n')}`,
   );
 });
 
-/** The opt-out, spelled once. A test OF the fake is the only legitimate reason to use it. */
-const EXEMPT_MARKER = 'git-fake-not-exhausted';
-
-test('every test that builds a git fake INLINE asserts its expectations were exhausted', () => {
-  // A strict fake catches an argv nobody expected. It cannot catch an expectation nobody used,
-  // which is exactly what a silently deleted gate looks like: the test still passes, because the
-  // refusal it asserts comes from somewhere else, or because nothing was asserted at all.
-  //
-  // SCOPE, stated because it is a real limit rather than an oversight: this checks each `test(...)`
-  // block that calls `makeGitFake` directly. A file-level factory (`cleanGit`, `mergedGit`) lives
-  // outside every block and is not reached, so its callers are on their own. The rule catches the
-  // shape that actually regresses: a fake built for one test, and then not checked.
+test('every file that builds git fakes asserts, at runtime, that all of them were exhausted', () => {
+  // Exhaustion is a RUNTIME property now. A strict fake catches an argv nobody expected; it cannot
+  // catch an expectation nobody used, which is what a silently removed gate looks like. The
+  // previous rule counted `.assertExhausted(` against `makeGitFake(` textually, which could not
+  // follow a file-level factory (`cleanGit`, `noGit`, `mergedGit`) into the tests that call it, so
+  // roughly three quarters of this directory's fakes were outside it. `makeGitFake` now registers
+  // every fake it builds, and `assertAllGitFakesExhausted` in an `after()` hook checks the lot.
   const offenders = [];
   for (const { name, text } of testFiles()) {
-    for (const block of text.split(/\ntest\(/).slice(1)) {
-      if (!block.includes('makeGitFake(')) continue;
-      if (block.includes('.assertExhausted(') || block.includes(EXEMPT_MARKER)) continue;
-      offenders.push(`${name}: ${JSON.stringify(block.split('\n')[0].slice(0, 70))}`);
-    }
+    // `makeGitFake(` with the paren: a file that only NAMES the helper in a comment builds none.
+    if (!text.includes('makeGitFake(')) continue;
+    if (!text.includes('assertAllGitFakesExhausted')) offenders.push(name);
   }
   assert.deepEqual(
     offenders,
     [],
-    'each inline makeGitFake must be paired with an assertExhausted, or carry the ' +
-      `\`${EXEMPT_MARKER}\` comment saying why it is deliberately not exhausted (a test OF the fake ` +
-      `is the only legitimate case).\n${offenders.map((o) => `  ${o}`).join('\n')}`,
+    'each file building git fakes must call assertAllGitFakesExhausted(assert) from an after() ' +
+      `hook. A fake deliberately left unused opts out at its own call site with { exhaustive: false }.\n${offenders.join('\n')}`,
   );
-});
-
-test('a file that uses the shared fake asserts exhaustion somewhere in it', () => {
-  const offenders = [];
-  for (const { name, text } of testFiles()) {
-    if (!text.includes('makeGitFake(')) continue;
-    if (!text.includes('.assertExhausted(')) offenders.push(name);
-  }
-  assert.deepEqual(offenders, [], `these files build git fakes and never check exhaustion:\n${offenders.join('\n')}`);
 });

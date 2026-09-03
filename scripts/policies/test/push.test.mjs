@@ -10,9 +10,9 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 
 import {
@@ -38,6 +38,7 @@ import {
   GIT_ARGV,
   NOW,
   UnexpectedGitInvocation,
+  assertAllGitFakesExhausted,
   assertTreeUnchanged,
   cleanup,
   liveFrom,
@@ -188,6 +189,23 @@ test('the operator gate: CI is an ABSOLUTE refusal, which no flag overrides', ()
   );
 });
 
+test('A DRY RUN NEEDS NO TERMINAL: gating it made the documented sequence unreachable', () => {
+  // The rule an agent must satisfy is "the operator asked, after seeing the dry run". Gating the
+  // dry run on a TTY meant the dry run needed the attestation that the rule says can only come
+  // after it, so every real run passed --operator-approved at a moment when nothing had been
+  // attested. That teaches exactly the wrong thing about the flag.
+  assert.deepEqual(assertInteractive({ env: {}, isTTY: false, mutating: false }), { via: 'dry-run' });
+  assert.deepEqual(assertInteractive({ env: {}, isTTY: false, operatorApproved: false, mutating: false }), { via: 'dry-run' });
+});
+
+test('but CI is still absolute for a dry run: the boundary is the credential, not the write', () => {
+  assert.throws(() => assertInteractive({ env: { CI: '1' }, isTTY: false, mutating: false }), /refuses to run with CI set/);
+  assert.throws(
+    () => assertInteractive({ env: { CI: '1' }, isTTY: true, operatorApproved: true, mutating: false }),
+    /refuses to run with CI set/,
+  );
+});
+
 test('a TTY satisfies the gate, and so does --operator-approved without one', () => {
   assert.deepEqual(assertInteractive({ env: {}, isTTY: true }), { via: 'tty' });
   assert.deepEqual(assertInteractive({ env: {}, isTTY: false, operatorApproved: true }), { via: 'operator-approval' });
@@ -215,6 +233,73 @@ test('--operator-approved is parsed as a boolean and defaults to false', () => {
   // its own. --confirm=<type> and --expect-live-sha still decide what gets written.
   assert.equal(parseArgs(['--operator-approved']).confirm, null);
   assert.equal(parseArgs(['--operator-approved']).expectLiveSha, null);
+});
+
+test('main: a DRY RUN runs with no TTY and no attestation, and says nothing about an operator', async () => {
+  // The end-to-end half of the same property, and the assertion that the attestation line is NOT
+  // printed: a dry run over which nobody was asked must leave no sentence in the transcript that a
+  // later agent, or the same agent after a compaction, could read as evidence that they were.
+  const { code, out, err } = await runMain(['--type', 'shipping_policy']);
+  assert.equal(out.includes('an operator asked for this write'), false, 'a dry run claimed an operator asked');
+  assert.equal(err.includes('refuses to run without a TTY'), false, 'the dry run was refused for want of a terminal');
+  // It gets as far as constructing the client, which fails here for want of credentials.
+  assert.equal(code, 1);
+  assert.match(err, /MYSHOPIFY_DOMAIN/);
+});
+
+test('main: a run carrying --confirm still refuses without a TTY or the attestation', async () => {
+  const { code, err } = await runMain(['--type', 'shipping_policy', '--confirm=shipping_policy', '--expect-live-sha=x']);
+  assert.equal(code, 1);
+  assert.match(err, /refuses to run without a TTY/);
+  assert.match(err, /--operator-approved/);
+});
+
+test('the dry run prints a re-run command that carries EVERY flag it was given', async () => {
+  // Carrying only the attestation would propagate the one flag asserting a human decision while
+  // dropping the ones recording WHICH decision, so the printed command would be refused by the
+  // gate the operator had already been past, at the moment an agent is most inclined to re-add a
+  // flag on its own judgment.
+  const root = editedRoot();
+  const dir = backupDir();
+  const sdir = stateDir();
+  const lines = [];
+  try {
+    const result = await run({
+      ...BASE,
+      log: (s) => lines.push(s),
+      client: makeClient({ live: liveFrom() }),
+      root,
+      backupDir: dir, stateDir: sdir,
+      options: options({ operatorApproved: true, allowUnreviewed: true, acceptNormalisation: true }),
+    });
+    assert.equal(result.reason, 'dry-run');
+    const printed = lines.find((l) => l.includes('npm run policies:push --'));
+    assert.ok(printed, 'no re-run command was printed');
+    for (const flag of ['--operator-approved', '--allow-unreviewed', '--accept-normalisation']) {
+      assert.ok(printed.includes(flag), `the printed re-run dropped ${flag}:\n${printed}`);
+    }
+    assert.equal(printed.includes('--force-overwrite-live'), false, 'a flag that was NOT passed was invented');
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+  }
+});
+
+test('a dry run given no flags prints a command with none, so nothing is invented', async () => {
+  const root = editedRoot();
+  const dir = backupDir();
+  const sdir = stateDir();
+  const lines = [];
+  try {
+    await run({ ...BASE, log: (s) => lines.push(s), client: makeClient({ live: liveFrom() }), root, backupDir: dir, stateDir: sdir, options: options() });
+    const printed = lines.find((l) => l.includes('npm run policies:push --'));
+    for (const flag of ['--operator-approved', '--force-overwrite-live', '--allow-unreviewed', '--accept-normalisation']) {
+      assert.equal(printed.includes(flag), false, `the printed re-run invented ${flag}`);
+    }
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+  }
 });
 
 test('--operator-approved does not weaken any gate that decides WHAT is written', async () => {
@@ -336,8 +421,10 @@ test('--allow-unreviewed waives the ancestor check, never the dirty-body check',
 test('the git fake refuses an argv nobody registered, rather than defaulting to ""', () => {
   // The meta-guard on the guard. If this ever returns a value instead of throwing, every gate
   // test in this file silently becomes a test of the fake.
-  // git-fake-not-exhausted: this fake is the subject, so its one expectation is never invoked.
-  const fakeGit = makeGitFake([{ args: ['status', '--porcelain'], result: '' }]);
+  const fakeGit = makeGitFake([{ args: ['status', '--porcelain'], result: '' }], {
+    exhaustive: false,
+    why: 'this fake is the subject of the test; its expectation is never meant to be invoked',
+  });
   assert.throws(
     () => fakeGit('/x', GIT_ARGV.statusDir),
     (err) => err.name === 'UnexpectedGitInvocation' && err instanceof UnexpectedGitInvocation,
@@ -345,10 +432,13 @@ test('the git fake refuses an argv nobody registered, rather than defaulting to 
 });
 
 test('assertExhausted fails when a registered expectation was never invoked', () => {
-  const fakeGit = makeGitFake([
-    { args: GIT_ARGV.statusDir, result: '' },
-    { args: GIT_ARGV.revParseHead, result: 'aaa' },
-  ]);
+  const fakeGit = makeGitFake(
+    [
+      { args: GIT_ARGV.statusDir, result: '' },
+      { args: GIT_ARGV.revParseHead, result: 'aaa' },
+    ],
+    { exhaustive: false, why: 'this test IS the unused-expectation case; leaving one unused is the point' },
+  );
   fakeGit('/x', GIT_ARGV.statusDir);
   assert.throws(() => fakeGit.assertExhausted(assert, 'partial'), /never invoked/);
 });
@@ -438,6 +528,58 @@ test('--force-overwrite-live discards the Admin edit on purpose', async () => {
   }
 });
 
+test('the in-sync fast path RECORDS the observation: it just did a confirmed live read', async () => {
+  // Returning without recording leaves a stale or absent baseline in place, and the next real push
+  // then trips the freshness gate on an Admin edit that never happened.
+  const root = makeRoot();
+  const dir = backupDir();
+  const stale = emptyStateDir();
+  try {
+    writeFileSync(
+      join(stale, 'observed.json'),
+      JSON.stringify({ schemaVersion: 1, policies: { shipping_policy: { coreSha256: 'f'.repeat(64), observedAt: NOW } } }),
+      'utf8',
+    );
+    const result = await run({
+      ...BASE,
+      client: makeClient({ live: liveFrom() }),
+      root,
+      backupDir: dir,
+      stateDir: stale,
+      options: options(),
+    });
+    assert.equal(result.reason, 'in-sync');
+    assert.equal(
+      readStateRaw(stale).policies.shipping_policy.coreSha256,
+      coreSha256(BODIES.SHIPPING_POLICY),
+      'the stale baseline survived a confirmed live read',
+    );
+    assert.equal(readdirSync(dir).length, 0, 'the in-sync path wrote a backup');
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+  }
+});
+
+test('an in-sync push against a CORRUPT state file refuses rather than reporting in-sync', () => {
+  // Pinned because the in-sync path now reads state (to record the observation) BEFORE the
+  // freshness gate, so a corrupt file surfaces earlier than it used to. Refusing is the intended
+  // behaviour and matches the rest of the design: absent is a fact, unusable is a refusal. The
+  // operator has to fix the file either way, and "already in sync" read off an unusable baseline
+  // is the kind of reassurance this subsystem exists to stop giving.
+  const root = makeRoot();
+  const dir = backupDir();
+  const broken = emptyStateDir();
+  writeFileSync(join(broken, 'observed.json'), 'nonsense', 'utf8');
+  return assert.rejects(
+    () => run({ ...BASE, client: makeClient({ live: liveFrom() }), root, backupDir: dir, stateDir: broken, options: options() }),
+    /is not valid JSON/,
+  ).finally(() => {
+    cleanup(root);
+    cleanup(dir);
+  });
+});
+
 // ---------------------------------------------------------------------------------------------
 // Step 4: the freshness gate needs the machine-local state, and refuses without it
 // ---------------------------------------------------------------------------------------------
@@ -474,6 +616,37 @@ test('NO STATE FILE is a refusal naming policies:pull verbatim, and nothing is s
   }
 });
 
+test('the no-state refusal names the file with $HOME collapsed, not the operator username', async () => {
+  // CLAUDE.md bars an absolute path carrying a username from the repo, from PRs and from issues,
+  // and a freshness refusal is exactly the output an operator pastes into one. Every backup path
+  // already went through displayPath; the state paths did not.
+  const root = editedRoot();
+  const dir = backupDir();
+  const empty = join(homedir(), '.local', 'state', 'shop-policies-state-pushtest');
+  mkdirSync(empty, { recursive: true });
+  try {
+    await assert.rejects(
+      () => run({
+        ...BASE,
+        client: makeClient({ live: liveFrom() }),
+        root,
+        backupDir: dir,
+        stateDir: empty,
+        options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
+      }),
+      (err) => {
+        assert.equal(err.message.includes(homedir()), false, `the refusal leaked $HOME:\n${err.message}`);
+        assert.ok(err.message.includes('~/.local/state/'), `not a display path:\n${err.message}`);
+        return true;
+      },
+    );
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
 test('a VALID state file lets the same push through, so the gate is not simply always-refuse', async () => {
   const root = editedRoot();
   const dir = backupDir();
@@ -494,13 +667,18 @@ test('a VALID state file lets the same push through, so the gate is not simply a
 });
 
 test('a corrupt, empty, wrong-shape or wrong-schema state file is a refusal, not a reseed', async () => {
-  for (const [label, contents] of [
-    ['not json', 'nonsense'],
-    ['empty', ''],
-    ['whitespace', '   \n'],
-    ['an array', '[]'],
-    ['no policies object', '{"schemaVersion":1}'],
-    ['a future schema', '{"schemaVersion":99,"policies":{}}'],
+  // Each row asserts its OWN message and asserts it is NOT the absent-file one. Asserting only
+  // that SEED_COMMAND appears would survive `readState` returning null on corrupt input: push
+  // would fall through to "there is no observation state", which also names the command, and the
+  // design's central distinction ("absent is a fact, unusable is a refusal") would be gone with
+  // every row still green.
+  for (const [label, contents, expected] of [
+    ['not json', 'nonsense', /is not valid JSON/],
+    ['empty', '', /is empty/],
+    ['whitespace', '   \n', /is empty/],
+    ['an array', '[]', /is not a state object/],
+    ['no policies object', '{"schemaVersion":1}', /has no "policies" object/],
+    ['a future schema', '{"schemaVersion":99,"policies":{}}', /has schemaVersion 99/],
   ]) {
     const root = editedRoot();
     const dir = backupDir();
@@ -517,6 +695,12 @@ test('a corrupt, empty, wrong-shape or wrong-schema state file is a refusal, not
           options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
         }),
         (err) => {
+          assert.match(err.message, expected, `${label}: wrong refusal`);
+          assert.equal(
+            /no observation state/.test(err.message),
+            false,
+            `${label}: refused as ABSENT, not as unusable; the two are different facts`,
+          );
           assert.ok(err.message.includes(SEED_COMMAND), `${label}: the refusal must name ${SEED_COMMAND}`);
           return true;
         },
@@ -766,16 +950,21 @@ test('a failed backup aborts before any mutation', async () => {
     const blocked = mkdtempSync(join(tmpdir(), 'policies-blocked-'));
     const dir = join(blocked, 'file');
     writeFileSync(dir, 'not a directory', 'utf8');
-    await assert.rejects(() =>
-      run({
-        ...BASE,
-        client,
-        root,
-        backupDir: dir, stateDir: sdir,
-        options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
-      }),
+    // Matched, not bare: `assert.rejects` with no matcher is satisfied by ANY rejection, so this
+    // passed whether the backup failed or the freshness gate did.
+    await assert.rejects(
+      () =>
+        run({
+          ...BASE,
+          client,
+          root,
+          backupDir: dir, stateDir: sdir,
+          options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
+        }),
+      /EEXIST|ENOTDIR|not a directory/,
     );
     assert.equal(client.calls.filter((c) => c.kind === 'mutate').length, 0, 'mutated without a backup');
+    assert.equal(readStateRaw(sdir).policies.shipping_policy.coreSha256, coreSha256(BODIES.SHIPPING_POLICY), 'state moved on a pre-mutation refusal');
     cleanup(blocked);
   } finally {
     cleanup(root);
@@ -932,7 +1121,7 @@ test('the failure taxonomy: a missing mutation field, and a client that throws',
             backupDir: dir, stateDir: sdir,
             options: options({ confirm: 'shipping_policy', expectLiveSha: sha(BODIES.SHIPPING_POLICY) }),
           }),
-        /failed write|no shopPolicy/,
+        /returned no shopPolicy and no userErrors/,
         name,
       );
     } finally {
@@ -1509,8 +1698,8 @@ test('main: CI set is refused first, and no flag reaches past it', async () => {
   assert.match(err, /nothing was written/);
 });
 
-test('main: no TTY and no attestation refuses, and names the flag rather than a pty', async () => {
-  const { code, err } = await runMain(['--type', 'shipping_policy']);
+test('main: no TTY and no attestation refuses a WRITE, and names the flag rather than a pty', async () => {
+  const { code, err } = await runMain(['--type', 'shipping_policy', '--confirm=shipping_policy', '--expect-live-sha=x']);
   assert.equal(code, 1);
   assert.match(err, /refuses to run without a TTY/);
   assert.match(err, /--operator-approved/);
@@ -1531,9 +1720,11 @@ test('main: an unknown flag and a missing type are refused', async () => {
 });
 
 test('main: the --operator-approved path SAYS SO on stdout, so a transcript records the attestation', async () => {
-  // The attestation must be visible in the log of the run that used it. Without credentials the
-  // run then fails at client construction, which is exactly what the next assertion pins.
-  const { out, code, err } = await runMain(['--type', 'shipping_policy', '--operator-approved']);
+  // The attestation must be visible in the log of the run that used it, and ONLY there: it is
+  // printed for a run carrying --confirm, never for a dry run nobody was asked about. Without
+  // credentials the run then fails at client construction, which the next assertion pins.
+  const args = ['--type', 'shipping_policy', '--operator-approved', '--confirm=shipping_policy', '--expect-live-sha=x'];
+  const { out, code, err } = await runMain(args);
   assert.match(out, /running without a TTY under --operator-approved \(an operator asked for this write\)/);
   assert.equal(code, 1);
   assert.match(err, /MYSHOPIFY_DOMAIN/);
@@ -1543,4 +1734,12 @@ test('main RETURNS an exit code even when the environment is missing; it never t
   // A main that throws instead of returning is a main whose refusals cannot be tested, and in
   // production it surfaced as an unhandled rejection with a stack trace rather than `error:`.
   await assert.doesNotReject(() => runMain(['--type', 'shipping_policy', '--operator-approved']));
+});
+
+
+after(() => {
+  // Exhaustion, checked at runtime rather than by counting text: every expectation registered by
+  // every fake this file built must have been invoked, or the gate that would have invoked it did
+  // not run. A fake deliberately never reached opts out at its own call site.
+  assertAllGitFakesExhausted(assert);
 });

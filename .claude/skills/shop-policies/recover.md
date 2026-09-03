@@ -1,12 +1,14 @@
 # Recovery
 
-**A restore is a push. All four absolutes apply unchanged. There is no emergency exception, and a
+**A restore is a push. All five absolutes apply unchanged. There is no emergency exception, and a
 bad live body is not an emergency: it is a wrong body that stays wrong until a human authorizes the
 next write.**
 
 Read `push.md` before running anything on this page that writes.
 
-Two entry points. Find the one matching what `policies:status` said.
+Five entry points, in the order you are most likely to need them. The first two are the states
+`policies:status` names; the rest are what a push can leave behind. Find the one matching what you
+are actually looking at.
 
 ---
 
@@ -66,9 +68,17 @@ back before the mutation. Backups live outside the checkout at
 `$XDG_STATE_HOME/shop-policies/`, because the repo is not an adequate backup: `HEAD~` matches live
 only if nobody edited the policy in Admin since.
 
+Dry run it first, exactly like any other push. Without `--confirm` it prints the diff and the
+command to apply it, `--expect-live-sha` included:
+
 ```bash
-npm run policies:push -- --restore <backup file> --confirm=<type>
+npm run policies:push -- --restore <backup file>
+npm run policies:push -- --restore <backup file> \
+  --expect-live-sha=<core sha from that dry run> --confirm=<type>
 ```
+
+`--expect-live-sha` is required on a restore too. The restore skips the repo gates and the freshness
+gate; it does not skip the "you are overwriting exactly what you think you are" gate.
 
 This is a push. It needs a fresh operator ask, quoted verbatim, exactly like any other. It leaves
 the repo body untouched and rewrites the observation state, so `policies:status` will then say a

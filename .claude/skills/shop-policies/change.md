@@ -5,20 +5,21 @@ the live store holding the OLD text.
 
 ## Seed the baseline first
 
-If `policies:status` says `unknown: no observation state on this machine`, the machine has no
-record of what Admin was last seen holding, and `policies:push` will refuse until it does. Fix it
-before editing, not after:
-
-```bash
-npm run policies:pull            # repo and Admin agree: this is a no-op on the wording
-```
-
-If a wording change is ALREADY committed and unpushed, a bare pull would take Admin's version and
-revert it. Use the seeder instead, which writes the state file and not one byte of the repo:
+If `policies:status` says `unknown: no observation state on this machine`, the machine has no record
+of what Admin was last seen holding, and `policies:push` will refuse until it does. Fix it before
+editing, not after:
 
 ```bash
 npm run policies:pull -- --seed
 ```
+
+It writes the state file and not one byte of the repo, so it is safe whether or not a wording change
+is already committed and unpushed. **Use it by default.**
+
+A bare `npm run policies:pull` also seeds, but it takes Admin's body into the repo on the way, so it
+reverts a committed unpushed wording change without asking. Reach for it only to make Admin's
+version win on purpose (`recover.md`, "Admin moved under us"), never merely to seed. `policies:status`
+prints the bare form as the next command for this state; prefer `--seed` anyway.
 
 ## 1. Preflight
 
@@ -39,7 +40,8 @@ Edit `marketing/policies/<type>.html` on a branch, in the ordinary way.
 disagrees with its own body.
 
 Hygiene, all fail-closed: no carriage returns, no byte-order mark, no `<script>` or `<style>` tag,
-and **no em dash in any form** (`U+2014`, `&mdash;`, `&#8212;`, `&#x2014;`). An en dash is fine.
+and **no em dash in any form** (`U+2014`, `&mdash;`, `&#8212;`, `&#x2014;`, `&#X2014;`). An en dash
+is fine.
 
 ## 3. Restamp
 

@@ -47,15 +47,24 @@ keeping them in the manifest meant a successful push dirtied its own working tre
 gate then blocked the next push until that side effect had been committed and merged. PR #154
 answered that by teaching the gate to ignore exactly those two fields, which cost a HEAD read, a
 JSON reshape and a field allowlist to guard a distinction the manifest should not have carried.
-Moving the fields to a machine-local `$XDG_STATE_HOME/shop-policies/state/observed.json` deletes
+Moving the fields to a machine-local `$XDG_STATE_HOME/shop-policies-state/observed.json` deletes
 all of it: the gate goes back to one question with one answer, and **a successful push now leaves
 the working tree clean**. The PR history is the record of what changed; `version` is the identity.
 
 The state file gets **its own path and its own override** (`POLICIES_STATE_DIR`), not the backup
 directory's. Sharing one would mean a "reclaim some space, delete old backups" action silently
-deletes the freshness baseline, and would let one variable relocate both. A resolved state
-directory inside the checkout is a refusal, because a committed observation is exactly what the
-move removes.
+deletes the freshness baseline, and would let one variable relocate both. It is a SIBLING of the
+backup directory rather than a child: `shop-policies/state/` was the first spelling and it defeated
+the whole rationale, since `rm -rf ~/.local/state/shop-policies` still took the baseline with it.
+Separate overrides are not enough when the defaults nest.
+
+A resolved state directory inside the checkout is a refusal, because a committed observation is
+exactly what the move removes. Compared on the REAL paths (symlinks resolved through the deepest
+existing ancestor) and case-insensitively on macOS and Windows: a lexical `startsWith` misses both a
+symlink into the tree and a differently-cased spelling of the same directory, and both are ways to
+pass the check and still write into a public checkout. Every message naming the state file collapses
+`$HOME` to `~`, the same way every backup path already did: an absolute state path carries the
+operator's username, and a freshness refusal is exactly the output that gets pasted into a PR.
 
 **`push` refuses with no state file, and there is no auto-seed.** Seeding the baseline from the very
 read the freshness gate is supposed to check against is not a check. That leaves a window between
@@ -142,7 +151,7 @@ core-based.
 `recover.md` hold the four phases. It lives in this repo rather than in `~/.claude/skills/`, like
 every other skill here.
 
-**The four absolutes are duplicated on purpose, in three files.** CLAUDE.md is always loaded;
+**The five absolutes are duplicated on purpose, in three files.** CLAUDE.md is always loaded;
 `SKILL.md` loads only if the skill triggers, and `push.md` only if the agent routes there. An agent
 reaching `policies:push` from `package.json`, from shell history, or from a pasted command sees none
 of it. `push.md` carries a copy specifically because it is the file open at the moment of the write,
@@ -156,17 +165,112 @@ A backstop that does not depend on the skill triggering: **a `policies:push` run
 `push.md` in this session is itself a violation**, stated in CLAUDE.md as well as in the skill.
 
 **A red-team pass over the skill text** (given only the skill, enumerate every path to a completed
-push that does not involve a quotable operator request in this session) closed five wordings: a push
-spelled `node scripts/policies/push.mjs` rather than `npm run policies:push`; a session that happens
-to have a TTY reading the terminal as the authorization; a hand-written `observed.json` or a
-redirected `POLICIES_STATE_DIR` defeating the freshness gate; `--force-overwrite-live`,
-`--allow-unreviewed` and `--discard-local` read as ways past an inconvenient gate; and a `--restore`
-read as an emergency exception. Each one was a wording bug in the absolutes, not a missing rule.
+push that does not involve a quotable operator request in this session) is what the absolutes are
+shaped by. `absolutes-parity.test.mjs` pins one clause per closed path, because each is the kind of
+sentence a later tightening-for-brevity edit removes without noticing.
+
+**The pass found one defect in the CODE, and it was the important one.** `assertInteractive` ran
+before the dry-run branch, so a dry run refused in any session without a TTY. That made the
+documented sequence unreachable: rule 1 requires the operator's ask to come AFTER they have seen the
+dry run, and the dry run required the attestation that rule 1 says can only follow it. Every real
+agent run therefore passed `--operator-approved` at a moment when nothing had been attested, which
+teaches precisely the wrong thing about the flag; and the tool then printed "an operator asked for
+this write" over a run where nobody had, leaving a sentence in the transcript that a later agent
+would read as evidence. A dry run sends no mutation and writes no file, so it now needs no terminal
+and no attestation. `CI` still refuses it, like everything else here: that boundary is about the
+credential, not about the write.
+
+**A second code fix from the same pass:** the dry run's printed re-run line carried
+`--operator-approved` forward and dropped `--force-overwrite-live`, `--allow-unreviewed` and
+`--accept-normalisation`. That is the safe default inverted, propagating the flag that asserts a
+human decision while dropping the ones recording WHICH decision, so the printed command was refused
+by the gate the operator had already been past, at the moment an agent is most inclined to re-add a
+flag on its own judgment. It now carries every flag the run was given, and invents none.
+
+**A fifth absolute.** No delegation was a skill-file rule, and a subagent handed "get the policy
+live" loads CLAUDE.md, not the skill: it would find only that a message must not be "relayed by a
+subagent", which reads as a constraint on other agents rather than on itself. The rule that must
+bind a subagent has to live in the always-loaded layer, so it is now absolute 5.
+
+**And four wording corrections in the absolutes:** a bare affirmative ("looks good", "ship it") is
+explicitly not a grant, since it is what operators actually type and it satisfies every clause of
+rule 1 except the least emphasised one; the exclusion list now names a compaction artifact, a
+conversation summary, a memory file, a resumed session's carried-over context and a parent agent's
+task prompt, because a compaction can MANUFACTURE the quote rather than merely drop it; rule 2's
+heading said "simulated" while its body forbade any pty, so a real pty from `script` was arguable
+(it now says "No terminal you did not sit at", and names `setsid`, `ssh -t`, `docker run -t`, a
+multiplexer and a `/dev/tty` redirect); and rule 3's "to get past it" qualifier invited unsetting
+`CI` for some other reason and then pushing.
+
+**One of the absolutes was factually wrong**, and had been since before this change. It offered
+`npx shopify theme pull` as the read-only way to inspect a live policy. Policy bodies are Admin
+objects written by `shopPolicyUpdate`; they are not theme files, and this theme has no policy
+template, so a theme pull returns no policy HTML at all. An agent following it would find nothing
+and be pushed back toward the bare `policies:pull` the rule forbids. The read-only ways are
+`policies:verify`, `policies:pull -- --check`, `policies:pull -- --seed` and
+`policies:status -- --live`, and there are no others.
+
+**`policies:status` is documented as `-- --live`.** Offline it compares the repo against the last
+observation, so `Admin moved` and `CONFLICT` are states it structurally cannot report, and the
+routing table routed two labels a bare run could never emit. The offline report now says what it
+could not determine rather than omitting it, and `in sync` from a bare run is qualified. Its
+next-command for "no state" is `pull -- --seed` rather than a bare pull, which would take Admin's
+body into the repo on the way and revert a committed unpushed wording change without asking.
 
 **The ownership rule, stated in all three files** so the next wording change does not land in
 whichever file was open: the skill holds the **how**, `marketing/policies/README.md` holds the
 **why** (gate rationale, the anchor contract, backups, what the tests do not prove), and CLAUDE.md
 holds the **trigger and the absolutes**.
+
+**Two findings from the code review.** `acceptWriteBack` rewrote the body file and only then read
+the manifest entry it needed, so a missing entry would have left the body updated and the manifest
+not: a half-applied write-back that `policies:check` refuses and that no message explains. It
+validates first now. And the "already in sync" fast path returned without recording the observation,
+throwing away a fresh confirmed read of what Admin holds; a stale or absent baseline then survived,
+and the next real push would trip the freshness gate on an Admin edit that never happened.
+
+**Two findings from the security pass, both about the state file.** `assertStateDirOutsideRepo`
+compared lexically resolved strings, which closed `..` traversal but not a symlink into the
+checkout, nor a differently-cased spelling on macOS or Windows; both are ways to pass the check and
+still write `observed.json` into a public working tree. It now compares REAL paths, resolving
+symlinks through the deepest existing ancestor, and case-insensitively where the filesystem is.
+Separately, every message naming the state file printed a raw absolute path carrying the operator's
+username, which CLAUDE.md bars from the repo, from PRs and from issues; `displayPath` already
+existed and was already applied to every backup path, and now covers the state paths too. A
+freshness refusal and a `policies:status` report are exactly the outputs that get pasted into a PR.
+
+**The meta-test was itself bypassable, which is the same lesson one level up.** It keyed on the
+DECLARATION (`const <something with git in the name> = (`) and on the literal property `run:`, so
+this passed every rule: `const runner = (root, args) => (args.some((a) => a.endsWith('.html')) ? ' M
+x' : ''); someGate('/x', { gitRun: runner })`. Twice over: the identifier avoided the name pattern,
+and `gitRun:` contains no `run:` with a word boundary before it, which left 28 of the directory's
+injection sites (every one in `pull` and `status`) invisible to all of it.
+
+The rules key on the INJECTION SITE now. What a fake is called does not matter; what reaches a
+`run:` or `gitRun:` parameter does, and it must be a function `makeGitFake` built. A function
+literal there is banned outright, and a named value is resolved to its binding. Exhaustion moved to
+RUNTIME: `makeGitFake` registers every fake it builds and `assertAllGitFakesExhausted` checks the
+lot in an `after()` hook, because a textual rule could not follow a file-level factory into the
+tests that call it and so covered about a quarter of the fakes. An opt-out now needs a `why`
+sentence rather than a marker comment. The rewritten rule is tested against the bypass that
+defeated its predecessor.
+
+**Five vacuous tests found and closed**, each named with the mutation that survived it. The worst
+was the suite guard in `state.test.mjs` asserting no path resolves outside the temp root: it ran as
+a top-level test, in declaration order, before any test body had created a directory, so its loop
+body never executed and it would have passed against a suite writing into the operator's home
+directory. It runs in `after()` now and asserts it saw something. The others: an
+`assert.rejects` with no matcher, satisfied by any rejection; the corrupt-state rows asserting only
+that `npm run policies:pull` was named, which the ABSENT-file refusal also names, so deleting the
+"absent is a fact, unusable is a refusal" distinction left every row green; and two `/a|b/`
+alternations where one branch could be deleted and the other would satisfy the test.
+
+**And three untested surfaces that would have failed silently**: `pull --check`'s operator-facing
+drift text (the regression the direction-naming exists to stop was a MESSAGE, and only the
+classification behind it was under test, so reverting the message broke nothing); `restamp`'s
+`ANCHOR CHANGE` block, the loudest thing the tool prints, computed but never asserted to be printed;
+and whether `pull` and `push` actually pass `root` to the state helpers, without which the
+never-inside-the-checkout guard is silently inert.
 
 **The test fakes were made strict first, as a separate change**, because the retrospective's own
 lesson is that gates tested against permissive fakes pass vacuously, and this change adds several

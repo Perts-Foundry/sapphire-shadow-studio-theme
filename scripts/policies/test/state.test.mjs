@@ -11,11 +11,13 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, sep } from 'node:path';
-import { tmpdir } from 'node:os';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { homedir, tmpdir } from 'node:os';
 
 import { PolicyError, coreSha256, sha256 } from '../lib/policies.mjs';
+import { defaultBackupDir } from '../lib/backups.mjs';
 import {
   DIR_MODE,
   FILE_MODE,
@@ -47,26 +49,34 @@ function scratch() {
 }
 
 after(() => {
-  for (const dir of MADE) rmSync(dir, { recursive: true, force: true });
-});
-
-test('the suite never resolves a path outside the temp root', () => {
+  // THE GUARD RUNS HERE, not as a test. As a top-level test it executed in declaration order,
+  // before any test body had called `scratch()`, so `MADE` was empty and the loop never ran: it
+  // would have passed against a suite writing straight into the operator's home directory. The
+  // non-empty assertion is what stops it going quiet again.
   assert.ok(TEMP_ROOT, 'no usable temp directory');
+  assert.ok(MADE.length > 0, 'the temp-root guard ran before anything was created, so it checked nothing');
   for (const dir of MADE) {
     assert.ok(dir.startsWith(TEMP_ROOT), `${dir} is not under the temp root`);
   }
+  for (const dir of MADE) rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------------------------
 // Where it lives
 // ---------------------------------------------------------------------------------------------
 
-test('the default is its OWN path, not the backup directory', () => {
+test('the default is a SIBLING of the backup directory, never a child of it', () => {
   // Sharing the backup directory would mean a "reclaim some space, delete old backups" action
-  // silently deletes the freshness baseline, and would let one variable relocate both.
-  const dir = defaultStateDir({ XDG_STATE_HOME: '/var/state' });
-  assert.equal(dir, join('/var/state', 'shop-policies', 'state'));
-  assert.notEqual(dir, join('/var/state', 'shop-policies'));
+  // silently deletes the freshness baseline. `shop-policies/state/` was the first spelling and it
+  // defeats that rationale entirely: `rm -rf ~/.local/state/shop-policies` still takes the
+  // baseline. Separate overrides are not enough when the defaults nest.
+  const env = { XDG_STATE_HOME: '/var/state' };
+  const state = defaultStateDir(env);
+  const backups = defaultBackupDir(env);
+  assert.equal(state, join('/var/state', 'shop-policies-state'));
+  assert.equal(backups, join('/var/state', 'shop-policies'));
+  assert.equal(state.startsWith(`${backups}${sep}`), false, 'the state directory is inside the backup directory');
+  assert.equal(backups.startsWith(`${state}${sep}`), false, 'the backup directory is inside the state directory');
 });
 
 test('POLICIES_STATE_DIR overrides, is resolved absolutely, and is separate from POLICIES_BACKUP_DIR', () => {
@@ -75,20 +85,20 @@ test('POLICIES_STATE_DIR overrides, is resolved absolutely, and is separate from
   // The backup override must not move the state file.
   assert.equal(
     resolveStateDir({ POLICIES_BACKUP_DIR: '/elsewhere', XDG_STATE_HOME: '/var/state' }),
-    join('/var/state', 'shop-policies', 'state'),
+    join('/var/state', 'shop-policies-state'),
   );
 });
 
 test('a relative or blank XDG_STATE_HOME falls back to ~/.local/state', () => {
   for (const value of ['relative/state', '  ', '', undefined]) {
     const dir = defaultStateDir({ XDG_STATE_HOME: value });
-    assert.ok(dir.includes(`${sep}.local${sep}state${sep}shop-policies${sep}state`), JSON.stringify(value));
+    assert.ok(dir.endsWith(`${sep}.local${sep}state${sep}shop-policies-state`), JSON.stringify(value));
   }
 });
 
 test('the path precedence ignores HOME once XDG_STATE_HOME is absolute', () => {
   const home = scratch();
-  assert.equal(defaultStateDir({ HOME: home, XDG_STATE_HOME: '/var/state' }), join('/var/state', 'shop-policies', 'state'));
+  assert.equal(defaultStateDir({ HOME: home, XDG_STATE_HOME: '/var/state' }), join('/var/state', 'shop-policies-state'));
 });
 
 test('a state directory INSIDE the checkout is a refusal', () => {
@@ -100,6 +110,73 @@ test('a state directory INSIDE the checkout is a refusal', () => {
   assert.doesNotThrow(() => assertStateDirOutsideRepo(scratch(), root));
   // A sibling directory whose name merely starts with the root's is NOT inside it.
   assert.doesNotThrow(() => assertStateDirOutsideRepo(`${root}-other`, root));
+});
+
+test('a SYMLINK into the checkout is refused: the check resolves real paths, not lexical ones', () => {
+  // `path.resolve` normalises `.` and `..` but knows nothing about symlinks, so a lexical check
+  // passes a link that then writes straight through into the working tree.
+  const root = scratch();
+  const parent = scratch();
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  const link = join(parent, 'link');
+  symlinkSync(join(root, 'scripts'), link, 'dir');
+  assert.throws(() => assertStateDirOutsideRepo(link, root), /inside the checkout/);
+  // And through a link whose own target does not exist yet: the deepest existing ancestor is
+  // what gets resolved, and the rest re-attached.
+  assert.throws(() => assertStateDirOutsideRepo(join(link, 'nested', 'deeper'), root), /inside the checkout/);
+});
+
+test('a symlink pointing somewhere legitimate still passes', () => {
+  // The other half. A guard that refuses every symlink would pass the test above and be useless.
+  const root = scratch();
+  const parent = scratch();
+  const target = scratch();
+  const link = join(parent, 'link');
+  symlinkSync(target, link, 'dir');
+  assert.doesNotThrow(() => assertStateDirOutsideRepo(link, root));
+});
+
+test('a differently-cased spelling is refused where the filesystem is case-insensitive', { skip: process.platform === 'linux' && 'case-sensitive filesystem' }, () => {
+  const root = scratch();
+  assert.throws(() => assertStateDirOutsideRepo(join(root.toUpperCase(), 'state'), root), /inside the checkout/);
+});
+
+test('the refusal names the paths with $HOME collapsed, not the operator username', () => {
+  // CLAUDE.md bars a dev-machine identifier from the repo, from PRs and from issues, and this
+  // message is exactly the kind an operator pastes into one.
+  const home = homedir();
+  const root = join(home, 'a-checkout');
+  try {
+    assertStateDirOutsideRepo(join(root, 'state'), root);
+    assert.fail('expected a refusal');
+  } catch (err) {
+    assert.equal(err.message.includes(home), false, `the refusal leaked $HOME:\n${err.message}`);
+    assert.ok(err.message.includes('~/a-checkout'));
+  }
+});
+
+test('no state message leaks an absolute $HOME path', () => {
+  // Every refusal in this module, plus the report line status prints. `displayPath` exists for
+  // exactly this and was already applied to every backup path.
+  const home = homedir();
+  const dir = join(home, '.local', 'state', 'shop-policies-state-test');
+  mkdirSync(dir, { recursive: true });
+  try {
+    for (const contents of ['nonsense', '', '[]', '{"schemaVersion":99,"policies":{}}', '{"schemaVersion":1}']) {
+      writeFileSync(stateFilePath(dir), contents, 'utf8');
+      try {
+        readState({ dir });
+        assert.fail(`expected a refusal for ${JSON.stringify(contents)}`);
+      } catch (err) {
+        assert.equal(err.message.includes(home), false, `leaked $HOME for ${JSON.stringify(contents)}:\n${err.message}`);
+        assert.ok(err.message.startsWith('~/'), `not a display path: ${err.message}`);
+      }
+    }
+    assert.equal(describeState(dir).display.includes(home), false);
+    assert.ok(describeState(dir).display.startsWith('~/'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('readState and writeState enforce the outside-the-repo rule too', () => {
@@ -266,4 +343,32 @@ test('the state file is JSON a person can read, with a trailing newline', () => 
   const text = readFileSync(stateFilePath(dir), 'utf8');
   assert.equal(text.endsWith('\n'), true);
   assert.equal(text.includes('\n  "policies"'), true, 'the file is not indented');
+});
+
+test('pull and push both pass `root` to the state helpers, so the in-checkout guard is live', () => {
+  // The guard itself is tested directly above, but nothing proved the CALLERS engage it. Dropping
+  // `root` from a call site silently disables it: `readState`/`writeState` only check containment
+  // when they are given a root, so the whole "never inside the checkout" property would be gone
+  // with every test in this file still green.
+  const dir = dirname(fileURLToPath(import.meta.url));
+  for (const file of ['../pull.mjs', '../push.mjs']) {
+    const source = readFileSync(join(dir, file), 'utf8');
+    const calls = [...source.matchAll(/\b(readState|writeState)\(\{([^}]*)\}/g)];
+    assert.ok(calls.length > 0, `${file} calls neither readState nor writeState`);
+    for (const [whole, name, args] of calls) {
+      assert.match(args, /\broot\b/, `${file}: ${name} called without a root, which disables the in-checkout guard: ${whole}`);
+    }
+  }
+});
+
+test('readState and writeState skip the guard when given no root, which is why the caller test exists', () => {
+  // Pinning the escape hatch as well as the guard: the helpers are usable without a root (the tests
+  // in this file do exactly that), so "the caller passes one" is a separate property and needs its
+  // own assertion rather than being assumed.
+  const root = scratch();
+  const inside = join(root, 'state');
+  mkdirSync(inside, { recursive: true });
+  assert.doesNotThrow(() => writeState({ dir: inside, state: emptyState() }));
+  assert.doesNotThrow(() => readState({ dir: inside }));
+  assert.throws(() => readState({ dir: inside, root }), /inside the checkout/);
 });

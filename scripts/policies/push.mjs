@@ -175,30 +175,42 @@ export function resolveType(raw) {
 /**
  * The operator gate. A write to a legal policy is an operator action, never a CI one.
  *
- * Two ways to satisfy it, and one that is absolute:
+ * THE DRY RUN IS NOT GATED ON A TERMINAL, and that is a correction rather than a loosening. The
+ * first version ran this before the dry-run branch, so a dry run refused in any session without a
+ * TTY. That made the documented sequence unreachable: the rule an agent must satisfy is "the
+ * operator asked, after seeing the dry run", and the dry run needed the attestation that the rule
+ * says can only come after it. Every real run therefore passed `--operator-approved` at a moment
+ * when nothing had been attested, which teaches exactly the wrong thing about the flag, and the
+ * tool then printed "an operator asked for this write" over a run where nobody had.
  *
- * - `CI` set is an UNCONDITIONAL refusal. No workflow in this repo wires `policies:push`, a test
- *   asserts that, and no flag here can override it. That is the blast-radius boundary: CI never
- *   holds a credential that can rewrite a legal policy.
- * - A TTY on stdin means a person is running it by hand. The ordinary case.
+ * A dry run sends no mutation and writes no file. What it needs is `CI` unset, like everything
+ * else here; what it does not need is a human at a keyboard.
+ *
+ * - `CI` set is an UNCONDITIONAL refusal, for every invocation including the dry run. No workflow
+ *   in this repo wires `policies:push`, a test asserts that, and no flag here can override it.
+ *   That is the blast-radius boundary: CI holds no credential that touches a legal policy.
+ * - For a run that would MUTATE, a TTY on stdin means a person is running it by hand.
  * - `--operator-approved` is the explicit attestation for the case where the operator has asked an
- *   agent to run the push in that session. It exists because the alternative people actually reach
- *   for is wrapping the command in a pty to fake a TTY, which defeats the check silently and
+ *   agent to run the write in that session. It exists because the alternative people actually
+ *   reach for is wrapping the command in a pty to fake a TTY, which defeats the check silently and
  *   teaches that the gate is routable. An honest flag that shows up in the shell history and in
  *   this tool's own output is strictly better than a faked terminal.
  *
  * This flag does NOT authorize a particular write. It only attests that a human asked. Everything
  * that decides WHAT gets written is unchanged and still required: `--confirm=<type>` matching
- * `--type`, `--expect-live-sha` from the tool's own dry run, the freshness gate against
- * `remote.sha256`, a clean `policies:check`, a clean tree merged into main, and a verified backup
- * before the mutation.
+ * `--type`, `--expect-live-sha` from the tool's own dry run, the freshness gate against the
+ * observation state, the monotonic version floor, a clean `policies:check`, a clean tree merged
+ * into main, and a verified backup before the mutation.
  *
- * @returns {{ via: 'tty' | 'operator-approval' }} how the gate was satisfied, for the log line
+ * @param {object} o
+ * @param {boolean} [o.mutating]  false for a dry run, which needs no terminal and no attestation
+ * @returns {{ via: 'tty' | 'operator-approval' | 'dry-run' }} how the gate was satisfied, for the log
  */
-export function assertInteractive({ env, isTTY, operatorApproved = false }) {
+export function assertInteractive({ env, isTTY, operatorApproved = false, mutating = true }) {
   if (env.CI) {
     throw new PolicyError('policies:push', 'refuses to run with CI set; no workflow may write a legal policy, and no flag overrides this');
   }
+  if (!mutating) return { via: 'dry-run' };
   if (isTTY) return { via: 'tty' };
   if (operatorApproved) return { via: 'operator-approval' };
   throw new PolicyError(
@@ -379,6 +391,11 @@ export async function run({ client, root, now, options, backupDir, stateDir, dom
   const live = await fetchLive(client, type);
   const liveCore = coreSha256(live.body);
   if (liveCore === sendCore) {
+    // RECORD THE OBSERVATION EVEN THOUGH NOTHING WAS SENT. This is a fresh, confirmed read of what
+    // Admin holds, which is exactly what the state file is for; returning without it leaves a
+    // stale or absent baseline in place, and the next real push then trips the freshness gate on
+    // an Admin edit that never happened.
+    recordState(stateDir, root, key, { body: live.body, now });
     log(`${key}: already in sync (core sha ${liveCore}); no changes made`);
     if (!restoring) log('The live body may still be missing the version stamp; that is expected until the next real wording change.');
     return { mutated: false, reason: 'in-sync', liveCore, sendCore };
@@ -401,7 +418,7 @@ export async function run({ client, root, now, options, backupDir, stateDir, dom
     if (state === null) {
       throw new PolicyError(
         key,
-        `there is no observation state at ${stateFilePath(stateDir)}, so the freshness gate has nothing ` +
+        `there is no observation state at ${displayPath(stateFilePath(stateDir))}, so the freshness gate has nothing ` +
           `to compare against and cannot tell your edit from someone else's Admin edit. Run ` +
           `${SEED_COMMAND} once to seed it, then re-run the dry run.`,
       );
@@ -410,7 +427,7 @@ export async function run({ client, root, now, options, backupDir, stateDir, dom
     if (!observed || typeof observed.coreSha256 !== 'string') {
       throw new PolicyError(
         key,
-        `the observation state at ${stateFilePath(stateDir)} records nothing for this policy. ` +
+        `the observation state at ${displayPath(stateFilePath(stateDir))} records nothing for this policy. ` +
           `Run ${SEED_COMMAND} once to seed it, then re-run the dry run.`,
       );
     }
@@ -454,12 +471,20 @@ export async function run({ client, root, now, options, backupDir, stateDir, dom
     log('');
     log('Dry run: NO CHANGES WERE MADE. This output is data to read, not a command to run.');
     log('To apply exactly this diff, and only with an operator asking for it in this session:');
-    // Carry --operator-approved into the printed command when it was used. Without it the
-    // suggested re-run is refused for the very reason this run was allowed, which sends the
-    // operator hunting for the flag they already passed.
+    // Carry EVERY flag this run was given into the printed command. Without that the suggested
+    // re-run is refused by the very gate this run was allowed past, which sends the operator
+    // hunting for a flag they already passed; and carrying only the attestation would propagate
+    // the one flag that asserts a human decision while dropping the ones that record WHICH
+    // decision, at the moment an agent is most inclined to re-add them on its own judgment.
     const source = restoring ? `--restore ${displayPath(resolve(options.restore))}` : `--type ${key}`;
-    const attest = options.operatorApproved ? ' --operator-approved' : '';
-    log(`  npm run policies:push -- ${source}${attest} --expect-live-sha=${liveCore} --confirm=${key}`);
+    const carried = [
+      options.operatorApproved ? '--operator-approved' : null,
+      options.forceOverwriteLive ? '--force-overwrite-live' : null,
+      options.allowUnreviewed ? '--allow-unreviewed' : null,
+      options.acceptNormalisation ? '--accept-normalisation' : null,
+    ].filter(Boolean);
+    const extra = carried.length ? ` ${carried.join(' ')}` : '';
+    log(`  npm run policies:push -- ${source}${extra} --expect-live-sha=${liveCore} --confirm=${key}`);
     return { mutated: false, reason: 'dry-run', liveCore, sendCore, diff, headingDiff };
   }
 
@@ -645,7 +670,9 @@ export async function run({ client, root, now, options, backupDir, stateDir, dom
  * neither.
  *
  * On the clean path there is usually nothing to commit at all, which is the point of moving the
- * observation out of the repo. This prints only when something in the tree did move.
+ * observation out of the repo. It is printed on every non-restore success anyway, worded
+ * conditionally, because the one case it exists for (a write-back) is also the case an operator is
+ * least expecting.
  */
 export const COMMIT_HINT = [
   'If the working tree moved (a write-back), commit it on its own branch:',
@@ -680,8 +707,15 @@ function acceptWriteBack(root, type, version, stamped, storedBody) {
   const key = keyForType(type);
   const core = coreOf(storedBody);
   const written = stamped && Number.isInteger(version) ? stampVersion(core, key, version) : core;
-  writeAtomic(paths(root).file(type), fileTextFor(written));
 
+  // EVERY REFUSAL BEFORE THE FIRST WRITE. The manifest entry was read after the body had already
+  // been rewritten, so a missing entry would leave the body updated and the manifest not: a
+  // half-applied write-back that `policies:check` refuses and that no message explains. Compute
+  // and validate first, then write both.
+  //
+  // The guard itself is defensive and currently unreachable: step 2's `plan(root)` refuses a
+  // missing manifest entry before any of this runs, and a restore never reaches the write-back at
+  // all. It stays because the ORDER is the point, and the order is what a future caller gets wrong.
   const p = paths(root);
   const manifest = readManifest(root);
   const entry = manifest.policies[key];
@@ -690,6 +724,8 @@ function acceptWriteBack(root, type, version, stamped, storedBody) {
   entry.sha256 = sha256(written);
   entry.length = written.length;
   entry.headings = extractHeadings(core);
+
+  writeAtomic(p.file(type), fileTextFor(written));
   writeAtomic(p.manifest, formatManifest(manifest));
 }
 
@@ -737,8 +773,12 @@ export async function main(argv) {
       env: process.env,
       isTTY: Boolean(process.stdin.isTTY),
       operatorApproved: options.operatorApproved,
+      // A dry run mutates nothing, so it needs no terminal and no attestation. Gating it made the
+      // documented sequence unreachable and printed an attestation line over a run nobody asked for.
+      mutating: options.confirm !== null,
     });
-    // Never let the non-TTY path be silent. If this line is in a transcript, an operator asked.
+    // Never let the non-TTY path be silent. If this line is in a transcript, an operator asked,
+    // and a WRITE was attempted: it is printed only for a run carrying --confirm.
     if (gate.via === 'operator-approval') {
       console.log('policies:push: running without a TTY under --operator-approved (an operator asked for this write).');
     }

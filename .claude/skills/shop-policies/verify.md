@@ -24,12 +24,13 @@ they differ.
 A byte match without a version match says the two bodies agree. It does not say that the body live
 is carrying is the one this repo can name, and that is the entire reason the version stamp exists.
 
-Four outcomes, and they are not interchangeable:
+Five outcomes, and they are not interchangeable:
 
 | Line | What it means |
 |---|---|
 | `PASS live carries the version stamp this repo names` | verified |
 | `FAIL live carries vN, the repo names vM` | someone else pushed, or a push landed that this session does not know about |
+| `SKIP this policy is not stamped, so there is no version to assert` | the repo body carries no stamp. `privacy_policy` is `stamped: false`, so you see this on every run |
 | `SKIP no stamped write has happened from this machine yet` | normal until the first stamped push; not a failure |
 | `FAIL a stamped body was pushed from this machine and live carries no stamp` | Shopify strips HTML comments. Set `"stamped": false` for that policy in `manifest.json`, restamp, and rely on the core hash from then on |
 
@@ -50,6 +51,10 @@ delete the hash, and it is not to delete the set unless the sentences genuinely 
 - `npm run policies:verify`
 - `npm run policies:pull -- --check` (drift only, in both directions)
 - `npm run policies:pull -- --seed` (records what Admin holds; writes nothing in the repo)
-- `npx shopify theme pull -s sapphire-shadow-studio --live --path /tmp/live --nodelete`
+- `npm run policies:status -- --live` (the current state per policy)
+
+**A theme pull is not on this list, and cannot be.** Policy bodies are Admin objects written by
+`shopPolicyUpdate`, not theme files; this theme has no policy template, so
+`npx shopify theme pull` returns templates and layout and no policy HTML at all.
 
 Never bare `npm run policies:pull` to satisfy curiosity. It is the destructive direction.

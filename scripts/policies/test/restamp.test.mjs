@@ -294,3 +294,37 @@ test('an unusable body refuses before rewriting anything', () => {
     cleanup(root);
   }
 });
+
+test('the ANCHOR CHANGE block is actually PRINTED, not merely computed', () => {
+  // The loudest output this tool produces, and the only warning that a reworded h2 has broken every
+  // shared /policies/...#anchor link anyone was ever sent. `restampManifest`'s `anchorChanges` was
+  // under test; the printing of it was not, so deleting the whole block changed no test.
+  const root = makeRoot();
+  try {
+    const reworded = BODIES.REFUND_POLICY.replace('<h2>Returns</h2>', '<h2>Returns and Exchanges</h2>');
+    writeRaw(root, fileNameForType('REFUND_POLICY'), fileTextFor(`<!-- sss-policy refund_policy v1 -->\n${reworded}`));
+
+    const { code, out } = runMain(root, ['--check']);
+    assert.equal(code, 2);
+    assert.match(out, /ANCHOR CHANGE/);
+    assert.match(out, /every shared \/policies\/\.\.\. link to the old anchor stops resolving/);
+    assert.match(out, /returns-and-exchanges/, 'the new id is not shown, so the operator cannot search for the old one');
+    assert.match(out, /git grep -n 'policies\/'/, 'the search command is not printed');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('a body edit with NO heading change prints no anchor warning', () => {
+  // The negative control. Without it a tool that shouted on every restamp would pass the test above
+  // and train the operator to ignore the one warning that matters.
+  const root = makeRoot();
+  try {
+    writeRaw(root, fileNameForType('REFUND_POLICY'), fileTextFor(`<!-- sss-policy refund_policy v1 -->\n${BODIES.REFUND_POLICY}\n<p>a new sentence</p>`));
+    const { code, out } = runMain(root, ['--check']);
+    assert.equal(code, 2, 'the edit should still be reported as a change');
+    assert.equal(out.includes('ANCHOR CHANGE'), false, 'shouted about anchors on an edit that moved none');
+  } finally {
+    cleanup(root);
+  }
+});

@@ -15,9 +15,11 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { STATES, classify, describeBranch, format, nextCommand, run } from '../status.mjs';
-import { POLICY_TYPES, coreSha256, fileNameForType, fileTextFor, keyForType } from '../lib/policies.mjs';
+import { check } from '../check.mjs';
+import { POLICY_TYPES, coreSha256, fileNameForType, fileTextFor, keyForType, sha256 } from '../lib/policies.mjs';
 import {
   BODIES,
+  assertAllGitFakesExhausted,
   cleanup,
   liveFrom,
   makeClient,
@@ -115,7 +117,9 @@ test('every state names exactly ONE next command, and never "it depends"', () =>
     assert.equal(command.includes(' or '), false, `${state}: offers a choice`);
   }
   assert.ok(nextCommand(STATES.REPO_AHEAD, 'shipping_policy').includes('--type shipping_policy'));
-  assert.ok(nextCommand(STATES.NO_STATE, 'x').includes('policies:pull'));
+  // `--seed`, not a bare pull: a bare pull takes Admin's body into the repo on the way and reverts
+  // a committed unpushed wording change without asking.
+  assert.ok(nextCommand(STATES.NO_STATE, 'x').includes('policies:pull -- --seed'));
   assert.ok(nextCommand(STATES.REPO_DIRTY, 'x').includes('policies:restamp'));
   assert.ok(nextCommand(STATES.TOOL_ERROR, 'x').includes('stop and look'));
 });
@@ -131,7 +135,11 @@ test('without a client, status constructs nothing and reads nothing from the net
     assert.equal(result.live, false);
     assert.equal(result.rows.length, POLICY_TYPES.length);
     for (const row of result.rows) assert.equal(row.status, STATES.IN_SYNC, row.key);
-    assert.ok(format(result).includes('pass --live for the Admin column'));
+    // The offline report must say what it could NOT determine, not merely omit it: an operator
+    // reading `in sync` off a bare run would otherwise take it as a statement about the live store.
+    const text = format(result);
+    assert.ok(text.includes('NOT READ'));
+    assert.ok(text.includes('"Admin moved" is not a state this run can report'));
   } finally {
     cleanup(root);
   }
@@ -162,9 +170,14 @@ test('a merged wording change reports REPO_AHEAD, which is the state check is si
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
     manifest.policies.shipping_policy.version = 2;
     manifest.policies.shipping_policy.coreSha256 = coreSha256(editedCore);
-    manifest.policies.shipping_policy.sha256 = coreSha256(`<!-- sss-policy shipping_policy v2 -->\n${editedCore}`);
+    // sha256 over the COMMITTED BYTES, not coreSha256, which strips the stamp: writing the core
+    // hash into the committed-bytes field made the two identical and left a root that
+    // `policies:check` would refuse.
+    manifest.policies.shipping_policy.sha256 = sha256(`<!-- sss-policy shipping_policy v2 -->\n${editedCore}`);
     manifest.policies.shipping_policy.length = `<!-- sss-policy shipping_policy v2 -->\n${editedCore}`.length;
     writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    assert.deepEqual(check(root).mismatches, [], 'the fixture is not a tree policies:check would accept');
 
     const result = await run({ root, stateDir: stateDir(), gitRun: mergedGit() });
     const row = result.rows.find((r) => r.key === 'shipping_policy');
@@ -282,4 +295,12 @@ test('status.mjs constructs no Admin client at module load, and imports one lazi
   const topLevel = source.slice(0, source.indexOf('export const STATES'));
   assert.equal(/^import .*blank-inventory/m.test(topLevel), false, 'status.mjs imports the Admin client at the top level');
   assert.ok(source.includes("await Promise.all(["), 'the live client is not lazily imported');
+});
+
+
+after(() => {
+  // Exhaustion, checked at runtime rather than by counting text: every expectation registered by
+  // every fake this file built must have been invoked, or the gate that would have invoked it did
+  // not run. A fake deliberately never reached opts out at its own call site.
+  assertAllGitFakesExhausted(assert);
 });

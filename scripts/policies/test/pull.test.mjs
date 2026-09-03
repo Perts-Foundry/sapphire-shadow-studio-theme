@@ -9,19 +9,20 @@
 // required state and a push that required state would deadlock: nothing could ever create the
 // file that everything demands.
 
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { check } from '../check.mjs';
-import { assertBodiesClean, indexPolicies, run } from '../pull.mjs';
+import { assertBodiesClean, indexPolicies, main as mainRun, run } from '../pull.mjs';
 import { POLICY_TYPES, PolicyError, bodyFromFileText, fileNameForType, fileTextFor, coreSha256 } from '../lib/policies.mjs';
 import {
   BODIES,
   GIT_ARGV,
   NOW,
+  assertAllGitFakesExhausted,
   assertTreeUnchanged,
   cleanup,
   liveFrom,
@@ -55,7 +56,10 @@ function cleanGit(...names) {
 
 /** A fake that must never be called: the gate is not expected to reach git on this path. */
 function noGit() {
-  return makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }]);
+  return makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }], {
+    exhaustive: false,
+    why: 'this path must not reach the dirty gate at all; the assertion is that git is never asked',
+  });
 }
 
 /** An empty checkout: marketing/policies/ exists but holds nothing. */
@@ -276,8 +280,10 @@ test('the gate asks about ONLY the bodies that would be overwritten', async () =
 });
 
 test('assertBodiesClean asks git nothing when there is nothing to overwrite', () => {
-  // git-fake-not-exhausted: the assertion IS that the expectation goes unused.
-  const gitRun = makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }]);
+  const gitRun = makeGitFake([{ args: ['status', '--porcelain', '--', 'never'], result: '' }], {
+    exhaustive: false,
+    why: 'the assertion IS that the expectation goes unused',
+  });
   assertBodiesClean('/x', [], { run: gitRun });
   assert.deepEqual(gitRun.calls, []);
 });
@@ -402,7 +408,13 @@ test('a null or empty body is a refusal, not a zero-byte write', async () => {
   for (const body of [null, '', '   \n  ']) {
     await withDirs(async (root, stateDir) => {
       const client = makeClient({ live: { ...liveFrom(), REFUND_POLICY: { title: 'Refund policy', body } } });
-      await assert.rejects(() => run({ client, root, now: NOW, stateDir, gitRun: noGit() }), /empty body|did not return/);
+      // No alternation: with `did not return` accepted too, deleting the empty-body check in
+      // `indexPolicies` survived, because a null body drops the row and the missing-type refusal
+      // fires instead.
+      await assert.rejects(
+        () => run({ client, root, now: NOW, stateDir, gitRun: noGit() }),
+        /Admin returned an empty body/,
+      );
       assert.equal(snapshotTree(policiesDir(root)).size, 0, `body ${JSON.stringify(body)} wrote a file`);
     }, { rootOptions: 'empty' });
   }
@@ -468,4 +480,90 @@ test('a bare directory with no manifest is a valid starting point', async () => 
     await run({ client: makeClient({ live: liveFrom() }), root, now: NOW, stateDir, gitRun: cleanGit(...ALL_FILES) });
     assert.deepEqual(check(root).problems, []);
   }, { rootOptions: 'empty' });
+});
+
+
+after(() => {
+  // Exhaustion, checked at runtime rather than by counting text: every expectation registered by
+  // every fake this file built must have been invoked, or the gate that would have invoked it did
+  // not run. A fake deliberately never reached opts out at its own call site.
+  assertAllGitFakesExhausted(assert);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The operator-facing output of --check
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `main` with a captured console and an injected client.
+ *
+ * THE MESSAGES ARE THE PRODUCT HERE. The regression this whole direction-naming exists to stop was
+ * a message: the old `--check` told the operator to run `policies:pull` for every drift, which in
+ * the repo-ahead case is the destructive action. Asserting only the `directions` map leaves that
+ * message free to say anything at all.
+ */
+async function runCheckMain(root, stateDir, live) {
+  const out = [];
+  const err = [];
+  const log = console.log;
+  const error = console.error;
+  console.log = (s) => out.push(String(s));
+  console.error = (s) => err.push(String(s));
+  const realCreate = process.env.MYSHOPIFY_DOMAIN;
+  try {
+    const code = await mainRun(['node', 'pull.mjs', '--root', root, '--check'], {
+      client: makeClient({ live }),
+      stateDir,
+    });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  } finally {
+    console.log = log;
+    console.error = error;
+    void realCreate;
+  }
+}
+
+test('--check names the destructive direction correctly, in the operator-facing text', async () => {
+  await withDirs(async (root, stateDir) => {
+    seedState(stateDir);
+    writeRaw(root, fileNameForType('SHIPPING_POLICY'), fileTextFor(`<!-- sss-policy shipping_policy v1 -->\n${BODIES.SHIPPING_POLICY}\n<p>committed change</p>`));
+    const live = liveFrom({ ...BODIES, REFUND_POLICY: `${BODIES.REFUND_POLICY}\n<p>admin edit</p>` });
+    const { code, err } = await runCheckMain(root, stateDir, live);
+
+    assert.equal(code, 2, '--check must exit 2 on drift');
+
+    // The repo-ahead half must NOT tell the operator to pull, and must say so explicitly.
+    const repoAhead = err.split('\n').filter((l) => l.includes('shipping_policy')).join('\n');
+    assert.match(repoAhead, /the REPO is ahead/);
+    assert.match(repoAhead, /npm run policies:push -- --type shipping_policy/);
+    // Asserted against the whole of stderr: this line names the consequence, not the policy, so
+    // filtering by key would drop the sentence that matters most.
+    assert.match(err, /policies:pull would refuse this one; it would overwrite the committed change/);
+
+    // The admin-moved half is the one that does point at a pull.
+    assert.match(err, /drift: refund_policy\.html - ADMIN has moved since the last pull\./);
+    assert.match(err, /Review the diff, then run npm run policies:pull to take Admin's version\./);
+
+    assert.match(err, /1 outstanding push\(es\), 1 Admin edit\(s\)/);
+  });
+});
+
+test('--check on a clean tree says so and exits 0', async () => {
+  await withDirs(async (root, stateDir) => {
+    seedState(stateDir);
+    const { code, out } = await runCheckMain(root, stateDir, liveFrom());
+    assert.equal(code, 0);
+    assert.match(out, /matches Admin/);
+  });
+});
+
+test('--check with no baseline says the direction is UNDETERMINED, and names --seed', async () => {
+  await withDirs(async (root, stateDir) => {
+    writeRaw(root, fileNameForType('SHIPPING_POLICY'), fileTextFor(`<!-- sss-policy shipping_policy v1 -->\n${BODIES.SHIPPING_POLICY}\n<p>committed change</p>`));
+    const { code, err } = await runCheckMain(root, stateDir, liveFrom());
+    assert.equal(code, 2);
+    assert.match(err, /the WORDING differs from Admin, and this machine has NO baseline/);
+    assert.match(err, /policies:pull -- --seed/);
+    assert.match(err, /1 undetermined/);
+  });
 });

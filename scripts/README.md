@@ -76,7 +76,7 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   version stamp after a deliberate local wording edit; `pull.mjs` reads through the read-only Admin
   client and refuses to overwrite a dirty or repo-ahead body; `verify.mjs` asserts what the live
   bodies say, against sentence sets that are refused when stale; `push.mjs` writes a legal policy on
-  the **live store** behind nine gates (writable type, not CI, TTY or an explicit operator
+  the **live store** behind ten gates (writable type, not CI, TTY or an explicit operator
   attestation, clean check, clean tree, HEAD merged, freshness against the machine-local observation
   state, the monotonic version floor, a dry run, a verified out-of-tree backup) and fails closed on
   `userErrors`, which `shopPolicyUpdate` returns with HTTP 200. Every comparison runs on the CORE
@@ -114,8 +114,9 @@ the app must grant `read_legal_policies`, and `push.mjs` also `write_legal_polic
 at runtime, never assumed). `policies:check` needs no credentials at all, and a test asserts it runs
 clean with all three deleted from the environment. Optional, policies only: `POLICIES_BACKUP_DIR`
 (pre-push backups, default `~/.local/state/shop-policies`) and `POLICIES_STATE_DIR` (the
-observation state, default `~/.local/state/shop-policies/state`). Two separate overrides on
-purpose: sharing one would let a "delete old backups" action take the freshness baseline with it.
+observation state, default `~/.local/state/shop-policies-state`). Two separate overrides AND two
+sibling defaults on purpose: sharing either would let a "delete old backups" action take the
+freshness baseline with it, and nesting the state under the backups defeats it just as thoroughly.
 
 `STOREFRONT_PASSWORD` is read only by the storefront-facing tools (`site-check/probe.mjs`,
 `site-check/tools.mjs`, `seo-review/crawl.mjs`, the a11y cookie helper); they also accept

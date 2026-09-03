@@ -1,4 +1,4 @@
-// The four absolutes are duplicated ON PURPOSE, in three files. This asserts the copies match.
+// The five absolutes are duplicated ON PURPOSE, in three files. This asserts the copies match.
 //
 // WHY DUPLICATE THEM AT ALL. CLAUDE.md is always loaded. `SKILL.md` loads only if the skill
 // triggers, and `push.md` only if the agent routes there. An agent reaching `policies:push` from
@@ -40,7 +40,7 @@ function extract(file) {
   return text.slice(start + BEGIN.length, end).trim();
 }
 
-test('the four absolutes are byte-identical in CLAUDE.md, SKILL.md and push.md', () => {
+test('the five absolutes are byte-identical in CLAUDE.md, SKILL.md and push.md', () => {
   const canonical = extract(CANONICAL);
   for (const copy of COPIES) {
     assert.equal(
@@ -52,19 +52,43 @@ test('the four absolutes are byte-identical in CLAUDE.md, SKILL.md and push.md',
   }
 });
 
-test('the block really is the four rules, not an empty region the markers happen to bracket', () => {
+test('the block really is the five rules, not an empty region the markers happen to bracket', () => {
   const canonical = extract(CANONICAL);
-  assert.ok(canonical.length > 800, 'the absolutes block is suspiciously short');
-  for (const n of ['1.', '2.', '3.', '4.']) {
+  assert.ok(canonical.length > 1500, 'the absolutes block is suspiciously short');
+  for (const n of ['1.', '2.', '3.', '4.', '5.']) {
     assert.ok(canonical.includes(`\n${n} `) || canonical.startsWith(`${n} `), `rule ${n} is missing`);
   }
   for (const phrase of [
     'Quote their sentence verbatim',
-    'No simulated terminal',
+    'No terminal you did not sit at',
     '`CI` set is an absolute refusal',
     'Never bare `npm run policies:pull`',
+    'The push runs in the session holding the operator',
   ]) {
     assert.ok(canonical.includes(phrase), `the absolutes no longer say: ${phrase}`);
+  }
+});
+
+test('the closed paths stay closed: each red-team finding has its clause', () => {
+  // A red-team pass over the skill text enumerated every route to a completed push with no
+  // quotable operator request. Each of these is the clause that closed one, and each is the kind
+  // of sentence a later tightening-for-brevity edit removes without noticing.
+  // Whitespace-normalised: the block is hard-wrapped markdown, so a clause that reads as one
+  // sentence spans a newline and two spaces of indent.
+  const canonical = extract(CANONICAL).replace(/\s+/g, ' ');
+  const clauses = {
+    'a push spelled as a module import': 'importing the module',
+    'a bare affirmative read as a grant': 'is not a grant',
+    'a compaction summary supplying the quote': 'compaction artifact',
+    'a parent agent\'s task prompt supplying the quote': "parent agent's task prompt",
+    'a real pty argued as not simulated': 'Whether the pty is real is not the question',
+    'CI unset for some other reason': 'for any reason at all',
+    'a theme pull offered as the way to read a policy': 'A theme pull does not show you a policy body',
+    'a subagent authorized by its task text': 'you are never authorized to run it',
+    'a re-run after a pre-gate typo treated as a new push': 'is the same authorized push',
+  };
+  for (const [path, clause] of Object.entries(clauses)) {
+    assert.ok(canonical.includes(clause), `the absolutes stopped closing "${path}": lost ${JSON.stringify(clause)}`);
   }
 });
 
