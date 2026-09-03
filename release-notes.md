@@ -25,6 +25,28 @@ Shopify's reserved `shopify--*` definitions, which Admin creates the first time 
 so on a category no product has used before there is literally nothing for `metafieldsSet` to
 reference.
 
+**The pre-PR review found the fix half-applied, and two of its findings were wrong in useful ways.**
+Four reviewers ran against the first version of this change. The doc-sync and code-review passes both
+caught the same real miss: the handle was corrected in the snippet and the constant but in none of the
+prose that quotes them, including the per-product value table in
+`docs/breadcrumb-collection-metafield.md`, which told the operator to set a **Collection reference**
+metafield to a handle that does not exist. That table was unsettable, not merely stale.
+
+Two findings were refuted by measurement, and both refutations are now recorded in the skill because
+the reasoning behind them was sound and would recur. The prompt review argued the new completion check
+was unrunnable, reasoning that `resourcePublicationsV2 { publication { name } }` needs
+`read_publications` and the app grants neither publications scope; the read in fact works, and only the
+write is denied. It then proposed `onlineStoreUrl` as a scope-free substitute, which is worse than the
+thing it replaces here: that field is null on **every** product in this store, published or not,
+because the storefront is password-protected. It would have failed the long-live `shift-fuel-crewneck`
+exactly as readily as an invisible product, and then started working silently the day the password
+comes off. Both the working check and the trap are now stated in `SKILL.md` and phase 2 step 9.
+
+**One review finding was a real hole in the fix.** "Lists the same channels as a sibling" passes
+vacuously when both sets are empty, so the check would have greened on precisely the broken product it
+was written for, compared against any other unpublished one. It now requires a non-empty set, a sibling
+that is itself reachable and named by handle, and forbids a sibling added in the same run.
+
 ## A dead handle in the breadcrumb preferred list (unreleased)
 
 `snippets/breadcrumbs.liquid` scanned `healthcare,the-vitals-collection,featured` for a product's

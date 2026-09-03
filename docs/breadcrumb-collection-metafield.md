@@ -7,7 +7,9 @@ A product usually belongs to several collections, so "which one does the breadcr
 answer the theme can derive. Before this metafield existed the answer came from a hardcoded
 preferred-handle list in the snippet, which is deterministic but hand-maintained and fails quietly:
 a handle that no longer exists is skipped with no error, so renaming or removing a collection
-degrades every affected trail and nothing notices. This metafield is the per-product answer that
+degrades every affected trail. That used to go unnoticed; `breadcrumb-preferred-handle-missing`
+now fails the seo-review run on it, added after `healthcare` sat in the list for months against a
+store whose collection is `healthcare-collection`. This metafield is the per-product answer that
 needs no list maintenance. The list stays behind it as a permanent fallback.
 
 ## The `custom.breadcrumb_collection` metafield
@@ -38,7 +40,7 @@ that does not contain the product.
    metafield. There is no canonical contradiction to worry about, because the last `ListItem` in the
    JSON-LD omits `item` entirely.
 2. **`custom.breadcrumb_collection`**, when it resolves to a non-catch-all collection.
-3. **The preferred-handle list** (`healthcare`, `the-vitals-collection`, `featured`), scanned in
+3. **The preferred-handle list** (`healthcare-collection`, `the-vitals-collection`, `featured`), scanned in
    order against the product's collections.
 4. **Any collection that is not a catch-all**, in whatever order `product.collections` returns.
 
@@ -60,15 +62,20 @@ therefore falls through to the preferred list rather than to the worst available
 
 ## Per-product values
 
-Confirm each against actual collection membership before setting it.
+Confirm each against actual collection membership before setting it. This table said `healthcare`
+for four products until 2026-09-03; no such collection exists, and the metafield is a **Collection
+reference**, so those values were not merely wrong, they were unsettable. The handle is
+`healthcare-collection`. Read the handle out of Admin rather than from a title: "Healthcare
+Collection" does not handleize to what a reader would guess.
 
 | Product handle | Value | Why |
 |---|---|---|
-| `lead-ii-crewneck` | `healthcare` | Credential-embroidered; the vertical the trail should name |
-| `lead-ii-quarter-zip` | `healthcare` | Same |
-| `lead-ii-vest-womens` | `healthcare` | Same |
-| `huddle-crewneck` | `healthcare` | Same |
-| `shift-fuel-crewneck` | whichever collection it is actually in | Not credential merchandise; must not name `healthcare` if it is no longer a member |
+| `lead-ii-crewneck` | `healthcare-collection` | Credential-embroidered; the vertical the trail should name |
+| `lead-ii-quarter-zip` | `healthcare-collection` | Same |
+| `lead-ii-vest-womens` | `healthcare-collection` | Same |
+| `huddle-crewneck` | `healthcare-collection` | Same |
+| `shift-fuel-crewneck` | whichever collection it is actually in | Not credential merchandise; must not name `healthcare-collection` if it is no longer a member |
+| `shift-fuel-tote` | whichever collection it is actually in | Non-garment; in `featured` and `healthcare-collection` as of 2026-09-03 |
 | `gift-card` | **leave blank** | Blank correctly yields a two-item "Home > Gift Card" trail |
 
 Set these only after collection membership is settled. Pointing a product at a collection it is
@@ -89,8 +96,8 @@ site is worse off. Once values are set, check on a preview theme:
 
 ## The checks that back this
 
-`scripts/seo-review/admin.mjs` reads the metafield through the Admin API and emits two `WARN`
-findings, both keyed per product (`admin:product/<handle>`) so the baseline differ names which
+`scripts/seo-review/admin.mjs` emits three findings. The first two read the metafield through the
+Admin API and are keyed per product (`admin:product/<handle>`) so the baseline differ names which
 product regressed instead of moving a counter:
 
 - **`product-breadcrumb-collection-missing`**: no resolved reference. The detail names the
@@ -98,7 +105,16 @@ product regressed instead of moving a counter:
 - **`product-breadcrumb-collection-catchall`**: the reference resolves to an excluded handle. This
   is the higher-value of the two, because a set-but-ignored value looks correct in Admin.
 
-Both are `WARN`, which is non-blocking under `exitCodeFor`, so no `accepted-risks.json` entries are
-needed while values are still being filled in. The excluded handles live in
-`BREADCRUMB_EXCLUDED_HANDLES` in `scripts/seo-review/lib/checks.mjs`, which mirrors
-`excluded_handles` in the snippet; change them together.
+Those two are `WARN`, which is non-blocking under `exitCodeFor`, so no `accepted-risks.json`
+entries are needed while values are still being filled in. The third backs step 3 of the cascade
+instead, and it blocks:
+
+- **`breadcrumb-preferred-handle-missing`** (`ERROR`, keyed `admin:collection/<handle>`): an entry
+  in the preferred-handle list names no collection in the store. `ERROR` rather than `WARN` because
+  the other two have a working fallback behind them, while a dead entry silently removes a rung
+  from the cascade and every multi-collection product drops to step 4's arbitrary order.
+
+Two mirrored constants sit in `scripts/seo-review/lib/checks.mjs` and must change together with the
+snippet: `BREADCRUMB_EXCLUDED_HANDLES` mirrors `excluded_handles`, and `BREADCRUMB_PREFERRED_HANDLES`
+mirrors `preferred_handles`. Both pairs are pinned by tests in `scripts/seo-review/test/admin.test.mjs`
+that parse the snippet, so drift now fails the suite rather than waiting for someone to notice.

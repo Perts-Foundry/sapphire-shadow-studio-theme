@@ -5,7 +5,9 @@ import {
   breadcrumbPreferredHandleFindings,
 } from '../admin.mjs';
 import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
-import { WARN, ERROR, BREADCRUMB_PREFERRED_HANDLES } from '../lib/checks.mjs';
+import {
+  WARN, ERROR, BREADCRUMB_PREFERRED_HANDLES, BREADCRUMB_EXCLUDED_HANDLES,
+} from '../lib/checks.mjs';
 
 test('isEffectivelyEmpty treats editor artifacts as empty', () => {
   assert.equal(isEffectivelyEmpty(''), true);
@@ -63,15 +65,35 @@ test('preferred handles that all resolve produce no finding', () => {
   assert.deepEqual(breadcrumbPreferredHandleFindings([...collections, { handle: 'extra' }]), []);
 });
 
-// checks.mjs only quotes the list in a finding detail; snippets/breadcrumbs.liquid is what actually
-// scans it. Their comments say "change them together", which nothing enforced. This does.
-test('the preferred-handle list matches the one the snippet scans', async () => {
+// Absence only means something over a complete list. A truncated read would otherwise report every
+// handle sitting on an unread page as missing, burying the real fault (admin-read-truncated).
+test('a truncated collections read suppresses the check rather than guessing', () => {
+  assert.deepEqual(breadcrumbPreferredHandleFindings([], false), []);
+  assert.equal(breadcrumbPreferredHandleFindings([], true).length, BREADCRUMB_PREFERRED_HANDLES.length);
+});
+
+// checks.mjs only quotes these lists; snippets/breadcrumbs.liquid is what actually scans them. Both
+// pairs carry a "change them together" comment, and nothing enforced either. These do. Parsing the
+// Liquid is deliberate: a copy of the list in a fixture would drift in exactly the same silence.
+const liquidSource = async () => {
   const { readFile } = await import('node:fs/promises');
-  const url = new URL('../../../snippets/breadcrumbs.liquid', import.meta.url);
-  const liquid = await readFile(url, 'utf8');
-  const m = liquid.match(/assign preferred_handles = '([^']+)' \| split: ','/);
-  assert.ok(m, 'could not find preferred_handles in snippets/breadcrumbs.liquid');
-  assert.deepEqual(m[1].split(','), BREADCRUMB_PREFERRED_HANDLES);
+  return readFile(new URL('../../../snippets/breadcrumbs.liquid', import.meta.url), 'utf8');
+};
+const assignedList = (liquid, name) => {
+  const m = liquid.match(new RegExp(`assign ${name}\\s*=\\s*'([^']+)'\\s*\\|\\s*split:\\s*','`));
+  assert.ok(m, `could not find "assign ${name} = '...' | split: ','" in snippets/breadcrumbs.liquid`);
+  return m[1].split(',');
+};
+
+test('the preferred-handle list matches the one the snippet scans', async () => {
+  assert.deepEqual(assignedList(await liquidSource(), 'preferred_handles'), BREADCRUMB_PREFERRED_HANDLES);
+});
+
+test('the excluded-handle list matches the one the snippet scans', async () => {
+  assert.deepEqual(
+    assignedList(await liquidSource(), 'excluded_handles').sort(),
+    [...BREADCRUMB_EXCLUDED_HANDLES].sort(),
+  );
 });
 
 // A hand-authored manifest with TWO non-garment products, one whose handle and template suffix are

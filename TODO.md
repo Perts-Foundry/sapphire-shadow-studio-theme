@@ -122,12 +122,11 @@ right now, and an empty heading with a live index entry is the residue this file
     sitemap. Fixed by adding `publish` to phase 2 and `published-check` to phase 3. Ask what else
     lives in that class: an Admin field with no repo representation, no CI check, and no crawl
     coverage, where the natural completion signal (`status == ACTIVE`) reads green.
-  - **Scope assumptions are unstated.** `publishablePublish` needs `write_publications`, which the
-    app does not grant, and that only surfaced as a mid-run ACCESS_DENIED. Category metafields are
-    worse: they need `shopify--*` metaobjects that only Admin can create. The skill should say which
-    steps are Admin-only *because the API cannot do them*, separately from those that are
-    admin-manual by policy, and ideally preflight the scopes it will need at phase-2 start the way
-    `product-images` already preflights its own.
+  - **Preflight the scopes phase 2 needs, at its start.** `publishablePublish` needs
+    `write_publications`, which the app does not grant, and that surfaced only as a mid-run
+    ACCESS_DENIED. The `admin-manual, policy` vs `admin-manual, api-blocked` tags now record which
+    steps the API cannot do, but nothing checks the granted scopes up front the way
+    `product-images` already does. That one step turns every such surprise into a phase-start fact.
   - **Exit lines are not evidence.** `upload-product-media.mjs` printed `created=4` for a run whose
     first attempt had died with a bare `Fatal: fetch failed`; only a read-back distinguished them.
     Every completion check should name the read-only query that proves it, which most already do.
@@ -141,3 +140,16 @@ right now, and an empty heading with a live index entry is the residue this file
     rule that anything past an approval gate is copied aside before being rewritten.
   Deliverable: proposed edits to `.claude/skills/add-product/*` (and the sub-skills where the defect
   is theirs), presented for review, not applied blind. Delete this item when that pass lands.
+
+- [ ] **Give `site-check` a publication check, so "ACTIVE but invisible" is caught by a machine.**
+  `scripts/site-check/lib/admin-checks.mjs`'s `product-status` check is the one that read green on a
+  product published to zero sales channels: it tests `status === 'ACTIVE'` and stops there.
+  `scripts/site-check/lib/admin-queries.mjs` already selects per-product fields on an authenticated
+  query, so adding `resourcePublicationsV2(first: 25) { nodes { isPublished publication { name } } }`
+  and a `product-unpublished` ERROR needs no new query and no new scope; the read works today, only
+  the write scope is missing. That covers every product forever, including ones added outside
+  `add-product` and channels changed months later, which is what the skill's prose cannot do.
+  **Do not use `onlineStoreUrl` for this**, the obvious-looking field: it is null on every product
+  in this store, published or not, because the storefront is password-protected, so it would fail
+  every product until the password comes off and then silently start working. Verified 2026-09-03
+  against both `shift-fuel-tote` and the long-live `shift-fuel-crewneck`.

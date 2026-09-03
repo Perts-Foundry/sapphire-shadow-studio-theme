@@ -178,10 +178,17 @@ export function breadcrumbCollectionFindings(products, { manifest } = {}) {
  * A dead entry is an ERROR, not a WARN: unlike a missing metafield, which has a
  * working fallback behind it, this silently removes a rung from the cascade.
  *
+ * Absence is only meaningful over a COMPLETE collection list, so a truncated
+ * read suppresses this entirely rather than reporting handles that may sit on
+ * an unread page. The caller still fails, on `admin-read-truncated`, which says
+ * what actually went wrong instead of naming innocent handles.
+ *
  * @param {Array<{handle:string}>} collections every collection in the store
+ * @param {boolean} [complete] false when the collections read was truncated
  * @returns {Array<{check:string, severity:string, url:string, detail:string}>}
  */
-export function breadcrumbPreferredHandleFindings(collections) {
+export function breadcrumbPreferredHandleFindings(collections, complete = true) {
+  if (!complete) return [];
   const live = new Set(collections.map((c) => c.handle));
   return BREADCRUMB_PREFERRED_HANDLES
     .filter((h) => !live.has(h))
@@ -237,7 +244,7 @@ async function main() {
     }
   }
   findings.push(...breadcrumbCollectionFindings(products));
-  findings.push(...breadcrumbPreferredHandleFindings(collections));
+  findings.push(...breadcrumbPreferredHandleFindings(collections, !truncated.includes('collections')));
   if (truncated.length > 0) {
     findings.push({
       check: 'admin-read-truncated', severity: ERROR, url: 'admin:query',
