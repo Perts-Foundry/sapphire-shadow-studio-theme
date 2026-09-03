@@ -110,6 +110,23 @@ pasted and pass.
       Fresh snapshot, click the editor, select all, paste.
    4. Read `SSSPOLL`; require the run's approved `after` numbers for this id, and `SSSSTAMP` to
       read `<id> <n>`. Always before Save. Never Save on a mismatch.
+
+      **A mismatch here buys one re-paste, then it is the failure.** The flaky hop is the
+      clipboard, not the editor: one run halted on `pos_exchange_v2_receipt` with `clipboard.mjs`
+      reporting the right file copied and `SSSPOLL` reading `338 60a6b193` against an approved
+      `23656 59aa69eb`, and an earlier one pasted a U+FEFF byte-order mark, one character too many.
+      Both were caught here, and the first cost the remaining 16 ids of the run. So on the first
+      mismatch redo step 3.3 once, whole (`clipboard.mjs` again, fresh snapshot, click, select all,
+      paste), then read `SSSPOLL` again; a second mismatch goes to step 4. This relaxes nothing.
+      The retry is entirely before Save, Save still demands an exact match against the approved
+      bytes, and a re-paste that lands leaves the editor holding exactly what the plan approved. It
+      is not a browser failure and does not count against `browser.md`'s failure bound, though a
+      navigation or snapshot that fails while doing it still does.
+
+      Most of these should now be caught before the browser is touched at all: `clipboard.mjs`
+      reads the clipboard back and exits non-zero unless it holds the file. That exit changed
+      nothing anywhere, so re-run the command once; a second failure goes to step 4 with its
+      output.
    5. Click "Save" (uid from a fresh snapshot), then reload with `editor-probe.js`, declining any
       leave-page dialog. Require the **reload to have completed** and `SSSSTORED` to equal the
       approved `after` numbers, with `SSSSTAMP`/`SSSPOLL` as corroboration. `SSSSTORED` is the
@@ -143,8 +160,11 @@ pasted and pass.
       with the dialog closed (if anything navigated away, navigate back with `editor-probe.js` and
       confirm `SSSSTORED` equals the approved `after` first). `clipboard.mjs
       <scratch>/before-<id>.liquid`, fresh snapshot, click the editor, select all, paste;
-      `SSSPOLL` must equal the approved `before`; Save and reload per step 3.5; `SSSSTORED` must
-      equal the approved `before` again. Then, under **both** policies:
+      `SSSPOLL` must equal the approved `before`, with the same single re-paste on a mismatch as
+      step 3.4, for the same reason and under the same terms: it is the same clipboard hop, and
+      giving up here ends the run with Admin holding the document the render check just rejected.
+      Save and reload per step 3.5; `SSSSTORED` must equal the approved `before` again. Then, under
+      **both** policies:
       `node scripts/notifications/state.mjs --store <store> run-quarantine <id>
       <verifier output file>`, with the verifier output kept verbatim for the end-of-run report.
       Record nothing in `seen`. Then `halt` goes to step 4 and `quarantine` continues at the next
@@ -172,7 +192,9 @@ pasted and pass.
    **Cost, an estimate until a run measures it.** The loop was 31 tool calls per id before these
    changes, most of it a redundant dump navigation, four fixed waits and two snapshots that
    confirmed nothing. Counting the steps above it should be about 22 for a `stock`-source id and 24
-   for a `network`-source one. Quote the current figure and the resulting total in the step 2 STOP,
+   for a `network`-source one. The step 3.4 re-paste does not move that figure: it fires only on a
+   mismatch, and the clipboard read-back that should make it rare happens inside `clipboard.mjs`,
+   in a call the loop already makes. Quote the current figure and the resulting total in the step 2 STOP,
    so the operator is choosing to spend a known amount rather than finding out at the end. Report
    the measured figure at the end of the run and hand it to the operator for a later edit of this
    file; a run makes no git writes, and a guess repeated as a measurement is how the last one went

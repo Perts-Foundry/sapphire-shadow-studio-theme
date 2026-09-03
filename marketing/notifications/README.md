@@ -104,6 +104,13 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 `header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
 (discounts, gift cards, partial fulfilment, refunds) are not exercised.
 
+`body-paragraphs` has one branch worth knowing about. Four templates hold their whole body in
+headings and table cells and carry no paragraph at all (`gift_card_confirmation`,
+`gift_card_notification`, `store_credit_issued`, `return_label_notification`); the brand stylesheet
+recolours neither, so for those the check asks only that the white cards still hold words, and the
+colour assertions apply to every render that does have a body paragraph. A test pins that set, so a
+fifth template joining it is reported rather than silently exempted.
+
 ## Skill
 
 `.claude/skills/notification-templates/` automates the whole lifecycle from a Claude Code session:

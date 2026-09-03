@@ -88,6 +88,18 @@ const inRow = (cls) => (e) => closest(e, (a) => isTable(a) && hasClass(a, cls)) 
 const inFooter = (e) => closest(e, (a) => hasClass(a, 'footer')) !== null;
 const describe = (e) => `<${e.tag}${e.attrs.class ? ` class="${e.attrs.class}"` : ''}>`;
 
+// Inside one of the white cards: a table.container that sits in a .content or .section row. Used
+// only by body-paragraphs, to look for copy in the layouts that carry none in a paragraph.
+const inWhiteCard = (e) => closest(e, (a) => isContainer(a) && (inRow('content')(a) || inRow('section')(a))) !== null;
+
+// Tags a notification body puts words in. `td` and `th` are the catch-all: the gift-card family and
+// return_label_notification hold their whole body copy in cells.
+const BODY_COPY_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th', 'li', 'div', 'span']);
+
+// Visible words in an element. parseHtml decodes no entities, so a stock `empty-line` spacer cell
+// arrives as the literal six characters `&nbsp;` and would otherwise read as copy.
+const copyText = (e) => innerText(e).replace(/&nbsp;|&#0*160;|&#x0*a0;/gi, ' ').replace(/\u00a0/g, ' ').trim();
+
 function allHave(list, getter, expected, label) {
   const wrong = list.filter((e) => getter(e) !== expected);
   if (wrong.length === 0) return null;
@@ -162,7 +174,18 @@ export const CHECKS = [
   ['body-paragraphs', ({ root, palette }) => {
     // Body-side disclaimer paragraphs belong to the body-disclaimer check.
     const list = select(root, (e) => e.tag === 'p' && !inFooter(e) && !hasClass(e, 'disclaimer__subtext'));
-    if (list.length === 0) return 'no body paragraphs';
+    if (list.length === 0) {
+      // Four templates carry no body paragraph at all, and never will: the gift-card family
+      // (gift_card_confirmation, gift_card_notification, store_credit_issued) and
+      // return_label_notification hold their whole body in headings and table cells. The brand
+      // stylesheet recolours neither, so there is no body-text colour here to assert; what is
+      // worth proving is that the white cards still hold words, which catches a render whose
+      // content came back empty. Whatever headings such a template does have are the headings
+      // check's business. The colour clauses below are not weakened: they apply whenever a body
+      // paragraph exists, and a template that grows one is checked like any other.
+      const copy = select(root, (e) => BODY_COPY_TAGS.has(e.tag) && inWhiteCard(e) && copyText(e) !== '');
+      return copy.length === 0 ? 'no body copy: no body paragraph, and no text in any .content or .section container' : null;
+    }
     const light = list.filter((e) => [palette.footerText, '#ffffff', palette.shopName].includes(colorOf(e)));
     if (light.length > 0) return `${light.length} body paragraph(s) in a footer colour: ${light.slice(0, 3).map(describe).join('; ')}`;
     if (!list.some((e) => colorOf(e) === palette.bodyText)) return `no body paragraph is ${palette.bodyText}`;

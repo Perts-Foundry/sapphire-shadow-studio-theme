@@ -12,7 +12,8 @@ import path from 'node:path';
 import { validate, load, save, emptyState, statePath, stateDir, isIso, nextId, MATCH, RENDER } from '../state.mjs';
 import { paths } from '../brand.mjs';
 import { hashFile } from '../dump.mjs';
-import { pickTool, encodeFor } from '../clipboard.mjs';
+import { pickTool, encodeFor, readClipboard, verifyCopy, measure, READERS } from '../clipboard.mjs';
+import { fnv1a } from '../dump.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'state.mjs');
@@ -374,4 +375,99 @@ test('clipboard: tool selection by platform, environment and availability; clip.
   const wide = encodeFor('a©', 'utf16le');
   assert.deepEqual([...wide], [0x61, 0x00, 0xa9, 0x00], 'no BOM: clip.exe pastes one as a U+FEFF character');
   assert.throws(() => encodeFor('x', 'latin1'), /unknown encoding/);
+});
+
+// The read-back. A copy that does not land used to surface three tool calls later as a byte-gate
+// failure in the browser, which halted a sync run with 16 ids unattempted.
+
+const TOOL = { cmd: 'clip.exe', args: [], encoding: 'utf16le' };
+// A reader stub: `outs` are the successive stdout strings (or an object for a failing run).
+const reader = (outs) => {
+  const calls = [];
+  const run = (cmd, args, opts) => {
+    calls.push({ cmd, args, opts });
+    const next = outs[Math.min(calls.length - 1, outs.length - 1)];
+    if (typeof next !== 'string') return { status: next.status ?? 0, error: next.error, stderr: Buffer.from(next.stderr || ''), stdout: Buffer.from('') };
+    return { status: 0, stdout: Buffer.from(next, 'utf8'), stderr: Buffer.from('') };
+  };
+  return { run, calls };
+};
+
+test('every clipboard tool has a read-back reader, and each addresses the same selection it wrote', () => {
+  for (const cmd of ['pbcopy', 'wl-copy', 'xclip', 'clip.exe']) {
+    assert.ok(READERS[cmd], `no reader for ${cmd}`);
+    assert.equal(typeof READERS[cmd].cmd, 'string');
+    assert.ok(Array.isArray(READERS[cmd].args));
+  }
+  assert.deepEqual(READERS['wl-copy'].args, ['-n'], 'wl-paste appends a newline without -n');
+  assert.deepEqual(READERS.xclip.args, ['-selection', 'clipboard', '-o'], 'the same selection xclip wrote');
+  assert.match(READERS['clip.exe'].args.at(-1), /Get-Clipboard -Raw/, '-Raw, or PowerShell returns an array of lines');
+});
+
+test('readClipboard normalises the CRLF Windows hands back, and touches nothing else', () => {
+  const { run, calls } = reader(['a\r\nb\r\n']);
+  const r = readClipboard(TOOL, { run, has: () => true });
+  assert.equal(r.ok, true);
+  assert.equal(r.text, 'a\nb\n');
+  assert.equal(r.reader, 'powershell.exe');
+  assert.equal(calls.length, 1);
+  // No trimming, no BOM stripping: both would hide the defect this exists to catch.
+  assert.equal(readClipboard(TOOL, { run: reader(['﻿x  ']).run, has: () => true }).text, '﻿x  ');
+});
+
+test('readClipboard reports a missing reader and a failing one differently', () => {
+  const missing = readClipboard(TOOL, { run: () => assert.fail('must not run'), has: () => false });
+  assert.deepEqual(missing, { available: false, why: 'powershell.exe is not on PATH' });
+  const unknown = readClipboard({ cmd: 'nope', args: [], encoding: 'utf8' }, { run: () => assert.fail('must not run'), has: () => true });
+  assert.equal(unknown.available, false);
+  assert.match(unknown.why, /no read-back reader is defined for nope/);
+  const failed = readClipboard(TOOL, { run: reader([{ status: 5, stderr: 'boom' }]).run, has: () => true });
+  assert.equal(failed.available, true);
+  assert.equal(failed.ok, false);
+  assert.match(failed.why, /powershell\.exe exited 5: boom/);
+});
+
+test('verifyCopy: a match ends it, a single bad read is retried, and a repeat is believed', () => {
+  const text = 'line one\nline two\n';
+  const expected = { length: text.length, hash: fnv1a(text) };
+  assert.deepEqual(measure(text), expected);
+
+  const good = reader([text.replace(/\n/g, '\r\n')]);
+  assert.deepEqual(verifyCopy(text, TOOL, { run: good.run, has: () => true }), { status: 'verified', expected, actual: expected, reads: 1 });
+  assert.equal(good.calls.length, 1, 'a match is not read twice');
+
+  // One empty read has been seen on a cold WSL interop call; the second read decides.
+  const flaky = reader(['', text]);
+  assert.equal(verifyCopy(text, TOOL, { run: flaky.run, has: () => true }).status, 'verified');
+  assert.equal(flaky.calls.length, 2);
+
+  const stale = reader(['something else entirely']);
+  const bad = verifyCopy(text, TOOL, { run: stale.run, has: () => true });
+  assert.equal(bad.status, 'mismatch');
+  assert.equal(bad.reads, 2, 'a mismatch is taken twice before it is believed');
+  assert.deepEqual(bad.actual, measure('something else entirely'));
+  assert.deepEqual(bad.expected, expected);
+
+  // The U+FEFF the first sync run pasted: one character too many, and the read-back sees it now.
+  const bom = verifyCopy(text, TOOL, { run: reader(['﻿' + text]).run, has: () => true });
+  assert.equal(bom.status, 'mismatch');
+  assert.equal(bom.actual.length, text.length + 1);
+
+  assert.equal(verifyCopy(text, TOOL, { run: () => assert.fail('must not run'), has: () => false }).status, 'unavailable');
+  assert.equal(verifyCopy(text, TOOL, { run: reader([{ status: 1, stderr: 'no display' }]).run, has: () => true }).status, 'error');
+});
+
+test('clipboard CLI: usage, the CR refusal, and --no-verify are the only flag', () => {
+  const clip = path.join(here, '..', 'clipboard.mjs');
+  const cli = (...args) => spawnSync(process.execPath, [clip, ...args], { encoding: 'utf8' });
+  assert.equal(cli().status, 2);
+  assert.match(cli().stderr, /usage: clipboard\.mjs <file> \[--no-verify\]/);
+  assert.equal(cli('a', 'b').status, 2, 'one file only');
+  assert.equal(cli('a', '--nope').status, 2, 'an unknown flag is a usage error, never silently ignored');
+  const dir = mkdtempSync(path.join(tmpdir(), 'ssb-clip-'));
+  const crlf = path.join(dir, 'crlf.liquid');
+  writeFileSync(crlf, 'a\r\nb\n', 'utf8');
+  const refused = cli(crlf);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /carriage return/);
 });

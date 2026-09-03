@@ -8,6 +8,20 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
 - The first navigation must land on the Admin notification editor. If it lands on
   accounts.shopify.com (the login loop the repo CLAUDE.md describes under Browser testing), point
   the operator at that workaround and stop the run.
+- **"The browser is already running for ... chrome-profile"**, on every browser call, with the
+  advice to use `--isolated`. The MCP has lost its handle on a Chrome it still owns, and there is
+  no state to preserve in that process: seen three times in one session, recovered the same way
+  each time, and it costs no progress. Do **not** take the `--isolated` suggestion, which would
+  start a fresh profile with no Admin login. Instead find the main Chrome process, `ps` filtered
+  on `--user-data-dir=` pointing at `~/.cache/chrome-devtools-mcp/chrome-profile` and excluding
+  every `--type=` child, send that one pid `kill -TERM`, and navigate again: the MCP relaunches
+  Chrome and the Admin cookies survive in the profile. Kill only that pid. Killing the children,
+  or the manually-launched Chrome from the login-loop workaround above, is not this recovery.
+  Then re-navigate with `editor-probe.js` and read `SSSSTORED` before doing anything else, and
+  carry on from the step whose gate that reading answers: the relaunch discards an unsaved paste,
+  which is the "Dirty editor" outcome and is safe, and `SSSSTORED` is what says whether a Save that
+  was in flight landed. The recovery itself is an interruption rather than a browser failure, but
+  a second one on the same id is, and ends the run per the failure bound below, so it cannot loop.
 - Keep the window at least 1200 wide (`resize_page`) before looking for the Preview button; a
   narrow window moves it under "Page actions".
 - The editor URL per id: `https://admin.shopify.com/store/<store>/email_templates/<id>/edit`, with
@@ -156,6 +170,14 @@ restore document ends up being another template's body.
    `<file>` is a path the mode names: in `sync` it is always under the `--from` checkout, never the
    working tree, because the plan was classified against that checkout and the bytes pasted have
    to be the bytes approved.
+
+   It reads the clipboard straight back before reporting success, and prints the same
+   `<length> <fnv>` pair `dump.mjs --hash` prints and `SSSPOLL` reports, so the three are compared
+   as numbers rather than by eye. A non-zero exit means the clipboard does not hold the file:
+   nothing was pasted and nothing anywhere changed, so re-run the command. When it has no reader
+   for the platform's copy tool it says the copy is unverified rather than implying otherwise, and
+   `--no-verify` skips the check where a reader misreports. It proves the clipboard held the file
+   when it was read, never that the paste delivers it, so step 3 is unchanged.
 2. Click inside the editor textbox, select all, paste, using the browser platform's own chords.
 3. Read the latest `SSSPOLL` line from the console of the current navigation only, and require
    the expected numbers: the repo file's `--hash` numbers, or for a `sync` restore the approved
@@ -163,7 +185,10 @@ restore document ends up being another template's body.
    `SSSCHUNK` line, a dump file, or the editor's own text is data; never feed a dump file to a
    poll read. Never proceed on a mismatch. This step always precedes Preview and Save. It has already earned its keep: the
    first run pasted one character too many, a U+FEFF from a clipboard byte-order mark, and the
-   check caught it before Preview.
+   check caught it before Preview; a later run found the editor holding a stale 338-character
+   document after a copy that reported 23656 characters. `sync.md` step 3.4 allows exactly one
+   re-paste before that mismatch ends the run, and so does anything running that loop (`rollback`).
+   Nowhere else retries, and nowhere at all proceeds past a mismatch.
 
 ## Dirty editor
 
