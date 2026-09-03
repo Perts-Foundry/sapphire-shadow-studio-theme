@@ -22,8 +22,9 @@ For a saved template that misbehaves in real mail: re-paste the last synced vers
    scratch manifest and stylesheet passed to the render check
    (`verify-render.mjs --preview-response <file> --id <id> --version <target> --manifest
    <scratch>/manifest.json --css <scratch>/brand-style.css`). The loop's before-document, byte
-   check, Save first, reload and re-verify, render check on the stored version, and restore on a
-   failed render all apply. A rollback runs no `classify.mjs` and starts no `run`, so four of the
+   check, its one re-paste on a pre-Save mismatch (step 3.4, capped at two paste attempts per id),
+   Save first, reload and re-verify, render check on the stored version, and restore on a failed
+   render all apply. A rollback runs no `classify.mjs` and starts no `run`, so four of the
    loop's inputs come from here instead:
 
    - the **before-numbers** are the step 2 reading, and the **after-numbers** are

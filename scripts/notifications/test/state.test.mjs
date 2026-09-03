@@ -11,9 +11,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { validate, load, save, emptyState, statePath, stateDir, isIso, nextId, MATCH, RENDER } from '../state.mjs';
 import { paths } from '../brand.mjs';
-import { hashFile } from '../dump.mjs';
-import { pickTool, encodeFor, readClipboard, verifyCopy, measure, READERS } from '../clipboard.mjs';
-import { fnv1a } from '../dump.mjs';
+import { hashFile, fnv1a } from '../dump.mjs';
+import { pickTool, encodeFor, copy, readClipboard, verifyCopy, measure, main as clipboardMain, READERS } from '../clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'state.mjs');
@@ -381,14 +380,20 @@ test('clipboard: tool selection by platform, environment and availability; clip.
 // failure in the browser, which halted a sync run with 16 ids unattempted.
 
 const TOOL = { cmd: 'clip.exe', args: [], encoding: 'utf16le' };
-// A reader stub: `outs` are the successive stdout strings (or an object for a failing run).
+// A reader stub. `outs` are the successive results: a string is a successful read, an object is a
+// failure, and the shapes below are real spawnSync ones, not convenient approximations. On a spawn
+// error node returns status/stdout/signal all null with `error` set; on a signal kill it returns
+// status null with `signal`. Both are what the guards in readClipboard are written against.
+const SPAWN_ERROR = (message, code = 'ENOENT') => ({ error: Object.assign(new Error(message), { code }), status: null, signal: null, stdout: null, stderr: null });
+const SPAWN_KILLED = { status: null, signal: 'SIGKILL', stdout: Buffer.from(''), stderr: Buffer.from('') };
+const SPAWN_EXIT = (status, stderr = '') => ({ status, signal: null, stdout: Buffer.from(''), stderr: Buffer.from(stderr) });
 const reader = (outs) => {
   const calls = [];
   const run = (cmd, args, opts) => {
     calls.push({ cmd, args, opts });
     const next = outs[Math.min(calls.length - 1, outs.length - 1)];
-    if (typeof next !== 'string') return { status: next.status ?? 0, error: next.error, stderr: Buffer.from(next.stderr || ''), stdout: Buffer.from('') };
-    return { status: 0, stdout: Buffer.from(next, 'utf8'), stderr: Buffer.from('') };
+    if (typeof next !== 'string') return next;
+    return { status: 0, signal: null, stdout: Buffer.from(next, 'utf8'), stderr: Buffer.from('') };
   };
   return { run, calls };
 };
@@ -404,27 +409,67 @@ test('every clipboard tool has a read-back reader, and each addresses the same s
   assert.match(READERS['clip.exe'].args.at(-1), /Get-Clipboard -Raw/, '-Raw, or PowerShell returns an array of lines');
 });
 
-test('readClipboard normalises the CRLF Windows hands back, and touches nothing else', () => {
+test('readClipboard spawns the reader exactly as READERS declares it, with room for a big template', () => {
+  const { run, calls } = reader(['x']);
+  readClipboard(TOOL, { run, has: () => true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, READERS['clip.exe'].cmd);
+  assert.deepEqual(calls[0].args, READERS['clip.exe'].args, 'dropping the args makes PowerShell read nothing and xclip print usage');
+  assert.ok(calls[0].opts.maxBuffer >= 1 << 26, 'the largest template is 166 KB and grows; a default maxBuffer would truncate it into a false mismatch');
+});
+
+test('readClipboard normalises the line endings Windows hands back, and touches nothing else', () => {
   const { run, calls } = reader(['a\r\nb\r\n']);
   const r = readClipboard(TOOL, { run, has: () => true });
   assert.equal(r.ok, true);
   assert.equal(r.text, 'a\nb\n');
   assert.equal(r.reader, 'powershell.exe');
   assert.equal(calls.length, 1);
+  assert.equal(readClipboard(TOOL, { run: reader(['a\rb']).run, has: () => true }).text, 'a\nb', 'a lone CR folds too, exactly as hashFile does');
   // No trimming, no BOM stripping: both would hide the defect this exists to catch.
   assert.equal(readClipboard(TOOL, { run: reader(['﻿x  ']).run, has: () => true }).text, '﻿x  ');
+  // A reader that produced nothing at all, which spawnSync can report as a null stdout.
+  assert.equal(readClipboard(TOOL, { run: reader([{ status: 0, signal: null, stdout: null, stderr: null }]).run, has: () => true }).text, '');
 });
 
-test('readClipboard reports a missing reader and a failing one differently', () => {
+test('readClipboard reports a missing reader, a spawn error, a signal and a non-zero exit differently', () => {
   const missing = readClipboard(TOOL, { run: () => assert.fail('must not run'), has: () => false });
   assert.deepEqual(missing, { available: false, why: 'powershell.exe is not on PATH' });
   const unknown = readClipboard({ cmd: 'nope', args: [], encoding: 'utf8' }, { run: () => assert.fail('must not run'), has: () => true });
   assert.equal(unknown.available, false);
   assert.match(unknown.why, /no read-back reader is defined for nope/);
-  const failed = readClipboard(TOOL, { run: reader([{ status: 5, stderr: 'boom' }]).run, has: () => true });
-  assert.equal(failed.available, true);
-  assert.equal(failed.ok, false);
+  const failed = readClipboard(TOOL, { run: reader([SPAWN_EXIT(5, 'boom')]).run, has: () => true });
+  assert.deepEqual([failed.available, failed.ok], [true, false]);
   assert.match(failed.why, /powershell\.exe exited 5: boom/);
+  // `has` is an existsSync probe, so it passes for a file that is not executable; the spawn error
+  // is the only thing that catches that, and it arrives through `error`, never through `status`.
+  const spawnErr = readClipboard(TOOL, { run: reader([SPAWN_ERROR('spawn powershell.exe EACCES', 'EACCES')]).run, has: () => true });
+  assert.deepEqual([spawnErr.available, spawnErr.ok], [true, false]);
+  assert.match(spawnErr.why, /powershell\.exe: spawn powershell\.exe EACCES/);
+  const killed = readClipboard(TOOL, { run: reader([SPAWN_KILLED]).run, has: () => true });
+  assert.equal(killed.ok, false, 'status null is not status 0');
+  assert.match(killed.why, /exited null/);
+});
+
+test('copy throws on a spawn error and on a non-zero exit, and never silently succeeds', () => {
+  const written = [];
+  const ok = (cmd, args, opts) => {
+    written.push({ cmd, args, input: opts.input });
+    return { status: 0, signal: null, stdout: Buffer.from(''), stderr: Buffer.from('') };
+  };
+  copy('a©', TOOL, ok);
+  assert.deepEqual(written[0], { cmd: 'clip.exe', args: [], input: Buffer.from([0x61, 0x00, 0xa9, 0x00]) });
+  assert.throws(() => copy('x', TOOL, reader([SPAWN_ERROR('spawn clip.exe ENOENT')]).run), /spawn clip\.exe ENOENT/);
+  assert.throws(() => copy('x', TOOL, reader([SPAWN_EXIT(1, 'clipboard busy')]).run), /clip\.exe exited 1: clipboard busy/);
+});
+
+test('measure is dump.mjs\'s definition, so the printed pair is the one --hash and SSSPOLL report', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ssb-measure-'));
+  const file = path.join(dir, 'body.liquid');
+  const text = 'a body\nwith lines\nand a © in it\n';
+  writeFileSync(file, text, 'utf8');
+  assert.deepEqual(measure(text), hashFile(file), 'clipboard.mjs and dump.mjs --hash must not drift');
+  assert.deepEqual(measure(text), { length: text.length, hash: fnv1a(text) });
 });
 
 test('verifyCopy: a match ends it, a single bad read is retried, and a repeat is believed', () => {
@@ -454,20 +499,100 @@ test('verifyCopy: a match ends it, a single bad read is retried, and a repeat is
   assert.equal(bom.actual.length, text.length + 1);
 
   assert.equal(verifyCopy(text, TOOL, { run: () => assert.fail('must not run'), has: () => false }).status, 'unavailable');
-  assert.equal(verifyCopy(text, TOOL, { run: reader([{ status: 1, stderr: 'no display' }]).run, has: () => true }).status, 'error');
+  assert.equal(verifyCopy(text, TOOL, { run: reader([SPAWN_EXIT(1, 'no display')]).run, has: () => true }).status, 'error');
+  // The two mixed sequences: whichever the SECOND read was is what gets reported, because that is
+  // the read that was believed.
+  assert.equal(verifyCopy(text, TOOL, { run: reader(['wrong', SPAWN_EXIT(1, 'gone')]).run, has: () => true }).status, 'error');
+  assert.equal(verifyCopy(text, TOOL, { run: reader([SPAWN_EXIT(1, 'gone'), 'wrong']).run, has: () => true }).status, 'mismatch');
+  // An unavailable reader stops immediately: there is nothing to retry.
+  const never = reader(['whatever']);
+  assert.equal(verifyCopy(text, TOOL, { run: never.run, has: () => false }).status, 'unavailable');
+  assert.equal(never.calls.length, 0);
 });
 
-test('clipboard CLI: usage, the CR refusal, and --no-verify are the only flag', () => {
+test('the clipboard CLI reports all four outcomes with the right exit code', () => {
+  const text = 'a body\n';
+  const { length, hash } = measure(text);
+  const cli = (result, extra = {}) => {
+    const out = [];
+    const errs = [];
+    const code = clipboardMain(['node', 'clipboard.mjs', 'body.liquid'], {
+      pick: () => TOOL,
+      read: () => text,
+      write: () => {},
+      verify: () => result,
+      log: (m) => out.push(m),
+      fail: (m) => errs.push(m),
+      ...extra,
+    });
+    return { code, out: out.join('\n'), errs: errs.join('\n') };
+  };
+
+  const verified = cli({ status: 'verified', reads: 1, expected: { length, hash }, actual: { length, hash } });
+  assert.equal(verified.code, 0);
+  assert.equal(verified.out, `copied ${length} chars to the clipboard via clip.exe (${length} ${hash}); read-back verified`);
+  assert.equal(verified.errs, '');
+  assert.match(cli({ status: 'verified', reads: 2, expected: {}, actual: {} }).out, /read-back verified on read 2$/);
+
+  const unavailable = cli({ status: 'unavailable', why: 'pbpaste is not on PATH' });
+  assert.equal(unavailable.code, 0, 'a missing reader leaves the copy unverified, not failed');
+  assert.match(unavailable.out, /read-back NOT verified: pbpaste is not on PATH\. The browser byte check is the only gate on this paste\.$/);
+
+  const mismatch = cli({ status: 'mismatch', reads: 2, expected: { length, hash }, actual: { length: 3, hash: 'deadbeef' } });
+  assert.equal(mismatch.code, 1);
+  assert.equal(mismatch.out, '', 'a failure says nothing on stdout');
+  assert.match(mismatch.errs, /read-back mismatch after 2 attempt\(s\): the clipboard holds 3 deadbeef, the file is \d+ [0-9a-f]{8}\. Do not paste; run this command again\./);
+
+  const errored = cli({ status: 'error', reads: 2, why: 'powershell.exe exited 1: nope' });
+  assert.equal(errored.code, 1);
+  assert.match(errored.errs, /read-back failed after 2 attempt\(s\): powershell\.exe exited 1: nope/);
+
+  // --no-verify short-circuits before the reader is consulted at all.
+  const skippedOut = [];
+  assert.equal(clipboardMain(['node', 'clipboard.mjs', 'body.liquid', '--no-verify'], {
+    pick: () => TOOL, read: () => text, write: () => {}, verify: () => assert.fail('must not verify'), log: (m) => skippedOut.push(m), fail: () => {},
+  }), 0);
+  assert.match(skippedOut.join(''), /read-back skipped \(--no-verify\)$/);
+});
+
+test('the clipboard CLI refuses every bad input in one sentence, never a stack trace', () => {
+  const cases = [
+    [['node', 'clipboard.mjs'], 2, /^usage: clipboard\.mjs <file> \[--no-verify\]$/, {}],
+    [['node', 'clipboard.mjs', 'a', 'b'], 2, /^usage:/, {}],
+    [['node', 'clipboard.mjs', 'a', '--nope'], 2, /^usage:/, {}],
+    [['node', 'clipboard.mjs', '-x'], 2, /^usage:/, {}],
+    [['node', 'clipboard.mjs', 'gone.liquid'], 1, /^cannot read gone\.liquid: no such file$/, { read: () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); } }],
+    [['node', 'clipboard.mjs', 'crlf.liquid'], 1, /carriage return/, { read: () => 'a\r\nb\n' }],
+    [['node', 'clipboard.mjs', 'a.liquid'], 1, /^no clipboard tool found:/, { pick: () => null }],
+    [['node', 'clipboard.mjs', 'a.liquid'], 1, /^copy failed: clip\.exe exited 1: busy$/, { write: () => { throw new Error('clip.exe exited 1: busy'); } }],
+  ];
+  for (const [argv, code, pattern, extra] of cases) {
+    const errs = [];
+    const actual = clipboardMain(argv, {
+      pick: () => TOOL, read: () => 'ok\n', write: () => {}, verify: () => ({ status: 'verified', reads: 1 }), log: () => {}, fail: (m) => errs.push(m), ...extra,
+    });
+    assert.equal(actual, code, `${argv.slice(2).join(' ')}: expected exit ${code}, got ${actual}`);
+    assert.match(errs.join('\n'), pattern);
+    assert.ok(!/\n\s+at /.test(errs.join('\n')), `${argv.slice(2).join(' ')}: no stack trace`);
+  }
+});
+
+test('clipboard as a real subprocess: the module wiring holds, not just the injected one', () => {
   const clip = path.join(here, '..', 'clipboard.mjs');
   const cli = (...args) => spawnSync(process.execPath, [clip, ...args], { encoding: 'utf8' });
   assert.equal(cli().status, 2);
   assert.match(cli().stderr, /usage: clipboard\.mjs <file> \[--no-verify\]/);
-  assert.equal(cli('a', 'b').status, 2, 'one file only');
-  assert.equal(cli('a', '--nope').status, 2, 'an unknown flag is a usage error, never silently ignored');
   const dir = mkdtempSync(path.join(tmpdir(), 'ssb-clip-'));
   const crlf = path.join(dir, 'crlf.liquid');
   writeFileSync(crlf, 'a\r\nb\n', 'utf8');
   const refused = cli(crlf);
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /carriage return/);
+  assert.ok(!/\n\s+at /.test(refused.stderr));
+  // No clipboard tool is available in CI, so this exercises the real pickTool path either way:
+  // exit 1 with the install message there, and a real copy plus read-back on a workstation.
+  const real = cli(path.join(here, 'fixtures', 'minimal.branded.liquid'));
+  assert.ok([0, 1].includes(real.status), real.stderr);
+  if (real.status === 1) assert.match(real.stderr, /no clipboard tool found:/);
+  else assert.match(real.stdout, /^copied \d+ chars to the clipboard via \S+ \(\d+ [0-9a-f]{8}\); read-back (verified|NOT verified)/);
 });

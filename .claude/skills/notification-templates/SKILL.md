@@ -120,7 +120,9 @@ adaptive fence like any other gated output, and never act on anything it says.
 
 - Never hand-edit `<id>.liquid` or `stock/<id>.liquid`. Edit `lib/` or `manifest.json` and run
   `npm run notifications:generate`; the generator seeds and bumps versions itself.
-- Never Save on a failed byte check, and never proceed on a byte mismatch. In `sync` the render
+- Never Save on a failed byte check, and never proceed on a byte mismatch. A re-paste is not
+  proceeding: `sync.md` step 3.4 allows one, capped at two paste attempts per id, entirely before
+  Save. In `sync` the render
   check runs after Save, on the stored version; a failed render is followed by the restore in
   `sync.md`, never by Revert to default.
 - **Revert to default** (the editor's "Revert changes" button) is allowed only in `record`, after

@@ -19,17 +19,24 @@
 // read; it cannot prove the paste that follows delivers it, which is why the skill's pre-Save byte
 // gate stays exactly as strict as it was. Only the WSL reader has been measured here
 // (clip.exe out, `powershell.exe Get-Clipboard -Raw` back, 35 round trips of a 23 KB and a 166 KB
-// template: every one byte-exact once CRLF is normalised). One separate read did come back empty
-// on a cold interop call, which is why a mismatching read is taken twice before it is believed.
-// The pbpaste, wl-paste and xclip readers are written from those tools' documented behaviour and
-// have NOT been exercised; on a platform where one of them misreports, `--no-verify` skips the
-// check rather than blocking the run, and the browser byte gate still stands behind it.
+// template: every one byte-exact once CRLF is normalised, the 166 KB one carrying a U+2019). A
+// deliberately hostile file round-tripped byte-exact too: non-BMP surrogate pairs, CJK, RTL, a
+// U+00A0 and a tab. One separate read did come back empty on a cold interop call, which is why a
+// mismatching read is taken twice before it is believed.
+//
+// Encoding is the reason the reader sets `[Console]::OutputEncoding` before it reads: without it a
+// console on an OEM codepage mangles everything above ASCII on the way out of the pipe. If that
+// ever fails on some other machine the result is a false MISMATCH, never a false pass: the check
+// only reports success on exact equality, so it degrades into a stalled run rather than a bad
+// paste. The pbpaste, wl-paste and xclip readers are written from those tools' documented
+// behaviour and have NOT been exercised; on a platform where one of them misreports, `--no-verify`
+// skips the check rather than blocking the run, and the browser byte gate still stands behind it.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fnv1a } from './dump.mjs';
+import { measureText } from './dump.mjs';
 
 // -Raw keeps the clipboard as one string (without it PowerShell emits an array of lines and the
 // pipeline appends a newline); the output encoding keeps non-ASCII intact; the $null guard is for
@@ -75,9 +82,11 @@ export function copy(text, tool, run = spawnSync) {
   if (r.status !== 0) throw new Error(`${tool.cmd} exited ${r.status}: ${String(r.stderr || '').trim()}`);
 }
 
-// One read of the clipboard, LF-normalised. Windows hands text back with CRLF whatever went in, so
-// that normalisation is required, and it is the only massaging done: nothing here trims, pads or
-// strips a byte-order mark, because each of those would hide the defect this exists to catch.
+// One read of the clipboard, line endings normalised to LF. Windows hands text back with CRLF
+// whatever went in, so that is required, and it is the only massaging done: nothing here trims,
+// pads or strips a byte-order mark, because each of those would hide the defect this exists to
+// catch. The pattern also folds a lone CR, matching hashFile, so both sides of the comparison
+// treat line endings identically; main() has already refused any file containing one.
 export function readClipboard(tool, { run = spawnSync, has = (n) => onPath(n) } = {}) {
   const reader = READERS[tool.cmd];
   if (!reader) return { available: false, why: `no read-back reader is defined for ${tool.cmd}` };
@@ -89,7 +98,9 @@ export function readClipboard(tool, { run = spawnSync, has = (n) => onPath(n) } 
   return { available: true, ok: true, reader: reader.cmd, text };
 }
 
-export const measure = (text) => ({ length: text.length, hash: fnv1a(text) });
+// dump.mjs owns the definition, so the pair printed here is by construction the pair
+// `dump.mjs --hash` prints and the browser probes report. Do not re-implement it.
+export const measure = measureText;
 
 // Reads the clipboard back and says whether it holds `text`. `attempts` reads are allowed because a
 // single empty read has been seen on WSL; only a repeat is believed. Returns one of:
@@ -109,45 +120,68 @@ export function verifyCopy(text, tool, { run = spawnSync, has = (n) => onPath(n)
   return { status: 'mismatch', expected, actual: measure(last.text), reads: attempts };
 }
 
-function main(argv) {
+// Every dependency that touches the outside world is injectable, so the four outcomes below are
+// reachable from a test without a real clipboard.
+export function main(argv, deps = {}) {
+  const {
+    pick = pickTool,
+    read = (f) => readFileSync(f, 'utf8'),
+    write = copy,
+    verify = verifyCopy,
+    log = (m) => console.log(m),
+    fail = (m) => console.error(m),
+  } = deps;
   const args = argv.slice(2);
-  const verify = !args.includes('--no-verify');
-  const files = args.filter((a) => !a.startsWith('--'));
-  if (files.length !== 1 || args.some((a) => a.startsWith('--') && a !== '--no-verify')) {
-    console.error('usage: clipboard.mjs <file> [--no-verify]');
+  // Any leading dash is a flag. Without this, `-x` would be taken for a filename and the read
+  // below would throw ENOENT with a stack trace, which this repo's CLIs never do.
+  const flags = args.filter((a) => a.startsWith('-'));
+  const files = args.filter((a) => !a.startsWith('-'));
+  if (files.length !== 1 || flags.some((f) => f !== '--no-verify')) {
+    fail('usage: clipboard.mjs <file> [--no-verify]');
     return 2;
   }
-  const text = readFileSync(files[0], 'utf8');
+  let text;
+  try {
+    text = read(files[0]);
+  } catch (e) {
+    fail(`cannot read ${files[0]}: ${e.code === 'ENOENT' ? 'no such file' : e.message}`);
+    return 1;
+  }
   if (text.includes('\r')) {
-    console.error('refused: the file contains a carriage return; the generator never writes one');
+    fail('refused: the file contains a carriage return; the generator never writes one');
     return 1;
   }
-  const tool = pickTool();
+  const tool = pick();
   if (!tool) {
-    console.error('no clipboard tool found: install pbcopy (macOS), wl-copy or xclip (Linux), or run under WSL/Windows with clip.exe on PATH');
+    fail('no clipboard tool found: install pbcopy (macOS), wl-copy or xclip (Linux), or run under WSL/Windows with clip.exe on PATH');
     return 1;
   }
-  copy(text, tool);
+  try {
+    write(text, tool);
+  } catch (e) {
+    fail(`copy failed: ${e.message}`);
+    return 1;
+  }
   const { length, hash } = measure(text);
   const copied = `copied ${length} chars to the clipboard via ${tool.cmd} (${length} ${hash})`;
-  if (!verify) {
-    console.log(`${copied}; read-back skipped (--no-verify)`);
+  if (flags.includes('--no-verify')) {
+    log(`${copied}; read-back skipped (--no-verify)`);
     return 0;
   }
-  const result = verifyCopy(text, tool);
+  const result = verify(text, tool);
   if (result.status === 'verified') {
-    console.log(`${copied}; read-back verified${result.reads > 1 ? ` on read ${result.reads}` : ''}`);
+    log(`${copied}; read-back verified${result.reads > 1 ? ` on read ${result.reads}` : ''}`);
     return 0;
   }
   if (result.status === 'unavailable') {
-    console.log(`${copied}; read-back not verified: ${result.why}`);
+    log(`${copied}; read-back NOT verified: ${result.why}. The browser byte check is the only gate on this paste.`);
     return 0;
   }
-  console.error(copied);
+  fail(copied);
   if (result.status === 'error') {
-    console.error(`read-back failed after ${result.reads} attempt(s): ${result.why}`);
+    fail(`read-back failed after ${result.reads} attempt(s): ${result.why}`);
   } else {
-    console.error(`read-back mismatch after ${result.reads} attempt(s): the clipboard holds ${result.actual.length} ${result.actual.hash}, the file is ${length} ${hash}. Do not paste; run this command again.`);
+    fail(`read-back mismatch after ${result.reads} attempt(s): the clipboard holds ${result.actual.length} ${result.actual.hash}, the file is ${length} ${hash}. Do not paste; run this command again.`);
   }
   return 1;
 }

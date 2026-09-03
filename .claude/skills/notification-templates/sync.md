@@ -111,22 +111,39 @@ pasted and pass.
    4. Read `SSSPOLL`; require the run's approved `after` numbers for this id, and `SSSSTAMP` to
       read `<id> <n>`. Always before Save. Never Save on a mismatch.
 
-      **A mismatch here buys one re-paste, then it is the failure.** The flaky hop is the
-      clipboard, not the editor: one run halted on `pos_exchange_v2_receipt` with `clipboard.mjs`
-      reporting the right file copied and `SSSPOLL` reading `338 60a6b193` against an approved
-      `23656 59aa69eb`, and an earlier one pasted a U+FEFF byte-order mark, one character too many.
-      Both were caught here, and the first cost the remaining 16 ids of the run. So on the first
-      mismatch redo step 3.3 once, whole (`clipboard.mjs` again, fresh snapshot, click, select all,
-      paste), then read `SSSPOLL` again; a second mismatch goes to step 4. This relaxes nothing.
-      The retry is entirely before Save, Save still demands an exact match against the approved
-      bytes, and a re-paste that lands leaves the editor holding exactly what the plan approved. It
-      is not a browser failure and does not count against `browser.md`'s failure bound, though a
-      navigation or snapshot that fails while doing it still does.
+      **The bound: at most two paste attempts per id.** Not two per failure kind. A
+      `clipboard.mjs` that exits non-zero and an `SSSPOLL` that disagrees are the same budget, and
+      a `clipboard.mjs` re-run inside a re-paste is not a fresh allowance. When the two attempts
+      are spent, go to step 4.
 
-      Most of these should now be caught before the browser is touched at all: `clipboard.mjs`
-      reads the clipboard back and exits non-zero unless it holds the file. That exit changed
-      nothing anywhere, so re-run the command once; a second failure goes to step 4 with its
-      output.
+      Within that, on a mismatch redo step 3.3 once, whole (`clipboard.mjs` on the same
+      `<scratch>/marketing/notifications/<id>.liquid`, fresh snapshot, click, select all, paste),
+      then read `SSSPOLL` again. Distinguish the two console cases first, because they have
+      different owners: a `SSSPOLL` line that is **absent or unchanged** is `browser.md`'s
+      read-once-more case (the probe logs only on change, so a paste that did nothing leaves the
+      previous line standing); a line **present with the wrong numbers** is this one.
+
+      Why the flaky hop is the clipboard and not the editor: one run halted on
+      `pos_exchange_v2_receipt` with `clipboard.mjs` reporting the right file copied and `SSSPOLL`
+      reading `338 60a6b193` against an approved `23656 59aa69eb`, and an earlier one pasted a
+      U+FEFF byte-order mark, one character too many. Both were caught here, and the first cost the
+      remaining 16 ids of the run. `clipboard.mjs` now reads the clipboard back, so most of these
+      should fail at the shell before the browser is touched; read its exit code per `browser.md`,
+      where exit 0 does **not** always mean verified.
+
+      **This relaxes nothing, and the reason is stronger than "it is before Save".** It is before
+      Save, and Save still demands an exact match. But also: the paste criterion is that Admin's
+      bytes *differ* from the repo file, so the approved `after` is by construction not the
+      document the editor held before the paste. A re-paste that silently does nothing therefore
+      leaves the same mismatching reading in place and fails again. Every way this retry can go
+      wrong is a false stop; none of them is a false pass. It is not a browser failure and does not
+      count against `browser.md`'s failure bound, though a navigation or snapshot that fails while
+      doing it still does.
+
+      Count the re-pastes. They go in the batch report and the end-of-run report (step 5): a defect
+      that a retry always clears is invisible otherwise, and this is the surface where the U+FEFF
+      bug was found precisely because a clipboard defect stopped a run. A rising count is a defect
+      to fix in the tool, never tolerance to widen here.
    5. Click "Save" (uid from a fresh snapshot), then reload with `editor-probe.js`, declining any
       leave-page dialog. Require the **reload to have completed** and `SSSSTORED` to equal the
       approved `after` numbers, with `SSSSTAMP`/`SSSPOLL` as corroboration. `SSSSTORED` is the
@@ -160,11 +177,14 @@ pasted and pass.
       with the dialog closed (if anything navigated away, navigate back with `editor-probe.js` and
       confirm `SSSSTORED` equals the approved `after` first). `clipboard.mjs
       <scratch>/before-<id>.liquid`, fresh snapshot, click the editor, select all, paste;
-      `SSSPOLL` must equal the approved `before`, with the same single re-paste on a mismatch as
-      step 3.4, for the same reason and under the same terms: it is the same clipboard hop, and
-      giving up here ends the run with Admin holding the document the render check just rejected.
-      Save and reload per step 3.5; `SSSSTORED` must equal the approved `before` again. Then, under
-      **both** policies:
+      `SSSPOLL` must equal the approved `before`. One re-paste on a mismatch, exactly as step 3.4
+      allows and for the same reason (the same clipboard hop), re-running `clipboard.mjs` on
+      `<scratch>/before-<id>.liquid` and not on the branded file. A second mismatch is **this
+      step's own failure two paragraphs down, not step 4's**: the dirty-editor bytes to confirm are
+      the approved `after`, and the report has to say Admin holds branded version `<n>` and point
+      at `rollback`. Step 4's report would send the operator to reconfirm against `before` and
+      would omit the rollback pointer, which is wrong on both counts here. Save and reload per step
+      3.5; `SSSSTORED` must equal the approved `before` again. Then, under **both** policies:
       `node scripts/notifications/state.mjs --store <store> run-quarantine <id>
       <verifier output file>`, with the verifier output kept verbatim for the end-of-run report.
       Record nothing in `seen`. Then `halt` goes to step 4 and `quarantine` continues at the next
@@ -192,10 +212,12 @@ pasted and pass.
    **Cost, an estimate until a run measures it.** The loop was 31 tool calls per id before these
    changes, most of it a redundant dump navigation, four fixed waits and two snapshots that
    confirmed nothing. Counting the steps above it should be about 22 for a `stock`-source id and 24
-   for a `network`-source one. The step 3.4 re-paste does not move that figure: it fires only on a
-   mismatch, and the clipboard read-back that should make it rare happens inside `clipboard.mjs`,
-   in a call the loop already makes. Quote the current figure and the resulting total in the step 2 STOP,
-   so the operator is choosing to spend a known amount rather than finding out at the end. Report
+   for a `network`-source one. The step 3.4 re-paste does not move that **estimate**: it fires only
+   on a mismatch, and the clipboard read-back that should make it rare happens inside
+   `clipboard.mjs`, in a call the loop already makes. It does of course cost a run in which it
+   fires, which is what the re-paste count in the report is for. Quote the current figure and the
+   resulting total in the step 2 STOP, so the operator is choosing to spend a known amount rather
+   than finding out at the end. Report
    the measured figure at the end of the run and hand it to the operator for a later edit of this
    file; a run makes no git writes, and a guess repeated as a measurement is how the last one went
    wrong.
@@ -223,6 +245,10 @@ pasted and pass.
    quarantined run leaves the set inconsistent on purpose. Then `state.mjs --store <store>
    run-end`. State plainly that `sync` proves Admin holds the bytes, and that the sample-data
    render is what the render check proves.
+
+   Report the re-paste count with those: how many ids needed a second paste attempt at step 3.4 or
+   3.7, and which. Zero is worth stating too, because it is what makes a later non-zero mean
+   something.
 
    Report counts against three separate denominators and never mix them: **this batch** (the
    `--batch` window, or the ids the operator last named), **this run** (the ids in `run-show`), and
