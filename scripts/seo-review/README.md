@@ -54,7 +54,10 @@ Crawl-mode checks and why each exists:
   re-sorted views; the crawl walks sitemap URLs, which are neither, so the suppression never trips
   this check.
 - `h1-count`: exactly one `<h1>` per page. Nothing in CI checks heading structure; the homepage
-  once had two (header + hero) and the FAQ page once had zero.
+  once had two (header + hero), the FAQ page once had zero, and so did the search page until
+  2026-09-03. It has no page-type exemption, and that is not an oversight: a missing `<h1>` is a
+  document structure problem whether or not the page is indexed, so noindexing a page does not clear
+  it. The search page proved it, and the fix there was the heading, not the robots tag.
 - `description-duplicate` (ERROR): the exact defect class of the original audit's worst content
   finding (two products carrying a third product's description verbatim).
 - `og-image-scheme`: `og:image` must be https. Regressed once in inherited Horizon boilerplate.
@@ -66,9 +69,6 @@ Crawl-mode checks and why each exists:
   that exempt list. The empty blog listing is deliberately noindexed and is suppressed through
   `accepted-risks.json` instead, not through the exempt list: `blog` stays an indexable page type so
   the day it has articles and still carries noindex, the check reds.
-- `h1-count` has no page-type exemption, and that is not an oversight. A missing `<h1>` is a document
-  structure problem whether or not the page is indexed, so noindexing a page does not clear it. The
-  search page is the one that proved it: it rendered zero, and the fix was the heading, not the tag.
 - `404-status`: a garbage path must return a real 404 (soft-404s poison crawl budget).
 
 Admin-mode checks read what is **stored**, because the storefront renders fallbacks: a null

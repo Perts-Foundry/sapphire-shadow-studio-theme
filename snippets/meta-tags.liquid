@@ -34,6 +34,16 @@
   # /search is noindexed below, so it needs no description at all. /collections
   # is indexable and gets its own line. Change the copy in the locale files, not
   # here, and remember `locales/it.json` and `locales/ro.json` mirror it.
+  #
+  # This names the two page types rather than deriving "has no Admin SEO field"
+  # from a rule, because Liquid exposes no such predicate; a new page type in
+  # the same position would need its own branch. That is deliberate rather than
+  # unnoticed, and it is not silent: `description-duplicate` is an ERROR in
+  # `scripts/seo-review/lib/checks.mjs`, and it is the check that found this one.
+  # Inverting to an allowlist of page types permitted to keep `page_description`
+  # was considered and rejected: it would suppress descriptions on any page type
+  # missing from the list, turning a duplicate into a blank, which is worse and
+  # which no check reds on for the types `description-missing` exempts.
   assign seo_description = page_description
   if request.page_type == 'search'
     assign seo_description = ''

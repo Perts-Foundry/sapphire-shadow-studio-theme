@@ -57,6 +57,10 @@ reason in the report. The operator can also ask for one layer by name (`repo`, `
      non-blank values first, emit with `forloop.last`; an `unless forloop.last` comma is the bug).
    - `snippets/meta-tags.liquid`: `og:image` still https; no `social_twitter_link` setting has
      been re-added alone (the file's comment block explains the broken x.com handle parse).
+   - `snippets/meta-tags.liquid`: the description tag still reads one `seo_description` variable set
+     by a single `if`/`elsif` chain, never a second description tag; `/search` still blanks it and
+     `/collections` still sources it from `content.collections_list_meta_description` (the file's
+     comment explains why an unhandled page type silently inherits the homepage's description).
    - `templates/page.json` keeps `main` enabled (the default template once rendered the About
      page over every unassigned page).
    - The breadcrumb allow-list in `snippets/breadcrumbs.liquid` still matches

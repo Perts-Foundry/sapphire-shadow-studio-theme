@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   parseAttrs, extractTitle, extractMetaByName, extractMetaByProperty,
   extractCanonical, countH1, extractJsonLdBlocks, jsonLdTypes,
@@ -126,14 +127,85 @@ test('decodeEntities decodes numeric entities in both bases', () => {
   assert.equal(decodeEntities('&#128512;'), String.fromCodePoint(0x1f600));
 });
 
+test('decodeEntities decodes at the top of the numeric range and rejects past it', () => {
+  // The caps are inclusive. `&#1114112;` below is one past U+10FFFF.
+  assert.equal(decodeEntities('&#1114111;'), String.fromCodePoint(0x10ffff));
+  assert.equal(decodeEntities('&#x10FFFF;'), String.fromCodePoint(0x10ffff));
+  // The hex branch reaching a supplementary character, not just the decimal one.
+  assert.equal(decodeEntities('&#x1F600;'), String.fromCodePoint(0x1f600));
+});
+
 test('decodeEntities leaves unknown and malformed entities exactly as written', () => {
-  // An unrecognised name, a bare ampersand, an unterminated entity, an
-  // out-of-range code point, and a lone surrogate all pass through untouched:
-  // a decode may shorten what it understands, never mangle what it does not.
-  assert.equal(
-    decodeEntities('&fnord; & &amp Rock &#1114112; &#xD800;'),
-    '&fnord; & &amp Rock &#1114112; &#xD800;',
+  // One assertion per rejection reason, so a regression names itself rather
+  // than failing as one long string diff.
+  assert.equal(decodeEntities('&fnord;'), '&fnord;', 'unrecognised name');
+  assert.equal(decodeEntities('a & b'), 'a & b', 'bare ampersand');
+  assert.equal(decodeEntities('&amp Rock'), '&amp Rock', 'unterminated entity');
+  assert.equal(decodeEntities('&#1114112;'), '&#1114112;', 'one past U+10FFFF');
+  assert.equal(decodeEntities('&#xD800;'), '&#xD800;', 'lone surrogate, low end');
+  assert.equal(decodeEntities('&#xDFFF;'), '&#xDFFF;', 'lone surrogate, high end');
+  assert.equal(decodeEntities('&#0;'), '&#0;', 'NUL');
+});
+
+test('decodeEntities holds the entity-name length cap', () => {
+  // The regex caps a name at 32 characters. Both of these are unknown names and
+  // must come back untouched, but for different reasons: the 32-char one
+  // matches the regex and misses the table, the 33-char one never matches. The
+  // test exists so a future edit to the {0,31} quantifier is caught either way.
+  const name32 = 'a'.repeat(32);
+  const name33 = 'a'.repeat(33);
+  assert.equal(decodeEntities(`&${name32};`), `&${name32};`);
+  assert.equal(decodeEntities(`&${name33};`), `&${name33};`);
+});
+
+test('decodeEntities handles back-to-back identical entities', () => {
+  // A global regex advancing lastIndex wrongly would skip the second of a pair
+  // with no literal text between them.
+  assert.equal(decodeEntities('&amp;&amp;&amp;'), '&&&');
+  assert.equal(decodeEntities('&ndash;&ndash;'), `${NDASH}${NDASH}`);
+});
+
+test('decodeEntities coerces non-string input rather than throwing', () => {
+  // The String(s) coercion is deliberate, not an accident of not crashing.
+  assert.equal(decodeEntities(null), 'null');
+  assert.equal(decodeEntities(undefined), 'undefined');
+  assert.equal(decodeEntities(42), '42');
+});
+
+test('the entity table covers every named entity the head snippet emits', () => {
+  // The table is deliberately a short list rather than the full HTML5 set of
+  // 2231 names, because this module has no dependencies and the only entities
+  // that reach it are the ones Shopify's `escape` filter produces and the ones
+  // this theme hardcodes. That reasoning holds only while the theme does not
+  // hardcode a name the table lacks, which is what this pins: `&ndash;` was
+  // exactly such a name, and its absence is the defect this test class exists
+  // for. Add a named entity to meta-tags.liquid and this fails until the table
+  // learns it, rather than waiting for a crawl to report a phantom title-long.
+  const snippet = readFileSync(
+    new URL('../../../snippets/meta-tags.liquid', import.meta.url), 'utf8',
   );
+  const named = new Set(snippet.match(/&[a-zA-Z][a-zA-Z0-9]{0,31};/g) || []);
+  assert.ok(named.size > 0, 'expected meta-tags.liquid to contain named entities');
+  for (const entity of named) {
+    assert.notEqual(
+      decodeEntities(entity), entity,
+      `${entity} is emitted by snippets/meta-tags.liquid but NAMED_ENTITIES does not decode it`,
+    );
+  }
+});
+
+test('entities are decoded inside attribute values, not just tag text', () => {
+  // The real path for this fix: title and description are the two fields the
+  // length checks read, and description arrives as an attribute value. Only
+  // extractTitle reads tag text.
+  const meta = '<meta name="description" content="Nurse &amp; EMS &ndash; Apparel &quot;kit&quot;">';
+  assert.equal(extractMetaByName(meta, 'description'), `Nurse & EMS ${NDASH} Apparel "kit"`);
+
+  const og = '<meta property="og:title" content="Women&rsquo;s Vest &ndash; Studio">';
+  assert.equal(extractMetaByProperty(og, 'og:title'), `Women${RSQUO}s Vest ${NDASH} Studio`);
+
+  const link = '<link rel="canonical" href="https://example.com/c?a=1&amp;b=2">';
+  assert.equal(extractCanonical(link), 'https://example.com/c?a=1&b=2');
 });
 
 test('decodeEntities does not double-decode', () => {
