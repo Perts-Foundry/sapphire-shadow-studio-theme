@@ -43,6 +43,50 @@ the pair already flattened, with the intervening turns removed by construction. 
 merely degrade adjacency; it manufactures it. An ask surviving only as a summary of itself is not a
 pair.
 
+## Variant weights, and the tier gaps they made reachable (unreleased)
+
+Every garment variant weighed 0 lb while the Expedited rate is tiered by `TOTAL_WEIGHT`, so every
+order bought the cheapest $20 tier and the three above it were unreachable. 426 variants across the
+five garment products now carry real weights, and the last `[LAUNCH BLOCKER]` is closed.
+
+**Variant weight holds the garment alone; the packaging lives in the store default package.** This
+is Shopify's own model: "If you have weight-based rates, then the weight of this package is added to
+the weight of the products being shipped", and their worked example adds it once per order. Baking
+the 1.6 oz mailer-and-inserts bundle into every variant instead would charge a three-item order for
+three mailers it never used, which is enough to push real carts into the wrong tier. The package was
+already configured but weighed 0 lb, so nothing was being added; it is now 0.1 lb.
+
+**The numbers are the measured shipped weight less 1.6 oz of packaging, in pounds, rounded up to two
+decimals.** Huddle and Shift Fuel Crewneck 0.93, Lead II Crewneck 0.87, Lead II Quarter-Zip 1.00,
+Lead II Vest 0.44. Rounding up is deliberate: it never undercharges, and the largest distortion is
+0.08 oz.
+
+**The Shift Fuel Tote was wrong in the other direction and is corrected in the same pass.** It was
+the one product that already had a weight, 1.4 lb against a measured 9.0 oz, so it overcharged by
+roughly 2.5x rather than undercharging. It is now 0.47 lb on the same model as the garments. Being
+an overwrite rather than a fill is what made it easy to miss.
+
+**The rate table had gaps, and they were unreachable only because the weights were zero.** The tiers
+ran `<= 2.9` then `>= 3`, so an order between 2.9 and 3.0 lb matched no Expedited rate at all. Same
+at 5.9 to 6.0 and 8.9 to 9.0. Economy is priced on `TOTAL_PRICE` and always matches, so checkout was
+never blocked; Expedited would simply have vanished with no error anywhere. Setting real weights is
+what would have made it reachable: two ordinary three-item carts land in the first hole. The maxima
+are now 2.99 / 5.99 / 8.99, and that is why the two-decimal rule above is load-bearing rather than
+cosmetic. Order totals are then always multiples of 0.01 lb, and the open interval between 2.99 and
+3.00 contains no multiple of 0.01, so the gap is unreachable rather than merely narrower. An
+exhaustive sweep of 8,007 mixed carts confirms zero no-rate holes and zero ambiguous tier matches.
+
+**Two Admin behaviours were tested rather than assumed, because both would have silently changed the
+arithmetic.** The shop-level Default weight unit does not retro-apply: switching it to ounces left
+all 426 variants storing pounds and every bulk-editor row rendering `lb`, because the unit is stored
+per variant. And assigning the package to individual variants does not multiply it: three crewnecks
+returned Expedited $20 from the live storefront rate engine, where per-item packaging would have
+made 3.09 lb and returned $40. Four crewnecks returned $40, so the boundary flips where it should.
+
+**`scripts/site-check/accepted-risks.json` is now empty.** Both rows carried `subject: null`, which
+`partitionAccepted` treats as a wildcard over every subject for that check id, so `variant-weight`
+and `product-json-weight-zero` were fully muted. They are live again.
+
 ## The terms of service stops shipping Shopify's authoring placeholders (unreleased)
 
 The terms body went live carrying the placeholders from Shopify's stock template, so every customer

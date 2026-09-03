@@ -1,14 +1,1 @@
-[
-  {
-    "check": "variant-weight",
-    "subject": null,
-    "note": "Known launch blocker, not dropped: every garment variant weighs 0 lb while the Expedited rate is weight-tiered (TODO.md, first recorded in the 2026-08-02 audit). The fix is per-variant weights in Admin; delete this row when they are set so the check goes live again.",
-    "accepted_on": "2026-09-01"
-  },
-  {
-    "check": "product-json-weight-zero",
-    "subject": null,
-    "note": "Same 0 lb state seen from the storefront product JSON; one decision, two vantage points. Delete together with the variant-weight row.",
-    "accepted_on": "2026-09-01"
-  }
-]
+[]
