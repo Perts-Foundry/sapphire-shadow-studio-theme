@@ -129,10 +129,72 @@ test('resolveType refuses a missing type, an unknown type, and the auto-managed 
   assert.equal(resolveType('SHIPPING_POLICY'), 'SHIPPING_POLICY');
 });
 
-test('the interactive gate refuses CI and a non-TTY stdin', () => {
+test('the operator gate: CI is an ABSOLUTE refusal, which no flag overrides', () => {
+  // The blast-radius boundary. If this ever becomes overridable, CI can rewrite a legal policy.
   assert.throws(() => assertInteractive({ env: { CI: 'true' }, isTTY: true }), /with CI set/);
-  assert.throws(() => assertInteractive({ env: {}, isTTY: false }), /without a TTY/);
-  assert.doesNotThrow(() => assertInteractive({ env: {}, isTTY: true }));
+  assert.throws(() => assertInteractive({ env: { CI: 'true' }, isTTY: false }), /with CI set/);
+  assert.throws(
+    () => assertInteractive({ env: { CI: 'true' }, isTTY: true, operatorApproved: true }),
+    /no flag overrides this/,
+  );
+  assert.throws(
+    () => assertInteractive({ env: { CI: '1' }, isTTY: false, operatorApproved: true }),
+    /with CI set/,
+  );
+});
+
+test('a TTY satisfies the gate, and so does --operator-approved without one', () => {
+  assert.deepEqual(assertInteractive({ env: {}, isTTY: true }), { via: 'tty' });
+  assert.deepEqual(assertInteractive({ env: {}, isTTY: false, operatorApproved: true }), { via: 'operator-approval' });
+  assert.deepEqual(assertInteractive({ env: {}, isTTY: true, operatorApproved: true }), { via: 'tty' });
+});
+
+test('no TTY and no attestation still refuses, and the message names the flag, not a pty', () => {
+  // The failure mode this replaced: an agent hits the refusal and reaches for `script -qc`. The
+  // message has to offer the supported route in the same breath as it refuses.
+  assert.throws(
+    () => assertInteractive({ env: {}, isTTY: false }),
+    (err) => {
+      assert.match(err.message, /without a TTY/);
+      assert.match(err.message, /--operator-approved/);
+      assert.match(err.message, /Do NOT wrap the command in a pty/);
+      return true;
+    },
+  );
+});
+
+test('--operator-approved is parsed as a boolean and defaults to false', () => {
+  assert.equal(parseArgs([]).operatorApproved, false);
+  assert.equal(parseArgs(['--operator-approved']).operatorApproved, true);
+  // It attests that a human asked; it does NOT name a policy, so it cannot authorize a write on
+  // its own. --confirm=<type> and --expect-live-sha still decide what gets written.
+  assert.equal(parseArgs(['--operator-approved']).confirm, null);
+  assert.equal(parseArgs(['--operator-approved']).expectLiveSha, null);
+});
+
+test('--operator-approved does not weaken any gate that decides WHAT is written', async () => {
+  const root = editedRoot();
+  const dir = backupDir();
+  try {
+    const client = makeClient({ live: liveFrom() });
+    const base = { ...BASE, client, root, backupDir: dir };
+    const approved = (o) => options({ operatorApproved: true, ...o });
+    // Still a dry run without --confirm.
+    const dry = await run({ ...base, options: approved() });
+    assert.equal(dry.mutated, false);
+    assert.equal(dry.reason, 'dry-run');
+    // Still refuses a mismatched --confirm and a missing/stale --expect-live-sha.
+    await assert.rejects(() => run({ ...base, options: approved({ confirm: 'true' }) }), /must be exactly/);
+    await assert.rejects(() => run({ ...base, options: approved({ confirm: 'shipping_policy' }) }), /--expect-live-sha: required/);
+    await assert.rejects(
+      () => run({ ...base, options: approved({ confirm: 'shipping_policy', expectLiveSha: 'stale' }) }),
+      /changed since the dry run/,
+    );
+    assert.equal(client.calls.filter((c) => c.kind === 'mutate').length, 0);
+  } finally {
+    cleanup(root);
+    cleanup(dir);
+  }
 });
 
 test('no workflow wires policies:push', () => {
