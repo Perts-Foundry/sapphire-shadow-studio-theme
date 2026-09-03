@@ -8,9 +8,32 @@ work left behind reasoning worth keeping (a corrected mistake, a cross-layer con
 why it went that way), write that into `release-notes.md` as part of the same change, then remove the
 item here.
 
-Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas). Add a
-`## Deploy and CI` section back when there is deploy or tooling work outstanding; there is none
-right now, and an empty heading with a live index entry is the residue this file's rule targets.
+Sections: [Product and storefront](#product-and-storefront) (merchandising / UX ideas),
+[Tooling](#tooling).
+
+## Tooling
+
+- [ ] **Settle whether one large blank group can time the Flow out on its own.** `apply` now paces
+  itself to one group per batch, which stops *different* groups' fan-outs from overlapping. It does
+  nothing about a single group's own storm: a 13-member crewneck group is 12 writes and 12 full
+  catalogue scans by itself, and neither the 2026-07-27 nor the 2026-09-03 incident isolated
+  single-group size as a variable. Read the maximum group size off the live store before relying on
+  the pacing (`audit --json`, largest member count; 13 for crewnecks as of 2026-09-03). If a single
+  group's fan-out alone can time out, the **product-level roll-up metafield** described in
+  `docs/blank-inventory-sync-flow.md` > Assumptions and limitations stops being a deferred option and
+  becomes required work: batching cannot fix it. Do not touch the Flow itself, including
+  `max_root_records`, to work around this; raising the cap makes the timing-out scan bigger.
+
+- [ ] **Exercise the read-only Flow run-list probe against Admin at least once, and record what it
+  saw.** `.claude/skills/blank-inventory/browser.md` plus
+  `scripts/blank-inventory/browser/flow-runs-probe.js`. Admin's Flow surface is unversioned and the
+  probe's GraphQL operation match and field names are the plausible shape, not an observed one, so
+  the first run may legitimately log `SSSFLOWNONE`. What to record, in the browser doc and not
+  anywhere else: the operation name the run list actually fetches, and the status tokens it returns
+  (which feed `IN_PROGRESS_STATUSES` in `scripts/blank-inventory/lib/flow-runs.mjs`, currently a
+  documented guess, so an unrecognised token is reported as `unclassified` rather than miscounted).
+  **Record the vocabulary only.** No counts, run ids or timestamps from the live store go into any
+  file, including as an illustration.
 
 ## Product and storefront
 

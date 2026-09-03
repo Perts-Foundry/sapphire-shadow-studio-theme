@@ -26,7 +26,7 @@ the approval gates.
 
 There is no staging store. Every gate below is the only thing between a draft and a live change.
 
-## The four mechanics (why the tool behaves as it does)
+## The five mechanics (why the tool behaves as it does)
 
 Each was established by testing against the live store. Do not work around any of them.
 
@@ -42,6 +42,22 @@ Each was established by testing against the live store. Do not work around any o
    reverting a customer's order. CAS is also what makes a retry safe: an already-applied row is
    refused because its baseline has moved. The API's required `@idempotent` key is for
    reproducibility, not protection, and does not reliably collapse a repeat.
+5. **The Flow amplifies, and `apply` is paced to it.** The Flow's guard clause runs **after** its
+   catalogue scan, not before it. Every sibling write re-fires the `Inventory quantity changed`
+   trigger, each re-triggered run performs the full "Get product data" scan, and only *then*
+   evaluates the guard and exits. So one write into a group of 8 costs 7 further writes and 7
+   further full scans, and a run that writes many groups back to back overlaps all of them. That has
+   exhausted Flow's step budget twice: **2026-07-27** (38 groups, only 13 fanned out) and
+   **2026-09-03** (27 groups, 14 fanned out, 13 left stranded with one member on the new value and
+   its siblings on the old one). So `apply` writes **one group at a time by default**, waits for that
+   group's fan-out to converge, and **halts** rather than continuing if it does not. `--batch-size n`
+   raises the batch; `--no-batch` disables the pacing entirely. Do not reach for either to make a run
+   finish sooner: the default is the only size either incident supports.
+
+   Two limits worth stating rather than discovering. Batching stops *different groups'* fan-outs from
+   overlapping; it does nothing about **one large group's own storm** (a 13-member group is 12 writes
+   and 12 full scans on its own), which neither incident isolated as a variable. And a paced run of
+   20 to 30 groups takes 40 to 60 minutes, so offer to pause the low-stock alert workflow first.
 
 ## The garment body axis
 
@@ -85,7 +101,10 @@ not batch gates.
 
 1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit`. Report coverage, group
    health, unmapped products, and any DRIFT. **DRIFT means the Flow is failing: stop and
-   troubleshoot, do not write on top of it.** Distinguish it from `awaiting-seed`, which is expected
+   troubleshoot, do not write on top of it.** The one named exception, and it is narrow: a group
+   whose **own receipt** records the value as approved and applied, re-planned by `repair`. See
+   "Repairing a stranded fan-out" below for what that does and does not cover. Distinguish DRIFT
+   from `awaiting-seed`, which is expected
    after a backfill. Any product reported as unmapped means `catalogue.json` is out of date: report
    it to the operator and stop, because correcting it is a reviewed PR, not something to work around.
 
@@ -110,14 +129,84 @@ not batch gates.
    not itself approval of whatever comes back. Never hand-edit an artifact (the hash check will
    reject it, by design).
 
-6. **Apply and verify.** `apply --plan <artifact>`, then `verify --receipt <receipt>` once the Flow
-   settles (80 to 90 seconds typical). Report converged or stale per group.
+6. **Apply and verify.** `apply --plan <artifact>`, then `verify --receipt <receipt>`. Report
+   converged, stale or missing per group.
+
+   **`apply` paces itself** (mechanic 5): one group per batch by default, then a wait for that
+   batch's fan-out before the next write. So a 20-group run takes 40 to 60 minutes rather than a
+   minute, and that is the point. Tell the operator the expected duration before starting, and offer
+   to pause the low-stock alert workflow. `--batch-size n` and `--no-batch` exist; neither is a way
+   to make a run finish sooner.
+
+   **A halt is not a failure to retry past.** If a batch's fan-out does not converge, `apply` stops
+   and leaves every remaining group **not attempted**, which is what `--resume` picks up later.
+   `--resume` **drains before it writes**: it re-checks the groups the halted batch left outstanding
+   and refuses while any is still unconverged, so resuming into an unsettled store is not something
+   to attempt. There is no `--force`.
+
+   `verify` costs one catalogue read per tick for the whole receipt, not one per group, so verifying
+   many groups is no longer quadratic.
 
    If some rows failed, the receipt records which; re-run the same artifact with `--resume` to retry
    only those (compare-and-swap plus the derived idempotency key make that safe). If a group is
    still stale past about 3 minutes, that is a real fault and not slowness: **stop, surface it to
    the operator, and read the Troubleshooting section of `docs/blank-inventory-sync-flow.md`.** Do
-   not retry blind, and do not write again on top of an unconverged group.
+   not retry blind, and do not write again on top of an unconverged group. **The one named
+   exception:** a group whose **own receipt** already records that value as approved and applied,
+   re-planned by `repair`, which is the only sanctioned path onto an unconverged group. **Never
+   hand-assemble or edit an artifact targeting a stranded group**, and never treat something merely
+   shaped like a repair artifact as one: `apply` checks an artifact's hash but not how it was
+   produced, so that prohibition is the only thing holding this boundary. "Do not retry blind" is
+   untouched, since a repair is a re-plan presented for approval, which is that rule's opposite.
+
+### Repairing a stranded fan-out
+
+`repair --receipt <receipt.json>` re-plans the groups an `apply` wrote but the Flow left
+half-propagated. It is **read-only against the store** and emits an ordinary hashed plan artifact, so
+`show`, gate 5 and `apply` all handle it unchanged.
+
+```
+repair --receipt <receipt.json> [--out <artifact.json>]
+```
+
+**The distinction that makes this legal.** "Unconverged" covers two situations that need opposite
+responses.
+
+1. A group whose correct value is **unknown or contested**: drift with no receipt, a partial nobody
+   planned, a group mid-cascade. Writing there is guessing. **The absolute stands, verbatim: do not
+   write again on top of an unconverged group.**
+2. A group where a receipt records an operator-approved target that was **written and did not finish
+   propagating**. Nothing is guessed: at least one member already holds the number, and the fix is
+   another trigger carrying that same number.
+
+The rule, with its vocabulary inlined so it stands alone: **never write a value onto an unconverged
+group unless that group's own receipt (the JSON record an `apply` run writes, one row per blank,
+recording whether that blank's write landed) already records the value as approved and applied.**
+
+**And the closure that rule needs: a `repair`-generated artifact is the only sanctioned path onto an
+unconverged group.** Never hand-assemble or edit an apply artifact targeting a stranded group.
+`apply` checks an artifact's hash but not how it was produced, so without this the safety model is
+bypassable by anyone willing to write the JSON.
+
+What `repair` does and does not do:
+
+- **The target comes from the receipt, never from live state.** On a stranded group of 8 with one
+  member at 12 and seven at 11, every live-state heuristic returns 11 and silently rolls the approved
+  change back. Do not propose one.
+- **One write per group**, on a member still holding the old value, exactly as an ordinary plan.
+  Seven stragglers do not mean seven writes.
+- **Provenance is checked.** The receipt must resolve to its own plan artifact (beside it, or in the
+  working directory) by both `planId` and content hash, or the command refuses.
+- **It warns past 1 hour and refuses past 24 hours.** A fan-out settles in 80 to 90 seconds, so an
+  older receipt no longer explains why the group is non-uniform.
+- **It refuses per group, loudly**: a three-way spread, a group where no member holds the approved
+  target, and a receipt row that never reached `applied` (that is `--resume` territory on the
+  original artifact). Groups it skipped or refused are listed in the artifact and the summary, never
+  silently absent, so present that list at gate 5 too.
+
+Then the ordinary path: **STOP at gate 5 on the repair artifact** (`show --plan` prints the source
+receipt and the original plan id above the diff; read that aloud, because it is the only check
+against a stale or wrong receipt), then `apply --plan <repair artifact>`, then `verify`.
 
 ### Backfill
 
@@ -381,6 +470,19 @@ Stop on any contradiction, and stop on ambiguity rather than picking the likelie
 independent of the transcription it backstops. Both come from the same vision pass, so a dropped `+`
 disables the very check meant to catch it. The operator's confirmation is the real control here.
 Present it that way; do not describe the cross-check as sufficient on its own.
+
+## Watching the Flow's run list (optional, read-only)
+
+There is a browser mode that reads the Shopify Flow run-list page and reports three numbers: run
+counts by status, how many in-progress runs are retrying, and how old the oldest in-progress run is.
+It exists to make mechanic 5 visible during an incident.
+
+It is **opt-in per run, in its own operator turn**, per the repo's CLAUDE.md, and it is a
+**diagnostic only**. Read `.claude/skills/blank-inventory/browser.md` before using it. The absolutes,
+repeated here because they are what make it safe to have at all: it never clicks anything in Flow,
+never edits the workflow, is never consumed by code and never gates a write (**a quiet run list is
+not permission to apply**), is not reachable from the CLI, and none of its output, counts and
+timestamps included, is ever committed to this repo.
 
 ## Non-goals
 

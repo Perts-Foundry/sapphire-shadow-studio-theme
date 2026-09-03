@@ -14,8 +14,9 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
    - Completion check: the sku skill's verify step reports the new variants covered.
 3. `blank-inventory` (route:/blank-inventory, shared-blank bodies only): backfill
    `custom.inventory_blank_sku` on the new variants, quiesce, separately approved seed write;
-   thresholds entry for a new blank. The Flow pause offer and the ~4-group batch limit are that
-   skill's rules.
+   thresholds entry for a new blank. The Flow pause offer and the write pacing are that skill's
+   rules; the tool paces itself now (one group per batch by default), so a seed covering many groups
+   takes minutes rather than seconds and that is expected, not a hang.
    - Completion check: that skill's verify converges.
 4. `media` (route:/product-images; for a new design value, only if design-specific photos are
    wanted: the gallery filters media by the COLOUR option, so existing colour-matched shots already

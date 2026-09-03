@@ -176,6 +176,31 @@ export function groupSlice({ body = 'crewneck', color = 'Grey Heather', size = '
 }
 
 /**
+ * A group the Flow left half-propagated: one member on the new value, the rest on the old one.
+ *
+ * This is the exact shape of the 2026-09-03 stranding, and the shape every `repair` decision turns
+ * on. It is built here rather than in the repair suite so no test hand-rolls a "stranded" group that
+ * quietly differs from the real one: the discriminating detail is that the CONVERGED member is a
+ * single one and the stragglers are the majority, which is what makes every live-state heuristic
+ * (majority, mode, histogram peak) return the OLD value and roll the approved change back.
+ *
+ * `atTargetIndex` exists because which member converged decides which member `selectWriteTarget`
+ * then picks, and a fixture that always converged members[0] would never exercise that.
+ *
+ * @param {object} opts
+ * @param {number} opts.target - the approved value; exactly one member holds it
+ * @param {number} opts.stale - the value the fan-out never reached
+ * @param {number} [opts.members] - total member count
+ * @param {number} [opts.atTargetIndex] - which member converged
+ * @returns {object[]}
+ */
+export function strandedGroup({ target, stale, members = 8, atTargetIndex = 0, body = 'crewneck', color = 'Grey Heather', size = '2XL' } = {}) {
+  return Array.from({ length: members }, (_, i) =>
+    variant({ body, color, size, quantity: i === atTargetIndex ? target : stale })
+  );
+}
+
+/**
  * The catalogue shape that broke the tool: three bodies sharing one colour and size, all carrying
  * ONE blank id. Correct modelling needs three separate pools; the old colour+size key had exactly
  * one slot for them.

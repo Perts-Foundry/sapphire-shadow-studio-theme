@@ -32,11 +32,12 @@ import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.
 import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, normaliseAxis, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
 import { planAll, derivedIdempotencyKey } from './lib/planner.mjs';
-import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, receiptsToArchive, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
-import { applyPlan } from './lib/apply.mjs';
+import { createArtifact, verifyArtifact, assertRenderablePlan, createReceipt, writeJsonAtomic, readJson, pendingBlankIds, pendingSeedBlankIds, splitStaleSeedReceipts, receiptsToArchive, receiptArtifactMismatch, isReceiptComplete, markRow, ROW_APPLIED, ROW_FAILED } from './lib/receipt.mjs';
+import { applyPlanInBatches, DEFAULT_BATCH_SIZE } from './lib/apply.mjs';
+import { repairPlans, assessReceiptAge, AGE_REFUSE, AGE_WARN } from './lib/repair.mjs';
 import { planBackfill, planBlankBootstrap, planSeed, untagVariants } from './lib/backfill.mjs';
 import { setQuantity, adjustQuantity, setBlankMetafields, deleteBlankMetafields } from './lib/mutations.mjs';
-import { pollToConvergence, allAtTarget, groupSignature, quiesce } from './lib/convergence.mjs';
+import { watchToConvergence, groupSignature, quiesce, DEFAULT_TIMEOUT_MS } from './lib/convergence.mjs';
 import { resolveWorkDir, findOrphanWorkDir, WORK_DIR_BASENAME } from './lib/workdir.mjs';
 import { bodyIndex, attachBodies, unmappedHandles } from './lib/bodies.mjs';
 import { loadThresholds, reconcileThresholds, assessThresholds, buildAxes, axisLabel, buildPivot, formatCell, flagReorders, selectReorders, pivotCounts, bodyTotals, buildPurchaseList, renderPurchaseList, aggregateDemand, proposeAdjustments, sinceDate, NO_GROUP, THRESHOLDS_PATH } from './lib/reorder.mjs';
@@ -282,6 +283,45 @@ async function loadStore({ requireWrite }) {
   const { vocab, conflicts, unbodied, display } = learnVocab(variants);
   const groups = buildGroups(variants);
   return { client, locationId, ...catalogue, variants, vocab, conflicts, unbodied, display, unmapped, groups };
+}
+
+/**
+ * The live half of a convergence watch: one full catalogue read per tick, a real clock, a real
+ * sleep. Separated from `waitForGroups` so a test can drive the same decision logic on a fake one.
+ *
+ * @returns {{readAll: () => Promise<Map<string, object[]>>, now: () => number, sleep: (ms: number) => Promise<void>}}
+ */
+function liveWatchDeps() {
+  return {
+    readAll: async () => (await loadStore({ requireWrite: false })).groups,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
+}
+
+/**
+ * Wait for a set of groups to converge on their targets.
+ *
+ * ONE helper, TWO callers: `verify` and the batch gate inside `apply`. Sharing it is not
+ * deduplication, it is a correctness property. "The gate says converged" and "verify says
+ * converged" have to be the same bar, or the gate lets a batch through that `verify` then fails,
+ * and the operator is left holding two tools that disagree about the same store.
+ *
+ * The catalogue read per tick is unavoidable (variant metafields are not filterable in a products
+ * search), so the win is one read per TICK rather than one per group per tick. `verify` used to
+ * poll each group serially with its own full `loadStore` per poll, which made it quadratic in the
+ * group count and piled reads onto the Admin API exactly when the Flow was already struggling.
+ *
+ * @param {object} params
+ * @param {Map<string, number>} params.targets - blank id to the quantity it should reach
+ * @param {number} [params.timeoutMs]
+ * @param {number} [params.intervalMs]
+ * @param {(tick: object) => void} [params.onTick]
+ * @param {object} [params.deps] - injectable for tests; defaults to the live store and clock
+ * @returns {Promise<{verdicts: Map<string, string>, converged: Set<string>, stale: Set<string>, missing: Set<string>, elapsedMs: number, reads: number}>}
+ */
+async function waitForGroups({ targets, timeoutMs = DEFAULT_TIMEOUT_MS, intervalMs, onTick, deps = liveWatchDeps() }) {
+  return watchToConvergence(deps, { targets, timeoutMs, intervalMs, onTick });
 }
 
 /**
@@ -813,14 +853,19 @@ const THRESHOLDS_FILE = fileURLToPath(new URL('./thresholds.json', import.meta.u
  * parseArgs swallows the next bare token as a value, so `--below crewneck` silently becomes
  * `below: "crewneck"` and the intended argument vanishes. Refuse it rather than coercing.
  *
+ * Coercing matters more since `--no-batch` joined the callers: a truthiness test on
+ * `--no-batch counts.csv` would read the swallowed filename as "yes, disable the write pacing".
+ *
  * @param {string} flag
  * @param {unknown} raw
+ * @param {(msg: string) => never} [onInvalid] - how to reject; defaults to the process-exiting
+ *   `fail`. Injectable so a unit test can assert the refusal without tearing down the runner.
  * @returns {boolean}
  */
-function boolOpt(flag, raw) {
+function boolOpt(flag, raw, onInvalid = fail) {
   if (raw === undefined) return false;
   if (raw === true) return true;
-  fail(`${flag} takes no value, got ${JSON.stringify(raw)}.`);
+  return onInvalid(`${flag} takes no value, got ${JSON.stringify(raw)}.`);
 }
 
 /**
@@ -1336,6 +1381,17 @@ async function cmdShow(opts) {
   }
 
   heading(`Plan ${artifact.planId} (mode: ${artifact.mode}, created ${artifact.createdAt})`);
+  // Gate 5 is the only human backstop against a stale or wrong receipt, and it cannot be that
+  // backstop without seeing where the numbers came from. A repair's targets are not read off the
+  // store; they are the values an earlier run's operator approved, so the operator approving THIS
+  // one needs to see which run, and how long ago.
+  if (artifact.repairedFrom) {
+    console.log(`  REPAIR of plan ${artifact.repairedFrom}`);
+    console.log(`    source receipt   ${artifact.repairedFromReceipt ?? 'unknown'}`);
+    console.log(`    written          ${artifact.repairedFromWrittenAt ?? 'unknown'}`);
+    console.log(`    Every target below is that run's approved value, read from the receipt and not`);
+    console.log(`      from the store. Check the receipt is the right one before approving.`);
+  }
   if (!artifact.groups.length) {
     console.log('  nothing to write; every group already holds its target.');
   } else {
@@ -1389,27 +1445,90 @@ function makeWriter(client, locationId) {
   };
 }
 
-async function cmdApply(opts) {
+/**
+ * Unconverged groups that this artifact does NOT cover.
+ *
+ * `plan` already refuses while any group is non-uniform, but nothing re-checked between plan and
+ * apply, and a long apply is exactly the window in which a group goes non-uniform. That is the gap
+ * the 2026-09-03 incident opened.
+ *
+ * THE SCOPING IS THE SUBTLE PART. Groups INSIDE the artifact are excluded, for two separate
+ * reasons: `checkDrift` already handles them per row, with the artifact's own approved baseline; and
+ * `repair` deliberately targets non-uniform groups, so a blanket check would make every repair
+ * artifact unappliable, which is the one case that most needs applying.
+ *
+ * @param {object} artifact
+ * @param {Array<{blankId: string, state: string, quantities: number[], members: object[]}>} classified
+ * @returns {Array<object>}
+ */
+export function outOfArtifactUnconverged(artifact, classified) {
+  const inArtifact = new Set(artifact.groups.map((g) => g.blankId));
+  return unconvergedGroups(classified).filter((g) => !inArtifact.has(g.blankId));
+}
+
+/**
+ * @param {object} opts
+ * @param {object} [deps] - injected so the refusal paths that stand between an operator flag and a
+ *   live write are reachable from a test. `load` stands in for loadStore, `refuse` for the exiting
+ *   `fail`, and `runBatches` for the apply engine, so a test can assert that a refusal happened
+ *   BEFORE the engine was ever called.
+ */
+async function cmdApply(opts, { load = loadStore, refuse = fail, runBatches = applyPlanInBatches } = {}) {
   if (opts.input || opts.mode) {
-    fail(
+    return refuse(
       `apply takes --plan <artifact>, never --input/--mode. The artifact is what the operator ` +
         `approved; re-deriving a plan at apply time could pick a different write target than the ` +
         `one that was reviewed.`
     );
   }
-  if (!opts.plan) fail('apply needs --plan <artifact.json> (produced by the plan command).');
+  if (!opts.plan) return refuse('apply needs --plan <artifact.json> (produced by the plan command).');
+
+  const noBatch = boolOpt('--no-batch', opts.noBatch, refuse);
+  const batchSize = noBatch ? Infinity : numericOpt('--batch-size', opts.batchSize, DEFAULT_BATCH_SIZE, refuse);
+  if (!noBatch && !(Number.isInteger(batchSize) && batchSize > 0)) {
+    return refuse(`--batch-size needs a positive whole number of groups, got ${JSON.stringify(opts.batchSize)}.`);
+  }
 
   const artifact = verifyArtifact(await readJson(opts.plan));
-  const store = await loadStore({ requireWrite: true });
+  const store = await load({ requireWrite: true });
   const byBlank = (blankId) => store.groups.get(blankId) ?? [];
   // Fresh read per row, NOT the snapshot above. The drift check only works if it sees the store as
   // it is at the moment of each write; a cached snapshot silently disables it.
   const readGroupLive = createGroupReader(async () => (await loadStore({ requireWrite: false })).groups);
 
+  const { receipts: onDiskReceipts } = await loadReceipts();
+  const blockedOutside = outOfArtifactUnconverged(
+    artifact,
+    classifyGroups(store.groups, pendingSeedBlankIds(onDiskReceipts))
+  );
+  if (blockedOutside.length && !opts.dryRun) {
+    const detail = blockedOutside
+      .map((g) => `  ${g.state.toUpperCase().padEnd(14)} ${g.blankId}  ${JSON.stringify(groupHistogram(g.members))}`)
+      .join('\n');
+    return refuse(
+      `${blockedOutside.length} group(s) OUTSIDE this artifact are not converged:\n${detail}\n\n` +
+        `Every write here fans out through the same Flow, so writing while another group's cascade ` +
+        `is unfinished is what turns one slow fan-out into a stranded one. Groups inside the ` +
+        `artifact are not counted: they are checked per row against the approved baseline, and a ` +
+        `repair artifact targets non-uniform groups on purpose.\n` +
+        `Resolve these first (audit --group <blankId>), or repair them, and re-run.`
+    );
+  }
+
   const receiptPath = opts.receipt ?? path.join(WORK_DIR, `receipt-${artifact.planId}.json`);
   let receipt;
   if (opts.resume && existsSync(receiptPath)) {
     receipt = await readJson(receiptPath);
+    // A receipt is a row list plus a set of approved targets. Resuming with one that belongs to a
+    // different plan drives THIS artifact's writes from THAT plan's row statuses.
+    const mismatch = receiptArtifactMismatch(receipt, artifact);
+    if (mismatch) {
+      return refuse(
+        `${receiptPath} does not belong to this plan: ${mismatch}. Resuming would re-attempt one ` +
+          `plan's rows against another plan's targets. Point --receipt at this plan's own receipt, ` +
+          `or drop --resume to start a fresh one.`
+      );
+    }
     console.log(`Resuming ${receiptPath}: ${pendingBlankIds(receipt).length} group(s) outstanding.`);
   } else {
     receipt = createReceipt(artifact);
@@ -1426,67 +1545,260 @@ async function cmdApply(opts) {
     for (const g of artifact.groups) {
       console.log(`  ${g.blankId}: would write ${artifact.mode === MODE_DELTA ? `delta ${g.target - g.baseline}` : `quantity ${g.target}`} to ${g.writeTargetTitle} (CAS ${g.baseline})`);
     }
+    console.log(
+      noBatch
+        ? '\n  --no-batch: every group would be written in one pass, with no wait between them.'
+        : `\n  Pacing: ${batchSize} group(s) per batch, waiting for each batch's fan-out before the next.`
+    );
+    if (blockedOutside.length) {
+      console.log(`  ${blockedOutside.length} group(s) outside this artifact are not converged; a real run would refuse.`);
+    }
     console.log('\nNothing written.');
     return;
   }
 
-  const result = await applyPlan({
+  const timeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS);
+  console.log(
+    noBatch
+      ? `Pacing DISABLED (--no-batch): all groups in one pass, no wait between them.`
+      : `Pacing: ${batchSize} group(s) per batch, then waiting for the fan-out (timeout ${Math.round(timeoutMs / 1000)}s).`
+  );
+
+  const result = await runBatches({
     artifact,
     receipt,
     readGroup: readGroupLive,
     write: makeWriter(store.client, store.locationId),
     persist: (r) => writeJsonAtomic(receiptPath, r),
     only: opts.resume ? pendingBlankIds(receipt) : null,
+    batchSize,
+    gate: !noBatch,
+    // The batch gate and `verify` go through the same helper on purpose: two different bars for
+    // "converged" would let the gate pass a batch that verify then fails.
+    awaitBatch: async (blankIds) => {
+      const targets = new Map(
+        blankIds.map((blankId) => {
+          const group = artifact.groups.find((g) => g.blankId === blankId);
+          // Unreachable while the receipt check above holds, and named rather than left to become a
+          // "cannot read properties of undefined" if it ever stops holding.
+          if (!group) refuse(`Receipt names blank "${blankId}", which this artifact does not contain.`);
+          return [blankId, group.target];
+        })
+      );
+      return waitForGroups({ targets, timeoutMs });
+    },
     onRow: (e) => console.log(`  ${e.status.toUpperCase().padEnd(13)} ${e.blankId}${e.detail ? `  ${e.detail}` : ''}`),
+    onBatch: (b) => {
+      const waited = Math.round((Date.parse(b.finishedAt) - Date.parse(b.startedAt)) / 1000);
+      const verdicts = Object.entries(b.verdicts)
+        .map(([blankId, verdict]) => `${blankId}=${verdict}`)
+        .join(' ');
+      console.log(
+        `  BATCH ${b.index + 1}: wrote ${b.appliedBlankIds.length}/${b.blankIds.length} ` +
+          `(${b.blankIds.join(', ')}), ${waited}s${verdicts ? `, ${verdicts}` : ''}` +
+          `${b.halted ? '  HALTED' : ''}`
+      );
+    },
   });
 
   heading('Apply');
   console.log(`  applied ${result.applied}   skipped ${result.skipped}   failed ${result.failed}`);
+  console.log(`  batches ${result.batches.length}${result.halted ? ' (HALTED)' : ''}`);
   console.log(`  receipt ${receiptPath}`);
   console.log(`  complete: ${isReceiptComplete(result.receipt)}`);
-  console.log(`\nThe Flow settles in about 80-90s. Confirm with:`);
-  console.log(`  node scripts/blank-inventory/blank-inventory.mjs verify --receipt '${receiptPath}'`);
+  if (result.halted) {
+    console.log(
+      `\nA batch's fan-out did not converge, so the remaining groups were NOT attempted. Do not\n` +
+        `re-run with --resume until those groups are settled: resuming drains first and will refuse\n` +
+        `while they are outstanding. Repair them:\n` +
+        `  node scripts/blank-inventory/blank-inventory.mjs repair --receipt '${receiptPath}'`
+    );
+    process.exitCode = 1;
+  } else {
+    console.log(`\nThe Flow settles in about 80-90s. Confirm with:`);
+    console.log(`  node scripts/blank-inventory/blank-inventory.mjs verify --receipt '${receiptPath}'`);
+  }
   if (result.failed) process.exitCode = 1;
 }
 
 // ---------------------------------------------------------------------------
-async function cmdVerify(opts) {
-  if (!opts.receipt) fail('verify needs --receipt <receipt.json>.');
+// repair: finish a fan-out the Flow left stranded.
+//
+// It is its own command rather than a `plan --recover` flag because what it emits is an ordinary
+// hashed plan artifact: gate 5, `show` and `apply` all work on it unchanged, and there is no second
+// write path to audit. Read-only against the store, like `plan`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the artifact a receipt was written from.
+ *
+ * Two places, in order: beside the receipt (which is where a preserved incident pair lives, since
+ * the runbook copies the receipt and its artifact together), then the working directory. Not a
+ * glob: the filename is derived from the receipt's own `planId`, so a directory holding several
+ * plans cannot resolve to the wrong one, and the hash check afterwards catches the rest.
+ *
+ * @param {string} receiptPath
+ * @param {string} planId
+ * @returns {string|null}
+ */
+function findOriginArtifact(receiptPath, planId) {
+  const candidates = [path.join(path.dirname(receiptPath), `plan-${planId}.json`), path.join(WORK_DIR, `plan-${planId}.json`)];
+  return candidates.find((p) => existsSync(p)) ?? null;
+}
+
+/**
+ * @param {object} opts
+ * @param {object} [deps] - injected so the test suite can prove this command issues no write
+ *   without reaching the network. `load` stands in for loadStore; `refuse` for the exiting `fail`.
+ */
+async function cmdRepair(opts, { load = loadStore, refuse = fail } = {}) {
+  if (!opts.receipt) return refuse('repair needs --receipt <receipt.json>.');
+  const receiptPath = stringOpt('--receipt', opts.receipt);
+  let receipt;
+  try {
+    receipt = await readJson(receiptPath);
+  } catch (err) {
+    return refuse(`Could not read ${receiptPath}: ${err.message}`);
+  }
+
+  // PROVENANCE IS CHECKED, NOT ASSUMED. Every target below comes from this receipt, so "the group's
+  // own receipt" has to be a property this command verified. A wrong --receipt path names a
+  // genuinely stranded group and steers it to the other of its two live values, which looks exactly
+  // like a correct repair right up to the moment it propagates.
+  const artifactPath = findOriginArtifact(receiptPath, receipt.planId);
+  if (!artifactPath) {
+    return refuse(
+      `No plan artifact for ${receipt.planId} beside ${receiptPath} or in ${WORK_DIR}. A repair's ` +
+        `targets are only trustworthy if the receipt can be tied back to the plan the operator ` +
+        `approved, so a receipt with no artifact is refused rather than believed.`
+    );
+  }
+  let origin;
+  try {
+    origin = verifyArtifact(await readJson(artifactPath));
+  } catch (err) {
+    return refuse(`${artifactPath}: ${err.message}`);
+  }
+  const mismatch = receiptArtifactMismatch(receipt, origin);
+  if (mismatch) return refuse(`${receiptPath} does not belong to ${artifactPath}: ${mismatch}.`);
+
+  const age = assessReceiptAge(receipt);
+  const ageHours = age.ageMs === null ? null : (age.ageMs / 3_600_000).toFixed(1);
+  if (age.verdict === AGE_REFUSE) {
+    return refuse(
+      age.ageMs === null
+        ? `${receiptPath} has no usable timestamp. An undatable record of a live write is refused ` +
+            `rather than trusted forever.`
+        : `${receiptPath} is ${ageHours}h old, past the 24h bound. A fan-out settles in 80-90 ` +
+            `seconds, so a receipt this old no longer describes why the group is non-uniform. ` +
+            `Investigate with audit --group <blankId> and re-plan from a fresh count.`
+    );
+  }
+  if (age.verdict === AGE_WARN) {
+    console.warn(
+      `\nWARNING: ${receiptPath} is ${ageHours}h old (warn past 1h, refused past 24h). A fan-out\n` +
+        `settles in 80-90 seconds, so the store has had time to move for reasons unrelated to the\n` +
+        `stranding. Check the per-group diff below with more than usual care.\n`
+    );
+  }
+
+  // No separate ensureBodies() call: loadStore makes the declared body map a precondition of every
+  // read, and a repair never resolves a body+colour+size of its own. It works from blank ids the
+  // receipt already names.
+  const store = await load({ requireWrite: false });
+
+  const planId = randomUUID();
+  const { plans, skipped, refused } = repairPlans({ rows: receipt.rows, groups: store.groups, planId });
+
+  const artifact = createArtifact({ plans, skipped: [...skipped, ...refused], mode: MODE_ABSOLUTE, planId });
+  // Outside canonicalPayload, exactly as narrowedFrom is, so the content hash is undisturbed and
+  // two repairs that differ only in provenance still hash identically.
+  artifact.repairedFrom = origin.planId;
+  artifact.repairedFromReceipt = receiptPath;
+  artifact.repairedFromWrittenAt = age.writtenAt === null ? null : new Date(age.writtenAt).toISOString();
+
+  heading(`Repair ${planId} (from plan ${origin.planId})`);
+  console.log(`  receipt ${receiptPath}, written ${artifact.repairedFromWrittenAt} (${ageHours}h ago)`);
+  if (!plans.length) console.log('  nothing to repair; no group is stranded on an approved target.');
+  for (const p of plans) {
+    console.log(`  ${p.blankId}`);
+    console.log(`    ${p.siblingCount + 1} member(s) hold ${p.current} or ${p.target}; the approved target is ${p.target}`);
+    console.log(`    write quantity ${p.target} to ${p.writeTargetTitle}`);
+    console.log(`    chosen because it holds ${p.baseline}, which differs from the target; a write to a`);
+    console.log(`      member already at the target fires no trigger and the siblings stay stale.`);
+    console.log(`    compare-and-swap baseline ${p.baseline} (its LIVE quantity, not the target).`);
+  }
+
+  // Enumerated, never merely absent: to an operator scanning gate 5, a silently omitted group and
+  // an overlooked one look identical.
+  if (skipped.length) {
+    heading('Nothing to do');
+    for (const s of skipped) console.log(`  ${s.blankId}: ${s.reason} (at ${s.current}, target ${s.target})`);
+  }
+  if (refused.length) {
+    heading('REFUSED (not in the artifact; these need a human)');
+    for (const r of refused) console.log(`  ${r.blankId}: ${r.reason}\n    ${r.detail}`);
+  }
+
+  const out = opts.out ? stringOpt('--out', opts.out) : path.join(WORK_DIR, `plan-${planId}.json`);
+  await writeJsonAtomic(out, artifact);
+  console.log(`\nArtifact: ${out}`);
+  console.log(`  ${plans.length} group(s) would be written, ${skipped.length} already fine, ${refused.length} refused.`);
+  console.log(`Nothing has been written to the store. Review the plan, then:`);
+  console.log(`  node scripts/blank-inventory/blank-inventory.mjs show --plan '${out}'`);
+  console.log(`  node scripts/blank-inventory/blank-inventory.mjs apply --plan '${out}'`);
+  return artifact;
+}
+
+// ---------------------------------------------------------------------------
+/**
+ * @param {object} opts
+ * @param {object} [deps] - injected for the same reason cmdApply's are: the target construction and
+ *   the exit-code wiring decide whether a stranded group is reported, and neither was reachable
+ *   from a test while this function closed over the live store.
+ */
+async function cmdVerify(opts, { refuse = fail, wait = waitForGroups } = {}) {
+  if (!opts.receipt) return refuse('verify needs --receipt <receipt.json>.');
   const receipt = await readJson(opts.receipt);
+  // ONLY `applied` rows. A skipped row was already at target and fired no trigger, and a failed row
+  // never fired one, so waiting on either means waiting for a fan-out that is never coming and
+  // reporting a healthy store as stale.
   const targets = new Map(receipt.rows.filter((r) => r.status === ROW_APPLIED).map((r) => [r.blankId, r.target]));
   if (!targets.size) {
     console.log('No applied rows in this receipt; nothing to verify.');
-    return;
+    return { verdicts: new Map(), converged: new Set(), stale: new Set(), missing: new Set(), reads: 0, elapsedMs: 0 };
   }
 
   heading(`Verify ${targets.size} group(s)`);
-  const results = [];
-  for (const [blankId, target] of targets) {
-    const res = await pollToConvergence(
-      {
-        read: async () => {
-          const store = await loadStore({ requireWrite: false });
-          const members = store.groups.get(blankId) ?? [];
-          return allAtTarget(members, target);
-        },
-        now: () => Date.now(),
-        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-      },
-      { timeoutMs: numericOpt('--timeout-ms', opts.timeoutMs, 300_000) }
-    );
-    results.push({ blankId, ...res });
-    console.log(`  ${res.verdict.toUpperCase().padEnd(10)} ${blankId}  target ${target}  after ${Math.round(res.elapsedMs / 1000)}s`);
-  }
+  // ONE read per tick, for every group at once. This used to poll each group serially, each poll
+  // doing its own full loadStore, so verifying N groups cost N x ticks catalogue reads and got
+  // slower exactly as the Flow got busier.
+  const res = await wait({
+    targets,
+    timeoutMs: numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS, refuse),
+  });
 
-  const stale = results.filter((r) => r.verdict !== 'converged');
-  if (stale.length) {
-    console.log(
-      `\n${stale.length} group(s) did not converge. Propagation is not atomic and settles in about ` +
-        `80-90s, so past ~3 minutes this is a real fault. See the Troubleshooting section of ` +
-        `docs/blank-inventory-sync-flow.md.`
-    );
-    process.exitCode = 1;
+  for (const [blankId, verdict] of res.verdicts) {
+    console.log(`  ${verdict.toUpperCase().padEnd(10)} ${blankId}  target ${targets.get(blankId)}`);
   }
+  console.log(`\n  ${res.reads} catalogue read(s) over ${Math.round(res.elapsedMs / 1000)}s.`);
+
+  if (res.missing.size) {
+    console.log(
+      `\n${res.missing.size} group(s) have no tagged variants at all, so there is nothing to ` +
+        `converge: ${[...res.missing].join(', ')}. That is a tagging problem, not a Flow one.`
+    );
+  }
+  if (res.stale.size) {
+    console.log(
+      `\n${res.stale.size} group(s) did not converge. Propagation is not atomic and settles in about ` +
+        `80-90s, so past ~3 minutes this is a real fault. See the Troubleshooting section of ` +
+        `docs/blank-inventory-sync-flow.md. If a group is stranded with one member at target and ` +
+        `its siblings on the old value, that is what "repair" is for.`
+    );
+  }
+  if (res.stale.size || res.missing.size) process.exitCode = 1;
+  return res;
 }
 
 // ---------------------------------------------------------------------------
@@ -1623,18 +1935,42 @@ async function cmdBackfill(opts) {
     const receipt = createReceipt(artifact);
     receipt.seeding = true;
 
-    const result = await applyPlan({
+    // PACED, exactly like `apply`. A seed write fires the same `Inventory quantity changed` trigger
+    // and fans out through the same Flow, so a backfill covering many groups amplifies identically
+    // (mechanic 5). Leaving this on the raw unpaced loop would have left the incident shape reachable
+    // through the other write path, which is the same hole in a different command.
+    const seedBatchSize = boolOpt('--no-batch', opts.noBatch)
+      ? Infinity
+      : numericOpt('--batch-size', opts.batchSize, DEFAULT_BATCH_SIZE);
+    const seedTimeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS);
+    console.log(`\nPacing: ${seedBatchSize === Infinity ? 'disabled (--no-batch)' : `${seedBatchSize} group(s) per batch`}.`);
+
+    const result = await applyPlanInBatches({
       artifact,
       receipt,
       readGroup: createGroupReader(async () => (await loadStore({ requireWrite: false })).groups),
       write: makeWriter(store.client, store.locationId),
       persist: (r) => writeJsonAtomic(receiptPath, r),
+      batchSize: seedBatchSize,
+      gate: seedBatchSize !== Infinity,
+      awaitBatch: async (blankIds) => {
+        const targets = new Map(
+          blankIds.map((blankId) => [blankId, artifact.groups.find((g) => g.blankId === blankId).target])
+        );
+        return waitForGroups({ targets, timeoutMs: seedTimeoutMs });
+      },
       onRow: (e) => console.log(`  ${e.status.toUpperCase().padEnd(13)} ${e.blankId}${e.detail ? `  ${e.detail}` : ''}`),
+      onBatch: (b) => console.log(`  BATCH ${b.index + 1}: seeded ${b.appliedBlankIds.length}/${b.blankIds.length}${b.halted ? '  HALTED' : ''}`),
     });
 
     console.log(`\n  applied ${result.applied}   skipped ${result.skipped}   failed ${result.failed}`);
     console.log(`  receipt ${receiptPath}`);
-    console.log(`\nVerify once the Flow settles:\n  blank-inventory.mjs verify --receipt '${receiptPath}'`);
+    if (result.halted) {
+      console.log(`\nA batch's fan-out did not converge; the remaining groups were NOT seeded.`);
+      process.exitCode = 1;
+    } else {
+      console.log(`\nVerify once the Flow settles:\n  blank-inventory.mjs verify --receipt '${receiptPath}'`);
+    }
     if (result.failed) process.exitCode = 1;
     return;
   }
@@ -1721,7 +2057,10 @@ blank-inventory: shared-blank stock and metafield tooling.
   vocab    [--check <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]]   the resolvable key space, or check a transcription
   show     --plan <artifact.json>          render a plan artifact for the approval gate
   plan     --input <csv> --mode <${MODES.join('|')}> [--format ${FORMATS.join('|')}]
-  apply    --plan <artifact.json> [--dry-run] [--resume]
+  repair   --receipt <receipt.json> [--out <artifact.json>]   re-plan groups the Flow left stranded
+           (read-only; emits an ordinary plan artifact for the same show/apply path)
+  apply    --plan <artifact.json> [--dry-run] [--resume] [--batch-size <n>] [--no-batch] [--timeout-ms <n>]
+           (paced: ${DEFAULT_BATCH_SIZE} group(s) per batch by default, waiting for each batch's fan-out)
   verify   --receipt <receipt.json> [--timeout-ms <n>]
   backfill --stage propose|tag|seed [--plan <f>] [--body B] [--color C] [--size S] [--product H] [--dry-run]
            propose --blank <id> --product H [--color C] [--allow-over-cap]   (mint a NEW id)
@@ -1773,6 +2112,9 @@ async function main() {
     vocab: cmdVocab,
     show: cmdShow,
     plan: cmdPlan,
+    // NOT in writeCommands: repair reads the store and emits an artifact. The write it enables
+    // happens later, through `apply`, behind the same gate every other plan goes through.
+    repair: cmdRepair,
     apply: cmdApply,
     verify: cmdVerify,
     backfill: cmdBackfill,
@@ -1806,4 +2148,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 // fails, a collision, a receipt that must stay unread once archived) cannot be reached through an
 // injected reader: they need real files in a real directory. Its test drives them against a temp
 // working directory, never the operator's.
-export { parseArgs, numericOpt, makeWriter, loadReceipts, archiveStaleSeedReceipts };
+// `boolOpt` joins them for the same reason numericOpt is here: it decides whether a switch that
+// disables the write pacing was really passed. `waitForGroups` is exported so the "one bar for
+// converged" property can be tested across both of its callers on one fake clock, and `cmdRepair`
+// so its promise of zero store writes can be asserted against a spying client rather than argued.
+// `cmdApply` and `cmdVerify` join them because they are the live-write entry point and the live
+// confirmation, and both were previously unreachable from a test: a regression in the batch-size
+// validation, the resume receipt check, the out-of-artifact refusal or the exit-code wiring would
+// have been caught only by an operator running against production.
+export { parseArgs, numericOpt, boolOpt, makeWriter, loadReceipts, archiveStaleSeedReceipts, waitForGroups, cmdRepair, cmdApply, cmdVerify };

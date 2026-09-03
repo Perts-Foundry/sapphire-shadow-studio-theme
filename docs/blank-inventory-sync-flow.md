@@ -106,6 +106,34 @@ of redundant writes. With the guard, a re-triggered run finds all siblings alrea
 nothing, and the propagation settles in a single wave. It also means the common case (a change that
 touches a blank shared by N variants) does at most N-1 writes.
 
+### But the guard does not stop the amplification of *work*
+
+Read the step order above again: the guard is step 4, and the catalogue scan is step 3. **The guard
+runs after the scan, not before it.** So a re-triggered run does the full "Get product data" scan,
+walks every product and variant, and only then evaluates the guard and exits having written nothing.
+
+The guard bounds the **writes**. It does not bound the **scans**. One write into a group of 8 costs
+7 further writes *and 7 further full catalogue scans*, all of them starting at once, and a caller
+that writes many groups back to back overlaps every one of those. That is the amplification, and it
+is present with a correct v2 flow: it is a consequence of the step order, not of a missing clause.
+
+Two incidents established it, both from `blank-inventory apply` runs against a healthy flow:
+
+| Date | Groups written | Fanned out | Outcome |
+|---|---|---|---|
+| 2026-07-27 | 38 | 13 | the rest never propagated |
+| 2026-09-03 | 27 | 14 | **13 stranded**: one member on the new value, siblings on the old one |
+
+On 2026-09-03 Admin showed dozens of runs as "In-progress / 1 retrying" and the failing step was
+`Get product data: Ran into transient error: Step timed out`. The timeout is on the scan.
+
+**The mitigation lives in the tooling, not in the flow.** `apply` writes one group at a time by
+default, waits for that group's fan-out to converge, and halts rather than continuing if it does not
+(`scripts/blank-inventory/lib/apply.mjs`). The root fix is the product-level roll-up metafield under
+Assumptions and limitations below, which would shrink the scan itself; batching only stops different
+groups' fan-outs from overlapping and does nothing about one large group's own storm, which for a
+13-member group is 12 writes and 12 full scans on its own.
+
 ## Measured behaviour
 
 Established by testing against the live store on 2026-07-19 and 2026-07-20, on one blank group,
@@ -186,11 +214,31 @@ body is made in. It changes nothing about this flow: see `scripts/blank-inventor
   **is** a valid field on the direct Admin API (see the write-step section above); it is Flow's
   restricted action that rejects it. Do not generalise this v1 failure into a claim about the store's
   schema.
-- **Runaway or escalating runs.** Check that the third guard clause
-  (`inventoryQuantity != inventoryQuantity`) is present on the sibling condition. Its absence is
-  what turns one change into a wave of self-triggering writes.
-- **Some siblings update, others do not.** Suspect the fetch cap: the missing siblings are likely
-  on products past `max_root_records`. Raise the cap or adopt the roll-up approach.
+- **Runaway or escalating runs.** Two different causes, and the first entry here used to name only
+  one of them.
+  - *A wave of redundant **writes*** is the third guard clause (`inventoryQuantity !=
+    inventoryQuantity`) missing from the sibling condition. Check it is there.
+  - *A pile of runs that write nothing and time out* happens with the guard present, because the
+    guard is downstream of the scan (see "But the guard does not stop the amplification of work"
+    above). Do not go looking for a missing clause; the cause is concurrency, and the answer is to
+    pace the caller.
+- **Runs pile up as in-progress, many showing a retry.** The scan is timing out under concurrency:
+  the failing step is `Get product data`, not the write. Stop writing, let the queue drain, and
+  confirm with `verify` (or the read-only run-list probe in
+  `.claude/skills/blank-inventory/browser.md`) before writing again. Then re-run `apply` with its
+  default pacing, or a smaller `--batch-size`; `--no-batch` is what produces this.
+- **A group is stranded: one member at the new value, its siblings on the old one.** The write landed
+  and the fan-out did not. This is not drift and it is not awaiting-seed, and re-running the original
+  plan will not fix it, because compare-and-swap refuses a row whose baseline has moved. Use
+  `blank-inventory.mjs repair --receipt <the receipt from that apply>`, which re-plans one write per
+  stranded group from the **receipt's** approved target, and take the resulting artifact through the
+  normal approval gate. Never infer the target from live state: on a group of 8 with one member at 12
+  and seven at 11, every live-state heuristic returns 11 and rolls the approved change back.
+- **Some siblings update, others do not.** Two candidates, and the fetch cap is the *less* likely one
+  now. Check the run log first: a timed-out `Get product data` under concurrency is the cause seen
+  twice in production (see the table above), and raising `max_root_records` makes that scan *bigger*.
+  Only if the runs completed cleanly and specific siblings were still skipped is the cap the
+  explanation, and then the missing siblings are on products past it.
 - **A non-blank product triggered work.** It should exit at the gate. Verify the gate condition is
   the first step after the trigger and checks `inventory_blank_sku` is non-empty.
 - **`plan` refuses with "N group(s) are not converged".** This is the designed gate, not a tool
