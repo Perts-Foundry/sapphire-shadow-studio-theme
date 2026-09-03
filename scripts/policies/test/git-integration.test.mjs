@@ -10,16 +10,20 @@
 //
 // These tests are slower than the injected ones and deliberately few: one per gate, covering the
 // refusal and the pass. Everything else stays injected.
+//
+// Two gates live here now: push's "all of marketing/policies/ is clean", and pull's "the bodies I
+// am about to overwrite are clean". The second is what makes bare `policies:pull` safe to run.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { assertReviewedTree } from '../push.mjs';
+import { assertBodiesClean, run as pullRun } from '../pull.mjs';
 import { fileTextFor } from '../lib/policies.mjs';
-import { BODIES, cleanup, makeRoot, policiesDir } from './helpers.mjs';
+import { BODIES, cleanup, liveFrom, makeClient, makeRoot, makeStateDir, policiesDir, seedState } from './helpers.mjs';
 
 /**
  * A real git repository at `root`, with everything committed and `origin/main` pointing at HEAD.
@@ -59,33 +63,73 @@ test('a real dirty policy body is refused, proving the pathspec matches what it 
     assert.deepEqual(assertReviewedTree(root), { unreviewed: false }, 'a clean committed tree must pass');
 
     writeFileSync(join(policiesDir(root), 'shipping_policy.html'), fileTextFor(`${BODIES.SHIPPING_POLICY}\n<p>edit</p>`), 'utf8');
-    assert.throws(() => assertReviewedTree(root), /uncommitted policy bodies/);
+    assert.throws(() => assertReviewedTree(root), /has uncommitted changes/);
   } finally {
     cleanup(root);
   }
 });
 
-test('an untracked policy body is refused too: `??` is a dirty tree, not an empty status', () => {
+test('a dirty MANIFEST is refused too: a push writes nothing into the tree any more', () => {
+  // The per-field exemption for `remote` and `pulledAt` is gone, along with the HEAD read and the
+  // JSON reshape it needed. This is what proves the simpler gate against real git.
   const root = makeRoot();
   try {
     initRepo(root);
-    writeFileSync(join(policiesDir(root), 'terms_of_service.html.new'), 'x\n', 'utf8');
-    // Not a policy file: outside the pathspec, so it must NOT refuse.
-    assert.deepEqual(assertReviewedTree(root), { unreviewed: false });
-
-    writeFileSync(join(policiesDir(root), 'legal_notice.html'), 'x\n', 'utf8');
-    assert.throws(() => assertReviewedTree(root), /uncommitted policy bodies/);
+    const file = join(policiesDir(root), 'manifest.json');
+    writeFileSync(file, `${readFileSync(file, 'utf8').replace('"version": 1', '"version":  1')}`, 'utf8');
+    assert.throws(() => assertReviewedTree(root), /has uncommitted changes/);
   } finally {
     cleanup(root);
   }
 });
 
-test('a dirty file elsewhere in the repo does not refuse: the pathspec is scoped', () => {
+test('an untracked file under marketing/policies/ is refused: `??` is a dirty tree', () => {
+  const root = makeRoot();
+  try {
+    initRepo(root);
+    writeFileSync(join(policiesDir(root), 'legal_notice.html'), 'x\n', 'utf8');
+    assert.throws(() => assertReviewedTree(root), /has uncommitted changes/);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('pull\'s dirty gate refuses against real git, and its pathspec is scoped to the named bodies', async () => {
+  // No fake can prove the pathspec production code emits is one real git accepts, and this gate
+  // is the only thing standing between bare `policies:pull` and a destroyed wording edit.
+  const root = makeRoot();
+  const stateDir = makeStateDir();
+  try {
+    initRepo(root);
+    assert.doesNotThrow(() => assertBodiesClean(root, ['SHIPPING_POLICY', 'REFUND_POLICY']));
+
+    writeFileSync(join(policiesDir(root), 'refund_policy.html'), fileTextFor(`${BODIES.REFUND_POLICY}\n<p>edit</p>`), 'utf8');
+    assert.throws(() => assertBodiesClean(root, ['REFUND_POLICY']), /would OVERWRITE/);
+    // Scoped: a pull that is not going to touch the refund policy must not refuse because of it.
+    assert.doesNotThrow(() => assertBodiesClean(root, ['SHIPPING_POLICY']));
+
+    // And end to end through `run`, with nothing injected: the real gate, the real pathspec.
+    // The baseline has to be seeded first, or the no-observation refusal fires before the dirty
+    // one and this would prove the wrong gate.
+    const live = liveFrom({ ...BODIES, REFUND_POLICY: `${BODIES.REFUND_POLICY}\n<p>admin edit</p>` });
+    seedState(stateDir);
+    await assert.rejects(
+      () => pullRun({ client: makeClient({ live }), root, now: '2026-01-02T03:04:05.000Z', stateDir }),
+      /would OVERWRITE/,
+    );
+  } finally {
+    cleanup(root);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('a dirty file elsewhere in the repo does not refuse either gate: both pathspecs are scoped', () => {
   const root = makeRoot();
   try {
     initRepo(root);
     writeFileSync(join(root, 'README.md'), '# not a policy\n', 'utf8');
     assert.deepEqual(assertReviewedTree(root), { unreviewed: false });
+    assert.doesNotThrow(() => assertBodiesClean(root, ['SHIPPING_POLICY']));
   } finally {
     cleanup(root);
   }
@@ -105,19 +149,19 @@ test('HEAD ahead of origin/main is refused by real git, and --allow-unreviewed p
   }
 });
 
-test('a manifest dirty only in the observation fields passes against real git', () => {
+test('the ancestor refusal names the recovery, and says why main is not a place to commit', () => {
   const root = makeRoot();
   try {
-    initRepo(root);
-    const file = join(policiesDir(root), 'manifest.json');
-    const manifest = JSON.parse(execFileSync('git', ['show', 'HEAD:marketing/policies/manifest.json'], { cwd: root, encoding: 'utf8' }));
-    manifest.policies.shipping_policy.remote = { sha256: 'a'.repeat(64), length: 1, observedAt: '2027-01-01T00:00:00.000Z' };
-    writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    assert.deepEqual(assertReviewedTree(root), { unreviewed: false });
-
-    manifest.policies.shipping_policy.sha256 = 'b'.repeat(64);
-    writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    assert.throws(() => assertReviewedTree(root), /beyond the `remote` and `pulledAt` observation fields/);
+    const git = initRepo(root);
+    writeFileSync(join(root, 'README.md'), '# later\n', 'utf8');
+    git('add', '--all');
+    git('commit', '--quiet', '-m', 'later');
+    assert.throws(() => assertReviewedTree(root), (err) => {
+      assert.match(err.message, /Merge the PR/);
+      assert.match(err.message, /git switch main && git pull/);
+      assert.match(err.message, /never a licence to commit to main/);
+      return true;
+    });
   } finally {
     cleanup(root);
   }

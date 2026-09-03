@@ -1,5 +1,148 @@
 # Release Notes
 
+## Shop policy versioning, and the bookkeeping leaves the repo (unreleased)
+
+The shop-policies subsystem landed across five PRs where two would have done, and the reason is
+recorded in the commit messages themselves. None of #152, #153 or #154 was a bug inside a command.
+Each was a gap in the **operating sequence**: which command is right for which situation, what git
+state each one needs, and what a tool's own side effects do to the next step.
+
+- the planned canary target was already in sync, so the first real push would have been a no-op
+- the TTY gate refused the exact execution path the operator wanted, and the only route through
+  was faking a terminal
+- the dirty-tree gate blocked the next push on its own side effect, meaning a PR per push forever
+- the dry run printed a re-run command that its own gate would refuse
+- `policies:pull --check` pointed the operator at the destructive command
+- two of #154's tests passed vacuously, because a fake matched a bare filename against production
+  code that emits a full pathspec
+
+This change answers the sequence rather than the individual commands.
+
+**Every policy carries a derived `version`, and the stamp goes into the live body.** An invisible
+HTML comment on the first line, `<!-- sss-policy shipping_policy v3 -->`, so viewing source on the
+live page answers "which version is up?" without an Admin read. `deriveVersion` is the one place a
+version is ever computed and it throws rather than guessing; the table is in
+`marketing/policies/README.md`.
+
+**Most of the risk in this change traces to the stamp being in the live body**, and that trade was
+taken deliberately rather than by default. A manifest-only stamp would remove the version
+monotonicity problem, the stamp-strip self-trip, the two-hash class of bug, the permanently-repo-
+ahead reading, the privacy-policy exemption and `verify`'s "never stamped versus stripped"
+ambiguity, and would still put `version` in every PR diff. It would not answer "what is live right
+now" from a browser. Recorded here so the trade is visible if it is ever revisited.
+
+**The core/stamp split is the whole design.** The stamp is additive presentation, so every
+comparison in the subsystem runs on the CORE body with the stamp stripped from both sides.
+`coreSha256` is the wording; the manifest's `sha256` is the committed bytes and is never compared
+against anything live. Confusing the two is how the stamp self-trips its own gate: a stamped repo
+body against an unstamped live one reads as a difference that is not a wording change. Every call
+site names its hash, and the README has the table.
+
+**The dry run prints the same hash the gate will check.** That coupling is not tidiness. A tool
+printing a re-run command its own gate then refuses is the #152-to-#154 pattern, and it happened
+twice.
+
+**`remote` and `pulledAt` left the repo.** They were observations, not reviewed content, and
+keeping them in the manifest meant a successful push dirtied its own working tree; the dirty-tree
+gate then blocked the next push until that side effect had been committed and merged. PR #154
+answered that by teaching the gate to ignore exactly those two fields, which cost a HEAD read, a
+JSON reshape and a field allowlist to guard a distinction the manifest should not have carried.
+Moving the fields to a machine-local `$XDG_STATE_HOME/shop-policies/state/observed.json` deletes
+all of it: the gate goes back to one question with one answer, and **a successful push now leaves
+the working tree clean**. The PR history is the record of what changed; `version` is the identity.
+
+The state file gets **its own path and its own override** (`POLICIES_STATE_DIR`), not the backup
+directory's. Sharing one would mean a "reclaim some space, delete old backups" action silently
+deletes the freshness baseline, and would let one variable relocate both. A resolved state
+directory inside the checkout is a refusal, because a committed observation is exactly what the
+move removes.
+
+**`push` refuses with no state file, and there is no auto-seed.** Seeding the baseline from the very
+read the freshness gate is supposed to check against is not a check. That leaves a window between
+the versioning PR merging and the operator's first `policies:pull`, and stating the window is what
+makes it deliberate rather than discovered.
+
+**The monotonic floor, for the revert case.** `deriveVersion` reads the previous entry from a
+git-tracked file, so `git revert` restores body and manifest atomically and walks `version`
+BACKWARDS while the live store keeps the higher number. The next wording change then re-derives a
+version that is already live against different bytes. The state file records `highestPushed`, and
+`push` refuses a version at or below it unless the wording is identical. Enforcement sits at the
+write, where the state file is guaranteed present.
+
+**All five seeded at version 1**, meaning "as of this change". Seeding the two already-pushed
+policies at 2 would assert a claim about git history that nothing enforces, and is unverifiable
+either way because the live store never carried a v1.
+
+**No live write was spent to deploy the stamps.** Comparisons run on cores, so the repo carries
+stamps and they reach the store on the next real wording change. Two consequences accepted: "live
+carries no stamp" is the normal state until then, and whether Shopify preserves an HTML comment
+stays unknown until that first stamped push. A fake client that strips comments proves the push
+completes either way, and `push` says so out loud if the stamp comes back missing.
+
+**Bare `policies:pull` stopped eating committed work.** It used to overwrite all five bodies with no
+check of any kind. It now refuses on a dirty body, on a policy whose repo core is ahead of live, and
+on a wording difference with no baseline at all. There is deliberately no "not a git worktree, skip
+the check" branch: a production tool that disables a destructive-write guard so a test can pass is
+the same defect class as the vacuous fakes.
+
+**The no-baseline refusal needed an escape, and `--seed` is it.** With no observation state and a
+wording difference, "which side moved?" has no answer, and guessing "Admin" silently reverts a
+committed wording change. Refusing there would have been circular, though: push refuses for want of
+a baseline and pull refuses to write one. `npm run policies:pull -- --seed` records what Admin holds
+and writes not one byte into the repo. Found by writing the migration sequence as a test, which is
+the point of writing it as a test.
+
+**`policies:status` is the entry point the subsystem was missing.** `check` proves the repo agrees
+with ITSELF and is green in the merged-but-not-pushed state, which is exactly how a wording change
+gets declared done while customers still read the old text. `pull --check` needs credentials and
+answers a different question. `status` classifies from the repo core, the manifest core and the last
+observation, and names exactly one command per state. It degrades and reports rather than refusing:
+no state file, no `origin/main`, not a git worktree at all.
+
+### The state machine
+
+| State | `status` says | The one command out |
+|---|---|---|
+| Everything agrees | `in sync` | nothing to do |
+| No state file | `unknown: no observation state on this machine` | `policies:pull`, or `--seed` if an edit is already committed |
+| Body edited, manifest stale | `repo edited: restamp, then commit` | `policies:restamp` |
+| Merged, not pushed | `repo ahead: a push is outstanding` | `policies:push -- --type <t>` (operator-gated) |
+| Admin edited behind us | `Admin moved: pull and review` | `policies:pull` |
+| Both moved | `CONFLICT: edited locally AND Admin moved` | `policies:pull -- --check` |
+| In state, not in the manifest | `in the observation state but not the manifest` | nothing; it is ignored |
+| `status` itself errored | exit 1 | stop and report; do not guess a state |
+
+Row four is what this table exists for. `policies:check` is GREEN there.
+
+**`verify-live.mjs` became `npm run policies:verify`,** with `--root`, an exported `run()` and a
+test file. Its sentence sets moved to `scripts/policies/assertions.json`, each pinning the
+`coreSha256` it was written against; a set whose hash no longer matches is refused **before any live
+read**, and a set with no hash is refused too rather than falling back. A stale positive assertion
+reports PASS on wording nobody checked, which is worse than no assertion. **The assertion of record
+is the version**: a byte match without a version match says the two bodies agree, not that the body
+live is carrying is the one this repo can name.
+
+**Step 8's re-read retries on a throw, and an unknown outcome is not a retry.** A read that throws
+every time means the write landed and the tool cannot say to what; it records the observation,
+refuses, and prints `--restore`. Re-running the push there is the one thing not to do.
+
+**The printed commit command carries no attribution of any kind,** and a test asserts it. A template
+printed by a tool becomes the shape of every future policy commit, so a trailer there would be
+permanent and would land in a public repo's history.
+
+**Rollback.** Reverting this change after the seeding pull leaves an orphan `observed.json` and
+possibly stamped bodies on the live store with no `version` in the tree. Revert the PR, delete
+`observed.json`, and note that a stamped live body is harmless because every comparison is
+core-based.
+
+**The test fakes were made strict first, as a separate change**, because the retrospective's own
+lesson is that gates tested against permissive fakes pass vacuously, and this change adds several
+new git- and state-dependent gates. `makeGitFake` matches on deep equality of the full argv and
+throws on anything else; `assertExhausted` catches the other half, an expectation nobody used, which
+is what a silently removed gate looks like. A meta-test makes it the only fake in the directory, and
+`test/git-integration.test.mjs` runs each git-backed gate against a real `git init`ed repository,
+because no fake can prove the pathspec production code emits is one real git accepts.
+
 ## Shop policies under version control, and a 3-5 day production window (unreleased)
 
 The five shop policies now live at `marketing/policies/`, with pull / check / gated-push tooling

@@ -68,15 +68,19 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   (`applique-grid/patterns.json`) in agreement. Writes to the **live store** through gated
   dry-run plans. Driven by the `applique-grid` Claude skill. See
   [`applique-grid/README.md`](applique-grid/README.md).
-- `policies/`: pull, check and push the five shop policies tracked at `marketing/policies/`.
-  `check.mjs` is **offline and CI-safe** and proves only that the repo agrees with itself;
-  `restamp.mjs` is offline too and recomputes the derived manifest fields after a deliberate local
-  wording edit, leaving `remote` and `pulledAt` alone so the outstanding push stays visible;
-  `pull.mjs` reads through the read-only Admin client; `push.mjs` writes a legal policy on the
-  **live store** behind nine gates (writable type, not CI, TTY, clean check, clean tree, HEAD
-  merged, freshness against the last observed Admin body, a dry run, a verified out-of-tree
-  backup) and fails closed on `userErrors`, which `shopPolicyUpdate` returns with HTTP 200. No
-  skill: three commands against an API. See
+- `policies/`: status, check, pull, restamp, verify and push the five shop policies tracked at
+  `marketing/policies/`. **`status.mjs` is the entry point**: offline, it says which state each
+  policy is in and names the one command that leaves it. `check.mjs` is **offline and CI-safe** and
+  proves only that the repo agrees with itself, which is green in the merged-but-not-pushed state;
+  `restamp.mjs` is offline too and recomputes the derived manifest fields plus each stamped body's
+  version stamp after a deliberate local wording edit; `pull.mjs` reads through the read-only Admin
+  client and refuses to overwrite a dirty or repo-ahead body; `verify.mjs` asserts what the live
+  bodies say, against sentence sets that are refused when stale; `push.mjs` writes a legal policy on
+  the **live store** behind nine gates (writable type, not CI, TTY or an explicit operator
+  attestation, clean check, clean tree, HEAD merged, freshness against the machine-local observation
+  state, the monotonic version floor, a dry run, a verified out-of-tree backup) and fails closed on
+  `userErrors`, which `shopPolicyUpdate` returns with HTTP 200. Every comparison runs on the CORE
+  body with the version stamp stripped from both sides. See
   [`../marketing/policies/README.md`](../marketing/policies/README.md).
 - `email-icons/`: render the social icons the Shopify Email templates use, and upload them to
   Shopify Files. Email clients cannot render SVG, so the theme's own inline icons are copied as
@@ -109,7 +113,9 @@ STOREFRONT_PASSWORD=<storefront password, while the store is locked>
 the app must grant `read_legal_policies`, and `push.mjs` also `write_legal_policies` (both asserted
 at runtime, never assumed). `policies:check` needs no credentials at all, and a test asserts it runs
 clean with all three deleted from the environment. Optional, policies only: `POLICIES_BACKUP_DIR`
-(pre-push backups, default `~/.local/state/shop-policies`).
+(pre-push backups, default `~/.local/state/shop-policies`) and `POLICIES_STATE_DIR` (the
+observation state, default `~/.local/state/shop-policies/state`). Two separate overrides on
+purpose: sharing one would let a "delete old backups" action take the freshness baseline with it.
 
 `STOREFRONT_PASSWORD` is read only by the storefront-facing tools (`site-check/probe.mjs`,
 `site-check/tools.mjs`, `seo-review/crawl.mjs`, the a11y cookie helper); they also accept

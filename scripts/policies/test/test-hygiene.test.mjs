@@ -84,25 +84,37 @@ test('every test file that injects a git runner imports the shared fake', () => 
 /** The opt-out, spelled once. A test OF the fake is the only legitimate reason to use it. */
 const EXEMPT_MARKER = 'git-fake-not-exhausted';
 
-test('every use of the shared fake asserts its expectations were exhausted', () => {
+test('every test that builds a git fake INLINE asserts its expectations were exhausted', () => {
   // A strict fake catches an argv nobody expected. It cannot catch an expectation nobody used,
-  // which is exactly what a silently deleted gate looks like: the test still passes because the
+  // which is exactly what a silently deleted gate looks like: the test still passes, because the
   // refusal it asserts comes from somewhere else, or because nothing was asserted at all.
+  //
+  // SCOPE, stated because it is a real limit rather than an oversight: this checks each `test(...)`
+  // block that calls `makeGitFake` directly. A file-level factory (`cleanGit`, `mergedGit`) lives
+  // outside every block and is not reached, so its callers are on their own. The rule catches the
+  // shape that actually regresses: a fake built for one test, and then not checked.
   const offenders = [];
   for (const { name, text } of testFiles()) {
-    const uses = (text.match(/makeGitFake\(/g) ?? []).length;
-    if (uses === 0) continue;
-    const exhausted = (text.match(/\.assertExhausted\(/g) ?? []).length;
-    const exempt = (text.match(new RegExp(EXEMPT_MARKER, 'g')) ?? []).length;
-    if (exhausted + exempt < uses) {
-      offenders.push(`${name}: ${uses} fake(s), ${exhausted} exhaustion assertion(s), ${exempt} exemption(s)`);
+    for (const block of text.split(/\ntest\(/).slice(1)) {
+      if (!block.includes('makeGitFake(')) continue;
+      if (block.includes('.assertExhausted(') || block.includes(EXEMPT_MARKER)) continue;
+      offenders.push(`${name}: ${JSON.stringify(block.split('\n')[0].slice(0, 70))}`);
     }
   }
   assert.deepEqual(
     offenders,
     [],
-    'each makeGitFake must be paired with an assertExhausted at the end of its test, or carry the ' +
+    'each inline makeGitFake must be paired with an assertExhausted, or carry the ' +
       `\`${EXEMPT_MARKER}\` comment saying why it is deliberately not exhausted (a test OF the fake ` +
       `is the only legitimate case).\n${offenders.map((o) => `  ${o}`).join('\n')}`,
   );
+});
+
+test('a file that uses the shared fake asserts exhaustion somewhere in it', () => {
+  const offenders = [];
+  for (const { name, text } of testFiles()) {
+    if (!text.includes('makeGitFake(')) continue;
+    if (!text.includes('.assertExhausted(')) offenders.push(name);
+  }
+  assert.deepEqual(offenders, [], `these files build git fakes and never check exhaustion:\n${offenders.join('\n')}`);
 });

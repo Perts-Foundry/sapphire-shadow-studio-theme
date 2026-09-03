@@ -7,6 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import {
   DIFFED_FIELDS,
@@ -31,7 +32,6 @@ import {
   hygieneProblems,
   keyForType,
   lengthOf,
-  remoteToken,
   sha256,
   slugify,
   typeForFileName,
@@ -228,52 +228,87 @@ test('keyForType refuses an untracked ShopPolicyType', () => {
 
 const BODY = '<h2>One</h2>\n<p>a</p>\n<h2>Two</h2>\n<p>b</p>';
 
-test('buildEntry records the derived fields and a remote token', () => {
-  const entry = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY, now: NOW });
+test('buildEntry records the derived fields and returns the body to write', () => {
+  const { entry, body } = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
   assert.equal(entry.handle, 'shipping-policy');
   assert.equal(entry.writable, true);
-  assert.equal(entry.sha256, sha256(BODY));
-  assert.equal(entry.length, BODY.length);
-  assert.deepEqual(entry.remote, { sha256: sha256(BODY), length: BODY.length, observedAt: NOW });
-  assert.equal(entry.pulledAt, NOW);
+  assert.equal(entry.stamped, true);
+  assert.equal(entry.version, 1);
+  assert.equal(entry.coreSha256, sha256(BODY));
+  assert.equal(body, `<!-- sss-policy shipping_policy v1 -->\n${BODY}`);
+  assert.equal(entry.sha256, sha256(body));
+  assert.equal(entry.length, body.length);
   assert.equal('reason' in entry, false);
 });
 
+test('THE TWO-HASH INVARIANT: sha256 is the committed bytes, coreSha256 is the wording', () => {
+  // The central new claim of the whole change, computed here independently rather than by
+  // rearranging the same expressions the production code uses.
+  const { entry, body } = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  assert.notEqual(entry.sha256, entry.coreSha256, 'a stamped entry whose two hashes agree proves nothing');
+  assert.equal(entry.sha256, createHash('sha256').update(body, 'utf8').digest('hex'));
+  assert.equal(entry.coreSha256, createHash('sha256').update(BODY, 'utf8').digest('hex'));
+});
+
+test('the unstamped policy has one hash for both, and no stamp in its body', () => {
+  const { entry, body } = buildEntry(undefined, { type: 'PRIVACY_POLICY', title: 'Privacy policy', body: BODY });
+  assert.equal(entry.stamped, false);
+  assert.equal(body, BODY);
+  assert.equal(entry.sha256, entry.coreSha256);
+});
+
 test('buildEntry attaches the reason to the non-writable policy only', () => {
-  const entry = buildEntry(undefined, { type: 'PRIVACY_POLICY', title: 'Privacy policy', body: BODY, now: NOW });
+  const { entry } = buildEntry(undefined, { type: 'PRIVACY_POLICY', title: 'Privacy policy', body: BODY });
   assert.equal(entry.writable, false);
   assert.equal(entry.reason, NOT_WRITABLE_REASON);
 });
 
-test('an unchanged body carries both timestamps forward, so a second pull is a no-op', () => {
-  const first = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY, now: NOW });
-  const later = '2027-05-05T05:05:05.000Z';
-  const second = buildEntry(first, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY, now: later });
+test('buildEntry deletes the observation fields, so a half-migrated manifest is repaired by one pull', () => {
+  const prev = { title: 'Shipping', remote: { sha256: 'x', length: 0, observedAt: NOW }, pulledAt: NOW };
+  const { entry } = buildEntry(prev, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  assert.equal('remote' in entry, false);
+  assert.equal('pulledAt' in entry, false);
+});
+
+test('an unchanged body produces a byte-identical entry, so a second pull is a no-op', () => {
+  const { entry: first } = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  const { entry: second } = buildEntry(first, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
   assert.deepEqual(second, first);
   assert.equal(formatManifest({ policies: { shipping_policy: second } }), formatManifest({ policies: { shipping_policy: first } }));
 });
 
-test('a changed body moves both timestamps', () => {
-  const first = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY, now: NOW });
-  const later = '2027-05-05T05:05:05.000Z';
-  const second = buildEntry(first, { type: 'SHIPPING_POLICY', title: 'Shipping', body: `${BODY}\n<p>c</p>`, now: later });
-  assert.equal(second.pulledAt, later);
-  assert.equal(second.remote.observedAt, later);
+test('a changed body bumps the version, and the new stamp is what gets written', () => {
+  const { entry: first } = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  const { entry: second, body } = buildEntry(first, { type: 'SHIPPING_POLICY', title: 'Shipping', body: `${BODY}\n<p>c</p>` });
+  assert.equal(second.version, 2);
+  assert.equal(body.startsWith('<!-- sss-policy shipping_policy v2 -->\n'), true);
+});
+
+test('buildEntry takes the core from a live body that ALREADY carries a stamp', () => {
+  // Live is stamped for every read after the first stamped push. Taking the core is what stops the
+  // stamp being re-stamped on top of itself, and what stops the version bumping on every pull.
+  const { entry: first, body: stamped } = buildEntry(undefined, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  const { entry: second, body } = buildEntry(first, { type: 'SHIPPING_POLICY', title: 'Shipping', body: stamped });
+  assert.equal(second.version, 1, 'a pull of our own stamped body must not bump the version');
+  assert.equal(body, stamped);
+  assert.equal(second.coreSha256, first.coreSha256);
 });
 
 test('buildEntry spreads the previous entry first, so unknown keys and key order survive', () => {
-  const prev = { note: 'kept', title: 'Shipping', handle: 'shipping-policy', writable: true, sha256: 'x', length: 0, headings: [], remote: { sha256: 'x', length: 0, observedAt: NOW }, pulledAt: NOW };
-  const next = buildEntry(prev, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY, now: NOW });
-  assert.equal(next.note, 'kept');
-  assert.equal(Object.keys(next)[0], 'note');
+  const prev = { note: 'kept', title: 'Shipping', handle: 'shipping-policy', writable: true, sha256: 'x', length: 0, headings: [] };
+  const { entry } = buildEntry(prev, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  assert.equal(entry.note, 'kept');
+  assert.equal(Object.keys(entry)[0], 'note');
 });
 
-test('remoteToken is the same shape pull writes', () => {
-  assert.deepEqual(remoteToken(BODY, NOW), { sha256: sha256(BODY), length: BODY.length, observedAt: NOW });
+test('buildEntry honours an entry that has opted out of stamping', () => {
+  const { entry, body } = buildEntry({ stamped: false }, { type: 'SHIPPING_POLICY', title: 'Shipping', body: BODY });
+  assert.equal(entry.stamped, false);
+  assert.equal(body, BODY);
 });
 
 test('diffEntry is silent when the entry matches, and names each field that does not', () => {
-  const computed = { handle: 'shipping-policy', writable: true, sha256: 'a'.repeat(64), length: 10, headings: [] };
+  const computed = { handle: 'shipping-policy', writable: true, stamped: true, sha256: 'a'.repeat(64), coreSha256: 'c'.repeat(64), length: 10, headings: [] };
   assert.deepEqual(diffEntry('shipping_policy', { ...computed }, computed), []);
   const bad = diffEntry('shipping_policy', { ...computed, sha256: 'b'.repeat(64), length: 11 }, computed);
   assert.equal(bad.length, 2);
@@ -283,7 +318,7 @@ test('diffEntry is silent when the entry matches, and names each field that does
 
 test('diffEntry never compares title, which cannot be recomputed offline', () => {
   assert.equal(DIFFED_FIELDS.includes('title'), false);
-  const computed = { handle: 'shipping-policy', writable: true, sha256: 'a'.repeat(64), length: 1, headings: [] };
+  const computed = { handle: 'shipping-policy', writable: true, stamped: true, sha256: 'a'.repeat(64), coreSha256: 'c'.repeat(64), length: 1, headings: [] };
   assert.deepEqual(diffEntry('k', { ...computed, title: 'anything at all' }, computed), []);
 });
 

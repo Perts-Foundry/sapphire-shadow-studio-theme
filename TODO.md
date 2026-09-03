@@ -90,21 +90,23 @@ several of the pass's other findings.
   one is about details the customer got wrong, the other about details the studio could not read.
   Worth a read for tone, since they sit one click apart.
 
-- [ ] **Close the remaining test gaps in `scripts/policies/`.** A mutation-test pass over the
-  subsystem (93 seeded defects, 68 caught) found the survivors cluster in three places, none of
-  which is a live bug today:
-  - `lib/backups.mjs` has no test file. `FILE_MODE 0o600 -> 0o644` survives because the assertion
-    compares the observed mode against the imported constant, which holds for any value; use a
-    literal. `displayPath`, `resolveBackupDir`'s `POLICIES_BACKUP_DIR` and `path.resolve`, and the
-    timestamp in `backupFileName` are all uncovered.
-  - `push.mjs` step 8: a re-read that THROWS (a transient 5xx seconds after the write) is the one
-    post-mutation failure path that does not print the `--restore` command, and no test covers a
-    read that throws anywhere. Retry on throw, and add the restore command to that message.
-  - `main()` in `push.mjs` is untested end to end, so `PUSH_SCOPES` losing `write_legal_policies`
-    survives and the interactive/review gates are never tied to a run.
-  Also: `real-bodies.test.mjs`'s `parseWindow` silently mis-parses "3 to 5 business days" as
-  `[5,5]`, and its regex should be shared with the one in `templates-cohesion.test.mjs`; the
-  offline-by-contract source regexes are single-quote-only, static-only and non-transitive.
+- [ ] **Capture a real `shopPolicyUpdate` response as a test fixture.** The whole suite runs against
+  a hand-shaped fake client, and `marketing/policies/README.md` has instructed capturing the first
+  real push's response since the subsystem landed. Both live writes have now been spent without it,
+  so the next real push is the opportunity: save the mutation payload (redacted of nothing, since it
+  carries only the policy body we sent) and reshape `test/helpers.mjs`'s fixtures against it. Until
+  then, "the mutation's actual input shape against the live schema" stays unproven.
+
+- [ ] **Whether Shopify preserves an HTML comment in a policy body is still unknown.** No stamped
+  push has landed, so the version stamp's survival is untested against the real API. `push` prints a
+  line if the comment comes back stripped, `policies:verify` distinguishes that case from "no
+  stamped write yet", and a fake client that strips comments proves the push completes either way.
+  The answer arrives with the next real wording change. If it is stripped, set `"stamped": false`
+  per policy and rely on `coreSha256`.
+
+- [ ] **`real-bodies.test.mjs`'s `parseWindow` silently mis-parses "3 to 5 business days" as
+  `[5,5]`,** and its regex should be shared with the one in `templates-cohesion.test.mjs`. The
+  offline-by-contract source regexes are also single-quote-only, static-only and non-transitive.
 
 - [ ] **Converge the remaining 14 `GHEOF` heredocs in `validate.yml`.** The four notification and
   policy steps now use the `/dev/urandom` delimiter plus the `sed` neutraliser from the actionlint

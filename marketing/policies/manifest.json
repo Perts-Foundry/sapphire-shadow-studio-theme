@@ -4,20 +4,20 @@
       "title": "Contact",
       "handle": "contact-information",
       "writable": true,
-      "sha256": "63e8745e32d30f1a055409b07abcbd697a0c6fc7681ec1287aac67c5477ccbf0",
-      "length": 831,
-      "headings": [],
-      "remote": {
-        "sha256": "63e8745e32d30f1a055409b07abcbd697a0c6fc7681ec1287aac67c5477ccbf0",
-        "length": 831,
-        "observedAt": "2026-09-03T00:43:45.209Z"
-      },
-      "pulledAt": "2026-09-02T22:29:40.452Z"
+      "stamped": true,
+      "version": 1,
+      "coreSha256": "63e8745e32d30f1a055409b07abcbd697a0c6fc7681ec1287aac67c5477ccbf0",
+      "sha256": "502bcfceeccbb4f5d5d224d1f1855afa4ce0b7ff601fde548a3c756499d0a2df",
+      "length": 874,
+      "headings": []
     },
     "privacy_policy": {
       "title": "Privacy policy",
       "handle": "privacy-policy",
       "writable": false,
+      "stamped": false,
+      "version": 1,
+      "coreSha256": "407eeb056d77225e005a26e7abc798fd044b4fab2c54988f23f11e5b1e0d048f",
       "sha256": "407eeb056d77225e005a26e7abc798fd044b4fab2c54988f23f11e5b1e0d048f",
       "length": 18307,
       "headings": [
@@ -87,20 +87,17 @@
           "id": "contact"
         }
       ],
-      "remote": {
-        "sha256": "407eeb056d77225e005a26e7abc798fd044b4fab2c54988f23f11e5b1e0d048f",
-        "length": 18307,
-        "observedAt": "2026-09-02T22:29:40.452Z"
-      },
-      "pulledAt": "2026-09-02T22:29:40.452Z",
       "reason": "Shopify auto-manages this policy: shopPolicyUpdate is refused on it and Shopify rewrites the body on its own schedule. Tracked read-only."
     },
     "refund_policy": {
       "title": "Refund policy",
       "handle": "refund-policy",
       "writable": true,
-      "sha256": "11192d6ab45cb01c4bbb6db7bba817c948eb64b9bced427f4ea42d1c79604eea",
-      "length": 3585,
+      "stamped": true,
+      "version": 1,
+      "coreSha256": "11192d6ab45cb01c4bbb6db7bba817c948eb64b9bced427f4ea42d1c79604eea",
+      "sha256": "03adce2b626c5abb1f5afd9140e1156f95bfbf0b12e859035f8d5eb3d750f692",
+      "length": 3622,
       "headings": [
         {
           "level": 2,
@@ -147,20 +144,17 @@
           "text": "Questions?",
           "id": "questions"
         }
-      ],
-      "remote": {
-        "sha256": "11192d6ab45cb01c4bbb6db7bba817c948eb64b9bced427f4ea42d1c79604eea",
-        "length": 3585,
-        "observedAt": "2026-09-02T22:29:40.452Z"
-      },
-      "pulledAt": "2026-09-02T22:29:40.452Z"
+      ]
     },
     "shipping_policy": {
       "title": "Shipping",
       "handle": "shipping-policy",
       "writable": true,
-      "sha256": "7f46e537f25d270b70415f57a5c0205de7a8cc5aebc58994dffd0d28b75c0940",
-      "length": 12719,
+      "stamped": true,
+      "version": 1,
+      "coreSha256": "7f46e537f25d270b70415f57a5c0205de7a8cc5aebc58994dffd0d28b75c0940",
+      "sha256": "e922fc93ba952aa0014f6edf122464468f650ad21062ee88dbdc78e1d0fb6033",
+      "length": 12758,
       "headings": [
         {
           "level": 2,
@@ -252,27 +246,18 @@
           "text": "Questions?",
           "id": "questions"
         }
-      ],
-      "remote": {
-        "sha256": "d977dba45b27d41e82f4d43aa3ca061fd8fd27cb1a873ff90f64080069c663c5",
-        "length": 11737,
-        "observedAt": "2026-09-02T22:29:40.452Z"
-      },
-      "pulledAt": "2026-09-02T22:29:40.452Z"
+      ]
     },
     "terms_of_service": {
       "title": "Terms of service",
       "handle": "terms-of-service",
       "writable": true,
-      "sha256": "0fd7fd531a04dec870829fe491745aeffee35176b225ba6081214839191e9bfb",
-      "length": 23057,
-      "headings": [],
-      "remote": {
-        "sha256": "0fd7fd531a04dec870829fe491745aeffee35176b225ba6081214839191e9bfb",
-        "length": 23057,
-        "observedAt": "2026-09-02T22:29:40.452Z"
-      },
-      "pulledAt": "2026-09-02T22:29:40.452Z"
+      "stamped": true,
+      "version": 1,
+      "coreSha256": "0fd7fd531a04dec870829fe491745aeffee35176b225ba6081214839191e9bfb",
+      "sha256": "635ac771a13401184a772b80d27893cb59326e68be17c910e2167d6556b2b2bd",
+      "length": 23097,
+      "headings": []
     }
   }
 }

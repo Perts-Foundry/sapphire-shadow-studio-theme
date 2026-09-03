@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { POLICY_TYPES, buildEntry, fileNameForType, fileTextFor, formatManifest, keyForType } from '../lib/policies.mjs';
+import { emptyState, readState, recordObservation, writeState } from '../lib/state.mjs';
 
 export const NOW = '2026-01-02T03:04:05.000Z';
 
@@ -28,25 +29,67 @@ export const BODIES = Object.freeze({
   TERMS_OF_SERVICE: '<p>Terms, with no headings, like the real one.</p>',
 });
 
-/** A checkout root holding marketing/policies/ in a self-consistent state. */
-export function makeRoot({ bodies = BODIES, now = NOW, titles = {} } = {}) {
+/**
+ * A checkout root holding marketing/policies/ in a self-consistent state.
+ *
+ * BODIES ARE WRITTEN STAMPED, exactly as the real tree holds them, because the two-hash invariant
+ * (`sha256` over the committed bytes, `coreSha256` over the wording) is only exercised by a
+ * fixture where the two actually differ. A fixture of unstamped bodies would make every core
+ * comparison in the suite a comparison of two identical values.
+ */
+export function makeRoot({ bodies = BODIES, titles = {}, stamped = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'policies-test-'));
   const dir = join(root, 'marketing', 'policies');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'README.md'), '# policies\n', 'utf8');
   const manifest = { policies: {} };
   for (const type of POLICY_TYPES) {
-    const body = bodies[type];
-    writeFileSync(join(dir, fileNameForType(type)), fileTextFor(body), 'utf8');
-    manifest.policies[keyForType(type)] = buildEntry(undefined, {
+    const key = keyForType(type);
+    const prev = stamped === null ? undefined : { stamped: stamped[type] === true };
+    const { entry, body: written } = buildEntry(prev, {
       type,
       title: titles[type] ?? titleFor(type),
-      body,
-      now,
+      body: bodies[type],
     });
+    writeFileSync(join(dir, fileNameForType(type)), fileTextFor(written), 'utf8');
+    manifest.policies[key] = entry;
   }
   writeFileSync(join(dir, 'manifest.json'), formatManifest(manifest), 'utf8');
   return root;
+}
+
+/** The body `makeRoot` writes for one policy: the fixture core, stamped if the policy is. */
+export function writtenBodyFor(type, bodies = BODIES) {
+  const { body } = buildEntry(undefined, { type, title: titleFor(type), body: bodies[type] });
+  return body;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The machine-local observation state
+// ---------------------------------------------------------------------------------------------
+
+/** A scratch state directory, outside any checkout. Never the repo, never a real XDG path. */
+export function makeStateDir() {
+  return mkdtempSync(join(tmpdir(), 'policies-state-'));
+}
+
+/**
+ * Seed the state file so it records exactly what `live` holds. The ordinary precondition for a
+ * push: the machine has pulled, so it knows what Admin was last seen holding.
+ */
+export function seedState(stateDir, { live = liveFrom(), now = NOW, extra = {} } = {}) {
+  const state = emptyState();
+  for (const [type, { body }] of Object.entries(live)) {
+    const key = keyForType(type);
+    state.policies[key] = { ...recordObservation(undefined, { body, now }), ...(extra[key] ?? {}) };
+  }
+  writeState({ dir: stateDir, state });
+  return state;
+}
+
+/** The parsed state file, or null. */
+export function readStateRaw(stateDir) {
+  return readState({ dir: stateDir });
 }
 
 export function titleFor(type) {
@@ -256,11 +299,12 @@ function sameArgv(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-/** The argv `assertReviewedTree` emits, in order. One place, so a pathspec change breaks loudly. */
+/** The argv the git-backed gates emit. One place, so a pathspec change breaks loudly. */
 export const GIT_ARGV = Object.freeze({
-  statusBodies: ['status', '--porcelain', '--', 'marketing/policies/*.html'],
-  statusManifest: ['status', '--porcelain', '--', 'marketing/policies/manifest.json'],
-  showManifest: ['show', 'HEAD:marketing/policies/manifest.json'],
+  /** push's gate: ALL of marketing/policies/, since a push no longer writes into the tree. */
+  statusDir: ['status', '--porcelain', '--', 'marketing/policies'],
+  /** pull's gate: only the bodies that pull would actually overwrite. */
+  statusFiles: (...names) => ['status', '--porcelain', '--', ...names.map((n) => `marketing/policies/${n}`)],
   revParseHead: ['rev-parse', 'HEAD'],
   revParseBase: ['rev-parse', 'origin/main'],
   isAncestor: (head, base) => ['merge-base', '--is-ancestor', head, base],
