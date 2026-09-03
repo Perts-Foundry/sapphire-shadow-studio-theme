@@ -62,9 +62,18 @@ The half `node --test` cannot reach is the DOM: whether `extractHeadings` derive
 TEXT that a browser's `textContent` yields, which is the entity-decoding and nested-markup half.
 That stays a manual check:
 
-- [ ] **Not yet verified in a browser.** Open `/policies/shipping-policy` (via the admin theme's
-  Preview link; the storefront is password-protected) and confirm each `h2`'s assigned `id` matches
-  the corresponding `headings[].id` here. Re-do it if either `slugify` or `extractHeadings` changes.
+**Verified in a browser on 2026-09-03** against the live `/policies/shipping-policy`: all 13 `h2`
+ids that `policy-nav.js` assigns at runtime matched the `headings[].id` values pinned here, in
+order. So `extractHeadings` does derive the same heading text a browser's `textContent` yields, for
+this body. Re-do it if either `slugify` or `extractHeadings` changes, or if a policy gains a heading
+with nested markup or an entity that the current bodies do not exercise.
+
+How, since the storefront is password-protected: open the page in a browser with a storefront
+session, and read the ids back with
+
+```js
+[...document.querySelectorAll('.shopify-policy__body h2')].map((h) => h.id)
+```
 
 ## Commands
 
@@ -93,10 +102,11 @@ partial run look clean; that would hide a half-applied pull.
 
 ## Pushing a wording change
 
-**Steps 1 to 3 are repo work. Steps 4 and 5 are OPERATOR-ONLY: they are the live write, and
-`policies:push` refuses without a TTY on stdin, so no agent can run them, dry run included.** That
-refusal is the rule working; do not wrap it in a pty. An agent's job ends at step 3, handing the
-operator the commands for 4 and 5.
+**Steps 1 to 3 are repo work. Steps 4 and 5 are the live write and belong to the operator.**
+`policies:push` refuses without a TTY on stdin, so by default an agent cannot run them, dry run
+included. **Never fake a TTY with a pty.** If the operator has asked an agent to do the push in
+that session, the supported route is `--operator-approved`, which attests exactly that and prints a
+line saying so. Absent that instruction, an agent's job ends at step 3, handing over the commands.
 
 1. Run `npm run policies:pull -- --check` first, to be sure Admin has not moved under you.
 2. Edit `<type>.html` in a branch, then run `npm run policies:restamp`. It rewrites `sha256`,
@@ -120,8 +130,10 @@ name means one run's confirmation cannot be reused for a different policy by acc
 
 `push.mjs` runs these in order; any failure aborts with a non-zero exit and no mutation.
 
-1. A known, **writable** `--type`; `CI` unset; stdin is a TTY. A legal-policy write is an operator
-   action, never a CI one.
+1. A known, **writable** `--type`; `CI` unset; and either a TTY on stdin or `--operator-approved`.
+   `CI` set is an absolute refusal that no flag overrides: CI never holds a credential that can
+   rewrite a legal policy. The TTY-or-attestation half only asks "did a human ask for this"; it
+   authorizes no particular write, and every gate below still applies unchanged.
 2. `policies:check` clean, a clean working tree under `marketing/policies/`, and `HEAD` an ancestor
    of `origin/main`, so the bytes that reach customers are bytes a reviewer saw.
    The recovery is to merge the PR. `--allow-unreviewed` exists for the case where **the operator**

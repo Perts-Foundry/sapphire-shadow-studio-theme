@@ -123,6 +123,18 @@ More to the point: after a wording change lands, `HEAD` holds the new text and `
 only if Admin has not been edited since, so the backup is the only record of what Admin actually
 held at the moment of the write.
 
+**The TTY gate became a TTY-or-attestation gate, because the alternative was people faking a TTY.**
+The first version refused any non-TTY invocation outright, which is right for CI and wrong for the
+case that actually comes up: the operator asking an agent to run the push while they watch. The
+only way through was `script -qc`, i.e. faking a terminal, which defeats the check silently and
+teaches that the gate is routable. `--operator-approved` is the honest version of the same thing:
+it attests that a human asked, it prints a line saying the non-TTY path was used, and it appears in
+the shell history. It authorizes no particular write. Everything that decides WHAT is written is
+unchanged and still required: `--confirm=<type>`, `--expect-live-sha` from the tool's own dry run,
+the freshness gate, a clean check, a clean merged tree, and a verified backup. `CI` set stays an
+absolute refusal that no flag overrides, because that is the blast-radius boundary: CI must never
+hold a credential that can rewrite a legal policy.
+
 **`--confirm` takes the policy name, not a boolean.** A bare `--confirm` is copy-pasteable out of
 shell history and is exactly the shape an agent reproduces from a README example; requiring
 `--confirm=<type>` to equal `--type` means one run's confirmation cannot be reused for a different

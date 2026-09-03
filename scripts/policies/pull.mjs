@@ -29,6 +29,7 @@ import {
   buildEntry,
   canonicalise,
   fileTextFor,
+  sha256,
   formatManifest,
   keyForType,
 } from './lib/policies.mjs';
@@ -99,6 +100,7 @@ export async function run({ client, root, now, checkOnly = false }) {
   const next = { ...manifest, policies: { ...manifest.policies } };
   const changed = [];
   const files = [];
+  const directions = new Map();
 
   for (const type of POLICY_TYPES) {
     const key = keyForType(type);
@@ -110,6 +112,12 @@ export async function run({ client, root, now, checkOnly = false }) {
     if (current !== text) {
       changed.push(key);
       files.push({ file, text });
+      // WHICH SIDE MOVED. `remote.sha256` is what Admin was last seen holding, so:
+      //   live == remote  ->  Admin has not moved; the REPO is ahead and a push is outstanding.
+      //   live != remote  ->  Admin was edited since the last pull.
+      // The two need opposite actions, and pulling in the first case destroys the committed edit.
+      const recorded = manifest.policies?.[key]?.remote?.sha256 ?? null;
+      directions.set(key, sha256(canonical) === recorded ? 'repo-ahead' : 'admin-moved');
     }
     next.policies[key] = buildEntry(manifest.policies?.[key], { type, title, body: canonical, now });
   }
@@ -118,7 +126,7 @@ export async function run({ client, root, now, checkOnly = false }) {
   const after = formatManifest(next);
   const manifestChanged = before !== after;
 
-  if (checkOnly) return { changed, written: [], manifestChanged };
+  if (checkOnly) return { changed, written: [], manifestChanged, directions };
 
   // Manifest first, then the files. FAIL-LOUD, NOT SELF-HEALING: either write order leaves a tree
   // that `policies:check` refuses, and the recovery is re-running this command. Do not "fix" the
@@ -127,7 +135,7 @@ export async function run({ client, root, now, checkOnly = false }) {
   if (manifestChanged) writeAtomic(p.manifest, after);
   for (const { file, text } of files) writeAtomic(file, text);
 
-  return { changed, written: files.map(({ file }) => file), manifestChanged };
+  return { changed, written: files.map(({ file }) => file), manifestChanged, directions };
 }
 
 async function main(argv) {
@@ -148,15 +156,31 @@ async function main(argv) {
     return 1;
   }
 
-  const { changed, written, manifestChanged } = result;
+  const { changed, written, manifestChanged, directions } = result;
   if (checkOnly) {
     if (changed.length === 0 && !manifestChanged) {
       console.log('policies:pull --check: marketing/policies/ matches Admin');
       return 0;
     }
-    for (const key of changed) console.error(`drift: ${key}.html differs from Admin`);
-    if (manifestChanged) console.error('drift: manifest.json would change');
-    console.error('policies:pull --check found drift; run npm run policies:pull and review the diff');
+    // Naming the DIRECTION is the whole point. The old message said "run policies:pull" for every
+    // drift, which in the repo-ahead case is the destructive action: it overwrites the committed
+    // wording change with the body Admin still holds, and there is no dirty-tree check to stop it.
+    const adminMoved = changed.filter((k) => directions.get(k) === 'admin-moved');
+    const repoAhead = changed.filter((k) => directions.get(k) === 'repo-ahead');
+    for (const key of repoAhead) {
+      console.error(`drift: ${key}.html - the REPO is ahead; Admin still holds the last body we observed.`);
+      console.error(`       A push is outstanding: npm run policies:push -- --type ${key}`);
+      console.error('       Do NOT run policies:pull for this one; it would overwrite the committed change.');
+    }
+    for (const key of adminMoved) {
+      console.error(`drift: ${key}.html - ADMIN has moved since the last pull.`);
+      console.error('       Run npm run policies:pull and review the diff.');
+    }
+    if (manifestChanged && changed.length === 0) console.error('drift: manifest.json would change');
+    console.error(
+      `policies:pull --check found drift: ${repoAhead.length} outstanding push(es), ${adminMoved.length} Admin edit(s).` +
+        (repoAhead.length && !adminMoved.length ? ' Nothing to pull.' : ''),
+    );
     return 2;
   }
 

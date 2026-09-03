@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 
 import { check } from '../check.mjs';
 import { indexPolicies, run } from '../pull.mjs';
-import { POLICY_TYPES, PolicyError, bodyFromFileText, fileNameForType } from '../lib/policies.mjs';
+import { POLICY_TYPES, PolicyError, bodyFromFileText, fileNameForType, fileTextFor } from '../lib/policies.mjs';
 import {
   BODIES,
   NOW,
@@ -22,6 +22,7 @@ import {
   shopPoliciesFrom,
   snapshotTree,
   assertTreeUnchanged,
+  writeRaw,
 } from './helpers.mjs';
 
 /** An empty checkout: marketing/policies/ exists but holds nothing. */
@@ -101,6 +102,50 @@ test('--check reports drift without writing, and is silent on a matching tree', 
     assert.deepEqual(result.changed, ['refund_policy']);
     assert.equal(result.written.length, 0);
     assertTreeUnchanged(assert, before, snapshotTree(policiesDir(root)), '--check wrote something');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('--check names the DIRECTION of drift: repo-ahead vs admin-moved', async () => {
+  // The bug this pins: the old message told the operator to run `policies:pull` for every drift.
+  // In the repo-ahead case that is the destructive action, and there is no dirty-tree check to
+  // stop it, so it silently overwrites a committed wording change with the body Admin still holds.
+  const root = makeRoot();
+  try {
+    // REPO AHEAD: the file was edited locally and restamped; Admin still holds the observed body.
+    const edited = `${BODIES.SHIPPING_POLICY}\n<p>a committed wording change</p>`;
+    writeRaw(root, fileNameForType('SHIPPING_POLICY'), fileTextFor(edited));
+    const client = makeClient({ live: liveFrom() });
+    const ahead = await run({ client, root, now: NOW, checkOnly: true });
+    assert.deepEqual(ahead.changed, ['shipping_policy']);
+    assert.equal(ahead.directions.get('shipping_policy'), 'repo-ahead');
+
+    // ADMIN MOVED: the file is untouched, but Admin returns something new.
+    const root2 = makeRoot();
+    try {
+      const drifted = liveFrom({ ...BODIES, REFUND_POLICY: `${BODIES.REFUND_POLICY}\n<p>edited in Admin</p>` });
+      const moved = await run({ client: makeClient({ live: drifted }), root: root2, now: NOW, checkOnly: true });
+      assert.deepEqual(moved.changed, ['refund_policy']);
+      assert.equal(moved.directions.get('refund_policy'), 'admin-moved');
+    } finally {
+      cleanup(root2);
+    }
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('both directions at once are reported separately', async () => {
+  const root = makeRoot();
+  try {
+    const edited = `${BODIES.SHIPPING_POLICY}\n<p>local edit</p>`;
+    writeRaw(root, fileNameForType('SHIPPING_POLICY'), fileTextFor(edited));
+    const live = liveFrom({ ...BODIES, REFUND_POLICY: `${BODIES.REFUND_POLICY}\n<p>admin edit</p>` });
+    const result = await run({ client: makeClient({ live }), root, now: NOW, checkOnly: true });
+    assert.deepEqual([...result.changed].sort(), ['refund_policy', 'shipping_policy']);
+    assert.equal(result.directions.get('shipping_policy'), 'repo-ahead');
+    assert.equal(result.directions.get('refund_policy'), 'admin-moved');
   } finally {
     cleanup(root);
   }

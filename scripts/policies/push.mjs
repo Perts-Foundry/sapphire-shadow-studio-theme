@@ -12,7 +12,7 @@
 // `shopPolicy`, and step 8 re-reads the live body rather than trusting the response echo.
 //
 // Gate sequence, in order, any failure aborting with a non-zero exit and no mutation:
-//   1. a known, writable --type; not CI; stdin is a TTY
+//   1. a known, writable --type; not CI (absolute); a TTY on stdin OR --operator-approved
 //   2. policies:check clean; clean working tree under marketing/policies/; HEAD an ancestor of
 //      origin/main, so the pushed bytes are the reviewed bytes
 //   3. fetch live; identical to the repo body means exit 0 with no mutation
@@ -100,6 +100,7 @@ export function parseArgs(args) {
     acceptNormalisation: false,
     forceOverwriteLive: false,
     allowUnreviewed: false,
+    operatorApproved: false,
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -120,6 +121,7 @@ export function parseArgs(args) {
       case '--accept-normalisation': out.acceptNormalisation = true; break;
       case '--force-overwrite-live': out.forceOverwriteLive = true; break;
       case '--allow-unreviewed': out.allowUnreviewed = true; break;
+      case '--operator-approved': out.operatorApproved = true; break;
       default: throw new PolicyError(flag, 'unknown flag');
     }
   }
@@ -143,12 +145,41 @@ export function resolveType(raw) {
 }
 
 /**
- * The interactive-only gate. A write to a legal policy is an operator action, never a CI one, and
- * no workflow in this repo wires `policies:push` (a test asserts that).
+ * The operator gate. A write to a legal policy is an operator action, never a CI one.
+ *
+ * Two ways to satisfy it, and one that is absolute:
+ *
+ * - `CI` set is an UNCONDITIONAL refusal. No workflow in this repo wires `policies:push`, a test
+ *   asserts that, and no flag here can override it. That is the blast-radius boundary: CI never
+ *   holds a credential that can rewrite a legal policy.
+ * - A TTY on stdin means a person is running it by hand. The ordinary case.
+ * - `--operator-approved` is the explicit attestation for the case where the operator has asked an
+ *   agent to run the push in that session. It exists because the alternative people actually reach
+ *   for is wrapping the command in a pty to fake a TTY, which defeats the check silently and
+ *   teaches that the gate is routable. An honest flag that shows up in the shell history and in
+ *   this tool's own output is strictly better than a faked terminal.
+ *
+ * This flag does NOT authorize a particular write. It only attests that a human asked. Everything
+ * that decides WHAT gets written is unchanged and still required: `--confirm=<type>` matching
+ * `--type`, `--expect-live-sha` from the tool's own dry run, the freshness gate against
+ * `remote.sha256`, a clean `policies:check`, a clean tree merged into main, and a verified backup
+ * before the mutation.
+ *
+ * @returns {{ via: 'tty' | 'operator-approval' }} how the gate was satisfied, for the log line
  */
-export function assertInteractive({ env, isTTY }) {
-  if (env.CI) throw new PolicyError('policies:push', 'refuses to run with CI set; this is an operator-only command');
-  if (!isTTY) throw new PolicyError('policies:push', 'refuses to run without a TTY on stdin; this is an operator-only command');
+export function assertInteractive({ env, isTTY, operatorApproved = false }) {
+  if (env.CI) {
+    throw new PolicyError('policies:push', 'refuses to run with CI set; no workflow may write a legal policy, and no flag overrides this');
+  }
+  if (isTTY) return { via: 'tty' };
+  if (operatorApproved) return { via: 'operator-approval' };
+  throw new PolicyError(
+    'policies:push',
+    'refuses to run without a TTY on stdin. This is an operator-only command. If an operator has ' +
+      'asked for this write in this session, pass --operator-approved to say so explicitly. Do NOT ' +
+      'wrap the command in a pty to fake a TTY: that defeats the check silently, and the flag is ' +
+      'the supported way to do the same thing honestly.',
+  );
 }
 
 // ------------------------------------------------------------------------------------------
@@ -499,7 +530,15 @@ async function main(argv) {
   let options;
   try {
     options = parseArgs(argv.slice(2));
-    assertInteractive({ env: process.env, isTTY: Boolean(process.stdin.isTTY) });
+    const gate = assertInteractive({
+      env: process.env,
+      isTTY: Boolean(process.stdin.isTTY),
+      operatorApproved: options.operatorApproved,
+    });
+    // Never let the non-TTY path be silent. If this line is in a transcript, an operator asked.
+    if (gate.via === 'operator-approval') {
+      console.log('policies:push: running without a TTY under --operator-approved (an operator asked for this write).');
+    }
     if (options.restore !== null) {
       options.restoreRecord = loadRestore(resolve(options.restore));
       options.type = resolveType(options.restoreRecord.type);
