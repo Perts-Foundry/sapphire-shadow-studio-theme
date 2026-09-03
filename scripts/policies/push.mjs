@@ -191,16 +191,62 @@ function git(root, args) {
 }
 
 /**
- * The working tree under marketing/policies/ must be clean and HEAD must be an ancestor of
- * origin/main, so the bytes about to reach customers are bytes a reviewer saw. `--allow-unreviewed`
- * is the deliberate escape hatch (a canary before the PR merges, say); it is reported loudly.
+ * The policy bodies must be clean and HEAD must be an ancestor of origin/main, so the bytes about
+ * to reach customers are bytes a reviewer saw. `--allow-unreviewed` is the deliberate escape hatch
+ * for the ancestor half (a canary before the PR merges, say); it never waives the dirty check.
+ *
+ * The manifest is treated differently from the bodies: see the comment on the manifest branch.
  *
  * Not applied to `--restore`, whose bytes come from a backup file rather than the tree.
  */
+/**
+ * Fields the TOOL writes into a manifest entry as observations, rather than reviewed content:
+ * what Admin was last seen holding, and when it was last refreshed from Admin. Neither can change
+ * what a push SENDS, which is the body file.
+ */
+const OBSERVATION_FIELDS = ['remote', 'pulledAt'];
+
+/** A manifest with the observation fields stripped, for comparing reviewed content only. */
+export function reviewedManifestShape(text) {
+  const parsed = JSON.parse(text);
+  const out = {};
+  for (const [key, entry] of Object.entries(parsed.policies ?? {})) {
+    const copy = { ...entry };
+    for (const f of OBSERVATION_FIELDS) delete copy[f];
+    out[key] = copy;
+  }
+  return JSON.stringify(out);
+}
+
 export function assertReviewedTree(root, { allowUnreviewed = false, run = git } = {}) {
-  const dirty = run(root, ['status', '--porcelain', '--', 'marketing/policies']);
-  if (dirty !== '') {
-    throw new PolicyError('marketing/policies', `has uncommitted changes; commit or stash them first:\n${dirty}`);
+  // The POLICY BODIES must be clean: they are the bytes that reach customers, and they must be
+  // bytes a reviewer saw.
+  const dirtyBodies = run(root, ['status', '--porcelain', '--', 'marketing/policies/*.html']);
+  if (dirtyBodies !== '') {
+    throw new PolicyError('marketing/policies', `has uncommitted policy bodies; commit or stash them first:\n${dirtyBodies}`);
+  }
+
+  // The MANIFEST is allowed to differ from HEAD in `remote` and `pulledAt` only. A successful push
+  // writes `remote` itself, so requiring a pristine manifest made every push block the next one
+  // until its own side effect had been committed, for a change that cannot affect what is sent.
+  // Every other field IS reviewed content (sha256, length, headings, handle, writable, title) and
+  // still refuses: a hand-edited sha256 would defeat the freshness gate.
+  const dirtyManifest = run(root, ['status', '--porcelain', '--', 'marketing/policies/manifest.json']);
+  if (dirtyManifest !== '') {
+    let committed;
+    try {
+      committed = run(root, ['show', 'HEAD:marketing/policies/manifest.json']);
+    } catch (err) {
+      throw new PolicyError('marketing/policies/manifest.json', `is modified and HEAD's copy could not be read (${String(err.message).trim()})`);
+    }
+    const working = readFileSync(paths(root).manifest, 'utf8');
+    if (reviewedManifestShape(working) !== reviewedManifestShape(committed)) {
+      throw new PolicyError(
+        'marketing/policies/manifest.json',
+        'has uncommitted changes beyond the `remote` and `pulledAt` observation fields; commit or ' +
+          `stash them first:\n${dirtyManifest}`,
+      );
+    }
   }
   if (allowUnreviewed) return { unreviewed: true };
   let head;
@@ -360,8 +406,12 @@ export async function run({ client, root, now, options, backupDir, domain, log =
     log(`send sha: ${sendSha}`);
     log('');
     log('Dry run: NO CHANGES WERE MADE. To apply exactly this diff, re-run:');
-    const source = restoring ? `--restore ${options.restore}` : `--type ${key}`;
-    log(`  npm run policies:push -- ${source} --expect-live-sha=${liveSha} --confirm=${key}`);
+    // Carry --operator-approved into the printed command when it was used. Without it the
+    // suggested re-run is refused for the very reason this run was allowed, which sends the
+    // operator hunting for the flag they already passed.
+    const source = restoring ? `--restore ${displayPath(resolve(options.restore))}` : `--type ${key}`;
+    const attest = options.operatorApproved ? ' --operator-approved' : '';
+    log(`  npm run policies:push -- ${source}${attest} --expect-live-sha=${liveSha} --confirm=${key}`);
     return { mutated: false, reason: 'dry-run', liveSha, sendSha, diff, headingDiff };
   }
 

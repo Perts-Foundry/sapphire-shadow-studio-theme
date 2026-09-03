@@ -135,6 +135,15 @@ the freshness gate, a clean check, a clean merged tree, and a verified backup. `
 absolute refusal that no flag overrides, because that is the blast-radius boundary: CI must never
 hold a credential that can rewrite a legal policy.
 
+**The reviewed-tree gate judges the bodies and the manifest differently, and it took a live push to
+notice.** The first version required the whole of `marketing/policies/` to be clean. A successful
+push writes the manifest's `remote` token itself, so the moment the `contact_information` canary
+landed, the shipping push was refused for the canary's own side effect: a change that cannot affect
+what is sent, on a protected `main`, meaning a PR per push. The gate now requires the policy BODIES
+committed (those are the bytes that reach customers) while allowing the manifest to differ from
+`HEAD` in `remote` and `pulledAt` only. Every other manifest field still refuses, `sha256` above
+all, because a hand-edited one would defeat the freshness gate.
+
 **`--confirm` takes the policy name, not a boolean.** A bare `--confirm` is copy-pasteable out of
 shell history and is exactly the shape an agent reproduces from a README example; requiring
 `--confirm=<type>` to equal `--type` means one run's confirmation cannot be reused for a different

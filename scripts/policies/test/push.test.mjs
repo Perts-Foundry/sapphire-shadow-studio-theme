@@ -23,6 +23,7 @@ import {
   loadRestore,
   parseArgs,
   resolveType,
+  reviewedManifestShape,
   run,
   writeBackup,
 } from '../push.mjs';
@@ -218,9 +219,73 @@ test('no workflow wires policies:push', () => {
 // Step 2: repo gates
 // ---------------------------------------------------------------------------------------------
 
-test('a dirty working tree under marketing/policies/ is a refusal', () => {
-  const fakeGit = (root, args) => (args[0] === 'status' ? ' M marketing/policies/shipping_policy.html' : '');
-  assert.throws(() => assertReviewedTree('/x', { run: fakeGit }), /uncommitted changes/);
+test('a dirty policy BODY is a refusal: those are the bytes that reach customers', () => {
+  const fakeGit = (root, args) =>
+    args[0] === 'status' && args.some((a) => a.endsWith('*.html')) ? ' M marketing/policies/shipping_policy.html' : '';
+  assert.throws(() => assertReviewedTree('/x', { run: fakeGit }), /uncommitted policy bodies/);
+});
+
+test('a manifest dirty ONLY in remote/pulledAt passes: a push writes those itself', () => {
+  // Requiring a pristine manifest made every successful push block the NEXT one until its own side
+  // effect had been committed, for a change that cannot affect what is sent. Hit in practice
+  // immediately after the contact_information canary landed.
+  const root = makeRoot();
+  try {
+    const committed = readManifestRaw(root);
+    const bumped = JSON.parse(committed);
+    bumped.policies.contact_information.remote = { sha256: 'a'.repeat(64), length: 99, observedAt: NOW };
+    bumped.policies.shipping_policy.pulledAt = '2027-01-01T00:00:00.000Z';
+    writeRaw(root, 'manifest.json', formatManifest(bumped));
+
+    const fakeGit = (r, args) => {
+      if (args[0] === 'status') return args.some((a) => a.endsWith('manifest.json')) ? ' M marketing/policies/manifest.json' : '';
+      if (args[0] === 'show') return committed;
+      if (args[0] === 'rev-parse') return 'aaa';
+      return '';
+    };
+    assert.deepEqual(assertReviewedTree(root, { run: fakeGit }), { unreviewed: false });
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('a manifest dirty in REVIEWED content still refuses, so a hand-edited sha cannot slip through', () => {
+  // sha256 is what the freshness gate reads. If a dirty one passed, the gate could be defeated by
+  // editing the file rather than by any legitimate route.
+  const root = makeRoot();
+  try {
+    const committed = readManifestRaw(root);
+    for (const mutate of [
+      (m) => { m.policies.shipping_policy.sha256 = 'b'.repeat(64); },
+      (m) => { m.policies.shipping_policy.length = 1; },
+      (m) => { m.policies.shipping_policy.headings = []; },
+      (m) => { m.policies.shipping_policy.handle = 'elsewhere'; },
+      (m) => { m.policies.privacy_policy.writable = true; },
+    ]) {
+      const edited = JSON.parse(committed);
+      mutate(edited);
+      writeRaw(root, 'manifest.json', formatManifest(edited));
+      const fakeGit = (r, args) => {
+        if (args[0] === 'status') return args.some((a) => a.endsWith('manifest.json')) ? ' M marketing/policies/manifest.json' : '';
+        if (args[0] === 'show') return committed;
+        return '';
+      };
+      assert.throws(
+        () => assertReviewedTree(root, { run: fakeGit }),
+        /beyond the `remote` and `pulledAt` observation fields/,
+      );
+    }
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('reviewedManifestShape ignores exactly the observation fields and nothing else', () => {
+  const base = { policies: { a: { sha256: 'x', length: 1, remote: { sha256: 'r1' }, pulledAt: 'p1' } } };
+  const moved = { policies: { a: { sha256: 'x', length: 1, remote: { sha256: 'r2' }, pulledAt: 'p2' } } };
+  const changed = { policies: { a: { sha256: 'y', length: 1, remote: { sha256: 'r1' }, pulledAt: 'p1' } } };
+  assert.equal(reviewedManifestShape(JSON.stringify(base)), reviewedManifestShape(JSON.stringify(moved)));
+  assert.notEqual(reviewedManifestShape(JSON.stringify(base)), reviewedManifestShape(JSON.stringify(changed)));
 });
 
 test('HEAD not an ancestor of origin/main is a refusal, and --allow-unreviewed is the escape hatch', () => {
@@ -233,9 +298,13 @@ test('HEAD not an ancestor of origin/main is a refusal, and --allow-unreviewed i
   assert.deepEqual(assertReviewedTree('/x', { run: fakeGit, allowUnreviewed: true }), { unreviewed: true });
 });
 
-test('--allow-unreviewed still refuses a dirty tree', () => {
-  const fakeGit = (root, args) => (args[0] === 'status' ? '?? marketing/policies/x.html' : '');
-  assert.throws(() => assertReviewedTree('/x', { run: fakeGit, allowUnreviewed: true }), /uncommitted changes/);
+test('--allow-unreviewed waives the ancestor check, never the dirty-body check', () => {
+  const fakeGit = (root, args) =>
+    args[0] === 'status' && args.some((a) => a.endsWith('*.html')) ? '?? marketing/policies/x.html' : '';
+  assert.throws(
+    () => assertReviewedTree('/x', { run: fakeGit, allowUnreviewed: true }),
+    /uncommitted policy bodies/,
+  );
 });
 
 test('an unclean policies:check refuses the push before anything is sent', async () => {

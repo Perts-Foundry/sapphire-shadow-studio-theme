@@ -134,10 +134,18 @@ name means one run's confirmation cannot be reused for a different policy by acc
    `CI` set is an absolute refusal that no flag overrides: CI never holds a credential that can
    rewrite a legal policy. The TTY-or-attestation half only asks "did a human ask for this"; it
    authorizes no particular write, and every gate below still applies unchanged.
-2. `policies:check` clean, a clean working tree under `marketing/policies/`, and `HEAD` an ancestor
-   of `origin/main`, so the bytes that reach customers are bytes a reviewer saw.
-   The recovery is to merge the PR. `--allow-unreviewed` exists for the case where **the operator**
-   is deliberately running a pre-merge canary, and for nothing else.
+2. `policies:check` clean; the policy **bodies** committed; and `HEAD` an ancestor of `origin/main`,
+   so the bytes that reach customers are bytes a reviewer saw. The recovery is to merge the PR.
+   `--allow-unreviewed` exists for the case where **the operator** is deliberately running a
+   pre-merge canary, and for nothing else; it waives the ancestor half only, never the dirty-body
+   half.
+
+   The **manifest** is judged differently from the bodies: it may differ from `HEAD` in `remote` and
+   `pulledAt` only. Those are observations the tool writes, not reviewed content, and neither can
+   change what a push sends. Requiring a pristine manifest meant every successful push blocked the
+   next one until its own side effect had been committed, which on a protected `main` is a PR per
+   push. Every other field still refuses, `sha256` above all: a hand-edited one would defeat the
+   freshness gate.
 3. Fetch live. Identical to the repo body means exit 0 with no mutation.
 4. **Freshness:** live sha must equal `remote.sha256`. This is the control that turns "silently
    clobber an Admin edit made three months ago" into a refusal, and it costs one manifest field.
@@ -181,8 +189,8 @@ the backup file rather than the tree, and it exists precisely to overwrite what 
 
 It leaves the `<type>.html` **body** untouched, but it does move the manifest's `remote` token,
 because Admin now holds the restored bytes and `remote` is the record of that. So a restore leaves
-`marketing/policies/` dirty, and the **next** push's clean-tree gate will refuse until you commit
-it. Commit the manifest, then run `policies:pull` if you want the body reconciled too.
+`marketing/policies/` dirty. Commit the manifest, then run `policies:pull` if you want the body
+reconciled too.
 
 ## Hygiene rules (fail closed)
 
