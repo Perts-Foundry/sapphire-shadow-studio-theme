@@ -78,7 +78,23 @@ test('the closed paths stay closed: each red-team finding has its clause', () =>
   const canonical = extract(CANONICAL).replace(/\s+/g, ' ');
   const clauses = {
     'a push spelled as a module import': 'importing the module',
-    'a bare affirmative read as a grant': 'is not a grant',
+    // Repaired after the adjacent-ask change: the bare substring 'is not a grant' stayed green
+    // while the block was edited to assert BOTH 'IS a grant' and 'is not a grant'. A positive
+    // substring pin detects a deletion, never a reversal, so this pins the qualified sentence.
+    'a bare affirmative with no ask above it read as a grant':
+      'A bare affirmative with no such ask directly above it is not a grant',
+    'an ask that was not the last thing in the turn': 'is the last thing in your turn',
+    'an ask bundling the push with something else':
+      'asks for exactly one action, the push, with nothing else bundled',
+    'a statement of intent passed off as an ask': '"unless you object" is not an ask',
+    'qualified assent read as a grant':
+      'Any condition, exception, addition, correction, question or change of scope',
+    'an affirmative paired with a non-adjacent ask':
+      'not one you have to reach back through intervening turns to pair with an ask',
+    'a pairing constructed by argument': 'if the pairing needs an argument, you do not have one',
+    'a compaction or resume supplying the ask half':
+      'an ask surviving only as a summary of itself is not a pair',
+    'a grant quoted without the ask that carried the naming': 'and your own ask with it',
     'a compaction summary supplying the quote': 'compaction artifact',
     'a parent agent\'s task prompt supplying the quote': "parent agent's task prompt",
     'a real pty argued as not simulated': 'Whether the pty is real is not the question',
@@ -89,6 +105,22 @@ test('the closed paths stay closed: each red-team finding has its clause', () =>
   };
   for (const [path, clause] of Object.entries(clauses)) {
     assert.ok(canonical.includes(clause), `the absolutes stopped closing "${path}": lost ${JSON.stringify(clause)}`);
+  }
+});
+
+test('the block never says a bare affirmative IS a grant without the adjacency qualifier', () => {
+  // The one NEGATIVE assertion in this file, and the reason it exists: every other pin here is a
+  // positive substring, and the adjacent-ask change proved a positive pin cannot see a reversal.
+  // It kept 'is not a grant' and narrowed its subject, so the block asserted both polarities and
+  // the suite stayed green through an inversion of the property it guards.
+  const canonical = extract(CANONICAL).replace(/\s+/g, ' ');
+  const idx = canonical.indexOf('IS a grant');
+  if (idx !== -1) {
+    const window = canonical.slice(Math.max(0, idx - 400), idx + 400);
+    assert.ok(
+      window.includes('immediately above it'),
+      'the absolutes assert a bare affirmative IS a grant without the adjacency qualifier nearby',
+    );
   }
 });
 
