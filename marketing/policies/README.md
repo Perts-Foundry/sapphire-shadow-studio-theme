@@ -235,6 +235,20 @@ Mitigations: the fake's response fixtures are shaped from a real captured `pull`
 real push must be a canary on `contact_information`** (1.2 KB) with the backup verified by hand,
 before anything touches the shipping policy. Capture that first real push response as a fixture.
 
+### The git fake, and why it is strict
+
+Everything the gates learn about git arrives through an injected `run`. A fake that answers a
+default for an argv it does not recognise makes an absent gate indistinguishable from a passing
+one; two tests shipped that way and passed vacuously, because the fake matched a bare filename
+against production code that emits a full pathspec.
+
+So `makeGitFake` in `test/helpers.mjs` matches on **deep equality of the full argv array** and
+throws `UnexpectedGitInvocation` on anything else, and `run.assertExhausted` closes the other half:
+an expectation nobody invoked is a gate that did not run. `test/test-hygiene.test.mjs` makes it the
+only fake in the directory, and `test/git-integration.test.mjs` runs the same gates against a real
+`git init`ed repository with nothing injected, because no fake can prove the pathspec production
+code emits is one real git accepts.
+
 ## Not in CI, deliberately
 
 Both CI steps are **offline by contract**. Do not add `policies:pull --check` to

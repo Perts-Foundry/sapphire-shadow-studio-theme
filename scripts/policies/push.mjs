@@ -35,7 +35,7 @@
 // and root defaulting live in `main` only, so a test that forgets to inject the fake cannot reach
 // the live store.
 
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -284,6 +284,10 @@ export function assertReviewedTree(root, { allowUnreviewed = false, run = git } 
  */
 export function writeBackup({ dir, type, live, now, domain }) {
   mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  // `mkdirSync`'s mode argument applies only to a directory it CREATES, and is masked by umask
+  // besides. An existing 0755 state directory would silently keep its mode, and the file below
+  // holds a full policy body. Set it explicitly. POSIX only: chmod is close to a no-op on Windows.
+  if (process.platform !== 'win32') chmodSync(dir, DIR_MODE);
   const file = join(dir, backupFileName(type, now));
   if (existsSync(file)) throw new PolicyError(file, 'a backup with this name already exists; refusing to overwrite it');
   const record = {
@@ -303,6 +307,9 @@ export function writeBackup({ dir, type, live, now, domain }) {
   } finally {
     closeSync(fd);
   }
+  // Same reasoning as the directory: `openSync`'s mode is masked by umask, and umask can only
+  // remove bits from 0600, but saying it explicitly is what the test can assert.
+  if (process.platform !== 'win32') chmodSync(file, FILE_MODE);
   const readBack = JSON.parse(readFileSync(file, 'utf8'));
   if (readBack.type !== type) throw new PolicyError(file, 'backup read back with the wrong type; refusing to mutate');
   if (sha256(canonicalise(readBack.body)) !== record.sha256) {

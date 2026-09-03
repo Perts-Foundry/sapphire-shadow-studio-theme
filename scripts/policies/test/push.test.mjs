@@ -32,11 +32,14 @@ import { FILE_MODE } from '../lib/backups.mjs';
 import { PolicyError, bodyFromFileText, canonicalise, fileTextFor, formatManifest } from '../lib/policies.mjs';
 import {
   BODIES,
+  GIT_ARGV,
   NOW,
+  UnexpectedGitInvocation,
   assertTreeUnchanged,
   cleanup,
   liveFrom,
   makeClient,
+  makeGitFake,
   makeRoot,
   policiesDir,
   readManifestRaw,
@@ -220,9 +223,14 @@ test('no workflow wires policies:push', () => {
 // ---------------------------------------------------------------------------------------------
 
 test('a dirty policy BODY is a refusal: those are the bytes that reach customers', () => {
-  const fakeGit = (root, args) =>
-    args[0] === 'status' && args.some((a) => a.endsWith('*.html')) ? ' M marketing/policies/shipping_policy.html' : '';
+  // The expectation IS the pathspec production code must emit. A fake that matched on
+  // `a.endsWith('*.html')` passed while `git status --porcelain -- marketing/policies/*.html`
+  // could have been anything at all; that is the #154 defect, and deep argv equality removes it.
+  const fakeGit = makeGitFake([
+    { args: GIT_ARGV.statusBodies, result: ' M marketing/policies/shipping_policy.html' },
+  ]);
   assert.throws(() => assertReviewedTree('/x', { run: fakeGit }), /uncommitted policy bodies/);
+  fakeGit.assertExhausted(assert, 'dirty-body gate');
 });
 
 test('a manifest dirty ONLY in remote/pulledAt passes: a push writes those itself', () => {
@@ -237,13 +245,16 @@ test('a manifest dirty ONLY in remote/pulledAt passes: a push writes those itsel
     bumped.policies.shipping_policy.pulledAt = '2027-01-01T00:00:00.000Z';
     writeRaw(root, 'manifest.json', formatManifest(bumped));
 
-    const fakeGit = (r, args) => {
-      if (args[0] === 'status') return args.some((a) => a.endsWith('manifest.json')) ? ' M marketing/policies/manifest.json' : '';
-      if (args[0] === 'show') return committed;
-      if (args[0] === 'rev-parse') return 'aaa';
-      return '';
-    };
+    const fakeGit = makeGitFake([
+      { args: GIT_ARGV.statusBodies, result: '' },
+      { args: GIT_ARGV.statusManifest, result: ' M marketing/policies/manifest.json' },
+      { args: GIT_ARGV.showManifest, result: committed },
+      { args: GIT_ARGV.revParseHead, result: 'aaa' },
+      { args: GIT_ARGV.revParseBase, result: 'bbb' },
+      { args: GIT_ARGV.isAncestor('aaa', 'bbb'), result: '' },
+    ]);
     assert.deepEqual(assertReviewedTree(root, { run: fakeGit }), { unreviewed: false });
+    fakeGit.assertExhausted(assert, 'clean-manifest path');
   } finally {
     cleanup(root);
   }
@@ -265,15 +276,16 @@ test('a manifest dirty in REVIEWED content still refuses, so a hand-edited sha c
       const edited = JSON.parse(committed);
       mutate(edited);
       writeRaw(root, 'manifest.json', formatManifest(edited));
-      const fakeGit = (r, args) => {
-        if (args[0] === 'status') return args.some((a) => a.endsWith('manifest.json')) ? ' M marketing/policies/manifest.json' : '';
-        if (args[0] === 'show') return committed;
-        return '';
-      };
+      const fakeGit = makeGitFake([
+        { args: GIT_ARGV.statusBodies, result: '' },
+        { args: GIT_ARGV.statusManifest, result: ' M marketing/policies/manifest.json' },
+        { args: GIT_ARGV.showManifest, result: committed },
+      ]);
       assert.throws(
         () => assertReviewedTree(root, { run: fakeGit }),
         /beyond the `remote` and `pulledAt` observation fields/,
       );
+      fakeGit.assertExhausted(assert, 'reviewed-content refusal');
     }
   } finally {
     cleanup(root);
@@ -288,23 +300,64 @@ test('reviewedManifestShape ignores exactly the observation fields and nothing e
   assert.notEqual(reviewedManifestShape(JSON.stringify(base)), reviewedManifestShape(JSON.stringify(changed)));
 });
 
-test('HEAD not an ancestor of origin/main is a refusal, and --allow-unreviewed is the escape hatch', () => {
-  const fakeGit = (root, args) => {
-    if (args[0] === 'status') return '';
-    if (args[0] === 'rev-parse') return args[1] === 'HEAD' ? 'aaa' : 'bbb';
-    throw new Error('not an ancestor');
-  };
+test('HEAD not an ancestor of origin/main is a refusal', () => {
+  const fakeGit = makeGitFake([
+    { args: GIT_ARGV.statusBodies, result: '' },
+    { args: GIT_ARGV.statusManifest, result: '' },
+    { args: GIT_ARGV.revParseHead, result: 'aaa' },
+    { args: GIT_ARGV.revParseBase, result: 'bbb' },
+    { args: GIT_ARGV.isAncestor('aaa', 'bbb'), throws: new Error('not an ancestor') },
+  ]);
   assert.throws(() => assertReviewedTree('/x', { run: fakeGit }), /not an ancestor of origin\/main/);
+  fakeGit.assertExhausted(assert, 'ancestor refusal');
+});
+
+test('--allow-unreviewed is the escape hatch, and it never reaches the ancestor check at all', () => {
+  // Registering the rev-parse argvs and asserting they went UNUSED is the point: an
+  // `--allow-unreviewed` that still resolved refs would be a different tool from the one
+  // documented, and a permissive fake could not tell the difference.
+  const fakeGit = makeGitFake([
+    { args: GIT_ARGV.statusBodies, result: '' },
+    { args: GIT_ARGV.statusManifest, result: '' },
+  ]);
   assert.deepEqual(assertReviewedTree('/x', { run: fakeGit, allowUnreviewed: true }), { unreviewed: true });
+  fakeGit.assertExhausted(assert, 'allow-unreviewed path');
+  assert.deepEqual(
+    fakeGit.calls.map((c) => c.args),
+    [GIT_ARGV.statusBodies, GIT_ARGV.statusManifest],
+    '--allow-unreviewed resolved a ref it should never have touched',
+  );
 });
 
 test('--allow-unreviewed waives the ancestor check, never the dirty-body check', () => {
-  const fakeGit = (root, args) =>
-    args[0] === 'status' && args.some((a) => a.endsWith('*.html')) ? '?? marketing/policies/x.html' : '';
+  const fakeGit = makeGitFake([
+    { args: GIT_ARGV.statusBodies, result: '?? marketing/policies/x.html' },
+  ]);
   assert.throws(
     () => assertReviewedTree('/x', { run: fakeGit, allowUnreviewed: true }),
     /uncommitted policy bodies/,
   );
+  fakeGit.assertExhausted(assert, 'allow-unreviewed dirty body');
+});
+
+test('the git fake refuses an argv nobody registered, rather than defaulting to ""', () => {
+  // The meta-guard on the guard. If this ever returns a value instead of throwing, every gate
+  // test in this file silently becomes a test of the fake.
+  // git-fake-not-exhausted: this fake is the subject, so its one expectation is never invoked.
+  const fakeGit = makeGitFake([{ args: ['status', '--porcelain'], result: '' }]);
+  assert.throws(
+    () => fakeGit('/x', GIT_ARGV.statusBodies),
+    (err) => err.name === 'UnexpectedGitInvocation' && err instanceof UnexpectedGitInvocation,
+  );
+});
+
+test('assertExhausted fails when a registered expectation was never invoked', () => {
+  const fakeGit = makeGitFake([
+    { args: GIT_ARGV.statusBodies, result: '' },
+    { args: GIT_ARGV.revParseHead, result: 'aaa' },
+  ]);
+  fakeGit('/x', GIT_ARGV.statusBodies);
+  assert.throws(() => fakeGit.assertExhausted(assert, 'partial'), /never invoked/);
 });
 
 test('an unclean policies:check refuses the push before anything is sent', async () => {
