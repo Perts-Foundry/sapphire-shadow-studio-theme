@@ -253,10 +253,10 @@
       "handle": "terms-of-service",
       "writable": true,
       "stamped": true,
-      "version": 1,
-      "coreSha256": "0fd7fd531a04dec870829fe491745aeffee35176b225ba6081214839191e9bfb",
-      "sha256": "635ac771a13401184a772b80d27893cb59326e68be17c910e2167d6556b2b2bd",
-      "length": 23097,
+      "version": 3,
+      "coreSha256": "d6d8b801ff4f7e1eec14906000a79ed9a0e940dab8ad81905e2da7c130802eb2",
+      "sha256": "c376c3982dc004b626c73e2c504f4dd5f0424287a70576cb044b4392e476ab2a",
+      "length": 22921,
       "headings": []
     }
   }
