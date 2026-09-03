@@ -59,7 +59,10 @@ rendered preview against the brand; input is a rendered HTML file, `--dump <cons
 or `--preview-response <file>`, the editor's EmailTemplateGeneratePreview response and the
 reliable way to get a render, since the Preview dialog's iframe is an `about:srcdoc` frame no
 script can be injected into; `--manifest` and `--css` override the checkout's for a rollback), `html-walk.mjs` (its
-parser), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
+parser), `classify.mjs` (applies the skill's match table to a set of Admin readings and prints the
+sync plan table), `before-doc.mjs` (materialises the document Admin held before a paste, from the
+stock snapshot or from the editor's `EmailTemplate` response, refused unless it hashes to the
+expected numbers and, with `--expect-gid`, answers for the expected template), `clipboard.mjs` (copies a file for the paste step), `state.mjs` (the skill's per-store
 state file) and `browser/` (the probe scripts the skill injects into the Admin editor).
 
 ## Versioning
@@ -105,20 +108,25 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 
 `.claude/skills/notification-templates/` automates the whole lifecycle from a Claude Code session:
 `change` (edit, regenerate, render-check, PR), `sync` (paste every template that differs by bytes,
-byte-verified before Save and after reload), `audit` (which version each Admin template holds, and
+byte-verified before Save and after reload, then render-checked on the stored version, with the
+previous document pasted back if that render fails), `audit` (which version each Admin template holds, and
 whether it renders), `record` (the drift procedure below) and `rollback` (re-paste an earlier
 version from git). It is operator-invoked, drives the Admin editor through the chrome-devtools MCP,
-and keeps a per-store state file outside the checkout as a hint. A single published locale is
+and keeps a per-store state file outside the checkout: a hint for what Admin holds, and the record
+of a `sync` in flight, so an interrupted run resumes with `sync --resume` rather than a
+hand-written handoff. A single published locale is
 assumed; re-check `shopLocales` in Admin if that changes, since notification templates are per
 language.
 
 ## Paste procedure
 
-The skill's `sync` mode automates these steps and adds the byte verification; this is the manual
-form.
+The skill's `sync` mode does the same paste with byte verification, saving before it previews
+(see below); this is the manual form.
 
 1. Admin > **Settings** > **Notifications** > **Customer notifications** > pick the template >
-   **Edit code**.
+   **Edit code**. The editor paints Shopify's **stock** body first and swaps the saved override in
+   a moment later, so give it a second before judging what is in there; the first thing on screen
+   is not necessarily what is stored.
 2. In the editor, select all and paste the whole repo file `<id>.liquid` over it.
 3. Use the editor's preview to check the render before saving. For the six templates with a
    body-side disclaimer paragraph (see the override list below), preview with a fulfillment that
@@ -126,11 +134,14 @@ form.
    tracking line must read as body text, not footer text.
 4. **Save.**
 
-Two templates cannot be previewed before saving: `ready_for_pickup` and `pickup_receipt`. Their
-editor preview renders the stored template and ignores the unsaved editor contents (verified by
-pasting a different template's body and getting the same stock render), while every other template
-previews the paste. For those two, save, reload, then preview; if the stored render is wrong, paste
-`stock/<id>.liquid` back and save, or use the editor's **Revert to default**.
+Three templates cannot be previewed before saving: `ready_for_pickup`, `pickup_receipt` and
+`change_requested`. Their editor preview renders the stored template and ignores the unsaved editor
+contents (verified by pasting a different template's body and getting the same stock render), while
+every other template tried so far previews the paste; the list is what has been observed, not a
+closed set. For those, save, reload, then preview; if the stored render is wrong, paste back what
+the editor held before and save (`stock/<id>.liquid` if that is what it was), or use the editor's
+**Revert to default**. The skill's `sync` saves first for every template and restores the previous
+document on a failed render, so it does not depend on knowing the list.
 
 Subject lines stay as they are in Admin; the manifest records them for reference and the
 generator never touches them. After the paste, the **Accent colour** setting under Settings >
@@ -187,11 +198,19 @@ do not, the manifest entry carries an `override` object with a `reason` and one 
 A fifth field, `skip`, with a reason string, would leave a template stock: no branded file is
 generated and the check refuses if one exists. No template is skipped today.
 
-One layout note that no override records, because the generator handles it correctly and it is
-stock behaviour: `customer_email_address_changed_confirmation` is the only template with a second
-`<style>` block, Shopify-authored, after `</head>`. It is left in place (it references no accent
-colour), and because it comes after `brand-style.css` its bare `a` rule wins over the brand link
-colour in the body. Header and footer are unaffected. Accept it.
+**A known defect, recorded here because this paragraph used to say it was harmless.**
+`customer_email_address_changed_confirmation` is the only template with a second `<style>` block,
+Shopify-authored, after `</head>`. It is left in place, and because it comes after
+`brand-style.css` every rule in it wins on cascade order. The note here used to say that was fine
+because the block references no accent colour. It is not fine: the block sets
+`body { background-color: #ffffff; }`, which beats the branded `#e1edf5` and renders the page
+white. The first `sync` of this template failed its `page-colour` render check on exactly that,
+was restored to stock, and the id is still unsynced.
+
+The fix is a `change` run (an override in `manifest.json`, then `npm run notifications:generate`),
+not a `sync` one, and it has not been made yet. Until it is, treat any template with a second
+`<style>` block as suspect and check the render before trusting it; the generator does not
+neutralise the block and nothing offline catches it.
 
 ## Drift: catching up with a Shopify change to a stock template
 
@@ -215,7 +234,10 @@ stock, unbranded:
 `record-stock.mjs` also accepts `--envelope <path>` (a JSON file carrying the id and text) and
 `--dump <path...>` (console output from `scripts/notifications/browser/editor-dump.js`, reassembled
 by `dump.mjs` and checked against its own length and hash), for recording without the
-copy-into-a-file step. The skill's `record` mode is this procedure with its gates.
+copy-into-a-file step. The skill's `record` mode is this procedure with its gates, and it takes
+step 2 from the editor's `EmailTemplate` network response through `before-doc.mjs` rather than from
+the console, because a console dump below the harness's persist threshold would have to be retyped
+by hand.
 
 ## Templates
 

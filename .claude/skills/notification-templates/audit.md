@@ -3,10 +3,15 @@
 Read every Admin template (or the id list) and compare it to the repo, without pasting anything.
 Full by default; `--quick` skips the previews.
 
-1. **Read** (browser opt-in ask first, its own turn). For each id, navigate with
-   `editor-probe.js` and read `SSSPOLL`, `SSSSTAMP` and `SSSREVERT`, exactly as in the `sync` read
-   pass, and classify with the `sync` table, in its order (`SSSREVERT` corroborates an
-   `unstamped-stock` row when it is not `unknown`). `--from` defaults to `origin/main`.
+1. **Read** (browser opt-in ask first, its own turn). `<scratch>` is a checkout of `--from`, made
+   the way `sync.md` step 1 makes it; `--from` defaults to `origin/main`. For each id, navigate
+   with `editor-probe.js` and take the whole reading from the stored pair, `SSSSTORED` and
+   `SSSSTOREDSTAMP`, with `SSSREVERT` alongside: never `SSSPOLL`/`SSSSTAMP`, which can still be
+   reporting the stock body (`browser.md`, The load race). Record the readings as
+   `<id>\t<length>\t<fnv>\t<stamp>\t<gid>` and classify them in one pass with
+   `node scripts/notifications/classify.mjs --root <scratch> --observed <file>
+   --audit-json <results.json>`, never by eye (`SSSREVERT` corroborates an `unstamped-stock` row
+   when it is not `unknown`).
 
 2. **Render** (skipped under `--quick`). For each stamped id, open Preview, read it from the
    network response, and run
@@ -16,9 +21,11 @@ Full by default; `--quick` skips the previews.
    ids, and `orphan` or `hash-mismatch` ids (whose `version` check fails by construction), get
    `render: skipped`, with the reason in the table.
 
-3. **Output.** A table with id, repo version, Admin version, `match`, `render`, then one final
-   line: `all <N> in sync` (N from `--status`) or the list that is not. Write the table to the scratchpad, never the
-   repo. Record the structured result:
+3. **Output.** The `classify.mjs` table plus a `render` column, then one final line:
+   `all <N> in sync` (N from `--status`) or the list that is not. Write the table to the
+   scratchpad, never the repo. Record the structured result:
    `node scripts/notifications/state.mjs --store <store> audit <results.json>`, where the JSON is
-   `{ <id>: { adminVersion, repoVersion, match, render } }` with `adminVersion` null when
-   unstamped. Suggest `sync` for anything not `in-sync`; never start it from here.
+   `{ <id>: { adminVersion, repoVersion, match, render } }` with `adminVersion` null whenever the
+   stamp does not name the id, which is every unstamped row and every `orphan` one. `classify.mjs --audit-json` writes that shape with every `render` set to `skipped`;
+   fill in the ones step 2 actually rendered before recording it. Suggest `sync` for anything not
+   `in-sync`; never start it from here.

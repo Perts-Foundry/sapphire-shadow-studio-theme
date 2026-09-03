@@ -247,6 +247,93 @@ default paragraph colour after the class rule. Cosmetic, consistent, and left al
 a higher-specificity rule, a regeneration of all 46 files and a re-paste of every saved template,
 so it is a decision for after the paste waves, not during them.
 
+**A third such template, and what `sync` does about it (2026-09-02).** The first full `sync` found
+`change_requested` ignoring unsaved edits the same way (the preview mutation carried the stamped
+branded body; the render came back unstamped and stock-coloured) and stopped on its render check
+with nothing saved, as the mode was written to. That was the rule working against a non-fault:
+the check gated Save on a preview that, for an unknown subset of ids, cannot see the paste. `sync`
+now saves first on every id and render-checks the stored version, so the check sees the paste
+everywhere; if the render fails, it pastes back the document the editor held before the paste and
+saves that, byte-verified against the numbers the operator approved for that id. The restore
+source is what Admin actually held, whatever its provenance, rather than the latest commit,
+because 18 of the 46 editors held a pre-merge paste that exists in no commit; it comes from the
+editor's own `EmailTemplate` response, or from `stock/<id>.liquid` for an id whose observed bytes
+are the recorded stock snapshot (see the next entry, which replaced the console dump this
+paragraph originally described). The cost is a window of one preview's length during which a bad
+render is live, bounded by a byte-verified restore; the batch approval covers that extra Save.
+"Revert to default" stays out of `sync`.
+
+**What the first run of that `sync` cost, and what came out of it (2026-09-02).** 576 tool calls
+and four and a half hours to paste 8 of the 45 templates that run had in scope (the manifest holds
+46; `buy_online` was already in sync). Almost all of the overhead was the skill's, not Shopify's,
+and the fixes are now in the skill and in `scripts/notifications/`:
+
+- **The Admin editor has a load race.** It paints the stock body first and swaps the saved
+  override in a moment later, and `editor-probe.js` logs only on change, so an early console read
+  reports stock and looks settled across two reads seconds apart. That produced a false "this
+  template was reverted" alarm, cost a re-read of every id in scope, and was caught by the
+  operator rather than by the run. It only ever under-reports, so every byte gate failed safe, but
+  a classification taken from it is wrong. `editor-probe.js` now patches `fetch` and
+  `XMLHttpRequest` before the page's own scripts run and logs `SSSSTORED` from the `EmailTemplate`
+  GraphQL response, which is what Admin stores rather than what the widget is currently painting,
+  and is there on the first console read.
+- **The stamp had to move with it.** Fixing the length and FNV while leaving the stamp on the
+  widget read left the hole half open: `behind`, `ahead`, `hash-mismatch` and `orphan` all turn on
+  the stamp, so one read during the race reports `none` for a stored branded template and
+  downgrades it to `unstamped-edited` in the table the operator approves. The probe now parses the
+  stored document's first line too and logs `SSSSTOREDSTAMP`. A fix that leaves the racy source
+  wired to the decision it feeds is not a fix.
+- **The reading has to say which template it is for.** The `EmailTemplate` request's `variables`
+  are opaque, so nothing in the URL names a template, and the probe took the first matching
+  response after install. In a 46-id loop through a single-page app, a prefetched or in-flight
+  response from the previous id would then be reported as this id's stored document, and the byte
+  gate would compare the wrong document against numbers derived from that same wrong document and
+  pass. `SSSSTORED` now carries `data.emailTemplate.id`, and `before-doc.mjs --expect-gid` refuses
+  a response that answers for another template however well its bytes match.
+- **The answer to a race is never a fixed wait.** The run's response was 8 to 10 second settles
+  implemented as `node -e` spin loops: 39 of them, 311 seconds, a burned CPU core, and about 25
+  seconds per template of pure guesswork. A fixed wait can still be too short, which is how the
+  race got through in the first place. The rule now is to read and compare against the value you
+  expect, with `SSSSETTLED` as the positive signal when one is genuinely needed.
+- **No step may require transcribing a tool result into a file.** `sync.md` asked for each
+  before-dump to be written to disk "verbatim and whole", but `list_console_messages` has no file
+  output and the harness only spills above roughly 50 KB, so the instruction worked out at about
+  480 KB of hand transcription across one run. It was unimplementable at scale and the run stalled
+  on it at template 1 of 45. The restore source now comes from `data.emailTemplate.bodyHtml` in
+  the editor's own `EmailTemplate` response, or from `stock/<id>.liquid` for an id whose bytes are
+  the recorded stock, both through `before-doc.mjs` and both refused unless they hash to the
+  approved before-numbers. `editor-dump.js` is `record`-only again, which also removes a second
+  navigation per id.
+- **The match table is code now.** `classify.mjs` applies it once, with tests, instead of a run
+  hand-rolling an awk join over 46 readings and classifying by eye. It reproduces the previous
+  run's 36-row plan exactly, including the 18/18 stock-versus-hand-edited split.
+- **A run in flight lives in the state file.** `run` records the approved plan, the `--from` sha,
+  the render-failure policy, the position and the quarantine list, so `sync --resume` picks a run
+  up after a compaction or a crash. The previous run had to be handed over as a 185-line prose
+  document written by hand, twice.
+- **A failed render can quarantine instead of halting**, `--on-render-fail quarantine`, chosen at
+  the plan STOP so the operator approves the policy rather than being asked again mid-run. It is a
+  real relaxation (the set is left deliberately inconsistent) and the byte gates are untouched by
+  it: a pre-Save mismatch still never Saves, and a post-Save mismatch still stops the run. Both
+  policies record the failing id in the run's quarantine list, and that is load-bearing rather
+  than tidy: an id left unsettled is still the run's `next`, so a halted run that stayed resumable
+  would repaste the template that just failed, under the original approval, once per resume.
+- **The post-Save proof is the stored reading, not the widget's.** Cancelling a leave-page dialog
+  cancels the navigation, so a post-Save `SSSPOLL` is read off a widget that has held the pasted
+  text since before the Save: it equals the repo file whether or not Admin stored anything. The
+  check is now `SSSSTORED`, which comes from Admin's own response and cannot be satisfied by the
+  editor's local state.
+- **One path spelling.** The plan is classified against a checkout of `--from`, and the loop used
+  to paste from the working tree, byte-check against the working tree, and read the version from
+  whichever manifest it happened to run against. On a branch worktree with the default
+  `--from origin/main` those are different files, and the pre-Save check would compare the editor
+  against the same unapproved file it had just pasted and pass. Every template path in `sync.md`
+  is now under the `--from` checkout, the byte checks name the run's approved numbers rather than
+  "the repo file", and `seen --from-file` refuses a file that is not the approved `after`.
+- **A halt is terminal for the turn.** After the run stopped for a fresh approval, something kept
+  re-invoking the session and it re-emitted the same ask about a dozen times. An unmet goal is not
+  an authorisation; the gate contract now says to state the ask once and stop.
+
 **The page background is painted on the row tables and the body, not only on the `.body`
 table.** In `order_invoice` and `pending_payment_failure`, the stock "Amount to pay" block puts a
 `<table>` directly inside a `<tr>` with no `<td>` in the branch where nothing has been paid yet.
@@ -296,7 +383,7 @@ a version backwards on purpose; the skill clicks Save itself but only after the 
 byte-verified, and re-verifies after a reload, because the first session found that an unsaved
 paste and a saved one look the same in the editor; one STOP covers a whole `sync` batch, the
 operator's call, since the batch is up to 46 identical mechanical writes each verified before and
-after; and the render checker is a tag-stack walker rather than regex, which is what produced three
+after (plus, since 2026-09-02, at most one restoring Save, see above); and the render checker is a tag-stack walker rather than regex, which is what produced three
 false positives in the first checker (the navy test matched the row tables, not the containers).
 The browser probes are committed files run under `node:vm` by the tests so the FNV in the browser
 is provably the FNV in Node. The first end-to-end run of the `change` mode paid for the byte check at

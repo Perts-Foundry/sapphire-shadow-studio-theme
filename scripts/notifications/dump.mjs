@@ -18,7 +18,8 @@
 //                                                                  print (or write) the text
 //   node scripts/notifications/dump.mjs --hash <file>               print "<length> <fnv>" of a
 //                                                                  file, the numbers a probe's
-//                                                                  SSSPOLL line must match
+//                                                                  SSSPOLL or SSSSTORED line
+//                                                                  must match
 //
 // A persisted MCP console result is accepted in both of its shapes: plain text, and a JSON array
 // of { text } parts.
@@ -119,6 +120,49 @@ export function parsePoll(consoleText) {
   let last = null;
   let m;
   while ((m = re.exec(consoleText)) !== null) last = { length: Number(m[1]), hash: m[2], source: m[3] };
+  return last;
+}
+
+// The SSSSTORED line editor-probe.js prints on a cold navigation:
+// `SSSSTORED <length> <fnv> <gid>`, taken from the EmailTemplate response rather than from the
+// widget, so it is not exposed to the editor's load race (Admin renders the stock body first and
+// swaps the saved override in). Returns { length, hash, gid } for a reading, `unavailable` when a
+// matching response carried no usable body, or null when the probe saw no such response at all.
+//
+// The LAST line of either kind wins, in document order. That matters because the console buffer
+// can span navigations: preferring any numeric reading anywhere in the text would answer a
+// navigation that said `unavailable` with the PREVIOUS template's numbers, with no signal that
+// the reading is stale. Feed this the console of one navigation, and take the answer it gives.
+export function parseStored(consoleText) {
+  const re = /SSSSTORED (?:(\d+) ([0-9a-f]{8})(?: (\S+))?|unavailable)/g;
+  let last = null;
+  let m;
+  while ((m = re.exec(consoleText)) !== null) {
+    last = m[1] === undefined ? 'unavailable' : { length: Number(m[1]), hash: m[2], gid: m[3] === undefined || m[3] === '-' ? null : m[3] };
+  }
+  return last;
+}
+
+// The SSSSTOREDSTAMP line: the stamp parsed from the STORED document's first line, so a
+// classification never turns on the widget's racy first paint. Returns { id, version }, the string
+// `none` for an unstamped stored document, or null when the probe logged no such line. Last wins,
+// for the same reason as parseStored.
+export function parseStoredStamp(consoleText) {
+  const re = /SSSSTOREDSTAMP (?:([a-z0-9_]+) ([1-9][0-9]*)|none)/g;
+  let last = null;
+  let m;
+  while ((m = re.exec(consoleText)) !== null) last = m[1] === undefined ? 'none' : { id: m[1], version: Number(m[2]) };
+  return last;
+}
+
+// The SSSSETTLED line: the editor document stopped changing. A positive signal that the widget has
+// finished loading, so no step in the skill ever has to guess a settle interval. It re-arms after
+// a change, so the last line is the current document's settle. Last wins.
+export function parseSettled(consoleText) {
+  const re = /SSSSETTLED (\d+) ([0-9a-f]{8})/g;
+  let last = null;
+  let m;
+  while ((m = re.exec(consoleText)) !== null) last = { length: Number(m[1]), hash: m[2] };
   return last;
 }
 
