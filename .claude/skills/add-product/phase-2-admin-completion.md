@@ -18,15 +18,42 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
    rules; the tool paces itself now (one group per batch by default), so a seed covering many groups
    takes minutes rather than seconds and that is expected, not a hang.
    - Completion check: that skill's verify converges.
-4. `media` (route:/product-images; for a new design value, only if design-specific photos are
-   wanted: the gallery filters media by the COLOUR option, so existing colour-matched shots already
-   serve a new design correctly): stage 0 (studio enhance) for raw shots, then the normal
-   naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
+4. `media` (route:/product-images; a new SIZE or DESIGN value needs no new photos, because the
+   gallery filters on the COLOUR option and the existing colour-matched shots already serve them,
+   while a new COLOUR does need real photography because it has none of its own; every entry needs a
+   hero on its new variants, but only some can get one from the tool, see below): stage 0 (studio
+   enhance) for raw shots, then the normal naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
    `docs/product-media-alt-text.md`. Include the size-chart PNG upload with its descriptive alt.
    A non-garment product uses the `<handle>_<shot>-<index>` filename form; it has no Color option,
    so its alts are plain description (nothing binds, nothing is rejected) and there is no size-chart
    PNG.
    - Completion check: that skill's final handoff summary lists this product's uploads.
+   - **Every new variant needs a hero attached.** This is separate from the gallery, which filters
+     on alt text and so serves a new size or design correctly off the existing colour-matched
+     photos. A variant with NO attached media falls back to the PRODUCT-level
+     featured image, which is one colour, so a new Grey Heather or Classic Navy variant shows a
+     Black garment in cart line-item thumbnails and on collection cards. Silent, and invisible on
+     the product page where you would look for it.
+   - **Whether `--attach-heroes` can do it turns on one question: do the new variants land under a
+     colour that ALREADY has attached variants?** `variantsByColor` in
+     `scripts/upload-product-media.mjs` is keyed by the Color option value alone, and the run makes
+     one `productVariantAppendMedia` call per colour carrying every variant of that colour.
+     - **A new COLOUR, or a new product: the tool handles it.** That colour key holds only the new
+       variants and none of them has media, so the append succeeds. Run `--attach-heroes` on the
+       same batch that ships the new colour's photos, and get its dry-run preview, its dedup and its
+       alt sync along with it.
+     - **A new SIZE or DESIGN value: the tool cannot, so do it in Admin.** Those variants land under
+       EXISTING colours, so the same call also carries the variants that already have media; they
+       reject the second attachment, the local `gql` helper throws on the userErrors, and that whole
+       colour is abandoned. Two further reasons it does not fit this case anyway: it builds its plan
+       only from manifest rows the run is processing, so with no batch there is nothing to attach,
+       and running it over an older batch is the documented `admin_color`/`alt` drift trap in
+       `docs/product-media-alt-text.md`. Attach the colour's existing hero media to the new variants
+       by hand, or with a one-off `productVariantAppendMedia` scoped to just the unattached ones.
+   - Completion check for the attach: every variant of every colour reports at least one media, and
+     the DISTINCT media ids across a colour's variants number exactly one. A single variant can
+     never hold two (the platform caps it at one), so a second id means part of that colour took a
+     different hero, which is the signature of a half-applied append.
 5. `metafields-seo` (admin-manual, policy): set `custom.breadcrumb_collection` if the breadcrumb cascade
    needs steering (read `docs/breadcrumb-collection-metafield.md` first; the Storefronts-read
    access setting is the silent-fail step). Fill the Admin SEO title and description; SEOInput

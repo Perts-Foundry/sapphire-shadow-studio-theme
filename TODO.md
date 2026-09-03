@@ -40,7 +40,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Fix the low stock alert flow to handle gift cards. Gift card should be excluded.**
 - [ ] **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
 - [ ] **Update the inventory.**
-- [ ] **Add nurse practitioner NP to the lead to collection of products for Carol Ann.**
 - [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
 - [ ] **Confirm the judge.me review setup is correct for our store at this point.**
 - [ ] **Figure out the blog skill for the store**
@@ -191,19 +190,3 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   every product until the password comes off and then silently start working. Verified 2026-09-03
   against both `shift-fuel-tote` and the long-live `shift-fuel-crewneck`.
 
-- [ ] **Take the `NP (Nurse Practitioner)` design value live on the three Lead II products.** The
-  repo half is done: `scripts/sku/tables.json` carries the `NP` code, `docs/sku-scheme.md` lists it,
-  and the pinned cross-product in `scripts/sku/test/derive.test.mjs` is updated. The store half is
-  not. The durable reasoning is in `release-notes.md` ("A credential costs one table row"); in order:
-  add the option value in Admin on the crewneck, the quarter-zip and the women's vest (42 new
-  variants, 18 + 18 + 6, the vest being Black-only), price them at $65 after confirming no active
-  price list touches Lead II, set weights rather than inheriting the crewneck's known 0-lb ones, and
-  match sibling inventory policy; then `/sku` (audit, plan, dry-run, apply) for the 42 SKUs; then
-  `/blank-inventory backfill` (propose, tag, seed). **The backfill is the reason this is not a
-  five-minute job**: those 42 variants span 42 distinct blank groups, the inventory-sync Flow's
-  burst limit is roughly four groups per batch, so it takes about eleven batched runs with a
-  convergence check between each, and the low-stock alert Flow is worth pausing first. A partial run
-  is expected and safe: `blank-inventory audit --stale` is both the verification and the
-  resume-detection step. Finish with `sku audit` clean and every group converged. New product photos
-  are optional (the gallery filters media by colour, not design) and no `/seo-review` run is needed,
-  since no URL changes. Delete this item when that lands.
