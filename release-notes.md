@@ -1,5 +1,39 @@
 # Release Notes
 
+## An exclusion that held only by coincidence, and the write path it blocked (unreleased)
+
+`unmappedHandles` in `scripts/blank-inventory/lib/bodies.mjs` names every live product the manifest
+does not cover, and `loadStore` refuses every write path on a non-empty list. That refusal is
+correct and load-bearing: it is what makes a newly added product loud instead of silently absorbed
+into whichever blank pool its colour and size happen to match.
+
+It excluded non-garments with `if (v.tracked === false) continue;`. **That was never the rule it
+looked like.** A product declared `"body": null` is a non-garment, and the check is meant to skip
+it; being untracked is a different property that the gift card, the only declared non-garment at the
+time, happened to have as well. The two coincided, so the wrong test passed every run.
+
+`shift-fuel-tote` broke the coincidence. It is declared `"body": null` in `catalogue.json`, exactly
+as it should be, and it tracks real stock. So it fell through into the unmapped list, and `apply`,
+`untag` and `backfill --stage tag|seed` all refused with "1 product(s) have no declared body:
+shift-fuel-tote" against a manifest that was already correct. `audit` carried the matching WARN
+permanently. The tool was blocked on a catalogue with no error in it.
+
+The manifest already distinguishes declared-with-no-body from not-declared-at-all, and
+`nonGarmentProducts` already exported that partition, so the fix is to consult it: `loadStore` passes
+a `Set` of declared non-garment handles and `unmappedHandles` skips them explicitly. An undeclared
+product still lands in the list.
+
+**The remedy the error text proposes would have been actively wrong here, and that is the part worth
+remembering.** The message says to declare the product in `catalogue.json`, which is right for the
+case it was written for and false data for this one: a tote has no garment body, and inventing one
+would key its stock into a pool it shares with nothing. Untracking or untagging the tote to quieten
+the check would have broken its real stock instead. When a gate refuses on data that is correct, the
+gate's own suggested fix is a hypothesis, not an instruction.
+
+The next stock-tracking non-garment will not hit this. What it will hit is the remaining half of the
+same shape: every other place that reasons about non-garments by asking whether anything is tracked,
+rather than by asking the manifest.
+
 ## The launch swap produced a second email file, not an edit in place (unreleased)
 
 `marketing/emails/welcome.liquid` was written for a store behind a password gate, and
