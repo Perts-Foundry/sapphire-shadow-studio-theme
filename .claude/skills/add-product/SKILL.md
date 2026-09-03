@@ -31,10 +31,12 @@ its steps, tags, and per-step completion checks):
 
 ## Ground rules
 
-- **This skill never writes to the live store, and never uses an Admin write MCP tool for product
-  or variant creation even if one is present in the roster.** Product and variant creation is the
-  operator in the Admin UI; other live writes belong to the sub-skills. Read-only Admin queries
-  (MCP get-products and friends) are how completion is verified.
+- **This skill's own steps never write to the live store.** Other live writes belong to the
+  sub-skills. The one exception is phase 0: product and variant creation is the operator's, in the
+  Admin UI by default, or through the Admin API (MCP create-product, manage-product-variants, and
+  the repo's Admin client for weights) when the operator says so in that session, one draft at a
+  time and never ACTIVE. Read-only Admin queries (MCP get-products and friends) are how completion
+  is verified either way.
 - **catalogue.json is hand-edited in a reviewed PR only.** This skill proposes the diff and
   presents it; the edit lands only through the operator's reviewed PR, never applied by a script
   or an unattended run.
@@ -88,7 +90,8 @@ holds the completion check's concrete result (a path, an id, a count).
 
 | Entry | Declared first in | Repo artifacts touched | Sub-skills |
 |---|---|---|---|
-| New product | `catalogue.json` (product entry; body/line if new) | catalogue.json, `scripts/sku/tables.json`, `templates/product.<suffix>.json`, size-chart profile, locales; `scripts/lib/photo-naming.mjs` only if the body is new | size-chart, sku, product-images, blank-inventory (shared-blank bodies), seo-review; applique-grid only for the Huddle line |
+| New product | `catalogue.json` (product entry; body/line if new) | catalogue.json, `scripts/sku/tables.json`, `templates/product.<suffix>.json`, size-chart profile, locales; `scripts/lib/photo-naming.mjs` only if the body is new; plus the pinned-count tests listed in phase 1 | size-chart, sku, product-images, blank-inventory (shared-blank bodies), seo-review; applique-grid only for the Huddle line |
+| New non-garment (`body: null`, `line: null`; the tote is the model) | `catalogue.json` (product entry only) | catalogue.json, `scripts/sku/tables.json` (`segments: []` if option-less), `templates/product.<suffix>.json` with a `ProductDetails`-style `anchor_id`, `scripts/site-check/lib/markers.mjs` rule, the pinned-count tests listed in phase 1 | sku, product-images, seo-review; no size-chart, no blank-inventory, no photo-naming token |
 | New colour | `catalogue.json` (`colors`, and the body's colour list) | catalogue.json, `scripts/sku/tables.json` (colour code) | sku, product-images (alt text names the new colour), blank-inventory if the blank group changes, seo-review |
 | New size | `catalogue.json` (`sizes`, and the body's size list) | catalogue.json, `scripts/sku/tables.json` (size code), size-chart profile re-render | size-chart, sku, blank-inventory if shared-blank, seo-review |
 
@@ -128,7 +131,7 @@ data (`docs/structured-data.md`), settings and shipping predicates
 
 ## Non-goals
 
-This skill does NOT: write to the live store or Admin; edit catalogue.json (it proposes);
+This skill does NOT: write to the live store or Admin outside phase 0's operator-directed draft creation; edit catalogue.json (it proposes);
 commit, push, open the PR, or comment `deploy`; run a sub-skill's steps inline instead of routing
 to it; carry an approval from one gate, skill, or session to another; or continue past a halted
 deploy gate (a reconcile PR that deletes a theme file, or a smoke HARD-FAIL, is the operator's

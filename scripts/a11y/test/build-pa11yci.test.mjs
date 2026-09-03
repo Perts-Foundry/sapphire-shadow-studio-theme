@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildConfig, CHROME_PATH, PATHS_FILE, resolvePaths, resolvedPaths, PRODUCTS_MARKER } from '../build-pa11yci.mjs';
 import { parseCatalogue } from '../../lib/catalogue-manifest.mjs';
+import { ADDED_SINCE_BASELINE } from '../../catalogue/test/capture-baseline.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const paths = resolvedPaths();
@@ -253,11 +254,27 @@ test('FAIL CLOSED: a plain entry with no path throws rather than auditing "/unde
   assert.throws(() => resolvePaths(raw, TEST_MANIFEST), /neither a "path" nor a recognised "marker"/);
 });
 
-test('MATCHES PRODUCTION: the resolved product entries equal the six the file used to spell out', () => {
+// Products declared after the pre-migration capture are spelled out BY HAND in
+// ADDED_SINCE_BASELINE (next to the capture script) rather than derived, so the derivation is still
+// checked against an independent statement for them.
+
+test('MATCHES PRODUCTION: the resolved product entries equal the six the file used to spell out, plus the hand-listed additions', () => {
   // Byte-compared against the frozen pre-migration capture, so "derived" had to mean "identical".
   const baseline = JSON.parse(
     readFileSync(join(REPO_ROOT, 'scripts/catalogue/test/fixtures/pre-migration-baseline.json'), 'utf8')
   ).a11yProductEntries;
   const derived = resolvedPaths().paths.filter((e) => e.path.startsWith('/products/'));
-  assert.equal(JSON.stringify(derived), JSON.stringify(baseline));
+  const addedPaths = new Set(ADDED_SINCE_BASELINE.map((e) => e.path));
+  assert.equal(JSON.stringify(derived.filter((e) => !addedPaths.has(e.path))), JSON.stringify(baseline));
+  assert.deepEqual(derived.filter((e) => addedPaths.has(e.path)), ADDED_SINCE_BASELINE);
+  // Order is a manifest contract: the tote is declared before the gift card, not appended.
+  assert.deepEqual(derived.map((e) => e.label), [
+    'product (huddle crewneck)',
+    'product (lead ii crewneck)',
+    'product (lead ii quarter zip)',
+    'product (lead ii vest womens)',
+    'product (shift fuel crewneck)',
+    'product (shift fuel tote)',
+    'product (gift card)',
+  ]);
 });

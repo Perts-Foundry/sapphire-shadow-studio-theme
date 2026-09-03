@@ -3,7 +3,7 @@
 // an explicit noMarker with a reason. Reading the committed files here is fine; no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { installFetchGuard } from './harness.mjs';
@@ -43,6 +43,12 @@ test('every product template has a rule keyed by its template file', () => {
       assert.ok(rule.markers.some((m) => m.includes('SizeChart')), `${t} must assert the size-chart anchor`);
       continue;
     }
+    // The tote has no size chart and no acknowledgment block either; its Product Details row
+    // carries a committed anchor id for this probe.
+    if (t === 'templates/product.shift-fuel-tote.json') {
+      assert.ok(rule.markers.some((m) => m.includes('ProductDetails')), `${t} must assert the product-details anchor`);
+      continue;
+    }
     assert.ok(rule.markers.some((m) => m.includes('properties[')), `${t} must assert an acknowledgment input`);
   }
   for (const t of Object.keys(MARKER_TABLE.byTemplate)) {
@@ -70,4 +76,14 @@ test('the key markers the CLAUDE.md contracts name are present', () => {
   assert.ok(garment.includes('id="SizeChart"'));
   assert.ok(MARKER_TABLE.byTemplate['templates/index.json'].markers.includes('hero-lockup'));
   assert.ok(!MARKER_TABLE.byTemplate['templates/product.gift-card.json'].markers.includes('id="SizeChart"'));
+});
+
+test('the tote template still carries the ProductDetails anchor its marker rule reads', () => {
+  // The anchor is a theme-editor-editable setting that reaches the repo through reconcile PRs. If
+  // it were cleared, every offline test would stay green and only a live render would fail; this
+  // pins the template side of the contract the way anchor-contract.test.mjs pins SizeChart.
+  const raw = readFileSync(join(TEMPLATES, 'product.shift-fuel-tote.json'), 'utf8').replace(/^\s*\/\*[\s\S]*?\*\//, '');
+  assert.match(raw, /"anchor_id":\s*"ProductDetails"/);
+  const rule = MARKER_TABLE.byTemplate['templates/product.shift-fuel-tote.json'];
+  assert.ok(rule.markers.includes('id="ProductDetails"'));
 });

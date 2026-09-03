@@ -360,7 +360,7 @@ export function checkPriceShowShippingInfo({ files, catalogue }) {
     let expected;
     if (m) {
       const product = m[1] ? productForTemplate(catalogue, m[1]) : null;
-      if (product && product.body === null) continue; // gift card: exempt
+      if (product && product.body === null) continue; // non-garment (gift card, tote): exempt
       expected = true;
     } else {
       expected = false;
@@ -392,10 +392,14 @@ export function checkPriceShowShippingInfo({ files, catalogue }) {
 export const TEMPLATE_BLOCK_RULES = [
   // Every garment page sells through the same widget set.
   { name: 'garment', when: (p) => p.body !== null, require: ['variant-picker', 'buy-buttons', 'add-to-cart', 'return-policy-acknowledgment', 'vacation-acknowledgment', 'price'] },
-  // The gift card has no return policy to acknowledge and no processing delay to accept.
+  // A non-garment starts from the gift-card floor: no return policy to acknowledge and no
+  // processing delay to accept. A non-garment that IS made to order adds its own row below.
   { name: 'non-garment', when: (p) => p.body === null, require: ['variant-picker', 'buy-buttons', 'add-to-cart', 'price'] },
   // Documented: the Shift Fuel page carries no return-policy acknowledgment block.
   { name: 'shift-fuel-no-return-policy', when: (p) => p.handle === 'shift-fuel-crewneck', exempt: ['return-policy-acknowledgment'] },
+  // The tote is embroidered to order like the Shift Fuel crewneck, so it takes the vacation
+  // acknowledgment; like that crewneck it is resellable and returnable, so no return-policy block.
+  { name: 'shift-fuel-tote-made-to-order', when: (p) => p.handle === 'shift-fuel-tote', require: ['vacation-acknowledgment'] },
   // The Huddle line sells its applique pattern through its own picker block.
   { name: 'huddle-applique', when: (p) => p.handle === 'huddle-crewneck', require: ['applique-pattern-select'] },
   // Lead II products take a custom text property.

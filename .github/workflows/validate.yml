@@ -717,36 +717,76 @@ jobs:
       # hand-edited or the manifest, stock and generated sets disagree.
       - name: Notification template regeneration check
         id: notifications-check
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
         run: |
           set +e
           OUTPUT=$(npm run notifications:check 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # A check script, not `node --test`, so there is no test count to
-          # assert on. Require its explicit success marker instead: an exit 0
-          # with no marker means the script did not run its comparison.
-          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qF 'notifications:check ok'; then
+          # assert on. Require its explicit success marker instead, matched as a
+          # WHOLE LINE (-qxF): an exit 0 with no marker means the script did not
+          # run its comparison, and an error line that quoted the marker would
+          # satisfy a substring match.
+          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qxF 'notifications:check ok'; then
             echo "::error::notifications:check exited 0 without printing 'notifications:check ok'. The check script has probably stopped running its comparison."
             EXIT_CODE=1
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
-            echo "output<<GHEOF"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "GHEOF"
+            echo "output<<${DELIM}"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       # ── Notification template tests ────────────────────────────
       # Unit tests for scripts/notifications/ (the brander behind the check above).
       - name: Notification template tests
         id: notifications-tests
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
         run: |
           set +e
           OUTPUT=$(npm run notifications:test 2>&1)
           EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
           echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
 
           # Same "green on zero tests" guard as the suites above: `node --test <glob>`
           # exits 0 when the glob matches nothing, so assert the suite actually ran.
@@ -757,10 +797,141 @@ jobs:
           fi
 
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
           {
-            echo "output<<GHEOF"
-            echo "$OUTPUT" | sed -E $'s/\x1b\\[[0-9;]*m//g' | tail -50
-            echo "GHEOF"
+            echo "output<<${DELIM}"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Shop policy repo-consistency check ─────────────────────
+      # BOTH POLICY STEPS ARE OFFLINE BY CONTRACT and must stay that way. They read
+      # marketing/policies/ and nothing else; a test asserts scripts/policies/check.mjs
+      # imports nothing that can reach the network.
+      #
+      # DO NOT add `policies:pull --check` here, however tempting the live-drift gap
+      # looks. It needs Shopify credentials, and this workflow runs on Dependabot PRs,
+      # which get a separate secrets scope: the step would fail unfixably on every one
+      # of them. Live drift is caught by the push-time freshness gate instead
+      # (scripts/policies/push.mjs step 4) and by a manual `policies:pull --check`.
+      #
+      # A green result here means THE REPO IS SELF-CONSISTENT, never that Admin holds
+      # these bytes. The report row says "repo consistency" on purpose.
+      - name: Shop policy repo-consistency check
+        id: policies-check
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: |
+          set +e
+          OUTPUT=$(npm run --silent policies:check 2>&1)
+          EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
+          echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
+
+          # A check script, not `node --test`, so there is no test count to assert on.
+          # Require its explicit success marker instead, matched as a WHOLE LINE: an
+          # error line that quoted the marker would satisfy a substring match.
+          if [ "$EXIT_CODE" = "0" ] && ! printf '%s\n' "$OUTPUT" | grep -qxF 'policies:check ok'; then
+            echo "::error::policies:check exited 0 without printing 'policies:check ok'. The check script has probably stopped running its comparison."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "output<<${DELIM}"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Shop policy tests ──────────────────────────────────────
+      # Unit tests for scripts/policies/ (the check above, the pull, and the gated push).
+      - name: Shop policy tests
+        id: policies-tests
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: |
+          set +e
+          OUTPUT=$(npm run --silent policies:test 2>&1)
+          EXIT_CODE=$?
+          # THIS is where workflow commands are parsed: a step's stdout. The captured
+          # output is file-sourced text (template and policy bodies), so a line
+          # beginning `::error::`, `::add-mask::` or `::stop-commands::` would be
+          # executed rather than printed. Wrap it. The token is separate from the
+          # $GITHUB_OUTPUT delimiter below on purpose, and hex-only so a body line
+          # cannot forge it.
+          STOP_TOKEN="stopcmd_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${STOP_TOKEN}"
+          echo "$OUTPUT"
+          echo "::${STOP_TOKEN}::"
+
+          # Same "green on zero tests" guard as the suites above: `node --test <glob>`
+          # exits 0 when the glob matches nothing, so assert the suite actually ran.
+          TESTS_RUN=$(printf '%s\n' "$OUTPUT" | grep -oE '\btests [0-9]+' | tail -1 | grep -oE '[0-9]+')
+          if [ "${TESTS_RUN:-0}" -lt 1 ]; then
+            echo "::error::policies suite reported ${TESTS_RUN:-0} tests. The glob in the policies:test script has probably stopped matching."
+            EXIT_CODE=1
+          fi
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Per-run delimiter, and any line forging it is neutralised on the way into
+          # the block. This step echoes file-sourced text, so the body is not ours.
+          # Same idiom as the actionlint step below: hex from /dev/urandom, which is
+          # also inert as a sed pattern. `${RANDOM}${RANDOM}` was the weaker first
+          # version of this and is under 30 bits, seeded from time and pid.
+          #
+          # `::stop-commands::` deliberately does NOT appear in this block. Workflow
+          # commands are parsed from a step's stdout, never from $GITHUB_OUTPUT, so a
+          # pair written here protects nothing and lands in the CI report as two junk
+          # lines. The `echo "$OUTPUT"` to stdout above is the sink that needs it, and
+          # it has its own token: two purposes, two tokens, so leaking one cannot
+          # re-enable the other.
+          DELIM="GHEOF_$(od -An -N 8 -t x1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "output<<${DELIM}"
+            echo "$OUTPUT" \
+              | sed -E $'s/\x1b\\[[0-9;]*m//g' \
+              | sed "s/^${DELIM}\$/${DELIM}./" \
+              | tail -50
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       # ── Blank-id leak guard ────────────────────────────────────
@@ -1340,6 +1511,8 @@ jobs:
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
           NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
+          POLICIES_CHECK_EXIT: ${{ steps.policies-check.outputs.exit_code }}
+          POLICIES_TESTS_EXIT: ${{ steps.policies-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1360,7 +1533,7 @@ jobs:
               FAIL=$((FAIL + 1))
             fi
           }
-          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$SITE_CHECK_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$NOTIFICATIONS_CHECK_EXIT" "$NOTIFICATIONS_TESTS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
+          for code in "$THEME_CHECK_EXIT" "$RECONCILE_EXIT" "$SIZE_CHART_EXIT" "$PRODUCT_IMAGES_EXIT" "$BLANK_INVENTORY_EXIT" "$SKU_EXIT" "$SKU_TABLES_EXIT" "$CATALOGUE_EXIT" "$SEO_REVIEW_EXIT" "$SITE_CHECK_EXIT" "$APPLIQUE_GRID_EXIT" "$EMAIL_ICONS_EXIT" "$NOTIFICATIONS_CHECK_EXIT" "$NOTIFICATIONS_TESTS_EXIT" "$POLICIES_CHECK_EXIT" "$POLICIES_TESTS_EXIT" "$BLANK_ID_GUARD_EXIT" "$TRACKED_MEDIA_EXIT" "$CONTRAST_EXIT" "$SMOKE_TEST_EXIT" "$ACTIONLINT_EXIT" "$ZIZMOR_EXIT" "$GITLEAKS_EXIT"; do
             classify "$code"
           done
           # The a11y audit is the one check that can be absent BY DESIGN: draft
@@ -1418,6 +1591,8 @@ jobs:
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
           NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
+          POLICIES_CHECK_EXIT: ${{ steps.policies-check.outputs.exit_code }}
+          POLICIES_TESTS_EXIT: ${{ steps.policies-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1443,6 +1618,8 @@ jobs:
           EMAIL_ICONS_OUTPUT: ${{ steps.email-icons.outputs.output }}
           NOTIFICATIONS_CHECK_OUTPUT: ${{ steps.notifications-check.outputs.output }}
           NOTIFICATIONS_TESTS_OUTPUT: ${{ steps.notifications-tests.outputs.output }}
+          POLICIES_CHECK_OUTPUT: ${{ steps.policies-check.outputs.output }}
+          POLICIES_TESTS_OUTPUT: ${{ steps.policies-tests.outputs.output }}
           BLANK_ID_GUARD_OUTPUT: ${{ steps.blank-id-guard.outputs.output }}
           TRACKED_MEDIA_OUTPUT: ${{ steps.tracked-media-guard.outputs.output }}
           CONTRAST_OUTPUT: ${{ steps.contrast.outputs.output }}
@@ -1495,6 +1672,8 @@ jobs:
             const emailIcons = process.env.EMAIL_ICONS_EXIT;
             const notificationsCheck = process.env.NOTIFICATIONS_CHECK_EXIT;
             const notificationsTests = process.env.NOTIFICATIONS_TESTS_EXIT;
+            const policiesCheck = process.env.POLICIES_CHECK_EXIT;
+            const policiesTests = process.env.POLICIES_TESTS_EXIT;
             const blankIdGuard = process.env.BLANK_ID_GUARD_EXIT;
             const trackedMedia = process.env.TRACKED_MEDIA_EXIT;
             const contrast = process.env.CONTRAST_EXIT;
@@ -1523,6 +1702,8 @@ jobs:
             const emailIconsOut = sanitize(process.env.EMAIL_ICONS_OUTPUT) || 'No output';
             const notificationsCheckOut = sanitize(process.env.NOTIFICATIONS_CHECK_OUTPUT) || 'No output';
             const notificationsTestsOut = sanitize(process.env.NOTIFICATIONS_TESTS_OUTPUT) || 'No output';
+            const policiesCheckOut = sanitize(process.env.POLICIES_CHECK_OUTPUT) || 'No output';
+            const policiesTestsOut = sanitize(process.env.POLICIES_TESTS_OUTPUT) || 'No output';
             const blankIdGuardOut = sanitize(process.env.BLANK_ID_GUARD_OUTPUT) || 'No output';
             const trackedMediaOut = sanitize(process.env.TRACKED_MEDIA_OUTPUT) || 'No output';
             const contrastOut = sanitize(process.env.CONTRAST_OUTPUT) || 'No output';
@@ -1608,6 +1789,8 @@ jobs:
               `| **Email icons** | \`npm run email-icons:test\` | ${status(emailIcons)} |`,
               `| **Notification templates: check** | \`npm run notifications:check\` | ${status(notificationsCheck)} |`,
               `| **Notification templates: tests** | \`npm run notifications:test\` | ${status(notificationsTests)} |`,
+              `| **Shop policies: repo consistency** | \`npm run policies:check\` (offline; proves the repo agrees with itself, NOT that Admin is in sync) | ${status(policiesCheck)} |`,
+              `| **Shop policies: tests** | \`npm run policies:test\` | ${status(policiesTests)} |`,
               `| **Blank id guard** | \`npm run blank-inventory:guard\` | ${status(blankIdGuard)} |`,
               `| **Tracked media guard** | \`git ls-files -- 'product-images/' ':(icase)*.heic'\` | ${status(trackedMedia)} |`,
               `| **Contrast + a11y** | \`npm run contrast:lint\` + tests | ${status(contrast)} |`,
@@ -1652,6 +1835,8 @@ jobs:
               { title: 'Email icons', tool: 'npm run email-icons:test', out: emailIconsOut, exit: emailIcons },
               { title: 'Notification templates: check', tool: 'npm run notifications:check', out: notificationsCheckOut, exit: notificationsCheck },
               { title: 'Notification templates: tests', tool: 'npm run notifications:test', out: notificationsTestsOut, exit: notificationsTests },
+              { title: 'Shop policies: repo consistency', tool: 'npm run policies:check', out: policiesCheckOut, exit: policiesCheck },
+              { title: 'Shop policies: tests', tool: 'npm run policies:test', out: policiesTestsOut, exit: policiesTests },
               { title: 'Blank id guard', tool: 'npm run blank-inventory:guard', out: blankIdGuardOut, exit: blankIdGuard },
               { title: 'Tracked media guard', tool: "git ls-files -- 'product-images/' ':(icase)*.heic'", out: trackedMediaOut, exit: trackedMedia },
               { title: 'Contrast + a11y', tool: 'npm run contrast:lint + tests', out: contrastOut, exit: contrast },
@@ -1769,6 +1954,8 @@ jobs:
           EMAIL_ICONS_EXIT: ${{ steps.email-icons.outputs.exit_code }}
           NOTIFICATIONS_CHECK_EXIT: ${{ steps.notifications-check.outputs.exit_code }}
           NOTIFICATIONS_TESTS_EXIT: ${{ steps.notifications-tests.outputs.exit_code }}
+          POLICIES_CHECK_EXIT: ${{ steps.policies-check.outputs.exit_code }}
+          POLICIES_TESTS_EXIT: ${{ steps.policies-tests.outputs.exit_code }}
           BLANK_ID_GUARD_EXIT: ${{ steps.blank-id-guard.outputs.exit_code }}
           TRACKED_MEDIA_EXIT: ${{ steps.tracked-media-guard.outputs.exit_code }}
           CONTRAST_EXIT: ${{ steps.contrast.outputs.exit_code }}
@@ -1809,6 +1996,8 @@ jobs:
           check_exit "email-icons" "$EMAIL_ICONS_EXIT"
           check_exit "notifications-check" "$NOTIFICATIONS_CHECK_EXIT"
           check_exit "notifications-tests" "$NOTIFICATIONS_TESTS_EXIT"
+          check_exit "policies-check" "$POLICIES_CHECK_EXIT"
+          check_exit "policies-tests" "$POLICIES_TESTS_EXIT"
           check_exit "blank-id-guard" "$BLANK_ID_GUARD_EXIT"
           check_exit "tracked-media-guard" "$TRACKED_MEDIA_EXIT"
           check_exit "contrast" "$CONTRAST_EXIT"

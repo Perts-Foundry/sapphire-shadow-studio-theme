@@ -1,5 +1,183 @@
 # Release Notes
 
+## Shop policies under version control, and a 3-5 day production window (unreleased)
+
+The five shop policies now live at `marketing/policies/`, with pull / check / gated-push tooling
+under `scripts/policies/`. The shipping policy's production window changed from 2 business days to
+3-5, and the six product-page "Shipping & Turnaround" accordions stopped restating any duration at
+all. `marketing/policies/README.md` documents the surface; this entry records the decisions.
+
+**`shopPolicyUpdate` returns HTTP 200 on a REJECTED write.** Transport success proves nothing: the
+`userErrors` array in the payload is the only signal, and a null `shopPolicy` alongside an empty
+`userErrors` is a failed write too. `push.mjs` fails closed on both and prints each error's `field`
+and `message`. This is the single most likely silent failure in the subsystem, and it is the reason
+the tool also re-reads the live body afterwards rather than trusting the mutation's echo.
+
+**The freshness gate is the highest-value part of the design, and it costs one manifest field.**
+`remote.sha256` records what Admin was last seen holding. A push refuses unless the live body still
+hashes to it, which converts "silently clobber an Admin edit made three months ago" into a refusal
+naming `policies:pull`. `--force-overwrite-live` is the deliberate override. The alternative
+considered, a scheduled `policies:pull --check` opening a sticky issue, was rejected for now: it
+would put `write_legal_policies` credentials into CI and widen the blast radius of the whole
+subsystem to anyone who can trigger a workflow. Recorded in `TODO.md` instead.
+
+**A refusal after the mutation still records `remote`, and that is what makes the documented
+recovery reachable.** The first version left the manifest untouched on every refusal, which reads
+as the safer choice and was not: `remote` means "what Admin was last seen holding", the write had
+landed, and leaving it stale was a false record. It also made the `--accept-normalisation`
+instruction unreachable, because the re-run then tripped the freshness gate and its message sent
+the operator to `--force-overwrite-live` to fix a whitespace difference. Two documented steps in
+sequence landing on the most dangerous flag in the set. The refusal now records `remote`, prints
+the re-run command with the new live sha, and a test asserts the second run actually succeeds. The
+repo BODY is still untouched by every refusal, which is the invariant that was actually wanted.
+
+**Write-back is opt-in, and only for entity and whitespace spelling.** If Shopify stores something
+other than what was sent, the tool never auto-writes the repo copy. An entity- or whitespace-only
+difference needs `--accept-normalisation`; anything larger is refused outright, flag or no flag,
+because that is Shopify storing different CONTENT. A difference in the extracted **headings** is
+refused hardest of all: that is an anchor break, not renormalisation, and is never something a
+normalisation flag should wave through.
+
+**The privacy policy is tracked but not writable.** Shopify auto-manages it and refuses
+`shopPolicyUpdate` on it (recorded here previously, and re-confirmed by the scope and enum
+introspection done for this change). It is still pulled, so the repo is a dated record of what the
+storefront said, but `push.mjs` refuses it at flag-parse time rather than discovering the refusal at
+the API, and `check.mjs` downgrades hygiene refusals to notes for it. Without that second half, an
+em dash Shopify introduced into its own auto-managed body would turn a required check permanently
+red on something nobody here can fix.
+
+**Heading text is the anchor, and the coupling now has a test.** `assets/policy-nav.js` slugifies
+each `h2` into an `id` at runtime, and those ids are the shareable `/policies/...#section` links, so
+a reworded heading silently breaks every link already sent. The manifest pins `{ level, text, id }`
+per heading; `scripts/policies/test/slugify-parity.test.mjs` extracts the component's `slugify` by
+source and asserts it agrees with the library's over every committed heading. `id` is non-null for
+`h2` only, because the component assigns ids to nothing else, and two `h2`s that slugify alike are a
+refusal rather than a warning, since the component would silently suffix one with `-2` and which one
+would depend on document order.
+
+**`ShopPolicy` has no `handle` field, and its `url` is useless for review.** Introspection against
+2026-07 confirmed the type carries `body`, `createdAt`, `id`, `title`, `translations`, `type`,
+`updatedAt`, `url` and nothing else, and `url` is the numeric legacy form
+(`/<shop-id>/policies/<policy-id>.html?locale=en`). The manifest's `handle` is therefore derived
+from the type and pinned, where it doubles as the link target the theme's JSON-LD and templates use,
+and `url` is deliberately not recorded. `ShopPolicyInput` takes only `{ type, body }`, so `title` is
+read-only metadata a push cannot change.
+
+**One canonical body form, applied in exactly three places.** `canonicalise` (strip a BOM, CRLF to
+LF, trim trailing whitespace at the END of the document) runs on pull's write, push's sent body, and
+both sides of every comparison. Without a single form, the CR/BOM hygiene rules and the round-trip
+comparison fight each other. It deliberately does NOT strip per-line trailing whitespace: a space
+before a newline is significant between inline elements, and tidying it would change what the
+storefront renders. The file on disk is the canonical body plus one newline, so the file is
+POSIX-clean while the bytes sent to Shopify stay exactly what Admin returned.
+
+**`restamp` exists because the plan's workflow had a hole.** `pull` answers "what does Admin
+hold?" and would overwrite a local wording edit with the live body, so after editing a policy in a
+branch there was nothing to recompute the derived manifest fields but a hand edit of a sha256. That
+is exactly the kind of hand edit that goes wrong quietly. `policies:restamp` recomputes `sha256`,
+`length` and `headings` from the committed bodies, refuses if the bodies themselves are unusable,
+and shouts when a heading moved. It deliberately does NOT touch `remote` or `pulledAt`: those are
+what say Admin has not received the edit yet, which is what `check` reports as an outstanding push
+and what push's freshness gate reads.
+
+**Both manifest timestamps are carried forward when nothing moved.** A timestamp rewritten on every
+pull churns all five entries, guarantees a conflict between two branches that both pulled, trains
+reviewers to skim the file that carries the anchor contract, and (found while testing) would make
+`policies:pull --check` report drift on a tree that has none.
+
+**The accordions now defer, and a cohesion test is what makes that permanent.** Six product
+templates carried a byte-identical "Shipping & Turnaround" string restating "about 2 business days
+... 7-10 ... 3-4 business days total". Six hand-maintained identical strings is the exact failure
+mode this repo already documented for product cards, so the replacement copy is held byte-identical
+across all six by a test, which also refuses any business-day duration anywhere under `templates/`
+and names the policy as the source of truth in its failure message. Without that test, "removes six
+drift sites permanently" would be aspirational.
+
+The plan for this change named five templates. `templates/product.shift-fuel-tote.json` was added
+after the plan was written and carried the same string, which the Part 0 evidence sweep caught. The
+sweep is the reason the count is right; recall would have missed it.
+
+The cohesion test ENUMERATES every `product.*.json` and then asserts coverage, rather than
+discovering only the templates that happen to carry the row. The first version did the latter, and
+that made its own "a new product must not be able to opt out" comment false: a template without the
+row was simply not discovered, and the `>= 6` floor still passed. A template with no shipping
+accordion now has to be named in `NO_SHIPPING_ROW` with a reason (the gift card is the one entry,
+delivered by email under its own Delivery heading). Its duration sweep exempts two templates by name
+with the reason inline (`page.faq.json`, response times rather than a turnaround;
+`page.custom-orders.json`, the separate 2-to-3-week track), and a second test asserts each exemption
+still states a duration, so a stale exemption cannot quietly hide a regression.
+
+**A knowingly accepted cost:** no customer now sees a turnaround before add-to-cart unless they
+click through to the policy, in the same change that lengthens production. That copy is also the
+evidence in a "shipping took too long" dispute. The middle option, a short range in the accordion
+protected by the same cohesion test, remains available.
+
+**The hedge in the policy is deliberate.** "Most orders ship within 3-5 business days ... some
+orders take longer" reads as weaker copy than an unconditional promise, but three other edits in the
+same change describe cases that exceed 3-5 (peak seasons, a personalisation question, four or more
+items). An unconditional promise would be contradicted by the same document.
+
+**Backups live outside the checkout, and the repo is not one.** `$XDG_STATE_HOME/shop-policies/`,
+0700 and 0600, rather than a `.gitignore` line that a single `git add -f` defeats in a public repo.
+More to the point: after a wording change lands, `HEAD` holds the new text and `HEAD~` matches live
+only if Admin has not been edited since, so the backup is the only record of what Admin actually
+held at the moment of the write.
+
+**The TTY gate became a TTY-or-attestation gate, because the alternative was people faking a TTY.**
+The first version refused any non-TTY invocation outright, which is right for CI and wrong for the
+case that actually comes up: the operator asking an agent to run the push while they watch. The
+only way through was `script -qc`, i.e. faking a terminal, which defeats the check silently and
+teaches that the gate is routable. `--operator-approved` is the honest version of the same thing:
+it attests that a human asked, it prints a line saying the non-TTY path was used, and it appears in
+the shell history. It authorizes no particular write. Everything that decides WHAT is written is
+unchanged and still required: `--confirm=<type>`, `--expect-live-sha` from the tool's own dry run,
+the freshness gate, a clean check, a clean merged tree, and a verified backup. `CI` set stays an
+absolute refusal that no flag overrides, because that is the blast-radius boundary: CI must never
+hold a credential that can rewrite a legal policy.
+
+**The reviewed-tree gate judges the bodies and the manifest differently, and it took a live push to
+notice.** The first version required the whole of `marketing/policies/` to be clean. A successful
+push writes the manifest's `remote` token itself, so the moment the `contact_information` canary
+landed, the shipping push was refused for the canary's own side effect: a change that cannot affect
+what is sent, on a protected `main`, meaning a PR per push. The gate now requires the policy BODIES
+committed (those are the bytes that reach customers) while allowing the manifest to differ from
+`HEAD` in `remote` and `pulledAt` only. Every other manifest field still refuses, `sha256` above
+all, because a hand-edited one would defeat the freshness gate.
+
+**`--confirm` takes the policy name, not a boolean.** A bare `--confirm` is copy-pasteable out of
+shell history and is exactly the shape an agent reproduces from a README example; requiring
+`--confirm=<type>` to equal `--type` means one run's confirmation cannot be reused for a different
+policy by accident.
+
+**Two CI hardening fixes, applied to the notifications steps at the same time, and one of them was
+initially in the wrong place.** A per-run delimiter, because these steps print HTML bodies and a
+body line that is exactly `GHEOF` would close the heredoc early and let the rest forge an
+`exit_code=0` line; and `::stop-commands::`, because a body line beginning `::error::` or
+`::add-mask::` would otherwise be executed as a workflow command.
+
+The first version wrote the `::stop-commands::` pair INTO `$GITHUB_OUTPUT`, where it is inert:
+workflow commands are parsed from a step's stdout, never from the env file. The sink that needed
+wrapping was the bare `echo "$OUTPUT"` a few lines earlier. It also shipped two junk lines into
+every CI report detail block. The pair now wraps the stdout echo, with its own `/dev/urandom` token
+separate from the heredoc delimiter, and the delimiter itself moved to the `/dev/urandom` + `sed`
+neutraliser idiom this workflow already used in its actionlint step, so a forged delimiter line is
+neutralised rather than merely improbable.
+
+**There were SIX coordinated edit sites per CI step, not the five the plan named.** The sixth is
+the `classify` loop in the `Collect results` step, which counts PASS/FAIL/SKIP for the sticky
+report's banner. Omitting it meant a failing policy step rendered "All checks passed. Comment
+`deploy` to deploy and merge." over a job that was going red, which is exactly the failure the
+a11y `SKIP_BY_DESIGN` comment right below it was written to prevent. The merge gate itself held,
+because `check_exit` is a separate list; the defect was operator misdirection. Anyone adding a step
+here should count six: the step, a unique id, the classify loop, the report row, the detail block,
+and the `check_exit` line. The success marker is also matched
+with `grep -qxF` (whole line) rather than `-qF`, since an error line quoting the marker satisfies a
+substring match.
+
+**Rush Orders is deliberately unchanged.** An earlier draft replaced it with a $25 checkout add-on;
+that was reversed. Rush production stays "contact us before ordering", so the Custom Orders page
+(its own 2-3 week track) is untouched too.
+
 ## Branded notification templates, generated from committed stock (unreleased)
 
 The 46 customer notification templates (Admin > Settings > Notifications) now have branded,

@@ -68,6 +68,16 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   (`applique-grid/patterns.json`) in agreement. Writes to the **live store** through gated
   dry-run plans. Driven by the `applique-grid` Claude skill. See
   [`applique-grid/README.md`](applique-grid/README.md).
+- `policies/`: pull, check and push the five shop policies tracked at `marketing/policies/`.
+  `check.mjs` is **offline and CI-safe** and proves only that the repo agrees with itself;
+  `restamp.mjs` is offline too and recomputes the derived manifest fields after a deliberate local
+  wording edit, leaving `remote` and `pulledAt` alone so the outstanding push stays visible;
+  `pull.mjs` reads through the read-only Admin client; `push.mjs` writes a legal policy on the
+  **live store** behind nine gates (writable type, not CI, TTY, clean check, clean tree, HEAD
+  merged, freshness against the last observed Admin body, a dry run, a verified out-of-tree
+  backup) and fails closed on `userErrors`, which `shopPolicyUpdate` returns with HTTP 200. No
+  skill: three commands against an API. See
+  [`../marketing/policies/README.md`](../marketing/policies/README.md).
 - `email-icons/`: render the social icons the Shopify Email templates use, and upload them to
   Shopify Files. Email clients cannot render SVG, so the theme's own inline icons are copied as
   path data, rasterised to committed PNGs under `marketing/emails/assets/`, and hosted on the CDN.
@@ -94,6 +104,12 @@ SHOPIFY_CLIENT_ID=<custom app client id>
 SHOPIFY_CLIENT_SECRET=<custom app client secret>
 STOREFRONT_PASSWORD=<storefront password, while the store is locked>
 ```
+
+`scripts/policies/pull.mjs` and `push.mjs` need the three Shopify variables above and nothing else;
+the app must grant `read_legal_policies`, and `push.mjs` also `write_legal_policies` (both asserted
+at runtime, never assumed). `policies:check` needs no credentials at all, and a test asserts it runs
+clean with all three deleted from the environment. Optional, policies only: `POLICIES_BACKUP_DIR`
+(pre-push backups, default `~/.local/state/shop-policies`).
 
 `STOREFRONT_PASSWORD` is read only by the storefront-facing tools (`site-check/probe.mjs`,
 `site-check/tools.mjs`, `seo-review/crawl.mjs`, the a11y cookie helper); they also accept

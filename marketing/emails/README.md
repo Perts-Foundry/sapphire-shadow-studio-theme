@@ -418,11 +418,15 @@ campaign to the list, not an edit here.
 
 ## Shipping and policy copy: do not restate it here
 
-Shipping rates, thresholds, and turnaround times already have four sources of truth (theme settings,
-inline template JSON, announcement slides, and the Admin rate names plus the shop policy pages, all
-covered in `docs/theme-settings-contracts.md`). An email is a fifth that nothing reconciles **and that cannot be
-corrected after it is sent**. Link to the shipping policy or the FAQ page instead of restating a
-number. `welcome.liquid` deliberately contains no shipping figures.
+Shipping rates, thresholds, and turnaround times already have five sources of truth (theme settings,
+inline template JSON, announcement slides, the Admin rate names, and the shop policies now tracked at
+`marketing/policies/`, all covered in `docs/theme-settings-contracts.md`). An email is a sixth that
+nothing reconciles **and that cannot be corrected after it is sent**. Link to the shipping policy or
+the FAQ page instead of restating a number. `welcome.liquid` deliberately contains no shipping
+figures.
+
+The rule is unchanged by the policies moving into the repo: a policy can be re-pushed, a sent email
+cannot be recalled.
 
 ## This repo is public
 

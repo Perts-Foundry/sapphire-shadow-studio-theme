@@ -20,7 +20,7 @@ import { effectiveTables } from '../lib/tables.mjs';
 
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
-/** A hand-authored manifest covering exactly the four fixture products. */
+/** A hand-authored manifest covering exactly the five fixture products. */
 export const MANIFEST = parseCatalogue(
   JSON.stringify({
     version: 2,
@@ -73,6 +73,14 @@ export const MANIFEST = parseCatalogue(
         title: 'Gift Card',
         gid: 'gid://shopify/Product/4',
       },
+      // An option-less non-garment: one variant, so its SKU is the bare product code.
+      'shift-fuel-tote': {
+        line: null,
+        body: null,
+        template: 'shift-fuel-tote',
+        title: 'Shift Fuel Tote',
+        gid: 'gid://shopify/Product/5',
+      },
     },
   })
 );
@@ -109,6 +117,10 @@ export const TABLES = {
       code: 'GIFT',
       segments: [{ kind: 'denomination' }],
     },
+    'shift-fuel-tote': {
+      code: 'SFTB',
+      segments: [],
+    },
   },
 };
 
@@ -130,6 +142,7 @@ export const PRODUCT_IDS = {
   'huddle-crewneck': 'gid://shopify/Product/2',
   'shift-fuel-crewneck': 'gid://shopify/Product/3',
   'sapphire-shadow-studio-gift-card': 'gid://shopify/Product/4',
+  'shift-fuel-tote': 'gid://shopify/Product/5',
 };
 
 /**

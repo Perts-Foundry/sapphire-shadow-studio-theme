@@ -19,7 +19,7 @@ and the loser's ranking signals go to a page nobody chose.
 
 ## Three constraints, stated up front
 
-**With six products you cannot differentiate two five-product collections by adding.** One must
+**With seven products you cannot differentiate two five-product collections by adding.** One must
 shrink. The symmetric difference has to be non-empty in **both** directions: each collection needs
 at least one product the other lacks. A subset is still a duplicate candidate against its superset,
 so swapping identical grids for nested ones fixes nothing.
@@ -31,7 +31,7 @@ work lands and still fails. `scripts/seo-review/admin.mjs` already flags the cla
 `collection-body-empty` and `collection-seo-description-missing`.
 
 **The structural answer is fewer collections.** `featured`, `healthcare`, and
-`the-vitals-collection` over six products (plus the built-in `all`) is still several names for one catalogue. What follows is a holding
+`the-vitals-collection` over seven products (plus the built-in `all`) is still several names for one catalogue. What follows is a holding
 action until the catalogue grows, recorded as such so it is not rediscovered as a fresh idea.
 
 ## Step 1: query before drafting
@@ -98,7 +98,7 @@ SEO titles on all four collections, and the missing collection images.
 - **Rule sets versus manual.** If `featured` is currently smart and tag-driven, keeping it smart
   while calling it hand-picked is a lie that will drift back to five products the next time a
   product is tagged.
-- **Discovery.** Shrinking `featured` removes two products from one browse path. With six products,
+- **Discovery.** Shrinking `featured` removes two products from one browse path. With seven products,
   one nav, and the built-in `/collections/all` existing, the real cost is near zero, but it is a real change.
 - **You will not see the result for weeks.** Canonical clustering is a Google-side judgement, and
   the only genuine verification is Search Console after a re-crawl. Everything before that is a

@@ -24,9 +24,11 @@ here:
 
 `<PRODUCT>-<DESIGN>-<COLOR>-<SIZE>`, uppercase, hyphen-separated. The segment shape is fixed per
 product code. Products with no Design option drop that segment. The gift card encodes its
-denomination instead. The longest SKU the current catalogue produces is 16 characters
+denomination instead. A product with no options at all (one variant) is its bare product code and
+nothing else: `segments` is an empty array in the tables, and the SKU has no hyphen. The longest SKU the current catalogue produces is 16 characters
 (`L2VW-CNA-BLK-2XL`), at the top of the 8 to 16 band that stays readable on a packing slip and
-scannable later.
+scannable later. The shortest is the tote's bare `SFTB`, under the band by construction: an
+option-less product has nothing to encode beyond its code.
 
 <!-- catalogue:begin products -->
 | Product | Code | Shape | Example |
@@ -36,6 +38,7 @@ scannable later.
 | Lead II Vest - Women's | `L2VW` | P-D-C-S | `L2VW-CNA-BLK-2XL` |
 | Huddle Crewneck | `HDCN` | P-D-C-S | `HDCN-NRS-GRH-S` |
 | Shift Fuel Crewneck | `SFCN` | P-C-S | `SFCN-BLK-M` |
+| Shift Fuel Tote | `SFTB` | P | `SFTB` |
 | Sapphire Shadow Studio Gift Card | `GIFT` | P-DENOM | `GIFT-050` |
 <!-- catalogue:end products -->
 

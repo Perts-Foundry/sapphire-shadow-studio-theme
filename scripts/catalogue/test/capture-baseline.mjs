@@ -34,6 +34,17 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 export const BASELINE_PATH = 'scripts/catalogue/test/fixtures/pre-migration-baseline.json';
 
 /**
+ * Products declared AFTER the pre-migration capture, spelled out by hand (path, label, template)
+ * rather than derived. The frozen fixture never grows: re-capturing it for an added product would
+ * turn that product's entry into "derived == derived", the exact failure the header above names.
+ * `captureBaseline` leaves these out of `a11yProductEntries`, and build-pa11yci.test.mjs asserts
+ * the derivation against this list for them. Add a row here when a product is added.
+ */
+export const ADDED_SINCE_BASELINE = Object.freeze([
+  { path: '/products/shift-fuel-tote', label: 'product (shift fuel tote)', template: 'templates/product.shift-fuel-tote.json' },
+]);
+
+/**
  * The digest the golden entries are stored as, shared with the tests that compare fresh bytes
  * against them.
  * @param {string} text
@@ -123,13 +134,15 @@ export async function captureBaseline(repoRoot = REPO_ROOT) {
   };
   collectPatternOptions(appliqueTemplate);
 
-  // 4. The six accessibility labels, in declaration order. Order is one of the manifest's two order
-  //    contracts, so the list is frozen as a LIST and not as a set.
+  // 4. The six pre-migration accessibility labels, in declaration order. Order is one of the
+  //    manifest's two order contracts, so the list is frozen as a LIST and not as a set. Products
+  //    added since are hand-listed in ADDED_SINCE_BASELINE and left out here, never re-captured.
   // Read through `resolvedPaths()`, not off the raw file: the per-product entries are derived from
   // catalogue.json now, and the raw file carries a marker where they sit. That is what makes this a
   // byte-stability assertion rather than a re-read of the same literals.
+  const addedPaths = new Set(ADDED_SINCE_BASELINE.map((e) => e.path));
   const a11yProductEntries = (resolvedPaths().paths ?? [])
-    .filter((e) => String(e.path).startsWith('/products/'))
+    .filter((e) => String(e.path).startsWith('/products/') && !addedPaths.has(e.path))
     .map((e) => ({ path: e.path, label: e.label, template: e.template }));
 
   return {

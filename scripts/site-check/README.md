@@ -60,12 +60,12 @@ elsewhere; variant weight strictly greater than 0; evidence fields 200 character
 - `announcement-amounts` (ERROR): the announcement slides state the flat rate and threshold as an
   ordered pair that must equal settings; the slides are inline copy with no locale key.
 - `template-shipping-amounts` (ERROR): the product-template accordions and the FAQ answers repeat
-  the amounts; "Shipping copy" in `docs/theme-settings-contracts.md` lists all six places.
+  the amounts; "Shipping copy" in `docs/theme-settings-contracts.md` lists all seven places.
 - `vacation-date-sync` (ERROR) / `vacation-date-format` (WARN) / `vacation-faq-anchor` (ERROR):
   the four dated vacation settings share one date string in the pinned format, and
   `faq_item_vacation` keeps `custom_anchor: "away-from-studio"`; nothing else reconciles them.
 - `price-show-shipping-info` (ERROR): every `price` block enumerated, then judged by template
-  (garments true, gift card exempt, non-product false, an absent key is a finding).
+  (garments true, non-garments (gift card, tote) exempt, non-product false, an absent key is a finding).
 - `catalogue-template-missing` / `catalogue-template-blocks` (ERROR): each `catalogue.json`
   product has a template file carrying the blocks its type requires.
 - `social-list-parity` (ERROR): the two hardcoded platform lists must agree or `sameAs` drifts.
@@ -87,7 +87,7 @@ elsewhere; variant weight strictly greater than 0; evidence fields 200 character
 - `render-liquid-error` / `render-translation-missing` (ERROR): the two strings Shopify renders
   in place of a broken tag or key.
 - `render-h1-count` (ERROR): nothing in CI checks heading structure.
-- `render-marker-missing` (ERROR): stable anchors only (`#SizeChart`, `#away-from-studio`, a
+- `render-marker-missing` (ERROR): stable anchors only (`#SizeChart`, `#ProductDetails` on the option-less tote, `#away-from-studio`, a
   `properties[...]` input, the policy-nav marker); a unit test asserts every `paths.json` entry
   has a marker rule or an explicit `noMarker`.
 - `render-coverage` (ERROR at zero products) / `sitemap-unreadable` / `retry-budget-exhausted`
