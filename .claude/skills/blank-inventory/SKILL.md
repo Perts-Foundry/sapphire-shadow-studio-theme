@@ -151,8 +151,23 @@ not batch gates.
    many groups is no longer quadratic.
 
    If some rows failed, the receipt records which; re-run the same artifact with `--resume` to retry
-   only those (compare-and-swap plus the derived idempotency key make that safe). If a group is
-   still stale past about 3 minutes, that is a real fault and not slowness: **stop, surface it to
+   only those (compare-and-swap plus the derived idempotency key make that safe).
+
+   **A slow group is not a broken one, and the clock alone cannot tell you which it is.** The 80 to
+   90 second figure is the cascade on an idle Flow; trigger latency sits outside it and has been
+   measured at 3 minutes on a healthy store, with an end-to-end edit taking about 6. Under load,
+   individual fan-outs have taken 313s. So a group still stale at 3 minutes is unremarkable.
+   Two rules that do hold:
+
+   - **Sample twice before concluding anything**, minutes apart, and compare direction. One
+     histogram cannot distinguish a cascade in progress from a stalled one, and reading a single
+     favourable sample as a trend is a mistake that has been made here.
+   - **The run list is the verdict, not elapsed time.** A run in progress for this change means
+     wait. No run at all, or a pile of in-progress runs, is the actual fault signal
+     (`.claude/skills/blank-inventory/browser.md`).
+
+   Past about **10 minutes** with no run accounting for it, treat it as a real fault: **stop,
+   surface it to
    the operator, and read the Troubleshooting section of `docs/blank-inventory-sync-flow.md`.** Do
    not retry blind, and do not write again on top of an unconverged group. **The one named
    exception:** a group whose **own receipt** already records that value as approved and applied,

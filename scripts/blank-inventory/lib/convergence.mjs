@@ -23,7 +23,15 @@ export const STALE = 'stale';
 /** A watched group that has no tagged members at all. Terminal, and never convergence. */
 export const MISSING = 'missing';
 
-/** Measured settle is 80-90s. Report stale at 3 minutes, keep polling to 5 for the record. */
+/**
+ * Measured cascade is 80-90s on an idle Flow. Report stale at 3 minutes, keep polling to 5.
+ *
+ * STALE here is "this watch gave up", NOT "this group is broken". Trigger latency sits outside the
+ * cascade figure (3 minutes observed on a healthy store, ~6 minutes end to end) and cascades
+ * degrade under load (313s observed within one paced run). So a STALE verdict is a prompt to
+ * re-check and read the Flow run list, never a fault verdict on its own. Callers must not phrase it
+ * as one.
+ */
 export const DEFAULT_STALE_AFTER_MS = 180_000;
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const DEFAULT_REQUIRED_CONVERGED_READS = 2;

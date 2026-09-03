@@ -1815,10 +1815,14 @@ async function cmdVerify(opts, { refuse = fail, wait = waitForGroups } = {}) {
   }
   if (res.stale.size) {
     console.log(
-      `\n${res.stale.size} group(s) did not converge. Propagation is not atomic and settles in about ` +
-        `80-90s, so past ~3 minutes this is a real fault. See the Troubleshooting section of ` +
-        `docs/blank-inventory-sync-flow.md. If a group is stranded with one member at target and ` +
-        `its siblings on the old value, that is what "repair" is for.`
+      `\n${res.stale.size} group(s) did not converge within this watch. Propagation is not atomic. ` +
+        `The 80-90s figure is the cascade on an idle Flow: trigger latency sits outside it (3 ` +
+        `minutes observed on a healthy store) and cascades degrade under load (313s observed), so ` +
+        `end to end can reach 5-10 minutes with nothing wrong. Do NOT read this as a fault on the ` +
+        `clock alone: re-check in a few minutes, and let the Flow run list decide (a run in ` +
+        `progress means wait; no run at all, or a pile of them, is the real signal). See the ` +
+        `Troubleshooting section of docs/blank-inventory-sync-flow.md. If a group is stranded with ` +
+        `one member at target and its siblings on the old value, that is what "repair" is for.`
     );
   }
   if (res.stale.size || res.missing.size) process.exitCode = 1;
