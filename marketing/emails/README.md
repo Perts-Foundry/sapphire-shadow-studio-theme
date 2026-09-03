@@ -273,7 +273,15 @@ widths, 24 px needs 283 px on a 375 px phone where the panel offers 279 px, so i
 hair; 20 px needs 251 px there and 392 px of the 504 px available on desktop, so it sets on one line
 on a desktop and on two lines on a phone with room to spare. And the cells are sized **by padding
 alone, with no fixed height**, so the wrapped tile grows instead of clipping against the navy edge.
-The wrap falls at the space, keeping "in-house" whole on its own line.
+
+**"in-house" is wrapped in its own `<span style="white-space: nowrap;">`, and that is not
+decoration.** Left alone, a browser breaks a hyphenated word *at the hyphen*, so the tile rendered
+as "Stitched in-" over "house". Predicting the break from advance widths does not catch this: a
+greedy word-wrap assumes the space is the only break opportunity, and the hyphen is one too. It was
+found by rendering the file at 375 px and looking, which is the argument for that pass in the
+Testing section below. The `nowrap` span makes the space the only break opportunity again, so the
+tile reads "Stitched" over "in-house". Remove the span and the bad wrap comes back silently, on
+mobile only.
 
 ```html
 <tr>

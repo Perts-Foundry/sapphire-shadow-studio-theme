@@ -42,6 +42,15 @@ on a phone. The cells are sized by padding alone with no fixed height, so the wr
 instead of clipping against the navy edge. Both new files carry the identical panel, so a change
 made to one and not the other reads as a mismatch rather than drifting quietly.
 
+**The measurement got the wrap position wrong, and only rendering the file caught it.** The
+arithmetic above predicted "Stitched" over "in-house". The browser produced "Stitched in-" over
+"house", because a hyphen is a break opportunity and a greedy word-wrap that splits on spaces does
+not know that. `in-house` now sits in its own `<span style="white-space: nowrap;">`, which makes the
+space the only break opportunity again. Worth recording for what it says about the two checks: the
+measurement was right about the thing that had a number attached (24 px overflows, 20 px does not)
+and wrong about the thing that did not, and no amount of care in the arithmetic would have closed
+that gap. Remove the span and the bad wrap returns silently, on mobile only.
+
 **No product count appears in either file, and that is a reversal of an earlier draft.** "Seven
 pieces live" was drafted and cut. A sent email cannot be recalled, so a count becomes false the
 first time a product is added or retired, and there is no correction available short of another
@@ -62,15 +71,22 @@ table was wrong, which is what to expect from a hand-maintained list of URLs tha
 against the files it describes. All three are corrected and the tote row is added. Nothing checks
 this, so it will drift again.
 
-**One local check does not exist and was replaced rather than skipped.** The plan called for four
-browser passes over each template (desktop and 375 px, once with `<style>` removed and once with
-images dead). Chrome was unavailable in the session, so the two things those passes were there to
-catch were checked another way: the panel by the width measurement above, and the markup by a full
-structural HTML parse of the actual bytes (tag balance and nesting, plus `width`/`height`/`alt` on
-every `<img>`). The copied regions were proved byte-identical to the source by a diff against the
-renamed file rather than by trusting the transcription. **The browser passes and the test send are
-still outstanding**, and the test send remains the only thing that proves an email renders in an
-inbox.
+**What the browser passes proved, beyond the hyphen.** Both templates were rendered at a desktop
+width and at 375 px, with the `<style>` block deleted, and with every image `src` pointed at a dead
+URL. Three things the markup was written to guarantee held up: the row-4 gift-card tile stayed 262 px
+and centred with `<style>` gone, which is the case its `width`/`height` attributes and inline
+`max-width` exist for; with images blocked every tile degraded to its alt text over its bold label,
+so no tile becomes an anonymous box; and the social row degraded to "Instagram Facebook TikTok" in
+text. The copied regions were separately proved byte-identical to the renamed source by diff rather
+than by trusting the transcription. **The test send is still outstanding**, and it remains the only
+thing that proves an email renders in an inbox.
+
+**One thing the render surfaced that is a judgment call, not a defect.** The gift-card tile alone in
+row 4 is the brand logo on white, not a flat lay, so at full 262 px width and centred it carries more
+visual weight than any product above it and reads at a glance like a second logo lockup rather than
+the seventh tile. It is the least important item in the grid and currently the loudest. Left as
+specified, because the fix is a taste decision about the brand's own artwork: either a narrower
+row-4 tile or a gift-card image that is a photograph rather than a wordmark.
 
 ## A phantom SEO finding, and the two real ones it was hiding (unreleased)
 
