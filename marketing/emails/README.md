@@ -43,15 +43,21 @@ rather than in the file. Read the row, type the two fields, paste the template.
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
 | `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | not yet |
-| `launch-announcement.liquid` | The studio is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
+| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
 | `welcome-prelaunch-superseded.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | Historical. Was the "Customer signs up" automation while the storefront was password-protected | 2026-08-21, test sends, first campaign, and the live automation |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 The two new subjects were checked against the usual filters before being written down: no capitals,
 no exclamation point, no "free", no percentage or currency symbol. "Welcome to Sapphire Shadow
 Studio" is 33 characters, which is borderline for a narrow Gmail-app list view and fits most
-everywhere else; "The studio is open" is 18. The preview lines are 51 and 46 characters, both inside
+everywhere else; "The store is open" is 17. The preview lines are 51 and 46 characters, both inside
 what an inbox shows.
+
+**The announcement's headline carries an exclamation point and its subject line does not**, and that
+split is deliberate rather than an oversight. In the body it is the one place the voice allows one.
+In the subject it is a mild bulk-sender signal, and the subject is the half a spam filter scores, so
+the inbox sees "The store is open" and the reader sees "The store is open!". Do not "fix" the
+mismatch by adding one to the table.
 
 Preview text lives in the editor field and in this table, and **nowhere in the template**. Both
 files used to carry a hidden preheader `<div>` as a second home for it. A real test send on

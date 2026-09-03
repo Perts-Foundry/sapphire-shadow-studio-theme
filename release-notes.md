@@ -57,6 +57,14 @@ first time a product is added or retired, and there is no correction available s
 campaign. The same rule already governs shipping figures here: both templates link the shipping
 policy and the FAQ page and state no duration of their own. Neither carries a date either.
 
+**The announcement's headline says "store" where the rest of the brand says "studio", and it is an
+operator decision rather than a slip.** "The store is open!" is the one place the word appears;
+`welcome-prelaunch-superseded.liquid` said "The studio opens", the button says "Shop the
+collection", and the name is Sapphire Shadow Studio throughout. Do not normalise it to "studio" for
+consistency. Its exclamation point is likewise deliberate and likewise asymmetric: the headline
+carries one, the subject line in the README's metadata table does not, because the subject is the
+half a spam filter scores and an exclamation there is a mild bulk-sender signal.
+
 **The announcement send discharges a promise the prelaunch welcome already made.** That file told
 every subscriber who received it: "you will hear it from us by email before we announce it anywhere
 else." Nothing in the repo enforces it and it cannot be corrected after the fact, so it fixes the
