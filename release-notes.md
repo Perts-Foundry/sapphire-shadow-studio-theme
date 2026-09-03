@@ -1,5 +1,53 @@
 # Release Notes
 
+## Taking NP live, and the step that existed nowhere (unreleased)
+
+`NP (Nurse Practitioner)` is live on all three Lead II products: 42 variants, all with derived SKUs,
+all tagged into their blank groups and converged with their siblings. The repo half was three files.
+The store half was where the gaps were, and two are worth keeping.
+
+**A new option value needs a hero attached, and nothing in the pipeline does it.** This is the one
+that would have shipped broken. The product-page gallery filters media by ALT TEXT against the
+colour option, so the existing colour-matched photos serve a new design correctly with no new
+photography, and checking the product page shows nothing wrong. But a variant with **no attached
+media at all** falls back to the PRODUCT-level featured image, which is one colour. So 36 of the 42
+new variants (the crewneck's and quarter-zip's; the vest's six had been attached already) would have
+shown a **Black** garment in cart line-item thumbnails and on collection cards for Grey Heather and
+Classic Navy. Invisible on the surface anyone would think to check.
+
+This is the same failure the pagination fix in `scripts/upload-product-media.mjs` was written
+against, reached through a different door: there a truncated read left variants unattached, here it
+was simply that new variants start with none. The entry-point row and phase 2's media step now both
+say the attach is required and manual, and phase 2 carries the completion check (every variant has
+at least one media, and each colour resolves to exactly ONE media id, since the one-media-per-variant
+cap otherwise hides a second).
+
+**`--attach-heroes` cannot do it, which is not obvious from its name.** Three independent reasons,
+recorded so the next person does not spend the time working them out: it builds `heroPlan` only from
+manifest rows the run is processing, so with no batch there is nothing to attach; running it over an
+older batch is the `admin_color` / `alt` drift trap `docs/product-media-alt-text.md` already warns
+about, where a stale alt makes `fileUpdate` overwrite correct live alt text; and it appends to EVERY
+variant of a colour, so the ones that already have media reject the second attachment and the local
+`gql` helper throws on the userErrors, abandoning that whole colour. The tool is built for "new
+photos, new product, attach as you go". The opposite case, media already live and variants newly
+created around it, is Admin work or a one-off scoped `productVariantAppendMedia`.
+
+**What did NOT need doing, confirmed rather than assumed.** Collection membership is product-level,
+so all three products stayed in Featured, Healthcare Collection and The Vitals Collection with no
+per-variant work. No `/seo-review`, because a design value mints no URL. And no template, locale,
+settings or theme change of any kind: the variant picker is count-based, and at nine values Design
+was already past the dropdown threshold it was already past at eight.
+
+**One warning that is correct and permanent.** `blank-inventory audit` reports `1 untagged
+variant(s) hold stock`. That is the Shift Fuel Tote, declared `"body": null` and legitimately
+tracking stock, which is the case PR #166 was about. It is not drift and there is nothing to fix.
+
+The stale variant counts in `scripts/upload-product-media.mjs` and its test are corrected here too.
+They read "the two 8-design products carry 144 variants each", present tense, which stopped being
+true the moment NP was added in Admin. They now name the shape (one variant per design x colour x
+size, 18 more per credential) and mark 144 as the count that regressed rather than a current one, so
+the next credential does not strand them again.
+
 ## What the first full notification sync taught, folded back in (unreleased)
 
 The first end-to-end `sync` of all 46 notification templates ran, and then a cold 46-id

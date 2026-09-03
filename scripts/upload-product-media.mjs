@@ -310,11 +310,13 @@ export function colorDriftProblem(liveValues, key) {
  * Read EVERY node of a product's connection, following its pages.
  *
  * WHY THIS EXISTS: the variants query was `variants(first: 100)` with no `hasNextPage` check. The
- * two 8-design products carry 144 variants each (8 designs x 3 colours x 6 sizes), so the read
- * stopped at 100 and the 44 beyond the cap were dropped. Those variants then fell through
- * `if (!hero.mediaId || !variantIds.length) continue;` with no error, so 88 variants across two
- * products silently kept the product-level featured image (a Black garment for every colour) while
- * the run still printed success. A truncated read that reports success is the fail-open shape
+ * two design-axis Lead II sweatshirts carry one variant per design x colour x size, so both sit far
+ * past the 100 cap and gain 18 more with every credential added (144 each at the eight designs this
+ * regressed against, 162 since NP). The read stopped at 100 and every variant beyond it was
+ * dropped. Those then fell through
+ * `if (!hero.mediaId || !variantIds.length) continue;` with no error, so they silently kept the
+ * product-level featured image (a Black garment for every colour) while the run still printed
+ * success. A truncated read that reports success is the fail-open shape
  * scripts/seo-review/admin.mjs refuses by design; this follows the pages instead of guessing.
  *
  * The same shape applied to `media`, where the consequence is worse than a miscount:

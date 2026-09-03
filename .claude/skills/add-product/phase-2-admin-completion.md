@@ -18,15 +18,30 @@ while one is active this skill asks nothing, and its approvals satisfy nothing h
    rules; the tool paces itself now (one group per batch by default), so a seed covering many groups
    takes minutes rather than seconds and that is expected, not a hang.
    - Completion check: that skill's verify converges.
-4. `media` (route:/product-images; for a new design value, only if design-specific photos are
-   wanted: the gallery filters media by the COLOUR option, so existing colour-matched shots already
-   serve a new design correctly): stage 0 (studio enhance) for raw shots, then the normal
-   naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
+4. `media` (route:/product-images; for a new colour, size or design value, new PHOTOS are usually
+   not wanted, but the hero attach below is still required): stage 0 (studio enhance) for raw shots,
+   then the normal naming / alt / gated upload flow. Alt text colour-binding drives the gallery; the rulebook is
    `docs/product-media-alt-text.md`. Include the size-chart PNG upload with its descriptive alt.
    A non-garment product uses the `<handle>_<shot>-<index>` filename form; it has no Color option,
    so its alts are plain description (nothing binds, nothing is rejected) and there is no size-chart
    PNG.
    - Completion check: that skill's final handoff summary lists this product's uploads.
+   - **Every new variant needs a hero attached, and no tool here does it.** This is separate from
+     the gallery, which filters on alt text and so serves a new design correctly off the existing
+     colour-matched photos. A variant with NO attached media falls back to the PRODUCT-level
+     featured image, which is one colour, so a new Grey Heather or Classic Navy variant shows a
+     Black garment in cart line-item thumbnails and on collection cards. Silent, and invisible on
+     the product page where you would look for it.
+   - **`--attach-heroes` does not cover this case; do it in Admin.** It builds its plan only from
+     manifest rows the run is processing, so with no batch there is nothing to attach; running it
+     over an older batch is the documented `admin_color`/`alt` drift trap in
+     `docs/product-media-alt-text.md`; and it appends to EVERY variant of the colour, so the ones
+     that already have media reject the second and the local `gql` helper throws on the userErrors,
+     abandoning that whole colour. Attach the colour's existing hero media to the new variants by
+     hand, or with a one-off `productVariantAppendMedia` scoped to just the unattached ones.
+   - Completion check for the attach: every variant of every colour reports at least one media, and
+     each colour resolves to exactly ONE media id (two means a second hero crept in, which the
+     one-media-per-variant cap otherwise hides).
 5. `metafields-seo` (admin-manual, policy): set `custom.breadcrumb_collection` if the breadcrumb cascade
    needs steering (read `docs/breadcrumb-collection-metafield.md` first; the Storefronts-read
    access setting is the silent-fail step). Fill the Admin SEO title and description; SEOInput

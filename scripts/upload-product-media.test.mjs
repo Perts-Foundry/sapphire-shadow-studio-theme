@@ -147,9 +147,10 @@ test('parseArgs still refuses an unscoped run without --check-products', () => {
 
 // --- fetchAllConnection --------------------------------------------------------------------
 // Regression cover for the silent truncation: `variants(first: 100)` with no hasNextPage check
-// yielded 100 of a 144-variant product's variants and dropped the other 44 without an error, so 88
-// variants across two products would have kept a Black hero for every colour while the run still
-// reported success. `media` had the identical shape, where a truncated read makes pollMediaReady
+// yielded 100 of a 144-variant product's variants and dropped the other 44 without an error, so
+// every variant past the cap would have kept a Black hero for every colour while the run still
+// reported success. 144 is the count that regressed, not a current one: the two design-axis Lead II
+// products gain 18 variants per credential and are at 162 today. `media` had the identical shape, where a truncated read makes pollMediaReady
 // report a processing timeout for media that was actually fine.
 
 const page = (ids, hasNextPage, endCursor = null) => ({
@@ -186,7 +187,7 @@ test('fetchAllConnection follows every page, in order, threading the cursor', as
   assert.deepEqual(cursors, ['c1', 'c2'], 'each page must be requested with the prior endCursor');
 });
 
-test('fetchAllConnection recovers all 144 variants of an 8-design product', async () => {
+test('fetchAllConnection recovers all 144 variants of the page-spanning shape that regressed', async () => {
   // The exact shape that regressed: a 100-wide first page, 44 beyond it.
   const first = page(Array.from({ length: 100 }, (_, i) => i + 1), true, 'cur');
   const rest = { product: { variants: page(Array.from({ length: 44 }, (_, i) => i + 101), false) } };
