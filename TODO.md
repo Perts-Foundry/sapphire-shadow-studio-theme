@@ -45,6 +45,19 @@ right now, and an empty heading with a live index entry is the residue this file
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
   involved, so there is nothing to unwind there.
 
+- [ ] **Retire the prelaunch welcome email, once the launch send is done.** Two halves, and the
+  second is the one that reaches a customer. In Admin, paste `marketing/emails/welcome-postlaunch.liquid`
+  over the "Customer signs up" automation's template and set its subject and preview text from the
+  metadata table in `marketing/emails/README.md`; **until that happens the automation keeps sending
+  the prelaunch email**, date panel and all, to every new subscriber, and nothing in this repo can
+  see that it is doing so. Then in the repo, decide whether
+  `marketing/emails/welcome-prelaunch-superseded.liquid` still earns its place: it is the only record
+  of what existing subscribers were sent, so keeping it is defensible, but it is also a fourth
+  self-contained copy of the header, footer, social row and palette, which is the drift cost the
+  "Branding is duplicated on purpose" section warns about. Pairs with the countdown item above: the
+  countdown block and that file's date panel state the same instant, and both go stale on the same
+  day, so retire them together.
+
 - [ ] **Scheduled live-drift detection for the shop policies.** `npm run policies:check` is offline
   and proves only that the repo agrees with itself; nothing automated notices when someone edits a
   policy in Admin. The push-time freshness gate catches it at the one moment it can do damage

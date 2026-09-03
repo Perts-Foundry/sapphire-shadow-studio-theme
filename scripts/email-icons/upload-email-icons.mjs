@@ -170,7 +170,7 @@ async function main() {
     console.log(`  url:    ${file.image?.url ?? '(still processing; re-run a dry run in a moment for the URL)'}`);
   }
 
-  console.log('\nPaste the URLs into marketing/emails/welcome.liquid and campaign-shell.liquid, and');
+  console.log('\nPaste the URLs into every template in marketing/emails/ (each one is self-contained), and');
   console.log('record them in marketing/emails/README.md. Strip the ?v= query string: it is a cache');
   console.log('buster, not part of the identity of the file.');
 }
