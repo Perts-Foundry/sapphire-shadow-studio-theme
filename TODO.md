@@ -72,19 +72,16 @@ right now, and an empty heading with a live index entry is the residue this file
   one is about details the customer got wrong, the other about details the studio could not read.
   Worth a read for tone, since they sit one click apart.
 
-- [ ] **Capture a real `shopPolicyUpdate` response as a test fixture.** The whole suite runs against
-  a hand-shaped fake client, and `marketing/policies/README.md` has instructed capturing the first
-  real push's response since the subsystem landed. Both live writes have now been spent without it,
-  so the next real push is the opportunity: save the mutation payload (redacted of nothing, since it
-  carries only the policy body we sent) and reshape `test/helpers.mjs`'s fixtures against it. Until
-  then, "the mutation's actual input shape against the live schema" stays unproven.
-
-- [ ] **Whether Shopify preserves an HTML comment in a policy body is still unknown.** No stamped
-  push has landed, so the version stamp's survival is untested against the real API. `push` prints a
-  line if the comment comes back stripped, `policies:verify` distinguishes that case from "no
-  stamped write yet", and a fake client that strips comments proves the push completes either way.
-  The answer arrives with the next real wording change. If it is stripped, set `"stamped": false`
-  per policy and rely on `coreSha256`.
+- [ ] **Teach `push.mjs` to persist the `shopPolicyUpdate` response, THEN capture one as a fixture.**
+  The whole suite runs against a hand-shaped fake client. Three live writes have now been spent
+  without a capture, and the reason is not forgetfulness: nothing in `push.mjs` writes the response
+  anywhere, and no flag or environment variable dumps it, so "capture it on the next push" is not a
+  thing anyone can actually do. Waiting for a fourth push changes nothing. Add the persistence first
+  (the backup file it already writes is the obvious home), in its own reviewed PR, since it touches
+  the only write path in the repo; then the next push captures itself and `test/helpers.mjs` can be
+  reshaped against real bytes. Until then, "the mutation's actual input shape against the live
+  schema" stays unproven, though the v3 terms push proves the shape is at least ACCEPTED by the live
+  schema.
 
 - [ ] **`real-bodies.test.mjs`'s `parseWindow` silently mis-parses "3 to 5 business days" as
   `[5,5]`,** and its regex should be shared with the one in `templates-cohesion.test.mjs`. The

@@ -87,6 +87,29 @@ made 3.09 lb and returned $40. Four crewnecks returned $40, so the boundary flip
 `partitionAccepted` treats as a wildcard over every subject for that check id, so `variant-weight`
 and `product-json-weight-zero` were fully muted. They are live again.
 
+## Shopify keeps HTML comments in a policy body (unreleased)
+
+The version stamp is an HTML comment on the first line of the live body, and whether Shopify would
+store it or quietly strip it had been unknown since the subsystem landed: no stamped push had ever
+run against the real API. The v3 terms of service push answered it. **The comment survives.**
+`policies:verify` reports `PASS live carries the version stamp this repo names (v3)`, and `push`
+printed no stripping note.
+
+So the design holds as built: `"stamped": true` stays correct for the four writable policies, the
+live page can self-identify its version to anyone who views source, and `policies:verify` keeps the
+version as its assertion of record rather than falling back to the core hash. The contingency that
+was written for the other outcome (set `"stamped": false` per policy and rely on `coreSha256`) is
+not needed and was never exercised.
+
+**The sibling question did NOT get answered, and the reason is worth writing down.** Capturing a
+real `shopPolicyUpdate` response as a test fixture has been on the backlog since the subsystem
+landed, phrased as "the next real push is the opportunity". Three live writes have now gone by. It
+was never going to happen that way: `push.mjs` does not persist the response anywhere, and no flag
+or environment variable dumps it, so there is no push during which someone can simply grab it. A
+backlog item whose action is "remember to do it next time" and whose tooling makes that impossible
+will sit there forever. The item now says to add the persistence first, in its own PR, and let the
+push after that capture itself.
+
 ## The terms of service stops shipping Shopify's authoring placeholders (unreleased)
 
 The terms body went live carrying the placeholders from Shopify's stock template, so every customer
