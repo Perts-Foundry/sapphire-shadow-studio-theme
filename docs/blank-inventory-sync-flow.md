@@ -140,7 +140,19 @@ Established by testing against the live store on 2026-07-19 and 2026-07-20, on o
 restored byte-for-byte afterwards. These numbers and rules are what `scripts/blank-inventory/` is
 built on. Settle time was measured twice end to end through the tooling: 89s and 101s.
 
-- **Settle time is 80 to 90 seconds** from the triggering write to every sibling agreeing.
+- **Settle time is 80 to 90 seconds** from the triggering write to every sibling agreeing, measured
+  on an otherwise idle Flow. That figure covers the *cascade*, and it is not the time from an edit
+  to convergence. Two things sit outside it, both observed on 2026-09-03 on a healthy store:
+  - **Trigger latency.** The gap between the inventory change and the Flow run starting is its own
+    delay, and it is not always short: an Admin edit visible at 21:21 did not start a run until
+    21:24:01, with no run in between. End to end that edit took about 6 minutes.
+  - **Cascade time degrades under load.** Within one paced `apply`, successive fan-outs took 102s,
+    116s, 154s and 313s. The last one blew a 300s batch timeout on a write that was otherwise fine.
+
+  So **do not treat a clock reading alone as a fault verdict.** Under ordinary load, end to end can
+  reach 5 to 10 minutes with nothing wrong. The reliable test is the run list (is a run for this
+  change in progress, and are runs piling up?), not elapsed time. See "Watching the run list" in
+  `.claude/skills/blank-inventory/browser.md`.
 - **Propagation is NOT atomic.** A mid-cascade read legitimately shows some siblings updated and some
   not (observed `12,12,11,11,11,11,11,11` at t+78s of a 90s settle). Anything checking convergence
   must poll to a verdict, never sample once, or it will report drift on a healthy group.

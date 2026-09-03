@@ -16,6 +16,7 @@ import {
   cmdRepair,
   cmdApply,
   cmdVerify,
+  untaggedHoldingStock,
 } from '../blank-inventory.mjs';
 import { MODE_ABSOLUTE, MODE_DELTA } from '../lib/input.mjs';
 import { createArtifact, verifyArtifact, receiptArtifactMismatch, writeJsonAtomic, readJson, ROW_APPLIED } from '../lib/receipt.mjs';
@@ -1036,4 +1037,54 @@ test('both reorder and demand run the manifest gate, and both run it before read
     assert.ok(thresholds > -1, `${command} still reads the thresholds file`);
     assert.ok(gate < thresholds, `${command} gates on the manifest before reading thresholds`);
   }
+});
+
+// untaggedHoldingStock: the "every untagged tracked variant is at 0" invariant's finding set.
+//
+// The distinction under test is DECLARED non-garment (exempt) versus UNDECLARED product (not
+// exempt). Broadening the exemption to anything without a body would let an unmapped handle go
+// quiet here, which is the failure this invariant exists to make loud.
+const v = (over = {}) => ({
+  id: 'gid://shopify/ProductVariant/1',
+  productHandle: 'a-crewneck',
+  blankId: null,
+  tracked: true,
+  quantity: 0,
+  ...over,
+});
+
+test('a declared non-garment holding stock is exempt, because it can never join a group', () => {
+  const rows = untaggedHoldingStock([v({ productHandle: 'a-tote', quantity: 2 })], new Set(['a-tote']));
+  assert.deepEqual(rows, []);
+});
+
+test('an UNDECLARED product holding stock is NOT exempt', () => {
+  // The manifest is the only authority on which products are garments. An unmapped handle must
+  // stay in the finding set rather than being absorbed by the non-garment exemption.
+  const rows = untaggedHoldingStock([v({ productHandle: 'mystery-thing', quantity: 2 })], new Set(['a-tote']));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].productHandle, 'mystery-thing');
+});
+
+test('an untagged garment variant holding stock is the finding this invariant is for', () => {
+  const rows = untaggedHoldingStock([v({ quantity: 5 })], new Set(['a-tote']));
+  assert.equal(rows.length, 1);
+});
+
+test('tagged, zero-quantity and untracked variants are all outside the finding set', () => {
+  const rows = untaggedHoldingStock(
+    [
+      v({ blankId: 'SOME_BLANK', quantity: 5 }),
+      v({ quantity: 0 }),
+      v({ quantity: -1 }),
+      v({ tracked: false, quantity: 5 }),
+    ],
+    new Set()
+  );
+  assert.deepEqual(rows, []);
+});
+
+test('an empty exemption set changes nothing for garments', () => {
+  const rows = untaggedHoldingStock([v({ quantity: 1 })], new Set());
+  assert.equal(rows.length, 1);
 });

@@ -112,7 +112,10 @@ not batch gates.
 
 3. **STOP: confirm the transcription and the mode.** Present a table with one row per line:
    the **raw token as read**, the resolved blank (or body + Color + Size), the current quantity, and
-   the resulting target. Then state the row count and ask the operator to confirm it against the
+   the resulting target. Where the row names a specific variant rather than a group, name it in full
+   per "Every gate table shows the FULL variant identity" below: body + colour + size is the group
+   key, not a variant's identity, and a count sheet keyed that way is addressing the whole group.
+   Then state the row count and ask the operator to confirm it against the
    sheet. In the same STOP, state the declared mode and the result of the cross-check (see "Mode is
    declared, then cross-checked" below), including its residual risk. Do not proceed on anything the
    operator has not confirmed.
@@ -148,8 +151,23 @@ not batch gates.
    many groups is no longer quadratic.
 
    If some rows failed, the receipt records which; re-run the same artifact with `--resume` to retry
-   only those (compare-and-swap plus the derived idempotency key make that safe). If a group is
-   still stale past about 3 minutes, that is a real fault and not slowness: **stop, surface it to
+   only those (compare-and-swap plus the derived idempotency key make that safe).
+
+   **A slow group is not a broken one, and the clock alone cannot tell you which it is.** The 80 to
+   90 second figure is the cascade on an idle Flow; trigger latency sits outside it and has been
+   measured at 3 minutes on a healthy store, with an end-to-end edit taking about 6. Under load,
+   individual fan-outs have taken 313s. So a group still stale at 3 minutes is unremarkable.
+   Two rules that do hold:
+
+   - **Sample twice before concluding anything**, minutes apart, and compare direction. One
+     histogram cannot distinguish a cascade in progress from a stalled one, and reading a single
+     favourable sample as a trend is a mistake that has been made here.
+   - **The run list is the verdict, not elapsed time.** A run in progress for this change means
+     wait. No run at all, or a pile of in-progress runs, is the actual fault signal
+     (`.claude/skills/blank-inventory/browser.md`).
+
+   Past about **10 minutes** with no run accounting for it, treat it as a real fault: **stop,
+   surface it to
    the operator, and read the Troubleshooting section of `docs/blank-inventory-sync-flow.md`.** Do
    not retry blind, and do not write again on top of an unconverged group. **The one named
    exception:** a group whose **own receipt** already records that value as approved and applied,
@@ -207,6 +225,36 @@ What `repair` does and does not do:
 Then the ordinary path: **STOP at gate 5 on the repair artifact** (`show --plan` prints the source
 receipt and the original plan id above the diff; read that aloud, because it is the only check
 against a stale or wrong receipt), then `apply --plan <repair artifact>`, then `verify`.
+
+### Every gate table shows the FULL variant identity
+
+At every STOP, identify each variant by the **whole variant title the tool printed**, with every
+option value in it, exactly as the command rendered it
+(`lead-ii-crewneck | NP (Nurse Practitioner) / Black / XS`). Never re-render it into a shorter form
+of your own, and never collapse rows into a per-product or per-colour summary that drops an option
+value.
+
+**Why this is a correctness rule and not a formatting preference.** A blank group is keyed on
+**body + colour + size**, so the group key deliberately does NOT contain the Design value (or any
+other option axis `catalogue.json` declares). The variant being written is identified by that axis
+too. Presenting the group key as though it were the variant identity therefore drops precisely the
+field that distinguishes the variants under approval from every other variant in the same groups,
+and it does so in the one place where the operator is being asked to agree to the write.
+
+This has happened: a backfill gate presented 42 NP variants as
+`lead-ii-crewneck / Black  sizes: XS S M L XL 2XL`, omitting the Design value, which was the entire
+substance of the change. It read as complete and was unfalsifiable: a second design value in the
+same set would have rendered identically.
+
+So, concretely, at any STOP:
+
+- Quote the tool's own label per row. Compaction is allowed only where it removes NOTHING: grouping
+  six sizes of one identical product+design+colour onto one line is fine **as long as the design and
+  colour are on that line**.
+- If a table has one row per group, state the option values that are not in the group key, because
+  the key alone cannot carry them.
+- Prefer pasting the command's output verbatim over rebuilding it. A hand-built table is where a
+  field goes missing, and the operator cannot see what you dropped.
 
 ### Backfill
 
