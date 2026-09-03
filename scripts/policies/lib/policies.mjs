@@ -257,60 +257,242 @@ export function hygieneProblems(body) {
   return problems;
 }
 
+// ------------------------------------------------------------------------------------------
+// The version stamp
+// ------------------------------------------------------------------------------------------
+
+/**
+ * The version stamp is an invisible HTML comment on the FIRST LINE of a policy body, so viewing
+ * source on the live policy page answers "which version is up?" without an Admin read.
+ *
+ * THE CORE/STAMP SPLIT IS THE WHOLE DESIGN. The stamp is additive presentation, so every
+ * comparison in this subsystem runs on the CORE body with the stamp stripped from both sides.
+ * `coreSha256` is the wording; `sha256` is the committed bytes, an integrity hash only. Comparing
+ * a stamped body against an unstamped one is how the stamp self-trips a gate, and the reason each
+ * call site names its hash explicitly (marketing/policies/README.md has the table).
+ *
+ * Shape: `<!-- sss-policy shipping_policy v3 -->`. The prefix is deliberately store-specific:
+ * `<!-- version 3 -->` would be plausible enough for a hand edit or another tool to collide with.
+ */
+const STAMP_KEY_RE = '[a-z][a-z0-9_]*';
+
+/**
+ * Anchored at position 0 and NOWHERE ELSE. A stamp-shaped comment further down a body is content,
+ * not a stamp, and stripping it would silently rewrite a policy. `v0`, `v03`, `v-1` and `v 3` are
+ * all non-matches: the version is `[1-9]\d*`, so a leading zero cannot mint a second spelling of
+ * the same number.
+ */
+const STAMP_RE = new RegExp(`^<!-- sss-policy (${STAMP_KEY_RE}) v([1-9]\\d*) -->(?:\\r?\\n|$)`);
+
+/** `{ key, version }` for a body whose first line is a stamp, else null. */
+export function parseVersionStamp(body) {
+  const m = STAMP_RE.exec(String(body ?? ''));
+  return m === null ? null : { key: m[1], version: Number(m[2]) };
+}
+
+/** True when the body's first line is a version stamp. */
+export function isStampedBody(body) {
+  return parseVersionStamp(body) !== null;
+}
+
+/**
+ * The core body: everything a comparison should look at. Idempotent, and a no-op on a body that
+ * carries no stamp. Never strips more than one stamp: two stamps means something wrote one on top
+ * of another, and `check` should say so rather than have this quietly tidy it away.
+ */
+export function stripVersionStamp(body) {
+  const text = String(body ?? '');
+  return text.replace(STAMP_RE, '');
+}
+
+/**
+ * `sha256` of the core body. THE hash every comparison uses. Takes a raw or canonical body and
+ * canonicalises first, so a caller cannot get a different answer by forgetting to.
+ */
+export function coreSha256(body) {
+  return sha256(stripVersionStamp(canonicalise(body)));
+}
+
+/** The core body in canonical form. */
+export function coreOf(body) {
+  return stripVersionStamp(canonicalise(body));
+}
+
+/**
+ * Put the stamp on. Takes a CORE body and refuses a body that already carries one: `stamp(stamp(x))`
+ * is the double-stamp bug, and a silent second stamp would be invisible in a diff of the rendered
+ * page. Callers strip first, always.
+ */
+export function stampVersion(core, key, version) {
+  const text = canonicalise(core);
+  if (isStampedBody(text)) throw new PolicyError(String(key), 'body already carries a version stamp; strip it first');
+  if (typeForKey(key) === null) throw new PolicyError(String(key), 'not a tracked policy key');
+  if (!isVersionNumber(version)) {
+    throw new PolicyError(String(key), `version must be an integer >= 1, got ${JSON.stringify(version)}`);
+  }
+  return `<!-- sss-policy ${key} v${version} -->\n${text}`;
+}
+
+/**
+ * A usable version number.
+ *
+ * SAFE integer, not merely integer. `Number.MAX_SAFE_INTEGER + 1` passes `Number.isInteger`, and
+ * `+ 1` on it returns the same value, so a version there would stop incrementing silently and two
+ * different bodies would ship under one number. Absurd as a real value, and exactly the kind of
+ * thing a hand-edited manifest can hold.
+ */
+export function isVersionNumber(value) {
+  return Number.isSafeInteger(value) && value >= 1;
+}
+
+/** The stamp a policy SHOULD carry, given its manifest entry. `false` means it carries none. */
+export function isStamped(entry) {
+  return entry?.stamped === true;
+}
+
+/**
+ * Whether a fresh entry for this type is stamped. Derived from WRITABLE, and it can only be
+ * narrowed by hand afterwards: a stamp we cannot push is a permanent `check` failure, which is
+ * exactly `privacy_policy`, auto-managed by Shopify and refused by `shopPolicyUpdate`.
+ */
+export function defaultStamped(type) {
+  return WRITABLE[type] === true;
+}
+
+/**
+ * The next version for a policy, from its previous manifest entry and the core hash of the body
+ * now on disk. DERIVED AND NEVER HAND-TYPED, which is what makes `version` an identity rather
+ * than a claim.
+ *
+ * | previous state                                   | result           |
+ * |--------------------------------------------------|------------------|
+ * | no entry, or no `version`                        | 1                |
+ * | `version` present, `coreSha256` absent           | `version` (seed) |
+ * | `version` present, `coreSha256` unchanged        | `version`        |
+ * | `version` present, `coreSha256` differs          | `version + 1`    |
+ * | `version` not an integer >= 1                    | REFUSAL          |
+ * | derived <= `floor.highestPushed`, different core | REFUSAL          |
+ *
+ * Row two is the pre-migration shape: an entry that has been given a version but whose core hash
+ * has never been recorded. Bumping there would invent a version off a comparison that was never
+ * made.
+ *
+ * THE MONOTONIC FLOOR (last row). `prev` comes from a git-tracked file, so `git revert` restores
+ * body and manifest atomically and walks `version` BACKWARDS while live still carries the higher
+ * number. The next wording change then re-derives a version that is already live against different
+ * bytes, which defeats the stamp's entire purpose. `floor` comes from the machine-local state file
+ * (`highestPushed`), so this refuses rather than minting a colliding version. An identical core is
+ * exempt: that is the same content, not a collision.
+ *
+ * Throws `PolicyError`. Every caller must leave the tree untouched when it does.
+ *
+ * @param {object|undefined} prev   the committed manifest entry, or undefined
+ * @param {string} coreHash         sha256 of the core body on disk
+ * @param {{highestPushed: number, coreSha256: string}|null} [floor]
+ */
+export function deriveVersion(prev, coreHash, floor = null) {
+  if (typeof coreHash !== 'string' || !/^[0-9a-f]{64}$/.test(coreHash)) {
+    throw new PolicyError('deriveVersion', `needs a sha256 digest, got ${JSON.stringify(coreHash)}`);
+  }
+  const previous = prev?.version;
+  let version;
+  if (previous === undefined || previous === null) {
+    version = 1;
+  } else if (!isVersionNumber(previous)) {
+    throw new PolicyError(
+      'version',
+      `is ${JSON.stringify(previous)}, which is not an integer >= 1. It is derived, never hand-typed; ` +
+        'fix it with npm run policies:restamp rather than by editing the manifest.',
+    );
+  } else if (typeof prev.coreSha256 !== 'string') {
+    version = previous;
+  } else if (prev.coreSha256 === coreHash) {
+    version = previous;
+  } else {
+    version = previous + 1;
+  }
+
+  assertVersionFloor(version, coreHash, floor);
+  return version;
+}
+
+/**
+ * The monotonic floor, as its own function because two callers enforce it and one message is the
+ * point: `deriveVersion` refuses to MINT a colliding version, and `push` refuses to WRITE one.
+ * Push is where it actually matters, because that is where the state file is guaranteed present.
+ *
+ * A version at or below the floor is fine when the core hash matches the one that was pushed at
+ * that version: that is the same content, not a collision.
+ */
+export function assertVersionFloor(version, coreHash, floor) {
+  if (!floor || !Number.isSafeInteger(floor.highestPushed)) return;
+  if (version > floor.highestPushed) return;
+  if (floor.coreSha256 === coreHash) return;
+  throw new PolicyError(
+    'version',
+    `${version} has already been pushed to the live store (highest pushed: v${floor.highestPushed}) against ` +
+      'DIFFERENT wording, so writing it would put two bodies behind one version number and the stamp ' +
+      'would stop identifying anything. This is what a `git revert` of a policy change looks like: the ' +
+      'manifest walks backwards while the live store does not. Make the next wording edit and run ' +
+      'npm run policies:restamp, which derives a version above the floor.',
+  );
+}
+
 /**
  * The manifest entry a pull would record for one policy.
  *
  * `prev` is spread first so key order never churns against a hand-formatted manifest.
  *
- * `remote.observedAt` reads as "when Admin was FIRST seen holding this body", not "when it was
- * last polled"; see the comment on the carry-forward below.
+ * `body` is the RAW body from Admin, which may or may not carry a stamp: live is unstamped until
+ * the first stamped push lands, and stamped for every read after it. The core is taken from it
+ * either way, and the entry describes the STAMPED body this function returns alongside it, which
+ * is what pull writes to disk. Without that, `check` would either refuse after every pull or be
+ * unable to detect a silently dropped stamp.
+ *
+ * The bookkeeping fields that used to live here, `remote` and `pulledAt`, are gone: they made
+ * every push dirty the tree with its own side effect, which meant a PR per push forever. They live
+ * in the machine-local state file now (`lib/state.mjs`), and the PR history is the record of what
+ * changed.
  *
  * @param {object|undefined} prev  the committed entry, or undefined for a new one
  * @param {object} o
  * @param {string} o.type          a POLICY_TYPES member
  * @param {string} o.title         Admin's title for the policy
- * @param {string} o.body          the RAW body from Admin; canonicalised here
- * @param {string} o.now           ISO-8601 timestamp for this run
+ * @param {string} o.body          the body from Admin, stamped or not
+ * @param {{highestPushed: number, coreSha256: string}|null} [o.floor]  the monotonic floor, from state
+ * @returns {{entry: object, body: string}} the entry, and the body to write to disk
  */
-export function buildEntry(prev, { type, title, body, now }) {
-  const canonical = canonicalise(body);
-  const hash = sha256(canonical);
-  const changed = !prev || prev.sha256 !== hash;
-  // Both timestamps are carried forward unchanged when nothing moved, for the same reason: a
-  // field rewritten on every pull churns all five entries, guarantees a conflict between two
-  // branches that both pulled, trains reviewers to skim the file that carries the anchor
-  // contract, and would make `policies:pull --check` report drift on a tree that has none.
-  const sameRemote = prev && prev.remote && prev.remote.sha256 === hash;
+export function buildEntry(prev, { type, title, body, floor = null }) {
+  const key = keyForType(type);
+  const core = coreOf(body);
+  const coreHash = sha256(core);
+  const version = deriveVersion(prev, coreHash, floor);
+  const stamped = prev?.stamped === undefined ? defaultStamped(type) : prev.stamped === true;
+  const written = stamped ? stampVersion(core, key, version) : core;
   const entry = {
     ...(prev ?? {}),
     title,
     handle: STOREFRONT_HANDLES[type],
     writable: WRITABLE[type],
-    sha256: hash,
-    length: canonical.length,
-    headings: extractHeadings(canonical),
-    remote: { sha256: hash, length: canonical.length, observedAt: sameRemote ? prev.remote.observedAt : now },
-    pulledAt: changed ? now : (prev.pulledAt ?? now),
+    stamped,
+    version,
+    coreSha256: coreHash,
+    sha256: sha256(written),
+    length: written.length,
+    headings: extractHeadings(core),
   };
+  delete entry.remote;
+  delete entry.pulledAt;
   if (!WRITABLE[type]) {
     entry.reason = prev?.reason ?? NOT_WRITABLE_REASON;
   } else {
     delete entry.reason;
   }
-  return entry;
+  return { entry, body: written };
 }
 
 export const NOT_WRITABLE_REASON =
   'Shopify auto-manages this policy: shopPolicyUpdate is refused on it and Shopify rewrites the body on its own schedule. Tracked read-only.';
-
-/**
- * The `remote` token a successful push records: what Admin held immediately after the write.
- * Same shape pull writes, so the freshness gate reads one field wherever it came from.
- */
-export function remoteToken(body, now) {
-  const canonical = canonicalise(body);
-  return { sha256: sha256(canonical), length: canonical.length, observedAt: now };
-}
 
 /**
  * Compare a committed entry against one recomputed from the body on disk. Returns a list of
@@ -321,7 +503,7 @@ export function remoteToken(body, now) {
  * comparing it against itself would be a tautology dressed as a check. check.mjs asserts it is a
  * non-empty string, and pull is what keeps it current.
  */
-export const DIFFED_FIELDS = Object.freeze(['handle', 'writable', 'sha256', 'length']);
+export const DIFFED_FIELDS = Object.freeze(['handle', 'writable', 'stamped', 'sha256', 'coreSha256', 'length']);
 
 export function diffEntry(key, committed, computed) {
   const out = [];

@@ -11,23 +11,35 @@
 // Transport success proves nothing. Step 7 fails closed on a non-empty `userErrors` or a null
 // `shopPolicy`, and step 8 re-reads the live body rather than trusting the response echo.
 //
+// EVERY COMPARISON HERE RUNS ON THE CORE BODY, with the version stamp stripped from both sides.
+// `coreSha256` is the wording; the manifest's `sha256` is the committed bytes and is never
+// compared against anything live. Comparing a stamped repo body against an unstamped live one is
+// how the stamp self-trips its own gate, so each site below names its hash.
+//
 // Gate sequence, in order, any failure aborting with a non-zero exit and no mutation:
 //   1. a known, writable --type; not CI (absolute); a TTY on stdin OR --operator-approved
-//   2. policies:check clean; clean working tree under marketing/policies/; HEAD an ancestor of
+//   2. policies:check clean; ALL of marketing/policies/ clean in git; HEAD an ancestor of
 //      origin/main, so the pushed bytes are the reviewed bytes
-//   3. fetch live; identical to the repo body means exit 0 with no mutation
-//   4. freshness: live sha must equal the manifest's remote.sha256
-//   5. without --confirm this is the dry run
-//   6. backup: write, fsync, read back, assert its sha equals the live body just fetched
+//   3. fetch live; identical CORE means exit 0 with no mutation
+//   4. freshness: the live CORE hash must equal the one the machine-local state file records.
+//      NO STATE FILE IS A REFUSAL naming `npm run policies:pull`; there is no auto-seed.
+//   5. without --confirm this is the dry run, which prints the SAME hash the gate checks
+//   6. the monotonic version floor, then a backup: write, fsync, read back, assert its core hash
+//      equals the live body just fetched
 //   7. mutate; fail closed on userErrors or a null shopPolicy
-//   8. re-read and verify; a heading change is never accepted as normalisation
-//   9. print the exact --restore command
+//   8. re-read and verify on the CORE; a heading change is never accepted as normalisation
+//   9. record the observation in state, and print the exact --restore and commit commands
+//
+// A SUCCESSFUL PUSH LEAVES THE WORKING TREE CLEAN. That is why gate 2 can require all of
+// marketing/policies/ to be clean again: the observation it records goes to the machine-local
+// state file, not to the manifest. The version bookkeeping that used to make every push dirty its
+// own tree, and therefore block the next push until a PR merged, is gone.
 //
 // ONE REFINEMENT TO "no mutation on a failure": that holds absolutely for every gate BEFORE the
 // mutation, and those refusals leave the tree byte-identical. AFTER the mutation has landed, a
-// refusal still leaves the repo BODY untouched, but it does record the manifest's `remote` token,
-// because `remote` means "what Admin was last seen holding" and Admin has demonstrably moved.
-// Leaving it stale is not neutrality, it is a false record, and it is what made the documented
+// refusal still leaves the repo untouched, but it does record the observation in state, because
+// state means "what Admin was last seen holding" and Admin has demonstrably moved. Leaving it
+// stale is not neutrality, it is a false record, and it is what made the documented
 // `--accept-normalisation` recovery unreachable: the re-run tripped the freshness gate at step 4
 // and was pointed at `--force-overwrite-live` to fix a whitespace difference.
 //
@@ -35,13 +47,24 @@
 // and root defaulting live in `main` only, so a test that forgets to inject the fake cannot reach
 // the live store.
 
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assertScopes, backoffDelayMs, createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import { paths, plan, readManifest, REPO_ROOT } from './check.mjs';
+import {
+  SEED_COMMAND,
+  emptyState,
+  floorFor,
+  readState,
+  recordObservation,
+  resolveStateDir,
+  stateEntry,
+  stateFilePath,
+  writeState,
+} from './lib/state.mjs';
 import { POLICIES_QUERY, indexPolicies } from './pull.mjs';
 import { backupFileName, displayPath, resolveBackupDir, DIR_MODE, FILE_MODE } from './lib/backups.mjs';
 import { differsOnlyByEntitiesAndWhitespace, unifiedDiff } from './lib/diff.mjs';
@@ -49,17 +72,22 @@ import {
   POLICY_TYPES,
   WRITABLE,
   PolicyError,
+  assertVersionFloor,
   bodyFromFileText,
   canonicalise,
+  coreOf,
+  coreSha256,
   decodeEntities,
   diffHeadings,
   extractHeadings,
   fileNameForType,
   fileTextFor,
   formatManifest,
+  isStamped,
   keyForType,
-  remoteToken,
+  parseVersionStamp,
   sha256,
+  stampVersion,
   typeForKey,
 } from './lib/policies.mjs';
 
@@ -147,30 +175,42 @@ export function resolveType(raw) {
 /**
  * The operator gate. A write to a legal policy is an operator action, never a CI one.
  *
- * Two ways to satisfy it, and one that is absolute:
+ * THE DRY RUN IS NOT GATED ON A TERMINAL, and that is a correction rather than a loosening. The
+ * first version ran this before the dry-run branch, so a dry run refused in any session without a
+ * TTY. That made the documented sequence unreachable: the rule an agent must satisfy is "the
+ * operator asked, after seeing the dry run", and the dry run needed the attestation that the rule
+ * says can only come after it. Every real run therefore passed `--operator-approved` at a moment
+ * when nothing had been attested, which teaches exactly the wrong thing about the flag, and the
+ * tool then printed "an operator asked for this write" over a run where nobody had.
  *
- * - `CI` set is an UNCONDITIONAL refusal. No workflow in this repo wires `policies:push`, a test
- *   asserts that, and no flag here can override it. That is the blast-radius boundary: CI never
- *   holds a credential that can rewrite a legal policy.
- * - A TTY on stdin means a person is running it by hand. The ordinary case.
+ * A dry run sends no mutation and writes no file. What it needs is `CI` unset, like everything
+ * else here; what it does not need is a human at a keyboard.
+ *
+ * - `CI` set is an UNCONDITIONAL refusal, for every invocation including the dry run. No workflow
+ *   in this repo wires `policies:push`, a test asserts that, and no flag here can override it.
+ *   That is the blast-radius boundary: CI holds no credential that touches a legal policy.
+ * - For a run that would MUTATE, a TTY on stdin means a person is running it by hand.
  * - `--operator-approved` is the explicit attestation for the case where the operator has asked an
- *   agent to run the push in that session. It exists because the alternative people actually reach
- *   for is wrapping the command in a pty to fake a TTY, which defeats the check silently and
+ *   agent to run the write in that session. It exists because the alternative people actually
+ *   reach for is wrapping the command in a pty to fake a TTY, which defeats the check silently and
  *   teaches that the gate is routable. An honest flag that shows up in the shell history and in
  *   this tool's own output is strictly better than a faked terminal.
  *
  * This flag does NOT authorize a particular write. It only attests that a human asked. Everything
  * that decides WHAT gets written is unchanged and still required: `--confirm=<type>` matching
- * `--type`, `--expect-live-sha` from the tool's own dry run, the freshness gate against
- * `remote.sha256`, a clean `policies:check`, a clean tree merged into main, and a verified backup
- * before the mutation.
+ * `--type`, `--expect-live-sha` from the tool's own dry run, the freshness gate against the
+ * observation state, the monotonic version floor, a clean `policies:check`, a clean tree merged
+ * into main, and a verified backup before the mutation.
  *
- * @returns {{ via: 'tty' | 'operator-approval' }} how the gate was satisfied, for the log line
+ * @param {object} o
+ * @param {boolean} [o.mutating]  false for a dry run, which needs no terminal and no attestation
+ * @returns {{ via: 'tty' | 'operator-approval' | 'dry-run' }} how the gate was satisfied, for the log
  */
-export function assertInteractive({ env, isTTY, operatorApproved = false }) {
+export function assertInteractive({ env, isTTY, operatorApproved = false, mutating = true }) {
   if (env.CI) {
     throw new PolicyError('policies:push', 'refuses to run with CI set; no workflow may write a legal policy, and no flag overrides this');
   }
+  if (!mutating) return { via: 'dry-run' };
   if (isTTY) return { via: 'tty' };
   if (operatorApproved) return { via: 'operator-approval' };
   throw new PolicyError(
@@ -191,62 +231,28 @@ function git(root, args) {
 }
 
 /**
- * The policy bodies must be clean and HEAD must be an ancestor of origin/main, so the bytes about
- * to reach customers are bytes a reviewer saw. `--allow-unreviewed` is the deliberate escape hatch
- * for the ancestor half (a canary before the PR merges, say); it never waives the dirty check.
+ * ALL of marketing/policies/ must be clean, and HEAD must be an ancestor of origin/main, so the
+ * bytes about to reach customers are bytes a reviewer saw. `--allow-unreviewed` is the deliberate
+ * escape hatch for the ancestor half (a canary before the PR merges, say); it never waives the
+ * dirty check.
  *
- * The manifest is treated differently from the bodies: see the comment on the manifest branch.
+ * THIS USED TO BE MORE COMPLICATED, AND THE COMPLICATION IS GONE ON PURPOSE. A successful push
+ * used to write `remote` and `pulledAt` into the manifest, which meant the gate blocked the next
+ * push on its own side effect: a PR per push, forever. PR #154 answered that by teaching the gate
+ * to ignore exactly those two fields, which cost a HEAD read, a JSON reshape and a field
+ * allowlist. Moving the observation to the machine-local state file removes the cause instead, so
+ * the gate goes back to one question with one answer. Do not reintroduce a per-field exemption:
+ * if a push ever needs to write to the manifest again, that is the thing to fix.
  *
  * Not applied to `--restore`, whose bytes come from a backup file rather than the tree.
  */
-/**
- * Fields the TOOL writes into a manifest entry as observations, rather than reviewed content:
- * what Admin was last seen holding, and when it was last refreshed from Admin. Neither can change
- * what a push SENDS, which is the body file.
- */
-const OBSERVATION_FIELDS = ['remote', 'pulledAt'];
-
-/** A manifest with the observation fields stripped, for comparing reviewed content only. */
-export function reviewedManifestShape(text) {
-  const parsed = JSON.parse(text);
-  const out = {};
-  for (const [key, entry] of Object.entries(parsed.policies ?? {})) {
-    const copy = { ...entry };
-    for (const f of OBSERVATION_FIELDS) delete copy[f];
-    out[key] = copy;
-  }
-  return JSON.stringify(out);
-}
-
 export function assertReviewedTree(root, { allowUnreviewed = false, run = git } = {}) {
-  // The POLICY BODIES must be clean: they are the bytes that reach customers, and they must be
-  // bytes a reviewer saw.
-  const dirtyBodies = run(root, ['status', '--porcelain', '--', 'marketing/policies/*.html']);
-  if (dirtyBodies !== '') {
-    throw new PolicyError('marketing/policies', `has uncommitted policy bodies; commit or stash them first:\n${dirtyBodies}`);
-  }
-
-  // The MANIFEST is allowed to differ from HEAD in `remote` and `pulledAt` only. A successful push
-  // writes `remote` itself, so requiring a pristine manifest made every push block the next one
-  // until its own side effect had been committed, for a change that cannot affect what is sent.
-  // Every other field IS reviewed content (sha256, length, headings, handle, writable, title) and
-  // still refuses: a hand-edited sha256 would defeat the freshness gate.
-  const dirtyManifest = run(root, ['status', '--porcelain', '--', 'marketing/policies/manifest.json']);
-  if (dirtyManifest !== '') {
-    let committed;
-    try {
-      committed = run(root, ['show', 'HEAD:marketing/policies/manifest.json']);
-    } catch (err) {
-      throw new PolicyError('marketing/policies/manifest.json', `is modified and HEAD's copy could not be read (${String(err.message).trim()})`);
-    }
-    const working = readFileSync(paths(root).manifest, 'utf8');
-    if (reviewedManifestShape(working) !== reviewedManifestShape(committed)) {
-      throw new PolicyError(
-        'marketing/policies/manifest.json',
-        'has uncommitted changes beyond the `remote` and `pulledAt` observation fields; commit or ' +
-          `stash them first:\n${dirtyManifest}`,
-      );
-    }
+  const dirty = run(root, ['status', '--porcelain', '--', 'marketing/policies']);
+  if (dirty !== '') {
+    throw new PolicyError(
+      'marketing/policies',
+      `has uncommitted changes; commit or stash them first:\n${dirty}`,
+    );
   }
   if (allowUnreviewed) return { unreviewed: true };
   let head;
@@ -262,8 +268,13 @@ export function assertReviewedTree(root, { allowUnreviewed = false, run = git } 
   } catch {
     throw new PolicyError(
       'HEAD',
-      'is not an ancestor of origin/main, so these bytes have not been reviewed and merged. ' +
-        'Merge the PR first, or pass --allow-unreviewed for a deliberate pre-merge canary.',
+      'is not an ancestor of origin/main, so these bytes have not been reviewed and merged.\n' +
+        '  Merge the PR, then: git switch main && git pull\n' +
+        '  Then re-run the dry run from main and push from there.\n' +
+        'WHY: being on main here is a consequence of the bytes being reviewed, never a licence to ' +
+        'commit to main. Do not commit the wording change directly to main to satisfy this gate; ' +
+        'that removes the review this gate exists to require.\n' +
+        '`--allow-unreviewed` is for a deliberate pre-merge canary and nothing else.',
     );
   }
   return { unreviewed: false };
@@ -284,6 +295,10 @@ export function assertReviewedTree(root, { allowUnreviewed = false, run = git } 
  */
 export function writeBackup({ dir, type, live, now, domain }) {
   mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  // `mkdirSync`'s mode argument applies only to a directory it CREATES, and is masked by umask
+  // besides. An existing 0755 state directory would silently keep its mode, and the file below
+  // holds a full policy body. Set it explicitly. POSIX only: chmod is close to a no-op on Windows.
+  if (process.platform !== 'win32') chmodSync(dir, DIR_MODE);
   const file = join(dir, backupFileName(type, now));
   if (existsSync(file)) throw new PolicyError(file, 'a backup with this name already exists; refusing to overwrite it');
   const record = {
@@ -292,6 +307,7 @@ export function writeBackup({ dir, type, live, now, domain }) {
     title: live.title,
     body: live.body,
     sha256: sha256(canonicalise(live.body)),
+    coreSha256: coreSha256(live.body),
     fetchedAt: now,
     storeDomain: domain,
   };
@@ -303,6 +319,9 @@ export function writeBackup({ dir, type, live, now, domain }) {
   } finally {
     closeSync(fd);
   }
+  // Same reasoning as the directory: `openSync`'s mode is masked by umask, and umask can only
+  // remove bits from 0600, but saying it explicitly is what the test can assert.
+  if (process.platform !== 'win32') chmodSync(file, FILE_MODE);
   const readBack = JSON.parse(readFileSync(file, 'utf8'));
   if (readBack.type !== type) throw new PolicyError(file, 'backup read back with the wrong type; refusing to mutate');
   if (sha256(canonicalise(readBack.body)) !== record.sha256) {
@@ -330,14 +349,16 @@ async function fetchLive(client, type) {
  * @param {string} o.now             ISO-8601 timestamp for this run
  * @param {object} o.options         parseArgs output, with `type` already resolved
  * @param {string} o.backupDir
+ * @param {string} o.stateDir        where observed.json lives; a refusal when it holds nothing
  * @param {string} o.domain
  * @param {(s: string) => void} [o.log]
  * @param {(ms: number) => Promise<void>} [o.sleep]
  */
-export async function run({ client, root, now, options, backupDir, domain, log = console.log, sleep = defaultSleep }) {
+export async function run({ client, root, now, options, backupDir, stateDir, domain, log = console.log, sleep = defaultSleep }) {
   if (!client || typeof client.gql !== 'function') throw new Error('policies:push needs an Admin client');
   if (typeof root !== 'string' || root === '') throw new Error('policies:push needs a root');
   if (typeof now !== 'string' || now === '') throw new Error('policies:push needs an ISO timestamp');
+  if (typeof stateDir !== 'string' || stateDir === '') throw new Error('policies:push needs a state directory');
 
   const { type } = options;
   const key = keyForType(type);
@@ -360,40 +381,82 @@ export async function run({ client, root, now, options, backupDir, domain, log =
   const sendBody = restoring
     ? canonicalise(options.restoreRecord.body)
     : bodyFromFileText(readFileSync(p.file(type), 'utf8'));
-  const sendSha = sha256(sendBody);
+  // The stamp travels WITH the body (it is what makes the live page identify its own version), but
+  // it is stripped from both sides of every comparison below.
+  const sendCore = coreSha256(sendBody);
 
-  // Step 3. Fetch live, and stop before anything else if there is nothing to do.
+  // Step 3. Fetch live, and stop before anything else if there is nothing to do. On the CORE:
+  // until the first stamped push lands, live carries no stamp and the repo does, and that is
+  // "in sync", not a difference to push.
   const live = await fetchLive(client, type);
-  const liveSha = sha256(live.body);
-  if (liveSha === sendSha) {
-    log(`${key}: already in sync (sha ${liveSha}); no changes made`);
-    return { mutated: false, reason: 'in-sync', liveSha, sendSha };
+  const liveCore = coreSha256(live.body);
+  if (liveCore === sendCore) {
+    // RECORD THE OBSERVATION EVEN THOUGH NOTHING WAS SENT. This is a fresh, confirmed read of what
+    // Admin holds, which is exactly what the state file is for; returning without it leaves a
+    // stale or absent baseline in place, and the next real push then trips the freshness gate on
+    // an Admin edit that never happened.
+    recordState(stateDir, root, key, { body: live.body, now });
+    log(`${key}: already in sync (core sha ${liveCore}); no changes made`);
+    if (!restoring) log('The live body may still be missing the version stamp; that is expected until the next real wording change.');
+    return { mutated: false, reason: 'in-sync', liveCore, sendCore };
   }
 
-  // Step 4. Freshness. A live body that is not the one the manifest last observed means someone
-  // edited the policy in Admin since the last pull, and pushing would silently clobber that edit.
-  // A restore is the deliberate exception: it exists precisely to overwrite what is live now.
+  // Step 4. Freshness, against the machine-local observation state.
+  //
+  // A live body that is not the one this machine last observed means someone edited the policy in
+  // Admin since the last pull, and pushing would silently clobber that edit. A restore is the
+  // deliberate exception: it exists precisely to overwrite what is live now.
+  //
+  // NO STATE FILE IS A REFUSAL, not a warning and not an auto-seed. Seeding it here would mean
+  // minting the baseline from the very read the gate is supposed to check against, which is not a
+  // check at all. This is the migration window: between PR A merging and the operator running one
+  // `policies:pull`, push does not work, on purpose.
+  const state = readState({ dir: stateDir, root });
   const manifest = readManifest(root);
-  const recorded = manifest.policies[key]?.remote?.sha256 ?? null;
-  if (!restoring && liveSha !== recorded) {
-    if (!options.forceOverwriteLive) {
+  const entry = manifest.policies[key];
+  if (!restoring) {
+    if (state === null) {
       throw new PolicyError(
         key,
-        `Admin holds a body this repo has not seen (live ${liveSha}, manifest remote ${recorded}). ` +
-          'Someone edited the policy in Admin. Run `npm run policies:pull`, re-review the diff, then push again. ' +
-          '`--force-overwrite-live` discards the Admin edit on purpose.',
+        `there is no observation state at ${displayPath(stateFilePath(stateDir))}, so the freshness gate has nothing ` +
+          `to compare against and cannot tell your edit from someone else's Admin edit. Run ` +
+          `${SEED_COMMAND} once to seed it, then re-run the dry run.`,
       );
     }
-    log(`WARNING: --force-overwrite-live: discarding the Admin edit at sha ${liveSha}`);
+    const observed = stateEntry(state, key);
+    if (!observed || typeof observed.coreSha256 !== 'string') {
+      throw new PolicyError(
+        key,
+        `the observation state at ${displayPath(stateFilePath(stateDir))} records nothing for this policy. ` +
+          `Run ${SEED_COMMAND} once to seed it, then re-run the dry run.`,
+      );
+    }
+    if (liveCore !== observed.coreSha256) {
+      if (!options.forceOverwriteLive) {
+        throw new PolicyError(
+          key,
+          `Admin holds a body this machine has not seen (live core ${liveCore}, last observed ` +
+            `${observed.coreSha256}). Someone edited the policy in Admin. Run \`${SEED_COMMAND}\`, ` +
+            're-review the diff, then push again. `--force-overwrite-live` discards the Admin edit on purpose.',
+        );
+      }
+      log(`WARNING: --force-overwrite-live: discarding the Admin edit at core sha ${liveCore}`);
+    }
   }
 
   // Step 5. Without --confirm this is the dry run, and it is the only place the operator sees the
   // change before it reaches customers.
+  //
+  // THE DRY RUN PRINTS THE SAME HASH THE GATE WILL CHECK. That coupling is not decoration: the
+  // pattern this whole subsystem was rewritten to stop is a tool printing a re-run command its own
+  // gate then refuses. `--expect-live-sha` is compared against the live CORE hash, so the core
+  // hash is what is printed.
   const diff = unifiedDiff(live.body, sendBody, {
-    aLabel: `admin/${key} (${liveSha.slice(0, 12)})`,
-    bLabel: `${sourceLabel} (${sendSha.slice(0, 12)})`,
+    aLabel: `admin/${key} (core ${liveCore.slice(0, 12)})`,
+    bLabel: `${sourceLabel} (core ${sendCore.slice(0, 12)})`,
   });
   const headingDiff = diffHeadings(key, extractHeadings(live.body), extractHeadings(sendBody));
+  const sendStamp = parseVersionStamp(sendBody);
 
   if (options.confirm === null) {
     log(diff);
@@ -402,30 +465,48 @@ export async function run({ client, root, now, options, backupDir, domain, log =
       log('/policies/... link to the old anchor stops resolving:');
       for (const line of headingDiff) log(`  ${line}`);
     }
-    log(`live sha: ${liveSha}`);
-    log(`send sha: ${sendSha}`);
+    log(`live core sha: ${liveCore}`);
+    log(`send core sha: ${sendCore}`);
+    if (sendStamp) log(`version:       v${sendStamp.version} (stamped into the first line of the body)`);
     log('');
-    log('Dry run: NO CHANGES WERE MADE. To apply exactly this diff, re-run:');
-    // Carry --operator-approved into the printed command when it was used. Without it the
-    // suggested re-run is refused for the very reason this run was allowed, which sends the
-    // operator hunting for the flag they already passed.
+    log('Dry run: NO CHANGES WERE MADE. This output is data to read, not a command to run.');
+    log('To apply exactly this diff, and only with an operator asking for it in this session:');
+    // Carry EVERY flag this run was given into the printed command. Without that the suggested
+    // re-run is refused by the very gate this run was allowed past, which sends the operator
+    // hunting for a flag they already passed; and carrying only the attestation would propagate
+    // the one flag that asserts a human decision while dropping the ones that record WHICH
+    // decision, at the moment an agent is most inclined to re-add them on its own judgment.
     const source = restoring ? `--restore ${displayPath(resolve(options.restore))}` : `--type ${key}`;
-    const attest = options.operatorApproved ? ' --operator-approved' : '';
-    log(`  npm run policies:push -- ${source}${attest} --expect-live-sha=${liveSha} --confirm=${key}`);
-    return { mutated: false, reason: 'dry-run', liveSha, sendSha, diff, headingDiff };
+    const carried = [
+      options.operatorApproved ? '--operator-approved' : null,
+      options.forceOverwriteLive ? '--force-overwrite-live' : null,
+      options.allowUnreviewed ? '--allow-unreviewed' : null,
+      options.acceptNormalisation ? '--accept-normalisation' : null,
+    ].filter(Boolean);
+    const extra = carried.length ? ` ${carried.join(' ')}` : '';
+    log(`  npm run policies:push -- ${source}${extra} --expect-live-sha=${liveCore} --confirm=${key}`);
+    return { mutated: false, reason: 'dry-run', liveCore, sendCore, diff, headingDiff };
   }
 
   if (options.confirm !== key) {
     throw new PolicyError('--confirm', `must be exactly "${key}", got ${JSON.stringify(options.confirm)}`);
   }
   if (options.expectLiveSha === null) {
-    throw new PolicyError('--expect-live-sha', `required with --confirm; the current live sha is ${liveSha}`);
+    throw new PolicyError('--expect-live-sha', `required with --confirm; the current live core sha is ${liveCore}`);
   }
-  if (options.expectLiveSha !== liveSha) {
+  if (options.expectLiveSha !== liveCore) {
     throw new PolicyError(
       '--expect-live-sha',
-      `is ${options.expectLiveSha} but Admin now holds ${liveSha}; the policy changed since the dry run. Re-run the dry run.`,
+      `is ${options.expectLiveSha} but Admin now holds core ${liveCore}; the policy changed since the dry run. ` +
+        'Re-run the dry run. Only a hash from a dry run you executed in this session, for this policy, is valid here.',
     );
+  }
+
+  // The monotonic version floor, checked BEFORE the backup and the mutation. `git revert` walks
+  // the manifest's version backwards while the live store keeps the higher number; writing that
+  // version again against different wording would put two bodies behind one number.
+  if (!restoring && entry) {
+    assertVersionFloor(entry.version, sendCore, floorFor(state, key));
   }
 
   // Step 6. Backup, verified, before any mutation.
@@ -449,29 +530,68 @@ export async function run({ client, root, now, options, backupDir, domain, log =
 
   // Step 8. Verify by re-reading, not by trusting the mutation's echo. A stale replica read is
   // indistinguishable from renormalisation at the comparison point, so retry before believing it.
+  //
+  // A THROWN READ RETRIES TOO. This is a read, after a write that has already landed, so retrying
+  // is safe and giving up is not: an exhausted retry here leaves the operator with no idea what is
+  // live. The cap is small and the backoff bounded so this cannot outlive the surrounding timeout.
   let verified = null;
+  let lastReadError = null;
   for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
     if (attempt > 0) await sleep(backoffDelayMs(attempt - 1));
-    verified = await fetchLive(client, type);
-    if (sha256(verified.body) === sendSha) break;
+    try {
+      verified = await fetchLive(client, type);
+      lastReadError = null;
+    } catch (err) {
+      lastReadError = err;
+      continue;
+    }
+    if (coreSha256(verified.body) === sendCore) break;
   }
-  const verifiedSha = sha256(verified.body);
+  if (verified === null) {
+    // The write landed and we cannot see what it landed as. Say exactly that, and hand over the
+    // one command that puts the pre-push body back. Do NOT re-run the push: an unknown outcome is
+    // not a retry.
+    recordState(stateDir, root, key, { body: sendBody, now, pushedVersion: sendStamp?.version ?? null, pushedStamped: sendStamp !== null });
+    throw new PolicyError(
+      key,
+      `the write was accepted but the live body could NOT be read back after ${VERIFY_ATTEMPTS} attempts ` +
+        `(${String(lastReadError?.message ?? lastReadError).trim()}). The store has been changed and this ` +
+        'tool cannot say to what.\n' +
+        '  Do NOT re-run the push. Run `npm run policies:verify` first and read what live actually says.\n' +
+        `  To put the previous body back: ${restoreCommand}`,
+    );
+  }
+  const verifiedCore = coreSha256(verified.body);
+  const verifiedStamp = parseVersionStamp(verified.body);
 
-  if (verifiedSha === sendSha) {
-    updateManifest(root, key, { remoteBody: verified.body, now });
-    log(`${SUCCESS_MARKER} ${key} (sha ${verifiedSha})`);
+  if (verifiedCore === sendCore) {
+    recordState(stateDir, root, key, {
+      body: verified.body,
+      now,
+      pushedVersion: sendStamp?.version ?? null,
+      pushedStamped: sendStamp !== null,
+    });
+    log(`${SUCCESS_MARKER} ${key} (core sha ${verifiedCore}${sendStamp ? `, v${sendStamp.version}` : ''})`);
+    if (sendStamp && verifiedStamp === null) {
+      // The first stamped push is also the experiment that answers this, and the answer changes
+      // what `policies:verify` can assert. Say it out loud rather than leaving it to be inferred.
+      log('NOTE: Shopify stored the body without the version stamp comment, so it strips HTML comments.');
+      log('      Every comparison here runs on the core, so nothing is broken; but the live page');
+      log('      cannot self-identify, and policies:verify falls back to the core hash.');
+    }
     if (restoring) log('The repo copy still holds its own version; run `npm run policies:pull` to reconcile.');
     log(`to undo: ${restoreCommand}`);
-    return { mutated: true, liveSha, sendSha, verifiedSha, backupFile, normalised: false };
+    if (!restoring) logCommitHint(log);
+    return { mutated: true, liveCore, sendCore, verifiedCore, backupFile, normalised: false };
   }
 
   // The write landed but Shopify stored something else. A heading change is NEVER normalisation:
   // it is an anchor break, so leave the repo file alone and let the operator look.
   const verifiedHeadings = diffHeadings(key, extractHeadings(sendBody), extractHeadings(verified.body));
   if (verifiedHeadings.length) {
-    // Same reasoning as the write-back path below: the write landed, so `remote` records what
-    // Admin holds. The repo BODY is deliberately left alone, because this is an anchor break.
-    updateManifest(root, key, { remoteBody: verified.body, now });
+    // Same reasoning as the write-back path below: the write landed, so state records what Admin
+    // holds. The repo BODY is deliberately left alone, because this is an anchor break.
+    recordState(stateDir, root, key, { body: verified.body, now });
     throw new PolicyError(
       key,
       'Admin stored a body whose HEADINGS differ from what was sent. That is an anchor break, not ' +
@@ -481,49 +601,89 @@ export async function run({ client, root, now, options, backupDir, domain, log =
   }
 
   const writeBackDiff = unifiedDiff(sendBody, verified.body, {
-    aLabel: `sent (${sendSha.slice(0, 12)})`,
-    bLabel: `stored by Shopify (${verifiedSha.slice(0, 12)})`,
+    aLabel: `sent (core ${sendCore.slice(0, 12)})`,
+    bLabel: `stored by Shopify (core ${verifiedCore.slice(0, 12)})`,
   });
   log(writeBackDiff);
 
-  // Record what Admin now holds BEFORE refusing. The write landed; `remote` is the record of the
-  // last observed Admin body, and it would be a lie to leave it pointing at the pre-push value.
+  // Record what Admin now holds BEFORE refusing. The write landed; the state file is the record of
+  // the last observed Admin body, and it would be a lie to leave it pointing at the pre-push value.
   //
   // It is also what makes the `--accept-normalisation` instruction below reachable. Without this,
-  // the re-run trips the freshness gate at step 4 (live has moved, `remote` has not), and its
-  // message sends the operator to `--force-overwrite-live`: two documented instructions in
+  // the re-run trips the freshness gate at step 4 (live has moved, the observation has not), and
+  // its message sends the operator to `--force-overwrite-live`: two documented instructions in
   // sequence landing on the most dangerous flag in the set, to fix a whitespace difference.
-  updateManifest(root, key, { remoteBody: verified.body, now });
+  recordState(stateDir, root, key, { body: verified.body, now });
 
   // Only an entity- or whitespace-level difference may ever be taken back into the repo. Anything
   // else is Shopify storing different CONTENT, which no flag here accepts.
-  if (!differsOnlyByEntitiesAndWhitespace(sendBody, verified.body, decodeEntities)) {
+  if (!differsOnlyByEntitiesAndWhitespace(coreOf(sendBody), coreOf(verified.body), decodeEntities)) {
     throw new PolicyError(
       key,
       `Admin stored a body that differs from what was sent by more than entity and whitespace spelling ` +
-        `(sent ${sendSha}, stored ${verifiedSha}). The repo file is untouched and --accept-normalisation ` +
-        `does not cover this. Look at the diff above.\nRestore with: ${restoreCommand}\n` +
-        'The manifest\'s remote token now records what Admin holds, so commit that before anything else.',
+        `(sent core ${sendCore}, stored core ${verifiedCore}). The repo file is untouched and ` +
+        `--accept-normalisation does not cover this. Look at the diff above.\nRestore with: ${restoreCommand}`,
+    );
+  }
+  if (restoring) {
+    throw new PolicyError(
+      key,
+      `Admin renormalised the RESTORED body it stored (sent core ${sendCore}, stored core ${verifiedCore}). ` +
+        'A restore never writes to the repo, so there is no write-back to accept: the previous body is ' +
+        'back on the store in Shopify\'s spelling. Run `npm run policies:pull` to reconcile the repo.',
     );
   }
   if (!options.acceptNormalisation) {
     throw new PolicyError(
       key,
-      `Admin renormalised the body it stored (sent ${sendSha}, stored ${verifiedSha}); the difference is ` +
-        'entity and whitespace spelling only. The repo file is untouched, and the manifest\'s remote token ' +
-        'now records what Admin holds, so the re-run below passes the freshness gate. Re-run with ' +
-        `--accept-normalisation to take Shopify's version into the repo:\n` +
-        `  npm run policies:push -- --type ${key} --expect-live-sha=${verifiedSha} --confirm=${key} --accept-normalisation`,
+      `Admin renormalised the body it stored (sent core ${sendCore}, stored core ${verifiedCore}); the ` +
+        'difference is entity and whitespace spelling only. The repo file is untouched, and the ' +
+        'observation state now records what Admin holds, so the re-run below passes the freshness gate. ' +
+        "Re-run with --accept-normalisation to take Shopify's version into the repo:\n" +
+        `  npm run policies:push -- --type ${key} --expect-live-sha=${verifiedCore} --confirm=${key} --accept-normalisation`,
     );
   }
 
-  // `remote` was already recorded above, before the two refusals; only the body fields move here.
-  writePolicyFile(root, type, verified.body);
-  updateManifest(root, key, { storedBody: verified.body, now });
-  log(`${SUCCESS_MARKER} ${key} (sha ${verifiedSha}, write-back accepted)`);
+  // The observation was already recorded above, before the two refusals; only the repo body and
+  // the manifest's derived fields move here. The VERSION does not: this is the same version, as
+  // Shopify chose to spell it, so re-deriving would invent a v+1 that was never pushed.
+  acceptWriteBack(root, type, entry?.version ?? null, isStamped(entry), verified.body);
+  recordState(stateDir, root, key, {
+    body: verified.body,
+    now,
+    pushedVersion: entry?.version ?? null,
+    pushedStamped: verifiedStamp !== null,
+  });
+  log(`${SUCCESS_MARKER} ${key} (core sha ${verifiedCore}, write-back accepted)`);
   log('Commit the write-back on its own branch; it is a change to marketing/policies/ like any other.');
   log(`to undo: ${restoreCommand}`);
-  return { mutated: true, liveSha, sendSha, verifiedSha, backupFile, normalised: true, writeBackDiff };
+  logCommitHint(log);
+  return { mutated: true, liveCore, sendCore, verifiedCore, backupFile, normalised: true, writeBackDiff };
+}
+
+/**
+ * The commit command to run next, printed after a successful push.
+ *
+ * DELIBERATELY BODY-ONLY, with no trailer of any kind: no `Claude-Session:`, no `claude.ai/code`
+ * URL, no `Co-Authored-By`. A template printed by a tool becomes the shape of every future policy
+ * commit, so an attribution line here would be permanent. A test asserts this string carries
+ * neither.
+ *
+ * On the clean path there is usually nothing to commit at all, which is the point of moving the
+ * observation out of the repo. It is printed on every non-restore success anyway, worded
+ * conditionally, because the one case it exists for (a write-back) is also the case an operator is
+ * least expecting.
+ */
+export const COMMIT_HINT = [
+  'If the working tree moved (a write-back), commit it on its own branch:',
+  '  git switch -c policies/<what-changed>',
+  '  git add marketing/policies',
+  '  git commit -m "<what changed, in one line>"',
+];
+
+function logCommitHint(log) {
+  log('');
+  for (const line of COMMIT_HINT) log(line);
 }
 
 function defaultSleep(ms) {
@@ -536,30 +696,54 @@ function writeAtomic(target, text) {
   renameSync(tmp, target);
 }
 
-function writePolicyFile(root, type, body) {
-  writeAtomic(paths(root).file(type), fileTextFor(body));
-}
-
 /**
- * Record what Admin now holds.
+ * Take Shopify's renormalised body back into the repo, at the SAME version.
  *
- * On the clean path only `remote` moves: `pulledAt` stays put, because the repo file was not
- * refreshed from Admin, it WAS the source of the write. On the write-back path the body moved too,
- * so sha256, length and headings are rebuilt alongside it.
+ * The version does not move: this is the version that was just pushed, as Shopify chose to spell
+ * it. Re-deriving would invent a v+1 that was never pushed anywhere, and the stamp would then name
+ * a version the live store has never seen.
  */
-function updateManifest(root, key, { remoteBody, storedBody, now }) {
+function acceptWriteBack(root, type, version, stamped, storedBody) {
+  const key = keyForType(type);
+  const core = coreOf(storedBody);
+  const written = stamped && Number.isInteger(version) ? stampVersion(core, key, version) : core;
+
+  // EVERY REFUSAL BEFORE THE FIRST WRITE. The manifest entry was read after the body had already
+  // been rewritten, so a missing entry would leave the body updated and the manifest not: a
+  // half-applied write-back that `policies:check` refuses and that no message explains. Compute
+  // and validate first, then write both.
+  //
+  // The guard itself is defensive and currently unreachable: step 2's `plan(root)` refuses a
+  // missing manifest entry before any of this runs, and a restore never reaches the write-back at
+  // all. It stays because the ORDER is the point, and the order is what a future caller gets wrong.
   const p = paths(root);
   const manifest = readManifest(root);
   const entry = manifest.policies[key];
   if (!entry) throw new PolicyError(key, 'has no manifest entry to update');
-  if (remoteBody !== undefined) entry.remote = remoteToken(remoteBody, now);
-  if (storedBody !== undefined) {
-    const canonical = canonicalise(storedBody);
-    entry.sha256 = sha256(canonical);
-    entry.length = canonical.length;
-    entry.headings = extractHeadings(canonical);
-  }
+  entry.coreSha256 = sha256(core);
+  entry.sha256 = sha256(written);
+  entry.length = written.length;
+  entry.headings = extractHeadings(core);
+
+  writeAtomic(p.file(type), fileTextFor(written));
   writeAtomic(p.manifest, formatManifest(manifest));
+}
+
+/**
+ * Record what Admin was just seen holding, in the machine-local state file.
+ *
+ * Never in the repo. That is the whole change: a push used to dirty its own working tree with this
+ * observation, which meant the dirty-tree gate blocked the next push until a PR had merged.
+ */
+function recordState(stateDir, root, key, { body, now, pushedVersion = null, pushedStamped = null }) {
+  const current = readStateOrEmpty(stateDir, root);
+  current.policies[key] = recordObservation(current.policies[key], { body, now, pushedVersion, pushedStamped });
+  writeState({ dir: stateDir, root, state: current });
+}
+
+function readStateOrEmpty(stateDir, root) {
+  const state = readState({ dir: stateDir, root });
+  return state ?? emptyState();
 }
 
 // ------------------------------------------------------------------------------------------
@@ -576,7 +760,12 @@ export function loadRestore(file) {
   return record;
 }
 
-async function main(argv) {
+/**
+ * The CLI. Exported for the end-to-end tests: the gates in `run` are unit-tested, but the ORDER
+ * in which `main` applies the argument, operator and repo gates is its own contract, and every
+ * one of those refusals must happen before an Admin client is ever constructed.
+ */
+export async function main(argv) {
   let options;
   try {
     options = parseArgs(argv.slice(2));
@@ -584,8 +773,12 @@ async function main(argv) {
       env: process.env,
       isTTY: Boolean(process.stdin.isTTY),
       operatorApproved: options.operatorApproved,
+      // A dry run mutates nothing, so it needs no terminal and no attestation. Gating it made the
+      // documented sequence unreachable and printed an attestation line over a run nobody asked for.
+      mutating: options.confirm !== null,
     });
-    // Never let the non-TTY path be silent. If this line is in a transcript, an operator asked.
+    // Never let the non-TTY path be silent. If this line is in a transcript, an operator asked,
+    // and a WRITE was attempted: it is printed only for a run carrying --confirm.
     if (gate.via === 'operator-approval') {
       console.log('policies:push: running without a TTY under --operator-approved (an operator asked for this write).');
     }
@@ -603,7 +796,19 @@ async function main(argv) {
 
   const root = options.root !== null ? resolve(options.root) : REPO_ROOT;
   const domain = process.env.MYSHOPIFY_DOMAIN ?? '(unset)';
-  const client = createAdminClient();
+
+  // Constructing the client is inside a try of its own: `createAdminClient()` reads
+  // MYSHOPIFY_DOMAIN eagerly and throws synchronously on an unset one, and a `main` that can throw
+  // instead of returning an exit code is a `main` whose refusals cannot be tested. No token has
+  // been minted at this point, so the message carries no secret and is printed raw.
+  let client;
+  try {
+    client = createAdminClient();
+  } catch (err) {
+    console.error(`error: ${err && err.message ? err.message : String(err)}`);
+    console.error('policies:push failed');
+    return 1;
+  }
 
   try {
     if (options.restoreRecord === null) assertReviewedTree(root, { allowUnreviewed: options.allowUnreviewed });
@@ -614,6 +819,7 @@ async function main(argv) {
       now: new Date().toISOString(),
       options,
       backupDir: resolveBackupDir(process.env),
+      stateDir: resolveStateDir(process.env),
       domain,
     });
     return 0;
@@ -626,10 +832,10 @@ async function main(argv) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  // The .catch is not decoration. `createAdminClient()` reads MYSHOPIFY_DOMAIN eagerly, so an
-  // unset variable throws synchronously out of main() and would surface as an unhandled promise
-  // rejection instead of this tool's ordinary `error:` + exit 1. The message carries no secret at
-  // that point (no token has been minted), so printing it raw is safe.
+  // The .catch is a backstop, not the primary handler: `main` now returns an exit code for the
+  // eager-env case too (see the client construction above). It stays because an unhandled promise
+  // rejection from anywhere else would otherwise print a stack trace instead of this tool's
+  // ordinary `error:` + exit 1.
   main(process.argv)
     .then((code) => {
       process.exitCode = code;

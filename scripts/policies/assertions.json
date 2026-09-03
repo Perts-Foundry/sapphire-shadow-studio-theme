@@ -1,0 +1,50 @@
+{
+  "comment": [
+    "What each pushed policy must, and must not, say, checked against the LIVE body by",
+    "npm run policies:verify.",
+    "",
+    "Each string must DISCRIMINATE: satisfied only by the new wording, never incidentally by the",
+    "old. A bare duration that appears in both versions proves nothing, so a phrase is quoted with",
+    "enough surrounding markup to be unique, and the old table rows are the negatives.",
+    "",
+    "coreSha256 pins the repo body each set was written against. verify refuses a set whose hash no",
+    "longer matches, BEFORE any live read, and refuses a set with no hash at all: there is no",
+    "fallback to default mode, because a stale positive assertion reports PASS on wording nobody",
+    "checked. After a wording edit, rewrite the sentences and paste the new coreSha256 from the",
+    "manifest."
+  ],
+  "policies": {
+    "shipping_policy": {
+      "coreSha256": "7f46e537f25d270b70415f57a5c0205de7a8cc5aebc58994dffd0d28b75c0940",
+      "must": [
+        "Most orders ship within <strong>3–5 business days</strong>",
+        "production time increases to <strong>7–10 business days</strong>",
+        "Nurses Week",
+        "If we need to check a detail with you, production pauses",
+        "orders of four or more items may add 1–2 business days",
+        "<td>8–13 business days</td>",
+        "<td>4–7 business days</td>",
+        "Every piece is embroidered to order, one at a time"
+      ],
+      "mustNot": [
+        "<td>2 business days</td>",
+        "<td>7–10 business days</td>",
+        "<td>3–4 business days</td>",
+        "may extend by 3–5 additional business days",
+        "ready to ship within <strong>2 business days</strong>"
+      ]
+    },
+    "contact_information": {
+      "coreSha256": "63e8745e32d30f1a055409b07abcbd697a0c6fc7681ec1287aac67c5477ccbf0",
+      "must": [
+        "Contact Us"
+      ],
+      "mustNot": [
+        "font-claude-response-body",
+        "break-words",
+        "whitespace-normal",
+        "leading-[1.7]"
+      ]
+    }
+  }
+}

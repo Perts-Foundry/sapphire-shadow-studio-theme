@@ -1,5 +1,285 @@
 # Release Notes
 
+## Shop policy versioning, and the bookkeeping leaves the repo (unreleased)
+
+The shop-policies subsystem landed across five PRs where two would have done, and the reason is
+recorded in the commit messages themselves. None of #152, #153 or #154 was a bug inside a command.
+Each was a gap in the **operating sequence**: which command is right for which situation, what git
+state each one needs, and what a tool's own side effects do to the next step.
+
+- the planned canary target was already in sync, so the first real push would have been a no-op
+- the TTY gate refused the exact execution path the operator wanted, and the only route through
+  was faking a terminal
+- the dirty-tree gate blocked the next push on its own side effect, meaning a PR per push forever
+- the dry run printed a re-run command that its own gate would refuse
+- `policies:pull --check` pointed the operator at the destructive command
+- two of #154's tests passed vacuously, because a fake matched a bare filename against production
+  code that emits a full pathspec
+
+This change answers the sequence rather than the individual commands.
+
+**Every policy carries a derived `version`, and the stamp goes into the live body.** An invisible
+HTML comment on the first line, `<!-- sss-policy shipping_policy v3 -->`, so viewing source on the
+live page answers "which version is up?" without an Admin read. `deriveVersion` is the one place a
+version is ever computed and it throws rather than guessing; the table is in
+`marketing/policies/README.md`.
+
+**Most of the risk in this change traces to the stamp being in the live body**, and that trade was
+taken deliberately rather than by default. A manifest-only stamp would remove the version
+monotonicity problem, the stamp-strip self-trip, the two-hash class of bug, the permanently-repo-
+ahead reading, the privacy-policy exemption and `verify`'s "never stamped versus stripped"
+ambiguity, and would still put `version` in every PR diff. It would not answer "what is live right
+now" from a browser. Recorded here so the trade is visible if it is ever revisited.
+
+**The core/stamp split is the whole design.** The stamp is additive presentation, so every
+comparison in the subsystem runs on the CORE body with the stamp stripped from both sides.
+`coreSha256` is the wording; the manifest's `sha256` is the committed bytes and is never compared
+against anything live. Confusing the two is how the stamp self-trips its own gate: a stamped repo
+body against an unstamped live one reads as a difference that is not a wording change. Every call
+site names its hash, and the README has the table.
+
+**The dry run prints the same hash the gate will check.** That coupling is not tidiness. A tool
+printing a re-run command its own gate then refuses is the #152-to-#154 pattern, and it happened
+twice.
+
+**`remote` and `pulledAt` left the repo.** They were observations, not reviewed content, and
+keeping them in the manifest meant a successful push dirtied its own working tree; the dirty-tree
+gate then blocked the next push until that side effect had been committed and merged. PR #154
+answered that by teaching the gate to ignore exactly those two fields, which cost a HEAD read, a
+JSON reshape and a field allowlist to guard a distinction the manifest should not have carried.
+Moving the fields to a machine-local `$XDG_STATE_HOME/shop-policies-state/observed.json` deletes
+all of it: the gate goes back to one question with one answer, and **a successful push now leaves
+the working tree clean**. The PR history is the record of what changed; `version` is the identity.
+
+The state file gets **its own path and its own override** (`POLICIES_STATE_DIR`), not the backup
+directory's. Sharing one would mean a "reclaim some space, delete old backups" action silently
+deletes the freshness baseline, and would let one variable relocate both. It is a SIBLING of the
+backup directory rather than a child: `shop-policies/state/` was the first spelling and it defeated
+the whole rationale, since `rm -rf ~/.local/state/shop-policies` still took the baseline with it.
+Separate overrides are not enough when the defaults nest.
+
+A resolved state directory inside the checkout is a refusal, because a committed observation is
+exactly what the move removes. Compared on the REAL paths (symlinks resolved through the deepest
+existing ancestor) and case-insensitively on macOS and Windows: a lexical `startsWith` misses both a
+symlink into the tree and a differently-cased spelling of the same directory, and both are ways to
+pass the check and still write into a public checkout. Every message naming the state file collapses
+`$HOME` to `~`, the same way every backup path already did: an absolute state path carries the
+operator's username, and a freshness refusal is exactly the output that gets pasted into a PR.
+
+**`push` refuses with no state file, and there is no auto-seed.** Seeding the baseline from the very
+read the freshness gate is supposed to check against is not a check. That leaves a window between
+the versioning PR merging and the operator's first `policies:pull`, and stating the window is what
+makes it deliberate rather than discovered.
+
+**The monotonic floor, for the revert case.** `deriveVersion` reads the previous entry from a
+git-tracked file, so `git revert` restores body and manifest atomically and walks `version`
+BACKWARDS while the live store keeps the higher number. The next wording change then re-derives a
+version that is already live against different bytes. The state file records `highestPushed`, and
+`push` refuses a version at or below it unless the wording is identical. Enforcement sits at the
+write, where the state file is guaranteed present.
+
+**All five seeded at version 1**, meaning "as of this change". Seeding the two already-pushed
+policies at 2 would assert a claim about git history that nothing enforces, and is unverifiable
+either way because the live store never carried a v1.
+
+**No live write was spent to deploy the stamps.** Comparisons run on cores, so the repo carries
+stamps and they reach the store on the next real wording change. Two consequences accepted: "live
+carries no stamp" is the normal state until then, and whether Shopify preserves an HTML comment
+stays unknown until that first stamped push. A fake client that strips comments proves the push
+completes either way, and `push` says so out loud if the stamp comes back missing.
+
+**Bare `policies:pull` stopped eating committed work.** It used to overwrite all five bodies with no
+check of any kind. It now refuses on a dirty body, on a policy whose repo core is ahead of live, and
+on a wording difference with no baseline at all. There is deliberately no "not a git worktree, skip
+the check" branch: a production tool that disables a destructive-write guard so a test can pass is
+the same defect class as the vacuous fakes.
+
+**The no-baseline refusal needed an escape, and `--seed` is it.** With no observation state and a
+wording difference, "which side moved?" has no answer, and guessing "Admin" silently reverts a
+committed wording change. Refusing there would have been circular, though: push refuses for want of
+a baseline and pull refuses to write one. `npm run policies:pull -- --seed` records what Admin holds
+and writes not one byte into the repo. Found by writing the migration sequence as a test, which is
+the point of writing it as a test.
+
+**`policies:status` is the entry point the subsystem was missing.** `check` proves the repo agrees
+with ITSELF and is green in the merged-but-not-pushed state, which is exactly how a wording change
+gets declared done while customers still read the old text. `pull --check` needs credentials and
+answers a different question. `status` classifies from the repo core, the manifest core and the last
+observation, and names exactly one command per state. It degrades and reports rather than refusing:
+no state file, no `origin/main`, not a git worktree at all.
+
+### The state machine
+
+| State | `status` says | The one command out |
+|---|---|---|
+| Everything agrees | `in sync` | nothing to do |
+| No state file | `unknown: no observation state on this machine` | `policies:pull`, or `--seed` if an edit is already committed |
+| Body edited, manifest stale | `repo edited: restamp, then commit` | `policies:restamp` |
+| Merged, not pushed | `repo ahead: a push is outstanding` | `policies:push -- --type <t>` (operator-gated) |
+| Admin edited behind us | `Admin moved: pull and review` | `policies:pull` |
+| Both moved | `CONFLICT: edited locally AND Admin moved` | `policies:pull -- --check` |
+| In state, not in the manifest | `in the observation state but not the manifest` | nothing; it is ignored |
+| `status` itself errored | exit 1 | stop and report; do not guess a state |
+
+Row four is what this table exists for. `policies:check` is GREEN there.
+
+**`verify-live.mjs` became `npm run policies:verify`,** with `--root`, an exported `run()` and a
+test file. Its sentence sets moved to `scripts/policies/assertions.json`, each pinning the
+`coreSha256` it was written against; a set whose hash no longer matches is refused **before any live
+read**, and a set with no hash is refused too rather than falling back. A stale positive assertion
+reports PASS on wording nobody checked, which is worse than no assertion. **The assertion of record
+is the version**: a byte match without a version match says the two bodies agree, not that the body
+live is carrying is the one this repo can name.
+
+**Step 8's re-read retries on a throw, and an unknown outcome is not a retry.** A read that throws
+every time means the write landed and the tool cannot say to what; it records the observation,
+refuses, and prints `--restore`. Re-running the push there is the one thing not to do.
+
+**The printed commit command carries no attribution of any kind,** and a test asserts it. A template
+printed by a tool becomes the shape of every future policy commit, so a trailer there would be
+permanent and would land in a public repo's history.
+
+**Rollback.** Reverting this change after the seeding pull leaves an orphan `observed.json` and
+possibly stamped bodies on the live store with no `version` in the tree. Revert the PR, delete
+`observed.json`, and note that a stamped live body is harmless because every comparison is
+core-based.
+
+### The skill, and why the absolutes are duplicated
+
+`.claude/skills/shop-policies/` holds the operating sequence: `SKILL.md` routes from a
+`policies:status` label to exactly one destination file, and `change.md` / `push.md` / `verify.md` /
+`recover.md` hold the four phases. It lives in this repo rather than in `~/.claude/skills/`, like
+every other skill here.
+
+**The five absolutes are duplicated on purpose, in three files.** CLAUDE.md is always loaded;
+`SKILL.md` loads only if the skill triggers, and `push.md` only if the agent routes there. An agent
+reaching `policies:push` from `package.json`, from shell history, or from a pasted command sees none
+of it. `push.md` carries a copy specifically because it is the file open at the moment of the write,
+possibly after a compaction dropped `SKILL.md`. Three copies is three chances to drift, and a
+drifted absolute is worse than none (an agent that finds two versions picks the convenient one), so
+each sits between the same markers, `scripts/policies/test/absolutes-parity.test.mjs` compares them
+byte for byte, and every copy carries the line telling a reader to stop and report a difference
+rather than choose.
+
+A backstop that does not depend on the skill triggering: **a `policies:push` run without having read
+`push.md` in this session is itself a violation**, stated in CLAUDE.md as well as in the skill.
+
+**A red-team pass over the skill text** (given only the skill, enumerate every path to a completed
+push that does not involve a quotable operator request in this session) is what the absolutes are
+shaped by. `absolutes-parity.test.mjs` pins one clause per closed path, because each is the kind of
+sentence a later tightening-for-brevity edit removes without noticing.
+
+**The pass found one defect in the CODE, and it was the important one.** `assertInteractive` ran
+before the dry-run branch, so a dry run refused in any session without a TTY. That made the
+documented sequence unreachable: rule 1 requires the operator's ask to come AFTER they have seen the
+dry run, and the dry run required the attestation that rule 1 says can only follow it. Every real
+agent run therefore passed `--operator-approved` at a moment when nothing had been attested, which
+teaches precisely the wrong thing about the flag; and the tool then printed "an operator asked for
+this write" over a run where nobody had, leaving a sentence in the transcript that a later agent
+would read as evidence. A dry run sends no mutation and writes no file, so it now needs no terminal
+and no attestation. `CI` still refuses it, like everything else here: that boundary is about the
+credential, not about the write.
+
+**A second code fix from the same pass:** the dry run's printed re-run line carried
+`--operator-approved` forward and dropped `--force-overwrite-live`, `--allow-unreviewed` and
+`--accept-normalisation`. That is the safe default inverted, propagating the flag that asserts a
+human decision while dropping the ones recording WHICH decision, so the printed command was refused
+by the gate the operator had already been past, at the moment an agent is most inclined to re-add a
+flag on its own judgment. It now carries every flag the run was given, and invents none.
+
+**A fifth absolute.** No delegation was a skill-file rule, and a subagent handed "get the policy
+live" loads CLAUDE.md, not the skill: it would find only that a message must not be "relayed by a
+subagent", which reads as a constraint on other agents rather than on itself. The rule that must
+bind a subagent has to live in the always-loaded layer, so it is now absolute 5.
+
+**And four wording corrections in the absolutes:** a bare affirmative ("looks good", "ship it") is
+explicitly not a grant, since it is what operators actually type and it satisfies every clause of
+rule 1 except the least emphasised one; the exclusion list now names a compaction artifact, a
+conversation summary, a memory file, a resumed session's carried-over context and a parent agent's
+task prompt, because a compaction can MANUFACTURE the quote rather than merely drop it; rule 2's
+heading said "simulated" while its body forbade any pty, so a real pty from `script` was arguable
+(it now says "No terminal you did not sit at", and names `setsid`, `ssh -t`, `docker run -t`, a
+multiplexer and a `/dev/tty` redirect); and rule 3's "to get past it" qualifier invited unsetting
+`CI` for some other reason and then pushing.
+
+**One of the absolutes was factually wrong**, and had been since before this change. It offered
+`npx shopify theme pull` as the read-only way to inspect a live policy. Policy bodies are Admin
+objects written by `shopPolicyUpdate`; they are not theme files, and this theme has no policy
+template, so a theme pull returns no policy HTML at all. An agent following it would find nothing
+and be pushed back toward the bare `policies:pull` the rule forbids. The read-only ways are
+`policies:verify`, `policies:pull -- --check`, `policies:pull -- --seed` and
+`policies:status -- --live`, and there are no others.
+
+**`policies:status` is documented as `-- --live`.** Offline it compares the repo against the last
+observation, so `Admin moved` and `CONFLICT` are states it structurally cannot report, and the
+routing table routed two labels a bare run could never emit. The offline report now says what it
+could not determine rather than omitting it, and `in sync` from a bare run is qualified. Its
+next-command for "no state" is `pull -- --seed` rather than a bare pull, which would take Admin's
+body into the repo on the way and revert a committed unpushed wording change without asking.
+
+**The ownership rule, stated in all three files** so the next wording change does not land in
+whichever file was open: the skill holds the **how**, `marketing/policies/README.md` holds the
+**why** (gate rationale, the anchor contract, backups, what the tests do not prove), and CLAUDE.md
+holds the **trigger and the absolutes**.
+
+**Two findings from the code review.** `acceptWriteBack` rewrote the body file and only then read
+the manifest entry it needed, so a missing entry would have left the body updated and the manifest
+not: a half-applied write-back that `policies:check` refuses and that no message explains. It
+validates first now. And the "already in sync" fast path returned without recording the observation,
+throwing away a fresh confirmed read of what Admin holds; a stale or absent baseline then survived,
+and the next real push would trip the freshness gate on an Admin edit that never happened.
+
+**Two findings from the security pass, both about the state file.** `assertStateDirOutsideRepo`
+compared lexically resolved strings, which closed `..` traversal but not a symlink into the
+checkout, nor a differently-cased spelling on macOS or Windows; both are ways to pass the check and
+still write `observed.json` into a public working tree. It now compares REAL paths, resolving
+symlinks through the deepest existing ancestor, and case-insensitively where the filesystem is.
+Separately, every message naming the state file printed a raw absolute path carrying the operator's
+username, which CLAUDE.md bars from the repo, from PRs and from issues; `displayPath` already
+existed and was already applied to every backup path, and now covers the state paths too. A
+freshness refusal and a `policies:status` report are exactly the outputs that get pasted into a PR.
+
+**The meta-test was itself bypassable, which is the same lesson one level up.** It keyed on the
+DECLARATION (`const <something with git in the name> = (`) and on the literal property `run:`, so
+this passed every rule: `const runner = (root, args) => (args.some((a) => a.endsWith('.html')) ? ' M
+x' : ''); someGate('/x', { gitRun: runner })`. Twice over: the identifier avoided the name pattern,
+and `gitRun:` contains no `run:` with a word boundary before it, which left 28 of the directory's
+injection sites (every one in `pull` and `status`) invisible to all of it.
+
+The rules key on the INJECTION SITE now. What a fake is called does not matter; what reaches a
+`run:` or `gitRun:` parameter does, and it must be a function `makeGitFake` built. A function
+literal there is banned outright, and a named value is resolved to its binding. Exhaustion moved to
+RUNTIME: `makeGitFake` registers every fake it builds and `assertAllGitFakesExhausted` checks the
+lot in an `after()` hook, because a textual rule could not follow a file-level factory into the
+tests that call it and so covered about a quarter of the fakes. An opt-out now needs a `why`
+sentence rather than a marker comment. The rewritten rule is tested against the bypass that
+defeated its predecessor.
+
+**Five vacuous tests found and closed**, each named with the mutation that survived it. The worst
+was the suite guard in `state.test.mjs` asserting no path resolves outside the temp root: it ran as
+a top-level test, in declaration order, before any test body had created a directory, so its loop
+body never executed and it would have passed against a suite writing into the operator's home
+directory. It runs in `after()` now and asserts it saw something. The others: an
+`assert.rejects` with no matcher, satisfied by any rejection; the corrupt-state rows asserting only
+that `npm run policies:pull` was named, which the ABSENT-file refusal also names, so deleting the
+"absent is a fact, unusable is a refusal" distinction left every row green; and two `/a|b/`
+alternations where one branch could be deleted and the other would satisfy the test.
+
+**And three untested surfaces that would have failed silently**: `pull --check`'s operator-facing
+drift text (the regression the direction-naming exists to stop was a MESSAGE, and only the
+classification behind it was under test, so reverting the message broke nothing); `restamp`'s
+`ANCHOR CHANGE` block, the loudest thing the tool prints, computed but never asserted to be printed;
+and whether `pull` and `push` actually pass `root` to the state helpers, without which the
+never-inside-the-checkout guard is silently inert.
+
+**The test fakes were made strict first, as a separate change**, because the retrospective's own
+lesson is that gates tested against permissive fakes pass vacuously, and this change adds several
+new git- and state-dependent gates. `makeGitFake` matches on deep equality of the full argv and
+throws on anything else; `assertExhausted` catches the other half, an expectation nobody used, which
+is what a silently removed gate looks like. A meta-test makes it the only fake in the directory, and
+`test/git-integration.test.mjs` runs each git-backed gate against a real `git init`ed repository,
+because no fake can prove the pathspec production code emits is one real git accepts.
+
 ## Shop policies under version control, and a 3-5 day production window (unreleased)
 
 The five shop policies now live at `marketing/policies/`, with pull / check / gated-push tooling

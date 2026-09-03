@@ -2,13 +2,18 @@
 // Offline, CI-safe consistency check over marketing/policies/.
 //
 // WHAT A GREEN CHECK PROVES: the repo is self-consistent. Every tracked policy has a file, every
-// file has a manifest entry, each file is in canonical form, its sha256 and length match, its
-// heading list (the anchor contract) matches, and the hygiene rules hold.
+// file has a manifest entry, each file is in canonical form, its sha256, coreSha256 and length
+// match, its version stamp agrees with its manifest version, its heading list (the anchor
+// contract) matches, and the hygiene rules hold.
 //
 // WHAT IT DOES NOT PROVE: that Admin holds these bytes. Nothing here touches the network, by
 // design; only `npm run policies:pull -- --check` answers that question. The CI report row says
 // "repo consistency" for exactly this reason, so a green required check is never read as
 // "policies are in sync".
+//
+// AND IT NEVER READS THE STATE FILE. `lib/state.mjs` is machine-local, so CI has no opinion about
+// it and could not have one. A test proves this by pointing POLICIES_STATE_DIR at a hostile file
+// and asserting a clean run. `policies:status` is the command that reads both sides.
 //
 //   node scripts/policies/check.mjs              check and report
 //   node scripts/policies/check.mjs --root <dir> operate on another checkout (tests)
@@ -26,12 +31,16 @@ import {
   NON_POLICY_FILES,
   NOT_WRITABLE_REASON,
   bodyFromFileText,
+  coreOf,
   diffEntry,
   duplicateHeadingIds,
   extractHeadings,
   fileNameForType,
   hygieneProblems,
+  isStamped,
+  isVersionNumber,
   keyForType,
+  parseVersionStamp,
   sha256,
   typeForFileName,
 } from './lib/policies.mjs';
@@ -58,15 +67,14 @@ export function readManifest(root) {
   return manifest;
 }
 
-const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-
 /**
  * Side-effect-free. Reads the manifest and the files under marketing/policies/, touches nothing,
  * and never reaches the network. Shared by check and by pull (which uses `bodies` to decide what
  * moved).
  *
  * Returns:
- *   bodies      Map<type, string>   the canonical body each file holds
+ *   bodies      Map<type, string>   the canonical body each file holds, stamp included
+ *   cores       Map<type, string>   the same body with the version stamp stripped
  *   computed    Map<type, object>   the entry fields recomputed from the file
  *   problems    string[]            refusals of the inputs (a missing file, a bad manifest)
  *   mismatches  string[]            a file and its manifest entry disagreeing
@@ -79,6 +87,7 @@ export function plan(root = REPO_ROOT) {
   const mismatches = [];
   const notes = [];
   const bodies = new Map();
+  const cores = new Map();
   const computed = new Map();
   const manifest = readManifest(root);
 
@@ -141,7 +150,8 @@ export function plan(root = REPO_ROOT) {
       for (const h of hygiene) target.push(`${key}: ${fileNameForType(type)} ${h}`);
     }
 
-    const headings = extractHeadings(body);
+    const core = coreOf(body);
+    const headings = extractHeadings(core);
     const dupes = duplicateHeadingIds(headings);
     if (dupes.length) {
       problems.push(
@@ -150,10 +160,15 @@ export function plan(root = REPO_ROOT) {
       );
     }
 
+    cores.set(type, core);
     computed.set(type, {
       handle: STOREFRONT_HANDLES[type],
       writable: WRITABLE[type],
+      // `stamped` is a decision, not a derivation: it is compared against the manifest's own value
+      // below so the entry stays self-describing, and the stamp rules key off the manifest.
+      stamped: manifest.policies?.[key]?.stamped === true,
       sha256: sha256(body),
+      coreSha256: sha256(core),
       length: body.length,
       headings,
     });
@@ -179,35 +194,60 @@ export function plan(root = REPO_ROOT) {
       mismatches.push(`${key}: "reason" belongs only on an entry with writable: false`);
     }
 
-    const remote = entry.remote;
-    if (!remote || typeof remote !== 'object') {
-      mismatches.push(`${key}: no "remote" token; run npm run policies:pull`);
-    } else {
-      if (typeof remote.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(remote.sha256)) {
-        mismatches.push(`${key}: remote.sha256 is not a sha256 digest`);
-      }
-      if (!Number.isInteger(remote.length) || remote.length < 0) {
-        mismatches.push(`${key}: remote.length is not a non-negative integer`);
-      }
-      if (typeof remote.observedAt !== 'string' || !ISO_RE.test(remote.observedAt)) {
-        mismatches.push(`${key}: remote.observedAt is not an ISO-8601 UTC timestamp`);
-      }
+    // -------------------------------------------------------------------------------------
+    // The version contract.
+    //
+    // `version` is DERIVED, never hand-typed, so the only thing to check here is that it is a
+    // usable integer and that the body agrees with it. `coreSha256` is what every comparison in
+    // the subsystem runs on; `sha256` stays the committed bytes, an integrity hash only. That the
+    // two differ for a stamped policy is the whole point, and is asserted in the test suite.
+    // -------------------------------------------------------------------------------------
+    if (!isVersionNumber(entry.version)) {
+      mismatches.push(
+        `${key}: version is ${JSON.stringify(entry.version)}, expected an integer >= 1. It is derived; ` +
+          'run npm run policies:restamp rather than editing it.',
+      );
     }
-    if (typeof entry.pulledAt !== 'string' || !ISO_RE.test(entry.pulledAt)) {
-      mismatches.push(`${key}: pulledAt is not an ISO-8601 UTC timestamp`);
+    if (typeof entry.stamped !== 'boolean') {
+      mismatches.push(`${key}: stamped must be true or false`);
+    } else if (entry.stamped && entry.writable === false) {
+      mismatches.push(
+        `${key}: stamped is true but writable is false. A stamp that can never be pushed is a permanent ` +
+          'check failure; Shopify auto-manages this policy.',
+      );
     }
 
-    // Not a mismatch: the repo legitimately holds an edit Admin has not received yet. Say so once,
-    // so a reviewer knows a push is outstanding rather than reading silence as "in sync".
-    if (remote && typeof remote.sha256 === 'string' && remote.sha256 !== entry.sha256) {
-      notes.push(
-        `${key}: the repo body differs from the last observed Admin body; a push is outstanding ` +
-          `(npm run policies:push -- --type ${key})`,
+    const body = bodies.get(type);
+    const stamp = parseVersionStamp(body);
+    if (isStamped(entry)) {
+      if (stamp === null) {
+        mismatches.push(
+          `${key}: ${fileNameForType(type)} carries no version stamp, but the manifest says stamped: true. ` +
+            'Run npm run policies:restamp.',
+        );
+      } else {
+        if (stamp.key !== key) {
+          mismatches.push(`${key}: the version stamp names "${stamp.key}", not this policy. Run npm run policies:restamp.`);
+        }
+        if (stamp.version !== entry.version) {
+          mismatches.push(
+            `${key}: the version stamp says v${stamp.version} but the manifest says version ${JSON.stringify(entry.version)}. ` +
+              'Run npm run policies:restamp.',
+          );
+        }
+      }
+    } else if (stamp !== null) {
+      // A stamp on a policy that opted out. Refuse for a writable one, where it is our mistake;
+      // note it for the auto-managed privacy policy, where Shopify owns the bytes and CI must not
+      // go permanently red on something nobody here can fix.
+      const target = WRITABLE[type] ? mismatches : notes;
+      target.push(
+        `${key}: ${fileNameForType(type)} carries a version stamp but the manifest says stamped: false`,
       );
     }
   }
 
-  return { bodies, computed, problems, mismatches, notes, manifest };
+  return { bodies, cores, computed, problems, mismatches, notes, manifest };
 }
 
 export function check(root = REPO_ROOT) {

@@ -36,7 +36,10 @@
     "policies:pull": "node scripts/policies/pull.mjs",
     "policies:restamp": "node scripts/policies/restamp.mjs",
     "policies:push": "node scripts/policies/push.mjs",
+    "policies:status": "node scripts/policies/status.mjs",
+    "policies:verify": "node scripts/policies/verify.mjs",
     "policies:test": "node --test scripts/policies/test/*.test.mjs",
+    "policies:coverage": "node --test --experimental-test-coverage --test-coverage-branches=80 --test-coverage-include=scripts/policies/**/*.mjs --test-coverage-exclude=scripts/policies/test/**  scripts/policies/test/*.test.mjs",
     "images:enhance": "node scripts/enhance-product-images.mjs"
   },
   "devDependencies": {
