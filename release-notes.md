@@ -135,6 +135,39 @@ possibly stamped bodies on the live store with no `version` in the tree. Revert 
 `observed.json`, and note that a stamped live body is harmless because every comparison is
 core-based.
 
+### The skill, and why the absolutes are duplicated
+
+`.claude/skills/shop-policies/` holds the operating sequence: `SKILL.md` routes from a
+`policies:status` label to exactly one destination file, and `change.md` / `push.md` / `verify.md` /
+`recover.md` hold the four phases. It lives in this repo rather than in `~/.claude/skills/`, like
+every other skill here.
+
+**The four absolutes are duplicated on purpose, in three files.** CLAUDE.md is always loaded;
+`SKILL.md` loads only if the skill triggers, and `push.md` only if the agent routes there. An agent
+reaching `policies:push` from `package.json`, from shell history, or from a pasted command sees none
+of it. `push.md` carries a copy specifically because it is the file open at the moment of the write,
+possibly after a compaction dropped `SKILL.md`. Three copies is three chances to drift, and a
+drifted absolute is worse than none (an agent that finds two versions picks the convenient one), so
+each sits between the same markers, `scripts/policies/test/absolutes-parity.test.mjs` compares them
+byte for byte, and every copy carries the line telling a reader to stop and report a difference
+rather than choose.
+
+A backstop that does not depend on the skill triggering: **a `policies:push` run without having read
+`push.md` in this session is itself a violation**, stated in CLAUDE.md as well as in the skill.
+
+**A red-team pass over the skill text** (given only the skill, enumerate every path to a completed
+push that does not involve a quotable operator request in this session) closed five wordings: a push
+spelled `node scripts/policies/push.mjs` rather than `npm run policies:push`; a session that happens
+to have a TTY reading the terminal as the authorization; a hand-written `observed.json` or a
+redirected `POLICIES_STATE_DIR` defeating the freshness gate; `--force-overwrite-live`,
+`--allow-unreviewed` and `--discard-local` read as ways past an inconvenient gate; and a `--restore`
+read as an emergency exception. Each one was a wording bug in the absolutes, not a missing rule.
+
+**The ownership rule, stated in all three files** so the next wording change does not land in
+whichever file was open: the skill holds the **how**, `marketing/policies/README.md` holds the
+**why** (gate rationale, the anchor contract, backups, what the tests do not prove), and CLAUDE.md
+holds the **trigger and the absolutes**.
+
 **The test fakes were made strict first, as a separate change**, because the retrospective's own
 lesson is that gates tested against permissive fakes pass vacuously, and this change adds several
 new git- and state-dependent gates. `makeGitFake` matches on deep equality of the full argv and

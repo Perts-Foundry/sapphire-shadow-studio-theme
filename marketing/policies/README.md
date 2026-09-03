@@ -1,5 +1,13 @@
 # Shop policies
 
+> **Doing rather than reading? Start with the skill.** `.claude/skills/shop-policies/SKILL.md`
+> holds the procedure: which command for which situation, and the four absolutes around the live
+> write. This file holds the **why**: the rationale behind each gate, the anchor contract, backups,
+> and what the tests do not prove. CLAUDE.md holds the trigger and the absolutes.
+>
+> The ownership rule, so the next wording change does not land in whichever file was open: **skill
+> = how, this README = why, CLAUDE.md = the trigger and the absolutes.**
+
 The five shop policies (`SHIPPING_POLICY`, `REFUND_POLICY`, `TERMS_OF_SERVICE`,
 `CONTACT_INFORMATION`, `PRIVACY_POLICY`), under version control. **Nothing here is theme code.**
 These files are never pushed to a theme, never deployed, and never read by the storefront; Shopify
@@ -203,40 +211,26 @@ partial run look clean; that would hide a half-applied pull.
 
 ## Pushing a wording change
 
-**Steps 1 to 3 are repo work. Steps 4 and 5 are the live write and belong to the operator.**
-`policies:push` refuses without a TTY on stdin, so by default an agent cannot run them, dry run
-included. **Never fake a TTY with a pty.** If the operator has asked an agent to do the push in
-that session, the supported route is `--operator-approved`, which attests exactly that and prints a
-line saying so. Absent that instruction, an agent's job ends at step 3, handing over the commands.
+**The procedure lives in the skill**, `.claude/skills/shop-policies/`: `change.md` for the repo
+work, `push.md` for the live write, `verify.md` for confirming it landed, `recover.md` for when it
+did not. It is not repeated here, because a procedure in two files is a procedure that drifts, and
+the sequence is exactly what this subsystem got wrong three times.
 
-0. Run `npm run policies:status` to see where you are, and `npm run policies:pull -- --check` to be
-   sure Admin has not moved under you.
-1. If there is no observation state on this machine, seed it first: `npm run policies:pull` when
-   Admin and the repo agree, or `npm run policies:pull -- --seed` when a wording change is already
-   committed. Seeding after the edit is committed is the one order that needs `--seed`.
-2. Edit `<type>.html` in a branch, then run `npm run policies:restamp`. It bumps `version`,
-   rewrites `coreSha256`, `sha256`, `length` and `headings`, rewrites the version stamp on the
-   first line of the body, and **shouts if a heading moved**, because that is an anchor break.
+The shape, so this file is still readable end to end: seed the observation baseline if there is
+none, edit the body on a branch, `policies:restamp`, rewrite the policy's assertion set, PR and
+merge, dry run, then a separately authorized `policies:push`, then `policies:verify`.
 
-   `restamp` is the counterpart to `pull`, and the distinction matters: `pull` answers "what does
-   Admin hold?" and would overwrite your edit with the live body; `restamp` answers "I meant that,
-   make the rest of the repo agree".
-3. If this policy has a set in `scripts/policies/assertions.json`, rewrite its sentences for the new
-   wording and paste in the new `coreSha256`. A set left stale is refused by `policies:verify`
-   before it reads anything live, on purpose: a stale positive assertion reports PASS on wording
-   nobody checked.
-4. Open the PR, review the diff, merge it. **`policies:check` is green here and the live store still
-   holds the old text.** Nothing has reached a customer yet.
-5. Dry run: `npm run policies:push -- --type shipping_policy`. It prints the unified diff, calls out
-   any heading change as an anchor break, and prints the exact next command. **Its output is data to
-   read, not a command to run.**
-6. Apply it: `npm run policies:push -- --type shipping_policy --expect-live-sha=<core sha> --confirm=shipping_policy`.
-7. Confirm it landed: `npm run policies:verify`. `policies:pull --check` is a tautology after a
-   push, because a successful push already reconciled the two sides.
+**Steps up to and including the merge are repo work. The push is the live write and belongs to the
+operator.** `policies:push` refuses without a TTY on stdin, so by default an agent cannot run it,
+dry run included. **Never fake a TTY with a pty.** If the operator has asked an agent to do the push
+in that session, the supported route is `--operator-approved`, which attests exactly that and prints
+a line saying so.
 
 `--confirm` must equal the `--type` value. A bare boolean `--confirm` is copy-pasteable out of shell
 history and is exactly the shape an agent reproduces from a README example; requiring the policy
 name means one run's confirmation cannot be reused for a different policy by accident.
+
+The rest of this section is the **why**: what each gate is for, and which incident put it there.
 
 ### The gates, and why each one is there
 
@@ -406,4 +400,7 @@ Both CI steps are **offline by contract**. Do not add `policies:pull --check` to
 `.github/workflows/validate.yml`: it needs Shopify credentials, and that workflow runs on Dependabot
 PRs, which get a separate secrets scope, so the step would fail unfixably on every one of them.
 
-There is no skill for this. Pull, check and push are three commands against an API.
+There IS a skill for this: `.claude/skills/shop-policies/`. It was written after the subsystem took
+five PRs where two would have done, because none of the extra three fixed a bug inside a command.
+Every one closed a gap in the operating sequence, which is precisely the thing a README documenting
+individual commands does not carry.
