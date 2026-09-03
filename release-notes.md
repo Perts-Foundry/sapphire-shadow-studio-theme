@@ -1,5 +1,46 @@
 # Release Notes
 
+## The terms of service stops shipping Shopify's authoring placeholders (unreleased)
+
+The terms body went live carrying the placeholders from Shopify's stock template, so every customer
+who opened `/policies/terms-of-service` read `[INSERT TRADING NAME]`, `[INSERT BUSINESS ADDRESS]`,
+`[INSERT BUSINESS PHONE NUMBER]`, `[INSERT BUSINESS REGISTRATION NUMBER]` and `[INSERT VAT NUMBER]`
+in section 24, four unfilled `[LINK]` markers, and a `[NOTE TO MERCHANT: ...]` bracket addressed to
+the store owner rather than to them. None of it was caught by anything: `policies:check` proves the
+repo agrees with itself, and a placeholder is perfectly consistent with itself.
+
+**Three of section 24's fields are deleted rather than filled, and that is the decision worth
+recording.** A future editor diffing this body against Shopify's stock template will find three
+fields missing and should not "complete" them:
+
+- **Business address**: there is no publishable one. The operation is home-based, and the Sensitive
+  Content rule in `CLAUDE.md` forbids committing a home or fulfilment address, or any operating
+  location below state level. This is the same reasoning that keeps `address` and `telephone` off
+  the Organization node in `snippets/structured-data-organization.liquid`; the difference is that
+  the studio phone and the contact address are already public on the contact policy, so those two
+  are republished here and the postal address is not.
+- **VAT number**: a US sole operation has none. The field is EU boilerplate.
+- **Business registration number**: nothing requires publishing it, so it is not published.
+
+**Section 9's merchant note is removed without touching the section's substance.** The bracket said
+the section "should not be removed or modified", which is Shopify telling the merchant not to
+weaken its own liability carve-out. That instruction binds the section's text; it does not make an
+instruction addressed to the merchant into terms addressed to the customer. The paragraph is
+unchanged, byte for byte, minus the bracket.
+
+**The link text is descriptive, not "here".** Section 10 had shipped two `here` links in one
+sentence pointing at different destinations, our privacy policy and Shopify's. That is the WCAG
+2.4.4 failure that link text exists to avoid, and no check in this repo would ever have caught it:
+`docs/accessibility-patterns.md` defers to WCAG rather than restating it, and pa11y cannot judge
+whether two identical link texts should lead to the same place. Every distinct destination now has
+distinct text, and the three links to the privacy policy share theirs.
+
+**`terms_of_service` gains an assertion set.** It had none, so `policies:verify` would have fallen
+back to the version assertion and confirmed only that *a* v3 was live, never that the placeholders
+were gone from it. The set is written the way `assertions.json` asks: the negatives are the
+placeholder strings themselves, which is the only thing that can prove this specific bug is fixed
+rather than merely that the body changed.
+
 ## Shop policy versioning, and the bookkeeping leaves the repo (unreleased)
 
 The shop-policies subsystem landed across five PRs where two would have done, and the reason is

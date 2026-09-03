@@ -45,6 +45,24 @@
         "whitespace-normal",
         "leading-[1.7]"
       ]
+    },
+    "terms_of_service": {
+      "coreSha256": "d6d8b801ff4f7e1eec14906000a79ed9a0e940dab8ad81905e2da7c130802eb2",
+      "must": [
+        "(540) 300-5229",
+        "href=\"/policies/refund-policy\"",
+        "href=\"/policies/privacy-policy\"",
+        ">Shopify’s Privacy Policy</a>"
+      ],
+      "mustNot": [
+        "[INSERT TRADING NAME]",
+        "[INSERT BUSINESS ADDRESS]",
+        "[INSERT BUSINESS PHONE NUMBER]",
+        "[INSERT BUSINESS REGISTRATION NUMBER]",
+        "[INSERT VAT NUMBER]",
+        "[LINK]",
+        "[NOTE TO MERCHANT"
+      ]
     }
   }
 }
