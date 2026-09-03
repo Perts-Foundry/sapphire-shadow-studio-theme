@@ -233,6 +233,64 @@ export function isReceiptComplete(receipt) {
 }
 
 /**
+ * Stamp `finishedAt` only when the run really is finished.
+ *
+ * `applyPlan` used to end with an unconditional `receipt.finishedAt = ...`, and the module header
+ * above promises that "a half-applied run never looks finished". Nothing enforced that promise: it
+ * held only because a crash never reached the assignment. Batching breaks it for real, because a
+ * batched run has a legitimate reason to stop early (a batch whose fan-out did not converge halts,
+ * leaving every later row not-attempted) and would otherwise stamp a run that stopped a third of
+ * the way through.
+ *
+ * Clearing it rather than leaving it alone is deliberate: a resumed run that halts again must not
+ * inherit a `finishedAt` written by an earlier attempt.
+ *
+ * @param {object} receipt
+ * @param {object} [opts]
+ * @param {string} [opts.at]
+ * @returns {object} the same receipt, mutated
+ */
+export function finalizeReceipt(receipt, { at = new Date().toISOString() } = {}) {
+  receipt.finishedAt = isReceiptComplete(receipt) ? at : null;
+  return receipt;
+}
+
+/**
+ * Why a receipt does not belong to an artifact, or null when it does.
+ *
+ * Two callers, deliberately one function:
+ *
+ *   - `apply --resume` reads a receipt off disk and re-attempts whatever it says is outstanding. It
+ *     used to do that without ever comparing the receipt against the artifact it was handed, so a
+ *     mistyped `--receipt` path, or a receipt left in the working directory by an earlier plan over
+ *     the same blanks, would drive one plan's row list against another plan's targets.
+ *   - `repair` derives its whole target set from a receipt's approved values, so "the group's own
+ *     receipt" has to be a CHECKED property rather than an assumed one. A wrong `--receipt` path
+ *     names a genuinely stranded group and steers it to the other of its two live values.
+ *
+ * Both halves are load-bearing. `planId` alone would pass a receipt written against a different
+ * revision of the same plan; `contentHash` alone would pass a receipt from a different plan whose
+ * groups happen to be identical, which is exactly the shape a re-run of the same count sheet
+ * produces.
+ *
+ * @param {object} receipt
+ * @param {object} artifact
+ * @returns {string|null}
+ */
+export function receiptArtifactMismatch(receipt, artifact) {
+  if (receipt?.planId !== artifact?.planId) {
+    return `the receipt was written for plan ${receipt?.planId ?? 'unknown'}, not ${artifact?.planId ?? 'unknown'}`;
+  }
+  if (receipt?.contentHash !== artifact?.contentHash) {
+    return (
+      `the receipt records content hash ${receipt?.contentHash ?? 'unknown'}, but the artifact ` +
+      `hashes to ${artifact?.contentHash ?? 'unknown'}: same plan id, different bytes`
+    );
+  }
+  return null;
+}
+
+/**
  * Groups still to do on a resumed run. A failed row is retried; CAS plus the derived idempotency
  * key make that safe.
  * @param {object} receipt

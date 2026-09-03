@@ -206,6 +206,130 @@ and it reads to the next person as protection that is not there.
 `customer_email_address_changed_confirmation` are unrelated twos in the same change; both are
 written out in full everywhere for that reason.)
 
+## The batch size that lived in a memory file (unreleased)
+
+`apply` now writes one blank group at a time by default, waits for that group's fan-out to converge
+before the next write, and halts rather than continuing if it does not. There is a `repair` command
+for the groups a previous run left stranded, `verify` costs one catalogue read per tick instead of
+one per group per tick, and `--resume` checks the receipt actually belongs to the artifact. Those are
+the changes. The reason they are worth an entry is not any of them.
+
+**The mechanism was known, and it was written down in the wrong place.** On 2026-07-27 an `apply` of
+38 groups overwhelmed the sync Flow and only 13 fanned out. That was diagnosed correctly at the time:
+the Flow's guard clause runs *after* its catalogue scan, not before it, so every sibling write
+re-fires the trigger, each re-triggered run does a full "Get product data" scan, and only then exits
+at the guard. A group of 8 costs 7 writes and 7 full scans, and a caller writing many groups back to
+back overlaps all of them. The conclusion, "batch about 4 groups at a time", was recorded in an
+assistant memory file. Not in `scripts/blank-inventory/README.md`, not in
+`docs/blank-inventory-sync-flow.md`, not in the skill, and not in the tool. Nothing in the repo knew
+it, so nothing in the repo could enforce it.
+
+On 2026-09-03 an `apply` of 27 groups did it again: 14 fanned out, **13 were left stranded** with one
+member holding the new value and seven siblings still on the old one, and Admin showed dozens of runs
+as "In-progress / 1 retrying" with `Get product data: Ran into transient error: Step timed out`.
+
+So the real subject here is that a fact that only lives in a memory file is not a control. The batch
+size is now `DEFAULT_BATCH_SIZE` in `lib/apply.mjs` with both incident dates in its comment, a fifth
+mechanic in the skill and the README, and a corrected section in the flow document. A future
+maintainer meets it whether or not anyone remembers to tell them.
+
+**One is the default, and the number is evidence rather than caution.** Neither incident isolated a
+safe batch larger than one, and the earlier "about 4" was inferred from a run that had already
+failed. Until a run establishes otherwise, the smallest size is the only defensible one.
+`--batch-size` raises it and `--no-batch` turns pacing off, for an operator who knows why.
+
+**The limit worth stating: batching does not fix a single large group.** It stops *different* groups'
+fan-outs from overlapping. A 13-member crewneck group is 12 writes and 12 full scans on its own, and
+neither incident isolated single-group size as a variable. If one group's fan-out alone can time out,
+the product-level roll-up metafield in `docs/blank-inventory-sync-flow.md` stops being a deferred
+option and becomes required work. That is an open risk, not a solved one; it is in `TODO.md`.
+
+**Two Troubleshooting entries in the flow document were actively wrong**, and correcting them mattered
+more than adding a new one. "Runaway or escalating runs" blamed a missing third guard clause; under
+load the guard is present and it still amplifies, because it is downstream of the scan. "Some
+siblings update, others do not" blamed the fetch cap and sent the reader to raise `max_root_records`,
+which makes the timing-out scan *bigger*. Both now name concurrency first and the cap second.
+
+**`repair` had to be a command, not a one-off script, and that is what took the design work.** A
+stranded group cannot be fixed by re-running the plan: compare-and-swap refuses a row whose baseline
+has moved, which is CAS working correctly. But before this there was no legal path at all. `plan`
+refuses any non-uniform group by design, `apply` accepts only a hashed artifact, and
+`backfill --stage seed` covers only newly tagged variants, so the only options were Admin by hand or
+stepping outside every gate the system exists to enforce. `repair` emits an ordinary hashed plan
+artifact, so `show`, the approval gate and `apply` all consume it unchanged and there is no second
+write path to audit.
+
+Three decisions inside it are the ones to know:
+
+- **The target comes from the receipt, never from live state.** On a group of 8 with one member at 12
+  and seven at 11, every live-state heuristic (majority, mode, histogram peak, "what most members
+  hold") returns 11 and silently rolls the approved change back on the one member that did converge.
+  It is the obvious implementation and it is exactly backwards. There is a test whose whole point is
+  to assert `target === 12` and `target !== 11`.
+- **One write per group, not one per straggler.** A plan review read this as needing a write per
+  stale sibling. Seven stragglers do not mean seven writes; that would be the amplification the rest
+  of this change exists to avoid.
+- **Provenance is checked, not assumed.** An earlier draft constrained the receipt's *content* but
+  not *whose* receipt it was, so a wrong `--receipt` path could name a genuinely stranded group and
+  steer it to the other of its two live values. "The group's own receipt" is now a property the
+  command verifies, by `planId` and content hash, against the artifact the receipt came from.
+
+**The absolute did not get relaxed; it got a stated exception with its vocabulary inlined.**
+"Unconverged" was collapsing two situations that need opposite responses: a group whose correct value
+is unknown (drift with no receipt, a partial nobody planned, a group mid-cascade), where writing is
+guessing and the absolute stands verbatim; and a group where a receipt records an operator-approved
+target that was written and did not finish propagating, where nothing is guessed. The rule now reads:
+never write a value onto an unconverged group unless that group's own receipt already records the
+value as approved and applied. Both existing statements in the skill were edited **in place** rather
+than left intact with a correction elsewhere, because a reader who scans only the absolutes has to
+meet the exception there.
+
+That rule needs one closure to be worth anything, and it is easy to miss: **a `repair`-generated
+artifact is the only sanctioned path onto an unconverged group.** `apply` checks an artifact's hash
+but not how it was produced, so without "never hand-assemble or edit an apply artifact targeting a
+stranded group", the whole safety model is bypassable by anyone willing to write the JSON.
+
+**A halt has to be a halt, and that took two changes nobody would guess at.** `--resume` now drains
+before it writes: it re-checks every group a prior halted batch recorded as unconverged and refuses
+while any still is. Without that, a halt followed by a resume reproduces the original incident one
+group at a time, because the halted group's re-triggered runs are still draining when the next write
+fires. And the *last* chunk is gated like every other one; skipping it looks free and lets `apply`
+exit reporting "finished" with the last group mid-storm, since `finishedAt` tracks write status and
+is orthogonal to convergence. There is deliberately no `--force`: a flag that exists gets used at
+11pm.
+
+**Two things were quietly broken and are now enforced.** `applyPlan` ended with an unconditional
+`receipt.finishedAt = ...` while its own module header promised that "a half-applied run never looks
+finished"; that held only because a crash never reached the line, and batching gives a run a
+legitimate reason to stop early. And `apply --resume` read a receipt off disk without ever comparing
+it to the artifact, so a mistyped path drove one plan's row list against another plan's targets.
+
+**`verify` was quadratic.** It polled each group serially, each poll doing its own full `loadStore`,
+so verifying N groups cost N x ticks catalogue reads, piling reads onto the Admin API exactly when
+the Flow was already struggling. It is one read per tick now. The full read per tick is unavoidable
+(variant metafields are not filterable in a products search), so that is the whole win, and it is a
+large one. The batch gate and `verify` deliberately share one helper: two bars for "converged" would
+let the gate pass a batch that `verify` then fails.
+
+Smaller notes, each of which was a real bug in an intermediate version: a group that lost all its
+tags is `missing` and **terminal**, because `allAtTarget` returns false for an empty array and a
+naive fold sits out the whole five-minute timeout and then blames the Flow; the convergence deadline
+is global rather than per group, since a batch is written within seconds of itself; the gate is asked
+only about rows that reached `applied`, because a skipped row was already at target and a failed row
+never fired, and waiting on either hangs forever; and `DEFAULT_REQUIRED_CONVERGED_READS` stays at 2,
+because the second read is what absorbs the tail of re-triggered runs already queued but destined to
+exit at the guard.
+
+There is also a read-only Flow run-list probe (`.claude/skills/blank-inventory/browser.md`). It was
+argued against during design and is recorded here so the argument is not lost: it diagnoses an
+incident the batch gate now prevents, Admin's Flow internals are unversioned, and Flow run logs quote
+blank ids into tool results in a repo whose CI exists to keep them out. It ships narrow. It never
+clicks anything, is never consumed by code, never gates a write, is not reachable from the CLI, and
+none of its output is committable. Its console-line parser is a pure function with a test suite so
+that something in the path is testable; the probe itself is not tested, and its URL match and field
+names are the plausible shape rather than an observed one, which is why "nothing matched" is a
+first-class reported outcome rather than an empty count.
+
 ## A credential costs one table row, because the vocabulary lives in Admin (unreleased)
 
 `NP (Nurse Practitioner)` joins the eight credentials the Lead II line already embroiders. The

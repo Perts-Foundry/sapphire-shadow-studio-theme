@@ -1,10 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path, { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, numericOpt, makeWriter, catalogueGate, refusalPayload } from '../blank-inventory.mjs';
+import {
+  parseArgs,
+  numericOpt,
+  boolOpt,
+  makeWriter,
+  catalogueGate,
+  refusalPayload,
+  outOfArtifactUnconverged,
+  waitForGroups,
+  cmdRepair,
+} from '../blank-inventory.mjs';
 import { MODE_ABSOLUTE, MODE_DELTA } from '../lib/input.mjs';
+import { createArtifact, verifyArtifact, receiptArtifactMismatch, writeJsonAtomic, readJson, ROW_APPLIED } from '../lib/receipt.mjs';
+import { repairPlans } from '../lib/repair.mjs';
+import { classifyGroups } from '../lib/groups.mjs';
+import { CONVERGED, STALE, MISSING } from '../lib/convergence.mjs';
+import { strandedGroup, blankIdFor, resetSeq } from './fixtures.mjs';
 
 // The CLI orchestrator's own functions. The lib layer is well covered on its own; these three are
 // the untested seam between parsed operator flags and a live mutation, so a defect here writes wrong
@@ -77,6 +93,277 @@ test('numericOpt refuses a non-numeric string', () => {
 
 test('numericOpt refuses an empty string', () => {
   assert.throws(() => numericOpt('--timeout-ms', '', 5, thrower), /needs a number/);
+});
+
+// --- boolOpt ----------------------------------------------------------------
+// `--no-batch` disables the write pacing, so a swallowed argument here reads as "yes, disable it".
+
+test('boolOpt returns false when the switch is absent and true when it is bare', () => {
+  assert.equal(boolOpt('--no-batch', undefined), false);
+  assert.equal(boolOpt('--no-batch', true), true);
+});
+
+test('boolOpt refuses a swallowed value rather than reading it as "on"', () => {
+  assert.throws(() => boolOpt('--no-batch', 'counts.csv', thrower), /takes no value/);
+  assert.throws(() => boolOpt('--no-batch', '0', thrower), /takes no value/);
+});
+
+test('--batch-size goes through numericOpt, so a bare flag cannot become a batch size of 1', () => {
+  const opts = parseArgs(['apply', '--plan', 'p.json', '--batch-size', '4']);
+  assert.equal(numericOpt('--batch-size', opts.batchSize, 1), 4);
+  assert.throws(() => numericOpt('--batch-size', true, 1, thrower), /needs a number/);
+});
+
+// --- the resume receipt/artifact check --------------------------------------
+// Both halves are load-bearing and each gets its own case: planId alone would pass a receipt from a
+// different revision of the same plan, and contentHash alone would pass a receipt from a different
+// plan whose groups happen to be identical, which is what a re-run of the same count sheet produces.
+
+const planRow = (blankId) => ({
+  blankId,
+  target: 12,
+  current: 11,
+  baseline: 11,
+  delta: null,
+  writeTargetId: 'gid://shopify/ProductVariant/1',
+  writeTargetTitle: 'p | t',
+  inventoryItemId: 'gid://shopify/InventoryItem/1',
+  memberIds: ['gid://shopify/ProductVariant/1'],
+  siblingCount: 7,
+  idempotencyKey: `key-${blankId}`,
+});
+
+test('--resume refuses a receipt whose contentHash does not match the artifact', () => {
+  const artifact = createArtifact({ plans: [planRow('B1')], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+  const receipt = { planId: 'plan-a', contentHash: 'a-different-hash' };
+  assert.match(receiptArtifactMismatch(receipt, artifact), /different bytes/);
+});
+
+test('--resume refuses a mismatched planId even when the hash matches', () => {
+  // The case a hash-only check misses entirely: two plans over the same groups at the same targets
+  // hash identically, so only the planId says which run's row statuses the receipt records.
+  const a = createArtifact({ plans: [planRow('B1')], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+  const receipt = { planId: 'plan-b', contentHash: a.contentHash };
+  assert.match(receiptArtifactMismatch(receipt, a), /not plan-a/);
+  assert.equal(receiptArtifactMismatch({ planId: 'plan-a', contentHash: a.contentHash }, a), null);
+});
+
+// --- the pre-write store-state check ----------------------------------------
+
+const A_BLANK = blankIdFor('crewneck', 'Grey Heather', '2XL');
+const B_BLANK = blankIdFor('crewneck', 'Black', 'M');
+
+test('apply refuses an unconverged group OUTSIDE the artifact', () => {
+  // plan already refuses on any non-uniform group, but nothing re-checked between plan and apply,
+  // and a long apply is exactly the window in which a group goes non-uniform.
+  resetSeq(700);
+  const groups = new Map([[B_BLANK, strandedGroup({ target: 12, stale: 11, color: 'Black', size: 'M' })]]);
+  const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+  const blocked = outOfArtifactUnconverged(artifact, classifyGroups(groups));
+  assert.deepEqual(blocked.map((g) => g.blankId), [B_BLANK]);
+});
+
+test('apply does NOT refuse an unconverged group inside the artifact', () => {
+  // checkDrift already handles those per row, against the approved baseline. Refusing on them would
+  // also make every repair artifact unappliable, which is the one case that most needs applying.
+  resetSeq(710);
+  const groups = new Map([[A_BLANK, strandedGroup({ target: 12, stale: 11 })]]);
+  const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+  assert.deepEqual(outOfArtifactUnconverged(artifact, classifyGroups(groups)), []);
+});
+
+test('a real repairPlans output passes the check, precisely because its stranded group is inside it', () => {
+  // Not a restatement of the case above: this feeds the actual planner's output through the actual
+  // check, so a future change that stopped carrying the stranded blank into the artifact would fail
+  // here rather than at the first live repair.
+  resetSeq(720);
+  const groups = new Map([[A_BLANK, strandedGroup({ target: 12, stale: 11 })]]);
+  const { plans } = repairPlans({
+    rows: [{ blankId: A_BLANK, target: 12, status: ROW_APPLIED, at: '2026-09-03T12:00:00.000Z' }],
+    groups,
+    planId: 'repair-1',
+  });
+  const artifact = createArtifact({ plans, mode: MODE_ABSOLUTE, planId: 'repair-1' });
+  assert.equal(plans.length, 1);
+  assert.deepEqual(outOfArtifactUnconverged(artifact, classifyGroups(groups)), []);
+});
+
+// --- one bar for "converged" ------------------------------------------------
+
+test('verify and the batch gate classify identically, because they are the same call', async () => {
+  // "The gate says converged" and "verify says converged" must be the same bar, or the gate passes
+  // a batch that verify then fails and the operator holds two tools that disagree about one store.
+  // One fake store and clock, fed through a verify-shaped call and a gate-shaped one.
+  const frames = [
+    { A: [12, 12], B: [11, 12], C: [] },
+    { A: [12, 12], B: [11, 12], C: [] },
+  ];
+  const fakeDeps = () => {
+    const s = { reads: 0, t: 0 };
+    return {
+      readAll: async () => {
+        const frame = frames[Math.min(s.reads++, frames.length - 1)];
+        return new Map(Object.entries(frame).map(([b, qs]) => [b, qs.map((q) => ({ quantity: q }))]));
+      },
+      now: () => s.t,
+      sleep: async (ms) => {
+        s.t += ms;
+      },
+    };
+  };
+  const targets = new Map([['A', 12], ['B', 12], ['C', 12]]);
+
+  // verify-shaped: the whole receipt's applied rows, the --timeout-ms default.
+  const fromVerify = await waitForGroups({ targets, timeoutMs: 300_000, deps: fakeDeps() });
+  // gate-shaped: the ids one batch just wrote, the same timeout, driven from inside apply.
+  const fromGate = await waitForGroups({ targets, timeoutMs: 300_000, deps: fakeDeps() });
+
+  assert.deepEqual([...fromVerify.verdicts], [...fromGate.verdicts]);
+  assert.deepEqual([...fromVerify.verdicts], [['A', CONVERGED], ['B', STALE], ['C', MISSING]]);
+});
+
+// --- repair writes nothing to the store -------------------------------------
+
+test('cmdRepair issues no Admin call at all, against a client that fails the test if used', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-repair-'));
+  try {
+    resetSeq(800);
+    const groups = new Map([[A_BLANK, strandedGroup({ target: 12, stale: 11 })]]);
+    const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+    const artifactPath = path.join(dir, `plan-${artifact.planId}.json`);
+    const receiptPath = path.join(dir, `receipt-${artifact.planId}.json`);
+    const outPath = path.join(dir, 'repair.json');
+    await writeJsonAtomic(artifactPath, artifact);
+    await writeJsonAtomic(receiptPath, {
+      planId: artifact.planId,
+      contentHash: artifact.contentHash,
+      mode: MODE_ABSOLUTE,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      rows: [{ blankId: A_BLANK, target: 12, status: ROW_APPLIED, detail: null, at: new Date().toISOString() }],
+    });
+
+    const spyClient = {
+      gql: () => {
+        assert.fail('repair must never issue an Admin call; it is read-only and emits an artifact');
+      },
+    };
+    const printed = [];
+    const realLog = console.log;
+    console.log = (...args) => printed.push(args.join(' '));
+    let out;
+    try {
+      out = await cmdRepair(
+        { receipt: receiptPath, out: outPath },
+        {
+          load: async ({ requireWrite }) => {
+            assert.equal(requireWrite, false, 'repair must not even ask for write scopes');
+            return { client: spyClient, locationId: 'gid://shopify/Location/1', groups };
+          },
+          refuse: (msg) => assert.fail(`unexpected refusal: ${msg}`),
+        }
+      );
+    } finally {
+      console.log = realLog;
+    }
+
+    // The gate-5 reading has to name the source receipt and say the baseline is the LIVE quantity,
+    // not the target: those two lines are what let an operator catch a stale or wrong receipt.
+    const text = printed.join('\n');
+    assert.match(text, /from plan plan-a/);
+    assert.ok(text.includes(receiptPath));
+    assert.match(text, /LIVE quantity, not the target/);
+
+    assert.equal(out.repairedFrom, 'plan-a');
+    assert.equal(out.groups.length, 1);
+    // And what it wrote to disk is an ordinary artifact the normal path accepts.
+    const written = verifyArtifact(await readJson(outPath));
+    assert.equal(written.contentHash, out.contentHash);
+    assert.equal(written.groups[0].target, 12);
+    assert.equal(written.groups[0].baseline, 11);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdRepair refuses a receipt it cannot tie back to an artifact, before reading the store', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-repair-'));
+  try {
+    const receiptPath = path.join(dir, 'receipt-orphan.json');
+    await writeJsonAtomic(receiptPath, { planId: 'plan-nowhere', contentHash: 'x', rows: [] });
+    const refusals = [];
+    await cmdRepair(
+      { receipt: receiptPath },
+      {
+        load: async () => assert.fail('the store must not be read once provenance has failed'),
+        refuse: (msg) => refusals.push(msg),
+      }
+    );
+    assert.equal(refusals.length, 1);
+    assert.match(refusals[0], /No plan artifact for plan-nowhere/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdRepair refuses a receipt whose hash disagrees with the artifact beside it', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-repair-'));
+  try {
+    const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+    await writeJsonAtomic(path.join(dir, 'plan-plan-a.json'), artifact);
+    const receiptPath = path.join(dir, 'receipt-plan-a.json');
+    await writeJsonAtomic(receiptPath, { planId: 'plan-a', contentHash: 'not-the-artifact-hash', rows: [] });
+    const refusals = [];
+    await cmdRepair(
+      { receipt: receiptPath },
+      { load: async () => assert.fail('the store must not be read'), refuse: (msg) => refusals.push(msg) }
+    );
+    assert.match(refusals[0], /does not belong to/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmdRepair refuses a receipt older than 24 hours', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-repair-'));
+  try {
+    const artifact = createArtifact({ plans: [planRow(A_BLANK)], mode: MODE_ABSOLUTE, planId: 'plan-a' });
+    await writeJsonAtomic(path.join(dir, 'plan-plan-a.json'), artifact);
+    const stale = new Date(Date.now() - 40 * 60 * 60 * 1000).toISOString();
+    const receiptPath = path.join(dir, 'receipt-plan-a.json');
+    await writeJsonAtomic(receiptPath, {
+      planId: 'plan-a',
+      contentHash: artifact.contentHash,
+      startedAt: stale,
+      finishedAt: stale,
+      rows: [{ blankId: A_BLANK, target: 12, status: ROW_APPLIED, at: stale }],
+    });
+    const refusals = [];
+    await cmdRepair(
+      { receipt: receiptPath },
+      { load: async () => assert.fail('an out-of-date receipt must not reach the store read'), refuse: (msg) => refusals.push(msg) }
+    );
+    assert.match(refusals[0], /past the 24h bound/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('repair is not a write command, and its body reaches no mutation', async () => {
+  // A structural check to pair with the runtime one above: the runtime test proves this run made no
+  // call, and this proves there is no branch that could. Comments are stripped first, so a mutation
+  // named in prose does not satisfy or trip the search.
+  const cli = await readFile(path.join(dirname(fileURLToPath(import.meta.url)), '../blank-inventory.mjs'), 'utf8');
+  const stripped = cli.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const start = stripped.indexOf('async function cmdRepair(');
+  assert.ok(start > -1);
+  const next = stripped.indexOf('\nasync function ', start + 1);
+  const body = stripped.slice(start, next === -1 ? undefined : next);
+  for (const forbidden of ['setQuantity', 'adjustQuantity', 'setBlankMetafields', 'deleteBlankMetafields', 'makeWriter', 'applyPlan']) {
+    assert.ok(!body.includes(forbidden), `cmdRepair must not reference ${forbidden}`);
+  }
+  assert.ok(body.includes('requireWrite: false'), 'and it must not ask for write scopes');
+  assert.match(stripped, /writeCommands = new Set\(\['apply', 'backfill', 'untag'\]\)/, 'repair stays out of the write set');
 });
 
 // --- makeWriter -------------------------------------------------------------

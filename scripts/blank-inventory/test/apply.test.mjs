@@ -1,7 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPlan, checkDrift, DRIFT_TARGET_MOVED, DRIFT_BASELINE_MOVED, ALREADY_CONVERGED } from '../lib/apply.mjs';
-import { createArtifact, createReceipt, isReceiptComplete, pendingBlankIds, ROW_APPLIED, ROW_FAILED, ROW_SKIPPED, ROW_NOT_ATTEMPTED } from '../lib/receipt.mjs';
+import {
+  applyPlan,
+  applyPlanInBatches,
+  unsettledBlankIds,
+  checkDrift,
+  DEFAULT_BATCH_SIZE,
+  DRIFT_TARGET_MOVED,
+  DRIFT_BASELINE_MOVED,
+  ALREADY_CONVERGED,
+} from '../lib/apply.mjs';
+import { createArtifact, createReceipt, finalizeReceipt, isReceiptComplete, pendingBlankIds, ROW_APPLIED, ROW_FAILED, ROW_SKIPPED, ROW_NOT_ATTEMPTED } from '../lib/receipt.mjs';
+import { CONVERGED, STALE } from '../lib/convergence.mjs';
 
 const V = (n) => `gid://shopify/ProductVariant/${n}`;
 const mem = (n, quantity) => ({ id: V(n), quantity, blankId: 'B', productHandle: 'p', title: 't', inventoryItemId: `ii-${n}` });
@@ -232,6 +242,325 @@ test('an already-converged group is a reported SKIP, not a wasted write', async 
   assert.equal(res.skipped, 1);
   assert.equal(writes.length, 0);
   assert.equal(res.receipt.rows[0].status, ROW_SKIPPED);
+});
+
+// --- finishedAt -------------------------------------------------------------
+// The module header has always promised that "a half-applied run never looks finished". Nothing
+// enforced it: the tail assignment was unconditional and only a crash kept it from running.
+
+test('finishedAt stays null while any row is not-attempted, and is set once every row is terminal', () => {
+  const receipt = createReceipt(artifactOf(['B1', 'B2']));
+  receipt.rows[0].status = ROW_APPLIED;
+  finalizeReceipt(receipt);
+  assert.equal(receipt.finishedAt, null, 'B2 has not been attempted');
+
+  receipt.rows[1].status = ROW_FAILED;
+  finalizeReceipt(receipt);
+  assert.ok(receipt.finishedAt, 'a failed row is terminal; the run really did finish');
+});
+
+test('finalizeReceipt CLEARS a stale finishedAt rather than leaving it', () => {
+  // A resumed run that halts again must not inherit a finishedAt written by an earlier attempt.
+  const receipt = createReceipt(artifactOf(['B1', 'B2']));
+  receipt.finishedAt = '2026-09-03T00:00:00.000Z';
+  finalizeReceipt(receipt);
+  assert.equal(receipt.finishedAt, null);
+});
+
+test('applyPlan({finalize: false}) leaves finishedAt untouched even when every row is terminal', async () => {
+  const artifact = artifactOf(['B1']);
+  const receipt = createReceipt(artifact);
+  await applyPlan({
+    artifact,
+    receipt,
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    persist: async () => {},
+    finalize: false,
+  });
+  assert.equal(receipt.rows[0].status, ROW_APPLIED);
+  assert.equal(receipt.finishedAt, null, 'the caller running this loop repeatedly decides when the run is over');
+});
+
+// --- batching ---------------------------------------------------------------
+// The gate is injected (awaitBatch), so every case below is synchronous and deterministic: no
+// clock, no network, no real waiting.
+
+/** A gate that reports every id converged, recording what it was asked about. */
+function convergingGate(calls) {
+  return async (blankIds) => {
+    calls.push([...blankIds]);
+    return { verdicts: new Map(blankIds.map((b) => [b, CONVERGED])) };
+  };
+}
+
+function batchHarness({ artifact, readGroup, write, awaitBatch, receipt: given }) {
+  const receipt = given ?? createReceipt(artifact);
+  const persisted = [];
+  return {
+    receipt,
+    persisted,
+    run: (over = {}) =>
+      applyPlanInBatches({
+        artifact,
+        receipt,
+        readGroup,
+        write,
+        awaitBatch,
+        persist: async (r) => persisted.push(structuredClone(r)),
+        ...over,
+      }),
+  };
+}
+
+test('the default batch size is 1: no two groups fan out at the same time', () => {
+  assert.equal(DEFAULT_BATCH_SIZE, 1);
+});
+
+test('nine groups at batchSize 4 are written 4/4/1 and gated three times, the last chunk included', async () => {
+  // Gating the final chunk is not free (one extra wait) and it is the difference between `apply`
+  // exiting "finished" with the last group mid-storm and exiting when it really is done. finishedAt
+  // tracks WRITE status and is orthogonal to convergence, so it cannot stand in for this.
+  const ids = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9'];
+  const calls = [];
+  const h = batchHarness({
+    artifact: artifactOf(ids),
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: convergingGate(calls),
+  });
+  const res = await h.run({ batchSize: 4 });
+  assert.deepEqual(calls, [['B1', 'B2', 'B3', 'B4'], ['B5', 'B6', 'B7', 'B8'], ['B9']]);
+  assert.equal(res.applied, 9);
+  assert.equal(res.halted, false);
+  assert.equal(isReceiptComplete(res.receipt), true);
+  assert.ok(res.receipt.finishedAt);
+});
+
+test('the gate is asked ONLY about rows that reached applied, never a skipped or a failed one', async () => {
+  // A skipped row was already at target and fired nothing; a failed row never fired. Waiting on
+  // either hangs the run forever, because no trigger is ever coming.
+  const calls = [];
+  const artifact = artifactOf(['ok', 'skipped', 'failed']);
+  const h = batchHarness({
+    artifact,
+    readGroup: async (blankId) => (blankId === 'skipped' ? [mem(1, 12), mem(2, 12)] : asPlanned()),
+    write: async (g) =>
+      g.blankId === 'failed'
+        ? { ok: false, noop: false, code: 'CHANGE_FROM_QUANTITY_STALE', message: 'stale' }
+        : { ok: true, noop: false },
+    awaitBatch: convergingGate(calls),
+  });
+  const res = await h.run({ batchSize: 3 });
+  assert.deepEqual(calls, [['ok']]);
+  assert.deepEqual(res.receipt.rows.map((r) => r.status), [ROW_APPLIED, ROW_SKIPPED, ROW_FAILED]);
+  assert.deepEqual(res.receipt.batches[0].appliedBlankIds, ['ok']);
+  assert.deepEqual(res.receipt.batches[0].blankIds, ['ok', 'skipped', 'failed'], 'the batch still records what it attempted');
+});
+
+test('a write failure mid-chunk still attempts the rest of the chunk, and the gate sees only the applied subset', async () => {
+  // Per-row continue-on-error is unchanged by batching: rows 3 and 4 are attempted after row 2
+  // fails. What must NOT happen is the gate waiting on row 2, which fired nothing.
+  const calls = [];
+  const artifact = artifactOf(['B1', 'B2', 'B3', 'B4']);
+  const writes = [];
+  const h = batchHarness({
+    artifact,
+    readGroup: async () => asPlanned(),
+    write: async (g) => {
+      writes.push(g.blankId);
+      return g.blankId === 'B2' ? { ok: false, noop: false, code: 'BOOM', message: 'no' } : { ok: true, noop: false };
+    },
+    awaitBatch: convergingGate(calls),
+  });
+  const res = await h.run({ batchSize: 4 });
+  assert.deepEqual(writes, ['B1', 'B2', 'B3', 'B4'], 'rows 3-4 are attempted after row 2 fails');
+  assert.deepEqual(calls, [['B1', 'B3', 'B4']]);
+  assert.equal(res.failed, 1);
+  assert.equal(res.applied, 3);
+});
+
+test('a stale verdict HALTS: later rows stay not-attempted and finishedAt stays null', async () => {
+  // Not FAILED. Nothing was tried on them, so nothing failed, and --resume can pick them up
+  // unchanged once the stranded group has been repaired.
+  const calls = [];
+  const artifact = artifactOf(['B1', 'B2', 'B3', 'B4']);
+  const writes = [];
+  const h = batchHarness({
+    artifact,
+    readGroup: async () => asPlanned(),
+    write: async (g) => {
+      writes.push(g.blankId);
+      return { ok: true, noop: false };
+    },
+    awaitBatch: async (blankIds) => {
+      calls.push([...blankIds]);
+      return { verdicts: new Map(blankIds.map((b) => [b, b === 'B2' ? STALE : CONVERGED])) };
+    },
+  });
+  const res = await h.run({ batchSize: 2 });
+  assert.deepEqual(writes, ['B1', 'B2'], 'B3 and B4 are never written');
+  assert.equal(res.halted, true);
+  assert.deepEqual(res.receipt.rows.map((r) => r.status), [ROW_APPLIED, ROW_APPLIED, ROW_NOT_ATTEMPTED, ROW_NOT_ATTEMPTED]);
+  assert.equal(res.receipt.finishedAt, null, 'a run that stopped halfway must not look finished');
+  assert.equal(res.receipt.batches.at(-1).halted, true);
+  assert.equal(res.receipt.batches.at(-1).verdicts.B2, STALE);
+});
+
+test('a missing verdict is treated as stale, not as converged', async () => {
+  // Fail closed: a gate that answers about fewer groups than it was asked about has not cleared
+  // the ones it left out.
+  const h = batchHarness({
+    artifact: artifactOf(['B1', 'B2']),
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: async () => ({ verdicts: new Map() }),
+  });
+  const res = await h.run({ batchSize: 2 });
+  assert.equal(res.halted, true);
+});
+
+test('a resumed batched run rebatches only the remainder', async () => {
+  const artifact = artifactOf(['B1', 'B2', 'B3', 'B4']);
+  const receipt = createReceipt(artifact);
+  receipt.rows[0].status = ROW_APPLIED;
+  receipt.rows[1].status = ROW_APPLIED;
+  const calls = [];
+  const writes = [];
+  const h = batchHarness({
+    artifact,
+    receipt,
+    readGroup: async () => asPlanned(),
+    write: async (g) => {
+      writes.push(g.blankId);
+      return { ok: true, noop: false };
+    },
+    awaitBatch: convergingGate(calls),
+  });
+  await h.run({ batchSize: 1, only: pendingBlankIds(receipt) });
+  assert.deepEqual(writes, ['B3', 'B4']);
+  assert.deepEqual(calls, [['B3'], ['B4']]);
+});
+
+test('a resume whose receipt records a halted, still-unconverged group REFUSES before any write', async () => {
+  // The blocker the plan review found. Without this drain, a halt followed by --resume reproduces
+  // the original incident one group at a time: the halted group's re-triggered runs are still
+  // draining when the next write fires.
+  const artifact = artifactOf(['B1', 'B2']);
+  const receipt = createReceipt(artifact);
+  receipt.rows[0].status = ROW_APPLIED;
+  receipt.batches = [{ index: 0, blankIds: ['B1'], appliedBlankIds: ['B1'], verdicts: { B1: STALE }, halted: true }];
+  const writes = [];
+  await assert.rejects(
+    applyPlanInBatches({
+      artifact,
+      receipt,
+      readGroup: async () => asPlanned(),
+      write: async (g) => {
+        writes.push(g.blankId);
+        return { ok: true, noop: false };
+      },
+      persist: async () => {},
+      awaitBatch: async (ids) => ({ verdicts: new Map(ids.map((b) => [b, STALE])) }),
+      only: pendingBlankIds(receipt),
+    }),
+    /still not converged[\s\S]*repair/
+  );
+  assert.deepEqual(writes, [], 'not one write may be issued while an earlier batch is still draining');
+});
+
+test('a resume whose halted group HAS since converged drains clean and proceeds', async () => {
+  const artifact = artifactOf(['B1', 'B2']);
+  const receipt = createReceipt(artifact);
+  receipt.rows[0].status = ROW_APPLIED;
+  receipt.batches = [{ index: 0, blankIds: ['B1'], appliedBlankIds: ['B1'], verdicts: { B1: STALE }, halted: true }];
+  const calls = [];
+  const h = batchHarness({
+    artifact,
+    receipt,
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: convergingGate(calls),
+  });
+  await h.run({ only: pendingBlankIds(receipt) });
+  assert.deepEqual(calls, [['B1'], ['B2']], 'the drain runs first, then the batch gate');
+});
+
+test('unsettledBlankIds takes the LATEST verdict per blank, so a later clean batch supersedes an earlier halt', () => {
+  const receipt = {
+    batches: [
+      { verdicts: { B1: STALE, B2: CONVERGED }, halted: true },
+      { verdicts: { B1: CONVERGED }, halted: false },
+    ],
+  };
+  assert.deepEqual(unsettledBlankIds(receipt), []);
+  assert.deepEqual(unsettledBlankIds({ batches: [{ verdicts: { B1: STALE } }] }), ['B1']);
+  assert.deepEqual(unsettledBlankIds({}), [], 'a fresh receipt records no batches at all');
+});
+
+test('gate:false writes everything in one pass and calls the gate zero times (--no-batch)', async () => {
+  const calls = [];
+  const h = batchHarness({
+    artifact: artifactOf(['B1', 'B2', 'B3']),
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: convergingGate(calls),
+  });
+  const res = await h.run({ batchSize: Infinity, gate: false });
+  assert.deepEqual(calls, []);
+  assert.equal(res.applied, 3);
+  assert.equal(res.receipt.batches.length, 1);
+  assert.deepEqual(res.receipt.batches[0].verdicts, {}, 'an ungated batch claims no convergence');
+});
+
+test('the receipt hits disk at every batch boundary, not once at the end', async () => {
+  const artifact = artifactOf(['B1', 'B2']);
+  const h = batchHarness({
+    artifact,
+    readGroup: async () => asPlanned(),
+    write: async () => ({ ok: true, noop: false }),
+    awaitBatch: convergingGate([]),
+  });
+  await h.run({ batchSize: 1 });
+  // A persist carrying exactly one batch entry proves the boundary reached disk before the second
+  // group was written: this is the record the next incident is reconstructed from.
+  const boundary = h.persisted.find((r) => r.batches?.length === 1);
+  assert.ok(boundary, 'a persist carrying the first batch entry exists');
+  assert.deepEqual(boundary.rows.map((r) => r.status), [ROW_APPLIED, ROW_NOT_ATTEMPTED]);
+  assert.equal(h.persisted.at(-1).batches.length, 2, 'and the last write on disk carries both batches');
+});
+
+test('a non-whole or non-positive batch size is refused rather than silently producing no chunks', async () => {
+  const artifact = artifactOf(['B1']);
+  for (const batchSize of [0, -1, 1.5, NaN]) {
+    await assert.rejects(
+      applyPlanInBatches({
+        artifact,
+        receipt: createReceipt(artifact),
+        readGroup: async () => asPlanned(),
+        write: async () => ({ ok: true, noop: false }),
+        persist: async () => {},
+        awaitBatch: convergingGate([]),
+        batchSize,
+      }),
+      /positive whole number/
+    );
+  }
+});
+
+test('applyPlanInBatches refuses to run with no gate function at all', async () => {
+  // There is no unpaced fallback: a caller that forgot the gate would silently be the old behaviour.
+  const artifact = artifactOf(['B1']);
+  await assert.rejects(
+    applyPlanInBatches({
+      artifact,
+      receipt: createReceipt(artifact),
+      readGroup: async () => asPlanned(),
+      write: async () => ({ ok: true, noop: false }),
+      persist: async () => {},
+    }),
+    /awaitBatch/
+  );
 });
 
 test('a group excluded by `only` is not read, not written, and its receipt row is untouched', async () => {

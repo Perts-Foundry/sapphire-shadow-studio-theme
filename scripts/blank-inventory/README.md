@@ -97,11 +97,18 @@ node scripts/blank-inventory/blank-inventory.mjs plan --input counts.csv --mode 
 # missing any key the gate needs, rather than printing a blank cell where a write target belongs.
 node scripts/blank-inventory/blank-inventory.mjs show --plan <workdir>/plan-<id>.json
 
+# Re-plan the groups an apply wrote but the Flow left half-propagated. Read-only against the store;
+# emits an ordinary hashed artifact for the same show/apply path. Targets come from the RECEIPT.
+node scripts/blank-inventory/blank-inventory.mjs repair --receipt <workdir>/receipt-<id>.json
+
 # Execute an APPROVED artifact. --dry-run prints the writes without making them.
-node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json
+# PACED: one group per batch by default, waiting for each batch's fan-out before the next write, and
+# halting if a batch does not converge. --batch-size raises it; --no-batch turns the pacing off.
+node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json [--batch-size 1] [--no-batch]
 
 # Poll the affected groups until the Flow settles. --timeout-ms overrides the 300000ms default
-# (stale is reported at 3 minutes; polling continues to 5).
+# (stale is reported at 3 minutes; polling continues to 5). One catalogue read per tick for the
+# whole receipt, not one per group.
 node scripts/blank-inventory/blank-inventory.mjs verify --receipt <workdir>/receipt-<id>.json [--timeout-ms 300000]
 
 # Tag untagged variants, then seed them so the Flow propagates. Two separate approvals.
@@ -158,7 +165,7 @@ differ only by body are **not** duplicates; they are the normal multi-garment ca
 The parser also cross-checks the declared mode against the source (signs, arrows, and headings like
 "received" or "on hand") and stops on a contradiction or on ambiguity.
 
-## The four mechanics
+## The five mechanics
 
 Each was established by testing against the live store, and each is load-bearing. The rationale is in
 the module headers; the short version:
@@ -183,6 +190,76 @@ the module headers; the short version:
    plan artifact to keep a plan reproducible, but **key collapse is not a safety property here**:
    tested live, an identical repeat about two minutes later was processed as a new call and stopped
    by CAS, not deduplicated.
+
+5. **The Flow amplifies, so `apply` paces itself.** The Flow's guard clause runs *after* its
+   catalogue scan, not before it, so every sibling write re-fires the trigger, and each re-triggered
+   run does a full scan before exiting at the guard. One write into a group of 8 costs 7 further
+   writes and 7 further full scans. Twice that has exhausted Flow's step budget from a single
+   `apply`: 2026-07-27 (38 groups, 13 fanned out) and 2026-09-03 (27 groups, 13 stranded). See
+   [`../../docs/blank-inventory-sync-flow.md`](../../docs/blank-inventory-sync-flow.md) >
+   "But the guard does not stop the amplification of work". **This lived only in an assistant memory
+   file until 2026-09-03**, which is why it happened twice.
+
+## Pacing, and what happens when a batch does not settle
+
+`apply` writes `DEFAULT_BATCH_SIZE` groups (**1**), waits for those groups to converge, then writes
+the next batch. Four rules, each of which fails silently if it is "simplified" away:
+
+- **It gates on rows that reached `applied`, and only those.** A skipped row was already at target
+  and fired nothing; a failed row never fired. Waiting on either hangs the run forever, because no
+  trigger is ever coming.
+- **The final chunk is gated too.** Skipping it lets `apply` exit reporting "finished" with the last
+  group mid-storm: `finishedAt` tracks *write* status and is orthogonal to convergence, so it cannot
+  stand in for the wait.
+- **A non-converged batch HALTS.** Remaining rows are left `not-attempted`, never `failed`: nothing
+  was tried on them, so nothing failed, and `--resume` picks them up unchanged. There is deliberately
+  no `--force`.
+- **`--resume` drains before it writes.** It re-checks every group a prior halted batch recorded as
+  unconverged and refuses while any still is. Without that, a halt followed by a resume reproduces
+  the incident one group at a time, since the halted group's re-triggered runs are still draining.
+
+The gate and `verify` go through **one** helper, `waitForGroups`. That is a correctness property, not
+deduplication: two bars for "converged" would let the gate pass a batch that `verify` then fails.
+
+`--batch-size n` raises the batch and `--no-batch` disables the pacing (one pass, no waiting). The
+resume drain runs either way; it is an absolute, not a pacing preference.
+
+The receipt records `batches[]` (which ids, when, what they were written alongside, the verdicts, and
+whether that batch halted), persisted at every boundary, so the next incident is a record rather than
+a reconstruction.
+
+## repair: finishing a stranded fan-out
+
+When the write lands and the fan-out does not, the group is left with one member on the new value and
+its siblings on the old one. Nothing else in this tool can fix that: `plan` refuses a non-uniform
+group by design, `apply` accepts only a hashed artifact, and `backfill --stage seed` covers only
+newly tagged variants.
+
+`repair --receipt <receipt.json>` re-plans those groups and emits an **ordinary hashed plan
+artifact**, so `show`, the approval gate and `apply` all consume it unchanged and there is no second
+write path to audit. It is read-only against the store.
+
+- **The target comes from the receipt's `applied` rows**, the values the operator approved. **Never
+  from live state:** on a group of 8 with one member at 12 and seven at 11, every live-state
+  heuristic (majority, mode, histogram peak) returns 11, silently rolling the approved change back on
+  the one member that did converge. It is the obvious implementation and it is exactly backwards.
+- **One write per group**, on a member still at the old value, and the Flow fans it out. Seven
+  stragglers do not mean seven writes; that would be the amplification this exists to avoid.
+- **CAS is unchanged**: the baseline is the chosen member's *live* quantity, not the approved target.
+  Wiring it to the target would compare the target against itself and defeat CAS silently.
+- **Mode is always absolute.** The original delta was consumed by the write that landed.
+- **A fresh `planId`**, so the derived idempotency keys differ and a repair can never be deduplicated
+  against the run it repairs. `repairedFrom` records the original id outside `canonicalPayload`, as
+  `narrowedFrom` already does, so the content hash is undisturbed.
+- **Provenance is checked, not assumed.** The receipt must resolve to its own artifact (beside it, or
+  in the working directory) by both `planId` and content hash. A wrong `--receipt` path names a
+  genuinely stranded group and steers it to the other of its two live values.
+- **Age-bounded**: a warning past 1 hour, a refusal past 24 hours, measured from the latest row
+  timestamp. A fan-out settles in 80 to 90 seconds.
+- **Per-group refusals are reported, never dropped**: a three-way spread, no member at the approved
+  target, or a receipt row that never reached `applied` (that is `--resume` territory on the original
+  artifact). Skipped and refused groups are enumerated in the artifact and the summary, because to an
+  operator scanning the gate, a silently omitted group and an overlooked one look identical.
 
 ## The untag interlock
 
@@ -454,7 +531,22 @@ pre-push sensitivity scan.
   variant, or its baseline changed, that row is refused and a re-plan is demanded.
 - **Per-row continue-on-error.** One group's failure never abandons the rest.
 - **Incremental atomic receipts.** A crash leaves a parseable, resumable record. A half-applied run
-  never looks finished. Re-run with `--resume`.
+  never looks finished. Re-run with `--resume`. That last promise is now *enforced* rather than
+  merely true by accident: `finalizeReceipt` stamps `finishedAt` only when every row is terminal and
+  clears it otherwise, so a halted or resumed-then-halted run cannot inherit one. The old code
+  assigned it unconditionally at the tail and held the promise only because a crash never reached
+  that line.
+- **`--resume` checks the receipt belongs to the artifact**, on both `planId` and content hash.
+  Without it, a mistyped `--receipt` path drives one plan's row list against another plan's targets.
+  Each half is load-bearing: `planId` alone passes a receipt from a different revision of the same
+  plan, and the hash alone passes a receipt from a different plan whose groups happen to match, which
+  is what a re-run of the same count sheet produces.
+- **`apply` re-checks the store for unconverged groups OUTSIDE the artifact.** `plan` already refuses
+  on any non-uniform group, but nothing re-checked between plan and apply, and a long apply is the
+  window in which one appears. Groups *inside* the artifact are excluded on purpose: `checkDrift`
+  handles them per row, and a repair artifact targets non-uniform groups deliberately.
+- **Writes are paced and halt on a fan-out that does not settle**, and a resume drains first. See
+  "Pacing" above.
 - **A pidfile lock** prevents concurrent writes, and is reclaimed automatically if its holder died.
 - **A pre-run snapshot** of every affected group is written into the receipt.
 - **`plan` refuses any non-uniform group, whatever its state.** `awaiting-seed` explains *why* a
@@ -491,6 +583,29 @@ false-stop), convergence polling against a racing cascade, the untag interlock, 
 suggestion that must never be substituted, seeding-receipt expiry (including the unparseable
 timestamp, which expires rather than being believed forever), and the refusal to render a plan
 artifact missing a gate-critical key.
+
+The pacing, the multi-group watch and `repair` each carry the cases that would otherwise fail
+silently: the gate is asked only about rows that reached `applied` (proven with a skipped row and a
+failed row in the same batch); the last chunk is gated too; a stale verdict halts with the rest left
+`not-attempted` and `finishedAt` null; a missing verdict counts as stale rather than converged; a
+resume whose receipt records a halted, still-unconverged group refuses **before any write**; the
+watch issues one catalogue read per tick rather than one per group per tick, treats a member-less
+group as `missing` and terminal rather than waiting out five minutes, exits as soon as every group is
+terminal, and computes its timeout deadline once globally instead of per group; the repair target
+comes from the receipt and specifically **not** from the seven-member majority; a repair emits one
+row per stranded group rather than one per straggler; its CAS baseline is the chosen member's live
+quantity and is distinct from the target; and a three-way spread, a group with no member at the
+approved target, a non-`applied` receipt row, and a receipt that does not resolve to its own artifact
+are each refused by name. `cmdRepair`'s promise of zero store writes is asserted twice: once at
+runtime against a client whose `gql` fails the test if called, and once structurally against its own
+source.
+
+`test/flow-runs.test.mjs` covers the Flow run-list console parser (Tranche 4's only testable half):
+dedupe across responses, an unrecognised status counted and named rather than folded into "finished",
+malformed lines reported rather than dropped, and the difference between "the Flow is quiet" and "the
+probe matched nothing", which look identical in a count of zero. Every input there is synthetic and
+hand-written; no sample of real probe output may ever be committed. The probe itself
+(`browser/flow-runs-probe.js`) is browser-only and deliberately has no test.
 
 The receipt archive step has a suite of its own against a real temporary working directory
 (`test/archive-receipts.test.mjs`), because mkdir, rename, a source file that vanished, a name
