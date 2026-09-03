@@ -47,14 +47,18 @@ below and stop; there is no default mode. Per mode:
   own recorded approval: it takes `--from`, which must still resolve to the recorded sha (omitted,
   it uses the run's own recorded ref rather than the `origin/main` default), and refuses every
   other flag and any positional id, because the recorded order is what was approved.
-- `audit [--quick] [--from <ref>] [id ...]`: an optional id list and `--from` as `sync` has them,
-  plus `--quick`. It writes nothing to Admin, so it takes none of `sync`'s write flags.
+- `audit [--quick] [--from <ref>] [--batch <n>] [--resume] [id ...]`: an optional id list and
+  `--from` as `sync` has them, plus `--quick` and `--batch`. It writes nothing to Admin, so it
+  takes none of `sync`'s write flags. `--resume` continues the pass recorded by `audit-start`
+  under **no** approval, because the mode performs no write; it accepts `--from` (which must
+  resolve to the recorded sha) and refuses every other flag and any positional id, naming the
+  recorded value. `audit.md` states the resume rules in full.
 - `record <id>`: exactly one id, required.
 - `rollback <id> [--from <ref>]`: exactly one id, required; `--from` defaults to the commit
   before the one recorded in `seen` (per `rollback.md`), never to what Admin already holds.
 
-Every id, positional in any mode, is validated against
-`node scripts/notifications/brand.mjs --status`; an unknown id, or zero or several ids where
+Every id, positional in any mode, is validated against `npm run notifications:status`
+(`node scripts/notifications/brand.mjs --status`); an unknown id, or zero or several ids where
 exactly one is required, refuses the run with the entry-points table. `test-send` is not a mode:
 it is a request the operator makes during or after a run, handled per `browser.md`.
 
@@ -63,8 +67,8 @@ it is a request the operator makes during or after a run, handled per `browser.m
 | Mode | File | Reads | Writes | Gates |
 |---|---|---|---|---|
 | `change` | `change.md` | the operator's description, `lib/`, `manifest.json` | the repo (branch, commit, push, PR); an unsaved paste in one editor | browser opt-in; the pre-PR gate; one STOP on a green PR |
-| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save; one restoring Save per failed render), the state file including the `run` record | browser opt-in; one STOP with the plan table, the render-failure policy and the cost |
-| `audit` | `audit.md` | every Admin editor in scope | the state file, a table in the scratchpad | browser opt-in |
+| `sync` | `sync.md` | `--status` on `--from`, the state file, every Admin editor in scope | Admin (Save; one restoring Save per failed render), the state file including the `run` record and, when the run covered the whole manifest, `lastAudit` | browser opt-in; one STOP with the plan table, the render-failure policy and the cost |
+| `audit` | `audit.md` | every Admin editor in scope | the state file including the `auditRun` record and its observed file, a table in the scratchpad | browser opt-in |
 | `record` | `record.md` | one Admin editor | `stock/<id>.liquid`, `manifest.json` (then `change`) | browser opt-in; one STOP before Revert to default (that approval covers the Save that follows) |
 | `rollback` | `rollback.md` | git history, one Admin editor | Admin (Save), the state file | browser opt-in; one STOP before the paste; a second before Revert to default |
 
@@ -90,6 +94,8 @@ Applies to every STOP in every mode file.
   the `sync` run that follows, and no approval carries across a STOP. The one recorded exception
   is `sync --resume`, which continues a run under the approval stored with it in the state file;
   the plan it resumes is the plan that was approved, and a changed `--from` refuses.
+  `audit --resume` is **not** a second exception: it carries no approval, because `audit` performs
+  no write. Its record could not authorise one, and must never be given a field that tries to.
 - **A stop ends the run, not just the turn.** This covers every way a mode stops early: an
   approval it needs and does not have, a failed check, `browser.md`'s failure bound, and
   `--on-render-fail halt`. End the turn with the report, one statement of what would restart the
@@ -144,17 +150,44 @@ One file per store, outside the checkout:
 `${XDG_STATE_HOME:-~/.local/state}/notification-templates/<store>.json`, read and written only
 through `node scripts/notifications/state.mjs --store <store> ...`. The store is the handle the
 repo `README.md`'s Development section passes to the Shopify CLI with `-s`, and must match
-`^[a-z0-9-]+$` or the run refuses. Schema (fixed): `{ schemaVersion: 1, store, seen, pending,
-lastAudit, run }` and nothing else; `seen` per id (`version`, `fnv`, `length`, `sha`, `ref`,
-`at`), `pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), `lastAudit` as
-`{ at, results: { <id>: { adminVersion, repoVersion, match, render } } }` or `null`, and `run` as
-`{ startedAt, ref, sha, onRenderFail, batch, ids, done, quarantine }` or `null`, where `ids` is
-the approved table itself, one `{ id, match, beforeSource, version, gid, before, after }` row per
-id in the approved order. `match` is from
-the closed set `in-sync | behind | ahead | unstamped-stock | unstamped-edited | hash-mismatch |
-orphan`; `render` from `pass | fail | skipped`; dates ISO 8601. A hint, never an authority:
-`sync` and `audit` always read Admin. The audit's human-readable table goes to the scratchpad,
-never the repo.
+`^[a-z0-9-]+$` or the run refuses. Schema (fixed): `{ schemaVersion: 2, store, seen, pending,
+lastAudit, run, auditRun }` and nothing else; `seen` per id (`version`, `fnv`, `length`, `sha`,
+`ref`, `at`), `pending` entries (`id`, `version`, `fnv`, `branch`, `pr`), `lastAudit` as
+`{ at, source, startedAt, results: { <id>: { adminVersion, repoVersion, match, render } } }` or
+`null`, `run` as `{ startedAt, ref, sha, onRenderFail, batch, ids, done, quarantine }` or `null`,
+where `ids` is the approved table itself, one
+`{ id, match, beforeSource, version, gid, before, after }` row per id in the approved order, and
+`auditRun` as `{ startedAt, updatedAt, ref, sha, quick, batch, ids, token, observedPath }` or
+`null`. `match` is from the closed set `in-sync | behind | ahead | unstamped-stock |
+unstamped-edited | hash-mismatch | orphan`; `render` from `pass | fail | skipped`; `source` from
+`sync | audit`; dates ISO 8601. A hint, never an authority: `sync` and `audit` always read Admin.
+The audit's human-readable table goes to the scratchpad, never the repo.
+
+**`schemaVersion` 2 and its one-way migration.** A `schemaVersion` 1 file is accepted on read and
+adopted as it is; the first **mutating** write bumps it to 2 after copying the file to a sibling
+`.v1.<timestamp>.bak`, whose path it prints. No read-only subcommand migrates. A checkout that
+predates this change refuses a `schemaVersion` 2 file, and restoring that backup is the recovery.
+It migrates rather than refusing and asking for a reseed, which is what the sibling
+`scripts/policies/lib/state.mjs` does, because `seen` holds one real fact per synced template,
+gathered a browser navigation at a time, and a reseed would destroy facts that exist nowhere else.
+
+### `run` and `auditRun`
+
+Same flag name, `--resume`, in the same skill, meaning different things on the axis this skill
+cares about most.
+
+| | `run` (`sync`) | `auditRun` (`audit`) |
+|---|---|---|
+| **Records** | the approved plan: every id's `before` and `after` numbers, in the approved order | which ids a read-only pass has been asked to read, and where its readings go |
+| **Carries an approval** | **yes.** `sync --resume` pastes and Saves under the approval recorded with it | **no, and it never may.** Its field set is closed so an approval-shaped field cannot be added in passing |
+| **Progress from** | `done` and `quarantine` inside the record; a `seen` write advances it | the observed file beside the state file, one newline-terminated row per id read; nothing in the record counts |
+| **Invalidated by** | a `--from` that no longer resolves to the recorded sha; a `before` that no longer matches what Admin holds | an observed file whose first line is not this run's token; a row for an id outside the run; a malformed row that is not the final one |
+
+**The invariant, imperative.** `auditRun` records no approval and must never gain a field that
+carries one. `--resume` is not a general mechanism: it exists for `audit` because `audit` performs
+no write. Any mode that writes to the live store requires a fresh operator message in the current
+session, and a resume record can never supply it. **Adding a resume record to a writing mode is a
+change to the approval gate, not an ergonomics change.**
 
 `run` is the exception to "a hint": it is the approved plan of a `sync` in flight, so a run
 survives a compaction, a crash or a new session, and `sync --resume` continues it under the
@@ -167,6 +200,17 @@ failed render records the id in `quarantine` under both policies, so a stopped r
 onto the template that stopped it. A `seen` write advances it, so the per-id loop spends no extra call on
 bookkeeping. Before it existed, a run interrupted mid-way could only be handed over as a prose
 document written by hand; do not go back to that.
+
+`auditRun` exists so a 46-id `audit` survives a compaction; the first full pass had to be
+hand-rolled outside the skill for want of it. Its observed file lives **beside the state file**,
+not in the session scratchpad, because the scratchpad path is keyed by session id and a resumed or
+forked session would not find it, which is the whole durability the record is for.
+
+**`lastAudit` has three writers** (`audit-end`, the bare `audit` subcommand, and `sync`'s end of
+run), so it records `source`. A `sync`-recorded one is a self-attestation: the same agent, in the
+same browser session, verifying its own writes. Everything that surfaces a `lastAudit` prints the
+source, and a `sync`-recorded one does not substitute for a cold `audit` when the question is
+whether Admin has drifted.
 
 ## Non-goals
 

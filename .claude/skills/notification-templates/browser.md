@@ -73,6 +73,14 @@ Two rules follow:
   template: its `variables` are opaque. Record it with the reading, and pass it to
   `before-doc.mjs --expect-gid`, so a response saved from another template's in-flight request is
   refused rather than becoming this id's restore document.
+- **The gid's id segment is the template HANDLE, not a number.** Every gid Admin returns matches
+  `GID_RE` (`scripts/notifications/brand.mjs`, the one place the shape is written down): the whole
+  string is `gid://shopify/EmailTemplate/<handle>`, and `<handle>` is the same `[a-z0-9_]+` an id
+  is. Record it exactly as the probe logged it; do not reshape it, do not extract a number from it,
+  and if one is refused, report the gid verbatim rather than editing it into something accepted. A
+  numeric segment is still legal, and no real template has one. This is stated because it was
+  assumed rather than observed: the tools checked for a numeric segment, no skill file said what
+  the shape actually was, and a `sync` was refused on all 46 ids at once.
 - **Never wait a fixed interval.** No `sleep` (the harness blocks it in the foreground), and never
   a `node -e` spin loop: it burns a core, and the interval is a guess either way (a fixed wait can
   still be too short, which is how the race got through in the first place). Read the console and

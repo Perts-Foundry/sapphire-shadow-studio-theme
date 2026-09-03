@@ -13,6 +13,9 @@ import { fnv1a } from '../dump.mjs';
 import { paths } from '../brand.mjs';
 import { MATCH } from '../state.mjs';
 import { classifyOne, classifyAll, parseObserved, repoFacts, formatTable, ClassifyError, PASTE_OVER } from '../classify.mjs';
+import { gidFor, NUMERIC_GID, GID_CLASSES, ILLEGAL_GIDS } from './gid-fixtures.mjs';
+
+const WRONG_RESOURCE_GID = ILLEGAL_GIDS.find(([name]) => name === 'wrong resource, numeric')[1];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'classify.mjs');
@@ -20,11 +23,12 @@ const script = path.join(here, '..', 'classify.mjs');
 const BRANDED = { alpha: 'branded alpha v2\n', beta: 'branded beta v1\n' };
 const STOCK = { alpha: 'stock alpha\n', beta: 'stock beta\n' };
 const VERSION = { alpha: 2, beta: 1 };
-// The shape Admin actually returns: the id segment is the template handle. The numeric one below
-// was the only shape any fixture used, which is how a numeric-only GID_RE shipped and refused all
-// 46 ids on the first sync that read them.
-const GID = 'gid://shopify/EmailTemplate/beta';
-const NUMERIC_GID = 'gid://shopify/EmailTemplate/1234567890';
+// Built by the shared fixture module rather than typed here. The id segment is the template
+// handle, which is what Admin returns; the numeric one was the only shape any fixture in this
+// suite used, which is how a numeric-only GID_RE shipped and refused all 46 ids on the first sync
+// that read them. `test/gid-corpus.test.mjs` carries the full corpus and fails if any test file
+// starts defining its own gid again.
+const GID = gidFor('beta');
 
 function root() {
   const r = mkdtempSync(path.join(tmpdir(), 'ssb-classify-'));
@@ -102,6 +106,13 @@ test('parseObserved accepts the TSV and both JSON shapes, and refuses anything i
   assert.deepEqual(parseObserved(JSON.stringify([{ id: 'alpha', length: 9, fnv: 'deadbeef' }]))[0].id, 'alpha');
   assert.deepEqual(parseObserved(JSON.stringify({ alpha: { length: 9, fnv: 'deadbeef', stamp: 'alpha 2' } }))[0].stamp, { id: 'alpha', version: 2 });
   assert.equal(parseObserved(JSON.stringify([{ id: 'alpha', length: 9, fnv: 'deadbeef', gid: GID }]))[0].gid, GID);
+  // Every gid class, not one primary example: the handle shapes Admin returns, a numeric segment,
+  // and the legal edges. `test/gid-corpus.test.mjs` owns the full positive and negative corpus.
+  for (const { name, gids } of GID_CLASSES) {
+    for (const gid of gids) {
+      assert.equal(parseObserved(`alpha\t9\tdeadbeef\tnone\t${gid}`)[0].gid, gid, `${name}: ${gid}`);
+    }
+  }
   assert.equal(
     parseObserved(`alpha\t9\tdeadbeef\tnone\t${NUMERIC_GID}`)[0].gid,
     NUMERIC_GID,
@@ -115,8 +126,8 @@ test('parseObserved accepts the TSV and both JSON shapes, and refuses anything i
     ['alpha\t9\tdeadbee', /is not eight lowercase hex digits/],
     ['alpha\t9\tdeadbeef\talpha v2', /is not "<id> <version>" or "none"/],
     ['alpha\t9\tdeadbeef\talpha 0', /is not "<id> <version>" or "none"/],
-    ['alpha\t9\tdeadbeef\tnone\tgid://shopify/Product/1', /is not gid:\/\/shopify\/EmailTemplate/],
-    ['alpha\t9\tdeadbeef\tnone\t1234', /is not gid:\/\/shopify\/EmailTemplate/],
+    [`alpha\t9\tdeadbeef\tnone\t${WRONG_RESOURCE_GID}`, /is not usable; expected gid:\/\/shopify\/EmailTemplate\/<handle>/],
+    ['alpha\t9\tdeadbeef\tnone\t1234', /is not usable; expected gid:\/\/shopify\/EmailTemplate\/<handle>/],
     // Concatenating two console dumps for one id is a documented workflow ("read once more"), and
     // last-write-wins would classify from one reading and never mention the other.
     [`alpha\t9\tdeadbeef\nalpha\t10\tdeadbeef`, /observed lists alpha twice; one reading per id/],

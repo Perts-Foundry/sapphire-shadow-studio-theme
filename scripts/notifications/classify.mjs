@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashFile } from './dump.mjs';
-import { paths, readManifest, isValidVersion, REPO_ROOT } from './brand.mjs';
+import { paths, readManifest, isValidVersion, GID_RE, GID_EXPECTED, REPO_ROOT } from './brand.mjs';
 import { MATCH, ID_RE } from './state.mjs';
 
 // sync.md pastes over everything except in-sync (nothing to do) and ahead (Admin is newer; the
@@ -42,16 +42,12 @@ export const PASTE_OVER = ['behind', 'unstamped-stock', 'unstamped-edited', 'has
 
 export class ClassifyError extends Error {}
 
+// The gid shape lives in brand.mjs and is re-exported here for the callers and tests that read it
+// through this module: two hand-typed copies of it are what let a wrong shape refuse all 46 ids.
+export { GID_RE };
+
 // One id. `observed` is { length, fnv, stamp }, `stamp` null or { id, version }. `repo` is
 // { version, branded: {length, hash}, stock: {length, hash} }.
-// The id segment of an EmailTemplate gid is the template HANDLE, not a number: Admin returns
-// `gid://shopify/EmailTemplate/buy_online`. This was `[0-9]+` until a sync read all 46 editors and
-// every one of them was refused, because the numeric shape was assumed rather than observed and
-// every test fixture was an invented numeric gid. Keep it anchored and narrow (no slashes, dots or
-// uppercase); what actually guards against pairing one template's response with another id is the
-// string equality in before-doc.mjs, which this format check only feeds.
-export const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[a-z0-9_]+$/;
-
 export function classifyOne(id, observed, repo, { pasteAhead = [] } = {}) {
   const bytesEqual = (o) => o && observed.length === o.length && observed.fnv === o.hash;
   const stamp = observed.stamp || null;
@@ -171,7 +167,7 @@ export function parseObserved(text) {
     }
     let gid = null;
     if (r.gidText !== '-') {
-      if (!GID_RE.test(r.gidText)) throw new ClassifyError(`${r.id}: gid ${JSON.stringify(r.gidText)} is not gid://shopify/EmailTemplate/<n> or "-"`);
+      if (!GID_RE.test(r.gidText)) throw new ClassifyError(`${r.id}: gid ${JSON.stringify(r.gidText)} is not usable; ${GID_EXPECTED}, or "-" for a reading that had none`);
       gid = r.gidText;
     }
     return { id: r.id, length: r.length, fnv: r.fnv, stamp, gid };

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fnv1a } from '../dump.mjs';
 import { paths } from '../brand.mjs';
 import { beforeDoc, BeforeDocError } from '../before-doc.mjs';
+import { FIXTURE_GID, OTHER_FIXTURE_GID, NUMERIC_GID, ALL_LEGAL_GIDS } from './gid-fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'before-doc.mjs');
@@ -29,8 +30,11 @@ function root() {
   return r;
 }
 
-const GID = 'gid://shopify/EmailTemplate/1234567890';
-const OTHER_GID = 'gid://shopify/EmailTemplate/999';
+// From the shared fixture module. This swap buys no coverage on its own, and saying so is the
+// point: this module compares gids by string EQUALITY, so the shape of the two literals never
+// mattered here. It is the pairing check that matters, and equality is what performs it.
+const GID = FIXTURE_GID;
+const OTHER_GID = OTHER_FIXTURE_GID;
 const response = (bodyHtml, id = GID) => JSON.stringify({ data: { emailTemplate: id === null ? { bodyHtml } : { id, bodyHtml } } });
 
 test('--from-stock returns the recorded snapshot when it hashes to the approved numbers', () => {
@@ -83,9 +87,18 @@ test('--expect-gid refuses a response for another template, however well its byt
   assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: GID, root: r }), BeforeDocError);
   assert.throws(
     () => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: GID, root: r }),
-    /is the response for gid:\/\/shopify\/EmailTemplate\/999, not gid:\/\/shopify\/EmailTemplate\/1234567890.*do not paste or restore from it/s,
+    // Built from the fixtures rather than restating them, so the two gids and the message they
+    // appear in cannot drift apart.
+    new RegExp(`is the response for ${OTHER_GID}, not ${GID}[\\s\\S]*do not paste or restore from it`),
   );
   assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: OTHER_GID, root: r }).text, STOCK, 'the matching gid is accepted');
+  // The pairing is string equality, so it holds for every legal shape and nothing here depends on
+  // which one the fixtures happen to use.
+  for (const gid of ALL_LEGAL_GIDS) {
+    writeFileSync(file, response(STOCK, gid), 'utf8');
+    assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: gid, root: r }).text, STOCK, `matching ${gid}`);
+    assert.throws(() => beforeDoc({ fromResponse: file, expect: EXPECT, expectGid: NUMERIC_GID + '0', root: r }), BeforeDocError, `mismatched against ${gid}`);
+  }
   assert.equal(beforeDoc({ fromResponse: file, expect: EXPECT, root: r }).text, STOCK, 'and the check is skipped when no gid is expected');
   // A response with no gid at all cannot satisfy the check, so it is refused rather than waved
   // through: the point of asking is to know which template answered.

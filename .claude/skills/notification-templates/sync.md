@@ -237,14 +237,53 @@ pasted and pass.
    the skill still records `seen` for every id that passed step 3.7, prints the partial table, and
    lists the ids not attempted. Do not Revert to default here.
 
-5. **End of run.** Re-run the read pass (`editor-probe.js`, `SSSSTORED`) over the ids in `done` as
-   a batch summary, print the final table, and `pending-remove` those ids only: a quarantined id
-   still needs syncing, so it keeps its `pending` entry and its place on the backlog. Report the
-   quarantine list in full with each verifier output verbatim, in an adaptive fence, and say
-   plainly which ids are branded and which are still on their previous document, because a
-   quarantined run leaves the set inconsistent on purpose. Then `state.mjs --store <store>
-   run-end`. State plainly that `sync` proves Admin holds the bytes, and that the sample-data
-   render is what the render check proves.
+5. **End of run.** Re-run the read pass (`editor-probe.js`, `SSSSTORED` and `SSSSTOREDSTAMP`) over
+   every id this run settled, print the final table, and `pending-remove` the `done` ids only: a
+   quarantined id still needs syncing, so it keeps its `pending` entry and its place on the
+   backlog. Report the quarantine list in full with each verifier output verbatim, in an adaptive
+   fence, and say plainly which ids are branded and which are still on their previous document,
+   because a quarantined run leaves the set inconsistent on purpose. Then `state.mjs --store
+   <store> run-end`. State plainly that `sync` proves Admin holds the bytes, and that the
+   sample-data render is what the render check proves.
+
+   **Those readings are an `audit`'s readings, so record them instead of discarding them.** Write
+   them to an observed file and classify in one pass, exactly as `audit.md` step 1 does:
+
+   ```
+   node scripts/notifications/classify.mjs --root <scratch> --observed <scratch>/observed-end.tsv \
+     --audit-json <scratch>/results.json
+   node scripts/notifications/state.mjs --store <store> audit <scratch>/results.json \
+     --source sync --started-at <the run's startedAt>
+   ```
+
+   Confirming a sync afterwards otherwise costs a second full browser pass, roughly 100 tool calls
+   for 46 ids, to re-read what this pass just read. Three terms decide whether it records, and the
+   guard is in `state.mjs audit`, not in this file, because a rule in prose is one an agent can
+   skip and the subcommand can be invoked directly:
+
+   - **scope**: the run targeted the **full manifest set**, not that the ids it happened to cover
+     added up to everything. A `sync` of a named id list never records a `lastAudit`, by design.
+   - **done**: `done` plus `quarantine`, which is every id the run settled. Read both; the
+     `render` for a quarantined id is `fail`.
+   - **quarantine**: a first-class value in the recorded result, never a disqualifier. A
+     quarantined id gets a row like any other. Were it a disqualifier, one permanently quarantined
+     template would mean `sync` silently never records an audit again, with nothing said about why.
+
+   `render` is a three-value enum, `pass | fail | skipped`, and a `fail` is **recorded**, does not
+   block the record, and is named in the report. Suppressing a render check that ran and failed is
+   worse than storing it.
+
+   When the run did not cover the whole manifest, `state.mjs audit --partial` prints the reason and
+   records nothing. Put that line in the report verbatim, as it prints:
+
+   ```
+   lastAudit not recorded: run covered n of m manifest ids. Run audit for a full verification.
+   ```
+
+   **A sync-recorded `lastAudit` is a self-attestation**: the same agent, in the same browser
+   session, verifying its own writes. It is recorded with `source: "sync"`, everything that
+   surfaces a `lastAudit` prints that source, and it does not substitute for a cold `audit` when
+   the question is whether Admin has drifted since.
 
    Report the re-paste count with those: how many ids needed a second paste attempt at step 3.4 or
    3.7, and which. Zero is worth stating too, because it is what makes a later non-zero mean
