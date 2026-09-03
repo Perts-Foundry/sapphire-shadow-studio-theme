@@ -239,6 +239,10 @@ function planManifestRows(d, preservedRows) {
 function derivedColumns(parsed) {
   const empty = { line: '', garment: '', colorway: '', admin_color: '', product: '', shot: '' };
   if (!parsed || !parsed.ok) return empty;
+  // The non-garment form carries the handle itself: no line, garment or colour. admin_color stays
+  // empty because the product has no Color option; the alt guard then has an empty vocabulary to
+  // check against and accepts any alt (a colour word in it is plain prose, not a binding).
+  if (parsed.product) return { ...empty, product: parsed.product, shot: parsed.shot || '' };
   const key = `${parsed.line}/${parsed.garment}`;
   const prod = productForLineGarment(parsed.line, parsed.garment);
   const admin = colorwayToAdminValue(parsed.colorway, key);
@@ -285,9 +289,10 @@ function profileName(iccBuf) {
 
 // Guard the alt column against the reserved-colour-vocabulary rule (docs/product-media-alt-text.md).
 // Only rows with a resolved product and a non-empty alt are checked. Returns `${name}: ${problem}`.
-// A shared-asset fan-out row has a product handle but empty line/garment; resolve its key via
-// productForHandle so those rows are guarded too (expected=null enforces a colour-free alt against
-// that product's vocabulary). An unknown handle is a guard problem, never a throw.
+// Two kinds of row carry a product handle with empty line/garment: a shared-asset fan-out row and
+// a non-garment product's row. Resolve the key via productForHandle so both are guarded
+// (expected=null enforces a colour-free alt against that product's vocabulary, which for a
+// non-garment is empty, so nothing is rejected). An unknown handle is a guard problem, never a throw.
 function altGuardProblems(rows) {
   const out = [];
   for (const r of rows) {
@@ -666,7 +671,10 @@ async function main() {
       if (collided) notes.push('collision -> suffixed');
       if (fanOut) notes.push(`shared asset: ${seeds.length} preserved product row(s)`);
       const productCell = fanOut ? `(shared: ${seeds.length} products)` : (d.product || '(unresolved)');
-      console.log([f, name, productCell, d.admin_color || '(shared)', notes.join('; ')].join('\t'));
+      // A non-garment product has no Color option at all, which is not the same fact as a shared or
+      // group photo (a colour-free photo on a product that does have colours).
+      const colorCell = d.admin_color || (norm.parsed?.product ? '(no colour option)' : '(shared)');
+      console.log([f, name, productCell, colorCell, notes.join('; ')].join('\t'));
     }
     const guard = altGuardProblems(previewRows);
     if (guard.length) {
@@ -757,7 +765,7 @@ async function main() {
 // below runs only when invoked directly.
 export {
   planRenames, loadRenameMap, planManifestRows, readExistingManifest, altGuardProblems,
-  profileName, underProductImages, prepareInput,
+  derivedColumns, profileName, underProductImages, prepareInput,
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

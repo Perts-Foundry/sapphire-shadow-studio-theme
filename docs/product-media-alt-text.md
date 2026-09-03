@@ -193,7 +193,9 @@ colour word from `admin_color`, never re-derive it from the filename. This is th
 made mechanical: the colour comes from `admin_color`, never from the file's own colour token. The
 alt-colour guard rejects an alt that names no recognized value, so a prose-only alt is skipped, not
 auto-completed. A group/shared photo has an empty `admin_color` and its alt must name no value at
-all.
+all. So does every photo of a non-garment product (`body: null` in `catalogue.json`): it has no
+Color option, its recognized value list is empty, and the gallery filter has nothing to match, so
+its alt is plain description.
 
 Be clear about what that does and does not buy you. `product-images/` is deliberately gitignored,
 binaries and manifest alike, because the CDN is these files' home. The CSV is a local authoring
