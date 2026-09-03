@@ -252,6 +252,30 @@ async function declaredNonGarmentHandles() {
   return new Set(nonGarmentProducts(await ensureManifest()).map((p) => p.handle));
 }
 
+/**
+ * Untagged tracked variants holding stock: the audit invariant's finding set.
+ *
+ * A variant on a product the manifest declares as a non-garment ("body": null) is exempt, because
+ * it can never join a blank group and holding stock is its correct state. The exemption is scoped
+ * to DECLARED non-garments deliberately: an undeclared product stays in the finding set, so an
+ * unmapped handle is never quietly absorbed here instead of being surfaced by the separate
+ * "every product has a declared body" check. The manifest is the only authority on which products
+ * are garments.
+ *
+ * @param {object[]} variants - normalised variants
+ * @param {Set<string>} nonGarmentHandles - handles the manifest declares with a null body
+ * @returns {object[]}
+ */
+export function untaggedHoldingStock(variants, nonGarmentHandles) {
+  return variants.filter(
+    (v) =>
+      !v.blankId &&
+      v.tracked !== false &&
+      v.quantity > 0 &&
+      !nonGarmentHandles.has(v.productHandle)
+  );
+}
+
 async function loadStore({ requireWrite }) {
   const client = createAdminClient();
   if (requireWrite) await assertScopes(client);
@@ -613,7 +637,7 @@ async function cmdAudit(opts) {
   // Asserted as invariants, not as frozen counts: backfill legitimately moves variants between the
   // tagged and untagged pools, so a count comparison would false-alarm on the first correct run.
   const taggedAtZero = store.variants.filter((v) => v.blankId && v.quantity <= 0);
-  const untaggedNonZero = store.variants.filter((v) => !v.blankId && v.tracked !== false && v.quantity > 0);
+  const untaggedNonZero = untaggedHoldingStock(store.variants, await declaredNonGarmentHandles());
   const awaitingSeed = new Set(rows.filter((r) => r.state === AWAITING_SEED).flatMap((r) => r.members.map((m) => m.id)));
   const unexplainedZero = taggedAtZero.filter((v) => !awaitingSeed.has(v.id));
 
