@@ -1,5 +1,101 @@
 # Release Notes
 
+## The launch swap produced a second email file, not an edit in place (unreleased)
+
+`marketing/emails/welcome.liquid` was written for a store behind a password gate, and
+`marketing/emails/README.md` carried a five-item list of what to change at launch. The store opened
+2026-09-03. The five edits were made, and they went into a **new** file,
+`welcome-postlaunch.liquid`, rather than into the old one, because the old one is the only record of
+what every existing subscriber was actually sent. A second file, `launch-announcement.liquid`, is
+the one-time campaign to the whole list.
+
+**Keeping the stale file created a paste hazard, and the filename is what answers it.** Nothing in
+`marketing/` deploys. Every file here is copy-pasted by hand into Shopify Email's custom-code
+editor, so two near-identical welcome templates sitting side by side is a live risk, and
+`welcome-postlaunch.liquid` sorts immediately *before* `welcome.liquid` in a plain listing: the
+wrong one is the one under the cursor. A row in the README's file table only helps if it is read at
+the moment of pasting, and nothing in the workflow forces that. So the old file was
+`git mv`d to `welcome-prelaunch-superseded.liquid`. The history is intact, and the warning now
+lives in the one string that is on screen while the paste is happening. This is the same reasoning
+as the notification templates' version stamp: the guard has to be where the mistake is made, not in
+a document beside it.
+
+**Row 4 of the product grid is a separate table, not a `colspan` row.** The grid went from six tiles
+to seven (the Shift Fuel Tote joined, and the Gift Card moved to a row of its own), and seven does
+not divide by two. The obvious shape, `<td colspan="2">` under a row of `width="50%"` siblings with
+no explicit width of its own, is the exact input that trips Outlook's Word rendering engine into
+mis-inferring column widths across the whole table, so the two-column table is closed after row 3
+and the seventh tile gets its own single-cell table. Two things in that table are load-bearing and
+neither is optional: centring is the `align="center"` **attribute** on both the outer `<td>` and the
+inner `<table>`, because Outlook does not honour `margin: auto`; and sizing is the `width`/`height`
+attributes plus an inline `max-width`, never a class, because a client that drops `<style>` would
+otherwise get the CDN's native 524 px.
+
+**The date panel became a brand-promises panel, and the font size is a measured choice.** The two
+navy tiles now read "Made to order" and "Stitched in-house" instead of "Sep 3" and "9:00 AM", with
+the sublabel `<span>`s removed rather than left empty. At 13 and 17 characters these strings are two
+and three times the length of the ones they replace. Measured against Helvetica Bold advance widths,
+the inherited 24 px needs 283 px inside the 279 px a 375 px phone leaves for that panel: an overflow
+by a hair, invisible on a desktop and visible to every mobile recipient. At 20 px it needs 251 px on
+a phone and 392 px of the 504 px available on a desktop, so it sets on one line on a desktop and two
+on a phone. The cells are sized by padding alone with no fixed height, so the wrapped tile grows
+instead of clipping against the navy edge. Both new files carry the identical panel, so a change
+made to one and not the other reads as a mismatch rather than drifting quietly.
+
+**The measurement got the wrap position wrong, and only rendering the file caught it.** The
+arithmetic above predicted "Stitched" over "in-house". The browser produced "Stitched in-" over
+"house", because a hyphen is a break opportunity and a greedy word-wrap that splits on spaces does
+not know that. `in-house` now sits in its own `<span style="white-space: nowrap;">`, which makes the
+space the only break opportunity again. Worth recording for what it says about the two checks: the
+measurement was right about the thing that had a number attached (24 px overflows, 20 px does not)
+and wrong about the thing that did not, and no amount of care in the arithmetic would have closed
+that gap. Remove the span and the bad wrap returns silently, on mobile only.
+
+**No product count appears in either file, and that is a reversal of an earlier draft.** "Seven
+pieces live" was drafted and cut. A sent email cannot be recalled, so a count becomes false the
+first time a product is added or retired, and there is no correction available short of another
+campaign. The same rule already governs shipping figures here: both templates link the shipping
+policy and the FAQ page and state no duration of their own. Neither carries a date either.
+
+**The announcement's headline says "store" where the rest of the brand says "studio", and it is an
+operator decision rather than a slip.** "The store is open!" is the one place the word appears;
+`welcome-prelaunch-superseded.liquid` said "The studio opens", the button says "Shop the
+collection", and the name is Sapphire Shadow Studio throughout. Do not normalise it to "studio" for
+consistency. Its exclamation point is likewise deliberate and likewise asymmetric: the headline
+carries one, the subject line in the README's metadata table does not, because the subject is the
+half a spam filter scores and an exclamation there is a mild bulk-sender signal.
+
+**The announcement send discharges a promise the prelaunch welcome already made.** That file told
+every subscriber who received it: "you will hear it from us by email before we announce it anywhere
+else." Nothing in the repo enforces it and it cannot be corrected after the fact, so it fixes the
+order of launch day: **email the list first, then social, then take the storefront password off.**
+The README's launch-swap section is the only record of that, which is why the paragraph survived a
+rewrite of the section around it.
+
+**The README's asset table had drifted from the templates, in three rows out of six.** It named
+Lead II Crewneck classic-navy RN, Huddle grey-heather vet-tech, and Shift Fuel black; the file has
+always referenced grey-heather LPN, black nurse, and classic-navy. The templates were right and the
+table was wrong, which is what to expect from a hand-maintained list of URLs that nothing compares
+against the files it describes. All three are corrected and the tote row is added. Nothing checks
+this, so it will drift again.
+
+**What the browser passes proved, beyond the hyphen.** Both templates were rendered at a desktop
+width and at 375 px, with the `<style>` block deleted, and with every image `src` pointed at a dead
+URL. Three things the markup was written to guarantee held up: the row-4 gift-card tile stayed 262 px
+and centred with `<style>` gone, which is the case its `width`/`height` attributes and inline
+`max-width` exist for; with images blocked every tile degraded to its alt text over its bold label,
+so no tile becomes an anonymous box; and the social row degraded to "Instagram Facebook TikTok" in
+text. The copied regions were separately proved byte-identical to the renamed source by diff rather
+than by trusting the transcription. **The test send is still outstanding**, and it remains the only
+thing that proves an email renders in an inbox.
+
+**One thing the render surfaced that is a judgment call, not a defect.** The gift-card tile alone in
+row 4 is the brand logo on white, not a flat lay, so at full 262 px width and centred it carries more
+visual weight than any product above it and reads at a glance like a second logo lockup rather than
+the seventh tile. It is the least important item in the grid and currently the loudest. Left as
+specified, because the fix is a taste decision about the brand's own artwork: either a narrower
+row-4 tile or a gift-card image that is a photograph rather than a wordmark.
+
 ## A phantom SEO finding, and the two real ones it was hiding (unreleased)
 
 The 2026-09-03 `seo-review` run reported six `title-long` WARNs. All six were the tool's own fault.

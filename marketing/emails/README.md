@@ -9,7 +9,14 @@ custom-code editor.
 | File | Purpose |
 |---|---|
 | `campaign-shell.liquid` | Reusable base. Clone it to start a new campaign. Its fill-in spots are ALL-CAPS placeholder text. |
-| `welcome.liquid` | Welcome automation, **written for prelaunch**. Ready to paste as-is. See the launch swap below. |
+| `welcome-postlaunch.liquid` | Welcome automation for an open store. This is the one the "Customer signs up" automation should be running. Ready to paste as-is. |
+| `launch-announcement.liquid` | One-time launch campaign to the whole list. Ready to paste as-is. It discharges the promise the prelaunch welcome made; see the launch swap below. |
+| `welcome-prelaunch-superseded.liquid` | **Superseded, retained for history, do not paste.** The prelaunch welcome, written for a store behind the password gate. Replaced by `welcome-postlaunch.liquid`. |
+
+The filename is the warning, and that is deliberate. These files are copy-pasted into a web editor by
+hand, so a note in this table only helps if someone reads it at the moment of pasting, and nothing in
+the workflow forces that. `welcome-prelaunch-superseded.liquid` carries the warning in the one string
+that is on screen while the paste is happening.
 
 ## The templates carry no comments. This file carries the documentation.
 
@@ -35,8 +42,22 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | "Customer signs up" welcome automation, all new email subscribers while the storefront is password-protected | 2026-08-21, test sends, first campaign, and the live automation |
+| `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | not yet |
+| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
+| `welcome-prelaunch-superseded.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | Historical. Was the "Customer signs up" automation while the storefront was password-protected | 2026-08-21, test sends, first campaign, and the live automation |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
+
+The two new subjects were checked against the usual filters before being written down: no capitals,
+no exclamation point, no "free", no percentage or currency symbol. "Welcome to Sapphire Shadow
+Studio" is 33 characters, which is borderline for a narrow Gmail-app list view and fits most
+everywhere else; "The store is open" is 17. The preview lines are 51 and 46 characters, both inside
+what an inbox shows.
+
+**The announcement's headline carries an exclamation point and its subject line does not**, and that
+split is deliberate rather than an oversight. In the body it is the one place the voice allows one.
+In the subject it is a mild bulk-sender signal, and the subject is the half a spam filter scores, so
+the inbox sees "The store is open" and the reader sees "The store is open!". Do not "fix" the
+mismatch by adding one to the table.
 
 Preview text lives in the editor field and in this table, and **nowhere in the template**. Both
 files used to carry a hidden preheader `<div>` as a second home for it. A real test send on
@@ -63,7 +84,8 @@ The Shopify Email custom-code editor is **desktop only**; it cannot be opened on
 1. Shopify Admin > **Marketing** > **Create campaign** (or **Automations** for the welcome flow) >
    **Shopify Email**.
 2. Pick the option for a custom-coded / custom Liquid email rather than a drag-and-drop template.
-3. Paste the **whole file**. `welcome.liquid` needs nothing else: it carries no comments and no
+3. Paste the **whole file**. `welcome-postlaunch.liquid` and `launch-announcement.liquid` need
+   nothing else: they carry no comments and no
    placeholders. A clone of `campaign-shell.liquid` still has its ALL-CAPS placeholders to replace,
    and they are visible text, so anything you miss is obvious in the preview and in the test send.
 4. Set the **subject line** and **preview text** from the campaign metadata table above. If you
@@ -123,7 +145,7 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   same page uses `{{ open_tracking_block }}`. The editor settles it. With open tracking on and
   `{{ open_tracking }}` in the file, the editor raises "Add `{{ open_tracking_block }}` variable",
   and the 2026-08-21 test send carried no tracking pixel at all, because the unrecognised variable
-  simply rendered to nothing. Both templates now use `{{ open_tracking_block }}`. It renders to
+  simply rendered to nothing. Every template here uses `{{ open_tracking_block }}`. It renders to
   nothing visible either way, so the only symptom of getting it wrong is opens that never record.
 
   Open tracking itself is a **store-wide** setting, not a campaign or template one: Admin >
@@ -176,9 +198,11 @@ These are the platform requirements the templates satisfy. Getting them wrong us
   10 in the body. Every personalization variable needs a fallback, because a subscriber who joined
   through a footer form has an email and nothing else. That is what
   `{{ customer.first_name | default: 'friend' }}` is for; do not drop the `default`.
-  `campaign-shell.liquid` carries that greeting. `welcome.liquid` deliberately does not:
-  it uses no `customer` variable at all, so it reads the same for every subscriber and there
-  is no fallback to get wrong.
+  `campaign-shell.liquid` carries that greeting. The three welcome and announcement templates
+  deliberately do not: they use no `customer` variable at all, so they read the same for every
+  subscriber and there is no fallback to get wrong. That matters most for
+  `launch-announcement.liquid`, which goes to the whole list, and the list is mostly footer-form
+  subscribers who have never ordered.
 
 ## Email-HTML rules these templates follow
 
@@ -234,12 +258,36 @@ size, and many block images by default, which is why the `alt` text has to stand
 </tr>
 ```
 
-**Date tile panel.** Two static tiles on a navy panel, echoing the countdown tiles on the password
-page. `welcome.liquid` carries this; the shell does not, because a date is campaign content. An
-email cannot tick, so the tiles are hand-typed text and there is nothing to recalculate. The eyebrow
-matches `blocks/launch-countdown.liquid`'s own, so a screen reader hears "The studio opens Sep 3
-2026 9:00 AM Eastern" as one sentence. At 375 px the two tiles come to roughly 250 px inside a
-335 px content box, so no media query is involved.
+**Two-tile navy panel.** Two static tiles on a navy panel, echoing the countdown tiles on the
+password page. The shell does not carry it, because what goes in the tiles is campaign content.
+
+`welcome-prelaunch-superseded.liquid` carries the original **date** form, below: "Sep 3" over "2026"
+and "9:00 AM" over "Eastern". An email cannot tick, so the tiles are hand-typed text and there is
+nothing to recalculate. The eyebrow matched `blocks/launch-countdown.liquid`'s own, so a screen
+reader heard "The studio opens Sep 3 2026 9:00 AM Eastern" as one sentence. At 375 px those two
+tiles came to roughly 250 px inside a 335 px content box, so no media query was involved.
+
+`welcome-postlaunch.liquid` and `launch-announcement.liquid` carry a **brand-promises** form of the
+same panel: the same markup, no sublabel `<span>`, and the tiles read "Made to order" and "Stitched
+in-house" under an eyebrow of "How we work" and "Open now" respectively. Three things about it are
+deliberate. The two strings are **identical in both files**, so a panel that is edited in one and
+not the other reads as an obvious mismatch rather than drifting quietly, which matters in a
+directory where nothing reconciles two copies. The value is **20 px rather than the date form's
+24 px**, and that is a measured choice, not a taste one: at 13 and 17 characters these strings are
+two and three times the length of "Sep 3" and "9:00 AM". Measured against Helvetica Bold advance
+widths, 24 px needs 283 px on a 375 px phone where the panel offers 279 px, so it overflows by a
+hair; 20 px needs 251 px there and 392 px of the 504 px available on desktop, so it sets on one line
+on a desktop and on two lines on a phone with room to spare. And the cells are sized **by padding
+alone, with no fixed height**, so the wrapped tile grows instead of clipping against the navy edge.
+
+**"in-house" is wrapped in its own `<span style="white-space: nowrap;">`, and that is not
+decoration.** Left alone, a browser breaks a hyphenated word *at the hyphen*, so the tile rendered
+as "Stitched in-" over "house". Predicting the break from advance widths does not catch this: a
+greedy word-wrap assumes the space is the only break opportunity, and the hyphen is one too. It was
+found by rendering the file at 375 px and looking, which is the argument for that pass in the
+Testing section below. The `nowrap` span makes the space the only break opportunity again, so the
+tile reads "Stitched" over "in-house". Remove the span and the bad wrap comes back silently, on
+mobile only.
 
 ```html
 <tr>
@@ -268,7 +316,7 @@ matches `blocks/launch-countdown.liquid`'s own, so a screen reader hears "The st
 </tr>
 ```
 
-**Social icon row.** Both templates carry this at the top of the navy footer cell. One cell per
+**Social icon row.** Every template carries this at the top of the navy footer cell. One cell per
 network, one link per network, icon and label inside the same anchor so the whole chip is clickable.
 The icon is `alt=""` on purpose; see the images-off rule above.
 
@@ -280,33 +328,91 @@ The icon is `alt=""` on purpose; see the images-off rule above.
 </td>
 ```
 
-**Product grid.** Six product tiles, two across, three rows, each tile an image and a bold label
-inside one anchor pointing at `{{ shop.url }}/products/<handle>`. `welcome.liquid` carries it; copy
-it from there rather than from here, so there is only one copy to keep current. Two things about it
-are load-bearing. The label is not decoration: with images blocked, a tile is a broken-image box
-sized to its `width`/`height` attributes, so a grid without labels degrades to six empty boxes and
-the reader cannot tell what any of them were. And the cells are `width="50%"` with the image at
-`width: 100%`, not fixed pixel widths, which is why the grid reflows on a phone with no media query
-of its own.
+**Product grid.** Seven product tiles: six two across in three rows, then a seventh centred on its
+own. Each tile is an image and a bold label inside one anchor pointing at
+`{{ shop.url }}/products/<handle>`. `welcome-postlaunch.liquid` and `launch-announcement.liquid`
+carry it, identically; copy it from one of them rather than from here, so there is only one copy to
+keep current. (`welcome-prelaunch-superseded.liquid` carries the older six-tile version, which had
+the gift card in the sixth slot and no tote. Do not copy from that one.)
+
+Four things about it are load-bearing:
+
+- The label is not decoration. With images blocked a tile is a broken-image box sized to its
+  `width`/`height` attributes, so a grid without labels degrades to seven empty boxes and the reader
+  cannot tell what any of them were.
+- The cells are `width="50%"` with the image at `width: 100%`, not fixed pixel widths, which is why
+  the grid reflows on a phone with no media query of its own.
+- **Row 4 is a separate table, not a `colspan` row.** The two-column table is closed after row 3 and
+  the seventh tile gets its own single-cell table. A `<td colspan="2">` with no explicit width
+  sitting under `width="50%"` siblings is the exact shape that trips Outlook's Word engine into
+  mis-inferring column widths across the whole table.
+- **Centring the row-4 tile is the `align="center"` attribute**, on both the outer `<td>` and the
+  inner `<table>`. Outlook does not honour `margin: auto`. The `margin: 0 auto` is kept as a second
+  mechanism for clients that do honour it, and must never be the only one. Its sizing is likewise
+  the `width="262"` and `height="262"` attributes plus the inline `max-width: 262px`, never a class
+  in the `<style>` block: the tile reverts to the CDN's native 524 px the moment a client drops
+  `<style>`.
+
+```html
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td align="center" style="padding: 0 6px 18px 6px;">
+      <table role="presentation" width="262" cellpadding="0" cellspacing="0" border="0" align="center">
+        <tr>
+          <td align="center">
+            <a href="{{ shop.url }}/products/sapphire-shadow-studio-gift-card" style="text-decoration: none;">
+              <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Square-White-BG-png.png?width=500&amp;height=500&amp;crop=center" alt="The Sapphire Shadow Studio logo on a white square." width="262" height="262" style="display: block; width: 100%; max-width: 262px; height: auto; margin: 0 auto; border: 0; border-radius: 4px;">
+              <span style="display: block; padding-top: 8px; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; font-weight: bold; color: #071e3f;">Gift Card</span>
+            </a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+```
+
+The tile order is Lead II Crewneck, Huddle Crewneck, Shift Fuel Crewneck, Lead II Quarter-Zip,
+Lead II Vest, Shift Fuel Tote, then the Gift Card alone in row 4. The alt text keeps the descriptive
+pattern the six original tiles use (colour, garment, laid flat, what is embroidered on it) rather
+than echoing the visible label. The label and the alt say different things, so an anchor's
+accessible name reads as description then name: verbose, but the description is real information
+for a screen-reader user, and the alt is the only thing carrying it.
+
+**Nothing checks the handles.** A product added, renamed, or unpublished after these files were
+written leaves a tile pointing at a 404 or the catalogue looking smaller than it is. Re-check all
+seven immediately before pasting, not after.
 
 **The hosted assets.** Everything the templates reference lives in Shopify Files and is served by
-the CDN, which is **not** behind the storefront password: all ten URLs return 200 to an anonymous
+the CDN, which is **not** behind the storefront password: all eleven URLs return 200 to an anonymous
 request, which is the only reason they work in an inbox at all. Re-check that after any change here.
 
 Paths below shown as `.../` are relative to `https://cdn.shopify.com/s/files/1/0958/0874/9868/files`.
+The three colourways were **wrong in this table** until 2026-09-03: it named classic-navy RN,
+grey-heather vet-tech and black where the templates have always referenced grey-heather LPN, black
+nurse and classic-navy. The templates were right and the table was wrong, which is the failure mode
+to expect from a hand-maintained list of URLs that nothing compares against the files.
 
 | Asset | URL |
 |---|---|
-| Logo (header, both templates) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480` |
-| Product grid, Lead II Crewneck (`welcome.liquid`) | `.../lead2_crew-sweater_classic-navy_rn_flat-1.jpg?width=524&height=524&crop=center` |
-| Product grid, Huddle Crewneck | `.../huddle_crew-sweater_grey-heather_vet-tech_flat-1.jpg?width=524&height=524&crop=center` |
-| Product grid, Shift Fuel Crewneck | `.../shift-fuel_crew-sweater_black_flat-1.jpg?width=524&height=524&crop=center` |
+| Logo (header, every template) | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/SSS-Horizontal-transparent-png.png?width=480` |
+| Product grid, Lead II Crewneck | `.../lead2_crew-sweater_grey-heather_lpn_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Huddle Crewneck | `.../huddle_crew-sweater_black_nurse_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Shift Fuel Crewneck | `.../shift-fuel_crew-sweater_classic-navy_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Quarter-Zip | `.../lead2_quarter-zip_classic-navy_medic_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Vest | `.../lead2_vest_black_rn_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Shift Fuel Tote (not in the superseded prelaunch file) | `.../shift-fuel-tote_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Gift Card | `.../SSS-Square-White-BG-png.png?width=500&height=500&crop=center` |
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
 | TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
+
+The tote image is the one uploaded on 2026-09-02, and a retouch pass on the studio's tote photography
+was still in progress when these templates were written. **A `curl` 200 cannot tell a final asset
+from a soon-to-be-superseded one**, since both answer 200. Confirm the tote image is the final asset
+before the first paste; if a retouch lands first, update the URL in **both** templates before the
+send, not after.
 
 The `?width=` and `?width=&height=&crop=` suffixes are Shopify's CDN image transforms, so the
 inbox downloads a 240 px logo and a 600x400 hero rather than a 2048 px original and a 4000x4000
@@ -327,8 +433,14 @@ Each file is self-contained: no partials, no includes, no build step. The repo h
 transpiler to begin with, and Shopify Email would not resolve a partial anyway, since it takes one
 pasted document and nothing else. The header, footer, social row, and palette are therefore copied
 into every template. **A palette or footer change has to be made in every file in this directory.**
+That is now **four** files rather than two, and the launch swap is what raised the count: a change
+to the header, the footer, the social row or the palette has to be made in `campaign-shell.liquid`,
+`welcome-postlaunch.liquid`, `launch-announcement.liquid` and
+`welcome-prelaunch-superseded.liquid`. The superseded file is included on purpose: it is the record
+of what was sent, so leaving it visually stale is fine, but a palette change made in three of four
+files is the drift this paragraph exists to warn about. Decide deliberately which it is.
 
-The palette also lives in a fourth place: `marketing/notifications/lib/brand-style.css`, the
+The palette also lives outside this directory, in `marketing/notifications/lib/brand-style.css`, the
 stylesheet behind the 46 branded Shopify notification templates, documented in
 `marketing/notifications/README.md`. A palette change goes there too, followed by a regenerate.
 
@@ -353,68 +465,98 @@ the button they land on. The **page surround** is `scheme-4`'s `background`, and
 in the size-chart token set because a PNG has no surround.
 
 The footer text used to be `#c9d8e6`, one digit off from `BODY`. That was a transcription slip, not a
-choice, and both files now say `#c9d8ea`. Only `scripts/email-icons/` reads the token set
+choice, and every file here now says `#c9d8ea`. Only `scripts/email-icons/` reads the token set
 programmatically (it bakes `BODY` into the icon PNGs); the templates hold literal hexes, because
 Shopify Email has no `settings` object and no way to resolve anything.
 
-## `welcome.liquid` is the prelaunch version, and has to be changed at launch
+## The launch swap: what changed, and what still has to be done in Admin
 
-**The storefront links point at the storefront, on purpose, even though it is still gated.** That is
-a reversal of what this file used to say. The old reasoning was that every storefront URL resolves
-to Shopify's "Opening soon" page, so a link there dead-ends and reads as a broken brand. Two things
-changed it. `blocks/launch-countdown.liquid` restyled that gate in the brand scheme and put a live
-countdown on it, so a click now lands on an on-brand page that answers "when?" instead of a generic
-wall. And a link written as `{{ shop.url }}/products/<handle>` starts resolving to the real product
-on launch day with no edit at all, which takes work out of the swap below rather than adding it.
+This section used to be a to-do list headed "`welcome.liquid` is the prelaunch version, and has to
+be changed at launch". The five edits it described were made on 2026-09-03. It is now the record of
+what they were and where they landed.
 
-What that costs: while the gate is up, the six product tiles, the header logo and the button all
-land on the same countdown page. The line above the grid ("A preview of what is available at launch")
-is what keeps that honest, so do not delete it before the gate comes down. The button is labelled
-"Visit the studio" rather than anything promising browsable product, for the same reason, and the
-Instagram link under it is the one destination in the email that is genuinely browsable today.
+**The edits went into a new file, not into the old one.** `welcome.liquid` became
+`welcome-prelaunch-superseded.liquid` (a `git mv`, so its history is intact) and the post-launch
+version is `welcome-postlaunch.liquid`. Keeping the stale copy is deliberate: it is the only record
+of what every existing subscriber was actually sent. The rename is what makes that safe. Two
+near-identical files in a directory that is copy-pasted by hand is a live paste hazard, and
+`welcome-postlaunch.liquid` would have sorted immediately *before* `welcome.liquid` in a plain
+listing. The filename now carries the warning, which survives a rushed paste in a way a row in a
+table above does not.
 
-The file is still **wrong the day the password comes off**, and nothing will tell you so. Nothing in
-the file itself says this either, because notes in a template ship to subscribers. This section is
-the only record. Make all five edits in one sitting; each one alone leaves the email half-migrated.
+The five edits, for the record:
 
-1. **Remove or repoint the date tiles.** Once the store is open, "The studio opens Sep 3" is stale
-   on the day it stops being true. Delete the row, or repoint the panel at whatever the next dated
-   thing is. `blocks/launch-countdown.liquid` states the same instant on the password page, so the
-   two should be retired together. Nothing links them, so this list is the only place that says so.
-2. **Delete the "A preview of what is available at launch" line** above the product grid. It no
-   longer names a date, so it will not go stale on a specific day, but it still reads as prelaunch
-   and once the tiles reach real product pages it is unnecessary.
-3. **Rewrite the "What happens next" section**, which is written for a shop that has not opened, and
-   update the subject, the preview text, and the metadata table above in the same sitting. Note what it currently promises: "you will hear it from us by email before we
-   announce it anywhere else." That fixes the order of launch day: **email the list first, then post
-   to social, then take the storefront password off.** It is a commitment the email has already made
-   to every subscriber who received it, it cannot be corrected after the fact, and nothing in the
-   repo enforces it. This paragraph is the only record.
-4. **Relabel the button.** "Visit the studio" was chosen to promise nothing the gate could not
-   deliver. With the gate down it can say what it means, in **both** halves: the VML `<center>` text
-   and the anchor text have to match each other or Outlook and everyone else read different labels.
-5. **Re-check the product grid.** Six tiles, two across, hardcoded to the six products that existed
-   when it was written. A product added, renamed, or unpublished since then leaves a tile pointing
-   at a 404 or the catalogue looking smaller than it is, and nothing checks the handles. The grid
-   deliberately uses varied colourways rather than each product's featured image, which are all the
-   black colourway and would have made six near-identical tiles.
+1. **The date tiles went.** "The studio opens Sep 3 2026, 9:00 AM Eastern" is stale on the day it
+   stops being true. The panel stayed, with the same markup and two tiles that cannot go stale:
+   "Made to order" and "Stitched in-house", under an eyebrow of "How we work". See the two-tile
+   navy panel snippet above for the sizing, which is not a straight copy of the date form's.
+   `blocks/launch-countdown.liquid` states the same instant on the password page and is still there;
+   the two should be retired together, and `TODO.md` now says so.
+2. **The "A preview of what is available at launch" line went**, along with the reason it existed:
+   with the gate down, the tiles reach real product pages.
+3. **"What happens next" was rewritten** for an open store: what made-to-order means for the wait,
+   that every piece is looked at before it is packed, and where to ask a question. It links the
+   shipping policy and the FAQ page and states no number or duration itself, per the rule below.
+4. **The button says "Shop the collection"** and points at `{{ shop.url }}/collections/all`, in
+   **both** halves. "Visit the studio" was chosen to promise nothing the gate could not deliver.
+5. **The product grid went from six tiles to seven**, adding the Shift Fuel Tote and moving the Gift
+   Card to a row of its own. The grid snippet above has the markup and the Outlook reason for the
+   fourth row being a separate table.
 
-Two things about the buttons and links. The Instagram URL is **hardcoded**, because Shopify Email
-has no `settings` object to read `settings.social_instagram_link` from, so it duplicates the value
-in `config/settings_data.json` and nothing reconciles the two: change the profile URL in theme
-settings and this file goes stale silently. The same is true of the three URLs in the social row.
-The storefront links are the opposite case and that is why they are written as `{{ shop.url }}`
-rather than a literal domain: Shopify resolves it at send time, so there is nothing to keep in sync.
+**The email-first promise, and why it fixes launch-day order.** The prelaunch welcome told every
+subscriber who received it: "you will hear it from us by email before we announce it anywhere else."
+That is a commitment already made, it cannot be corrected after the fact, and nothing in the repo
+enforces it. So the order on launch day is: **send `launch-announcement.liquid` to the list first,
+then post to social, then take the storefront password off.** This paragraph is the only record of
+that, which is why it survives the rewrite of the section around it.
 
-**The copy names a launch date, and that is a reversal.** This file used to argue the opposite: that
-a date in a sent email cannot be corrected, so no date was better than a date that slips. The reason
-it changed is that the date stopped being the email's to withhold. `blocks/launch-countdown.liquid`
-commits publicly to 2026-09-03 09:00 ET, the password page ticks down to it, and the Instagram bio
-repeats it, so a subscriber reads this email minutes after watching that countdown. Saying only "not
-open yet" there reads as evasion, not caution. The residual risk is real and cannot be designed away:
-this is an **automation**, so every send carries whatever date the template said at the time, and
-editing the template fixes future sends only. If September 3 slips, the correction is a follow-up
-campaign to the list, not an edit here.
+`launch-announcement.liquid` is what discharges the promise. It is a one-time campaign to the whole
+list, not an automation. It carries no discount and no launch offer, and no product count: the list
+is mostly people who have never ordered, and a count is a claim that becomes false the first time a
+product is added or retired, in an email that cannot be recalled.
+
+### Still to do in Admin, and nothing here does it
+
+**Re-paste the "Customer signs up" automation.** Until `welcome-postlaunch.liquid` is pasted over
+it, the live automation keeps sending the prelaunch email, date panel and all, to every new
+subscriber. Nothing in this repo can see or change what that automation is running.
+
+**Re-check the seven product handles and the tote image immediately before the first paste.** A
+product added, renamed, unpublished or entirely sold out since 2026-09-03 leaves a tile pointing at
+a 404 or the catalogue looking smaller than it is. Confirm the tote asset is the final one and not a
+version the retouch work is about to supersede; a 200 answer cannot tell those apart.
+
+**Update the subject and preview text**, and **Last verified** in the metadata table, in the same
+sitting as each paste. Both fields belong to the campaign, not to the template, so a re-paste drops
+them.
+
+### Two accepted limitations, neither fixable from a template
+
+**Shopify drops `lang="en"` from `<html>` on a real send**, along with emptying the whole `<head>`
+(see Shopify's contract above). A screen reader therefore loses its language hint on the delivered
+email. This already affected the live prelaunch file and affects the new ones identically; there is
+nothing template-side to change, so it is a note rather than a defect.
+
+**The social URLs are hardcoded in every template**, because Shopify Email has no `settings` object
+to read `settings.social_instagram_link` from. They duplicate the values in
+`config/settings_data.json` and nothing reconciles the two: change a profile URL in theme settings
+and every file here goes stale silently. The storefront links are the opposite case, and that is
+why they are written as `{{ shop.url }}` rather than a literal domain: Shopify resolves it at send
+time, so there is nothing to keep in sync.
+
+### Why the prelaunch file named a date
+
+Kept because the reasoning outlived the file. This README used to argue that a date in a sent email
+cannot be corrected, so no date was better than a date that slips. It changed because the date
+stopped being the email's to withhold: `blocks/launch-countdown.liquid` committed publicly to
+2026-09-03 09:00 ET, the password page ticked down to it, and the Instagram bio repeated it, so a
+subscriber read that email minutes after watching that countdown. Saying only "not open yet" there
+would have read as evasion, not caution. The residual risk was real and could not be designed away:
+that file was an **automation**, so every send carried whatever date the template said at the time,
+and editing it would have fixed future sends only.
+
+The new templates carry no date, no duration and no product count, for the same underlying reason
+and with none of the residual risk.
 
 ## Shipping and policy copy: do not restate it here
 
@@ -422,8 +564,10 @@ Shipping rates, thresholds, and turnaround times already have five sources of tr
 inline template JSON, announcement slides, the Admin rate names, and the shop policies now tracked at
 `marketing/policies/`, all covered in `docs/theme-settings-contracts.md`). An email is a sixth that
 nothing reconciles **and that cannot be corrected after it is sent**. Link to the shipping policy or
-the FAQ page instead of restating a number. `welcome.liquid` deliberately contains no shipping
-figures.
+the FAQ page instead of restating a number. Every template here deliberately contains no shipping
+figures. `welcome-postlaunch.liquid` and `launch-announcement.liquid` both link the shipping policy
+and the FAQ page and state no duration of their own, which is the whole reason they can talk about
+made-to-order at all.
 
 The rule is unchanged by the policies moving into the repo: a policy can be re-pushed, a sent email
 cannot be recalled.
