@@ -37,7 +37,10 @@ function goodState() {
   };
 }
 
-const GID = 'gid://shopify/EmailTemplate/1234567890';
+// Handle-shaped, which is what Admin returns; the numeric one is still accepted. See the note in
+// classify.test.mjs: a numeric-only fixture is what let a numeric-only GID_RE ship.
+const GID = 'gid://shopify/EmailTemplate/alpha';
+const NUMERIC_GID = 'gid://shopify/EmailTemplate/1234567890';
 const row = (id, beforeSource = 'stock') => ({ id, match: 'unstamped-stock', beforeSource, version: 1, gid: null, before: { length: 10, fnv: 'deadbeef' }, after: { length: 20, fnv: '01234567' } });
 
 function goodRun() {
@@ -222,6 +225,8 @@ for (const [name, mutate, re] of runRefusals) {
 test('a run row may carry a gid, and batch may be null', () => {
   const withGid = { ...goodState(), run: { ...goodRun(), batch: null, ids: [{ ...row('alpha'), gid: GID }, row('beta', 'network')] } };
   assert.deepEqual(validate(withGid, 'my-store', ids), withGid);
+  const numeric = { ...goodState(), run: { ...goodRun(), ids: [{ ...row('alpha'), gid: NUMERIC_GID }, row('beta', 'network')] } };
+  assert.deepEqual(validate(numeric, 'my-store', ids), numeric, 'a numeric id segment is still accepted');
 });
 
 test('nextId is the first id that is neither done nor quarantined', () => {

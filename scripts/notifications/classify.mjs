@@ -44,7 +44,13 @@ export class ClassifyError extends Error {}
 
 // One id. `observed` is { length, fnv, stamp }, `stamp` null or { id, version }. `repo` is
 // { version, branded: {length, hash}, stock: {length, hash} }.
-export const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[0-9]+$/;
+// The id segment of an EmailTemplate gid is the template HANDLE, not a number: Admin returns
+// `gid://shopify/EmailTemplate/buy_online`. This was `[0-9]+` until a sync read all 46 editors and
+// every one of them was refused, because the numeric shape was assumed rather than observed and
+// every test fixture was an invented numeric gid. Keep it anchored and narrow (no slashes, dots or
+// uppercase); what actually guards against pairing one template's response with another id is the
+// string equality in before-doc.mjs, which this format check only feeds.
+export const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[a-z0-9_]+$/;
 
 export function classifyOne(id, observed, repo, { pasteAhead = [] } = {}) {
   const bytesEqual = (o) => o && observed.length === o.length && observed.fnv === o.hash;

@@ -64,7 +64,9 @@ export const STORE_RE = /^[a-z0-9-]+$/;
 export const ID_RE = /^[a-z0-9_]+$/;
 const FNV_RE = /^[0-9a-f]{8}$/;
 const SHA_RE = /^[0-9a-f]{7,64}$/;
-const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[0-9]+$/;
+// Handle-shaped, not numeric; see the note on classify.mjs's copy. The two must stay in step, or a
+// plan that classifies will still be refused by run-start one step later.
+const GID_RE = /^gid:\/\/shopify\/EmailTemplate\/[a-z0-9_]+$/;
 const VERIFIER_MAX = 20000;
 
 export function stateDir(env = process.env) {
