@@ -14,6 +14,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fnv1a, parseDump, parseStored, parseStoredStamp, parseSettled, LEN_PREFIX, HASH_PREFIX, CHUNK_PREFIX } from '../dump.mjs';
 import { STAMP_RE_SOURCE, commentLine } from '../brand.mjs';
+import { FIXTURE_GID, GID_CLASSES } from './gid-fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, '..', 'browser');
@@ -210,7 +211,11 @@ test('editor-probe.js logs again when the document or the revert state changes, 
 // because the request URL identifies no template: its variables are opaque.
 const STORED_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplate/shopify/sapphire-shadow-studio?operationName=EmailTemplate&variables=%7B%7D';
 const PREVIEW_URL = 'https://admin.shopify.com/services/internal/graphql/EmailTemplateGeneratePreview/shopify/sapphire-shadow-studio?operationName=EmailTemplateGeneratePreview';
-const GID = 'gid://shopify/EmailTemplate/1234567890';
+// From the shared fixture module, not a literal typed here: this is the ONLY gid in this suite,
+// so the probe's extraction and parseStored's capture were proven against an invented numeric id
+// and nothing else. That is what let a numeric-only GID_RE ship. The extraction itself is a JSON
+// path and imposes no shape, and `parseStored gid classes` below runs the real ones through it.
+const GID = FIXTURE_GID;
 const storedBody = (bodyHtml, id = GID) => JSON.stringify({ data: { emailTemplate: id === null ? { bodyHtml } : { id, bodyHtml } } });
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -253,6 +258,23 @@ test('editor-probe.js: SSSSTORED carries the stored document and its gid, once, 
   await flush();
   assert.deepEqual(noGid.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED 5 ${fnv1a('body\n')} -`]);
   assert.equal(parseStored(noGid.logs.join('\n')).gid, null);
+});
+
+test('editor-probe.js and parseStored carry every gid class, not just the one fixture', async () => {
+  // The extraction is `parsed.data.emailTemplate.id`, a JSON path with no pattern of its own, and
+  // the SSSSTORED line is a space-separated field that parseStored splits. Neither imposes a shape,
+  // and this is what proves it: real manifest handles, a numeric segment and the legal edge shapes
+  // all round-trip. Before the shared fixtures, one invented numeric gid was the whole corpus here.
+  const text = 'a body\n';
+  for (const { name, gids } of GID_CLASSES) {
+    for (const gid of gids) {
+      const probe = makeProbe('editor-probe.js', { textarea: 'x', fetchImpl: fetchStub({ [STORED_URL]: storedBody(text, gid) }).impl });
+      await probe.window.fetch(STORED_URL);
+      await flush();
+      assert.deepEqual(probe.logs.filter((l) => l.startsWith('SSSSTORED ')), [`SSSSTORED ${text.length} ${fnv1a(text)} ${gid}`], `${name}: ${gid}`);
+      assert.deepEqual(parseStored(probe.logs.join('\n')), { length: text.length, hash: fnv1a(text), gid }, `${name}: ${gid}`);
+    }
+  }
 });
 
 test('editor-probe.js: SSSSTOREDSTAMP parses the STORED document, so the classification never turns on the racy widget read', async () => {

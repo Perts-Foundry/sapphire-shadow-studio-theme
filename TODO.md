@@ -21,23 +21,17 @@ right now, and an empty heading with a live index entry is the residue this file
 - [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
 - [ ] **Confirm the judge.me review setup is correct for our store at this point.**
 - [ ] **Figure out the blog skill for the store**
-- [ ] **Sync the branded notification templates into Admin.** Run
-  `/notification-templates sync` with the ids in wave order (the skill never reads this file);
-  delete this item when the first full sync lands and `/notification-templates audit` reports all
-  46 in sync. Wave 2 (money): `gift_card_confirmation`, `gift_card_notification`,
-  `store_credit_issued`, `order_invoice`, `draft_order_invoice`, `order_payment_receipt`,
-  `payment_reminder`, `pending_payment_success`, `pending_payment_failure`,
-  `failed_payment_processing`, `store_receipt`, `return_created`, `return_approved`,
-  `return_declined`, `return_label_notification`, `return_receipt`, `change_requested`,
-  `requested_edit_declined`. Wave 3 (everything else): `customer_account_activate`,
-  `customer_account_reset`, `customer_account_welcome`,
-  `customer_email_address_changed_confirmation`, `customer_add_payment_method`,
-  `customer_update_payment_method`, `customer_restore_payment_method`, `contact_buyer`,
-  `order_link`, `customer_marketing_confirmation`, `pos_send_cart`, `buy_online`,
-  `pos_exchange_v2_receipt`, `company_contact_welcome_email`,
-  `company_location_update_payment_method`, `local_out_for_delivery`, `local_delivered`,
-  `local_missed_delivery`. The wave-1 order-lifecycle ids are already saved but pre-date the
-  version stamp, so the sync pastes them too.
+
+- [ ] **Re-record `customer_email_address_changed_confirmation`'s stock snapshot without the
+  injected colour block.** Two steps, in order. First, in Admin, turn the colour customisation off
+  under Settings > Notifications > *Customize email templates*: while it is on, the shop-injected
+  `<style>` block after `</head>` is written into this store's copy and comes back on every
+  re-record. Then run `/notification-templates record
+  customer_email_address_changed_confirmation`, which re-snapshots the stock and lets the
+  `override.replace` that currently drops the block be removed. **The `record` run reverts that
+  template to stock in Admin**, so it sends unbranded from then until the next `sync` of that id;
+  budget for both runs in one sitting. `marketing/notifications/README.md` explains what the block
+  is and why the override exists.
 
 - [ ] **Remove the launch countdown at public launch.** Delete `blocks/launch-countdown.liquid` and
   `assets/launch-countdown.js`, the password-template script block in `snippets/scripts.liquid`, the

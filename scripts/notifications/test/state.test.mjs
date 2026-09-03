@@ -4,18 +4,41 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, existsSync, rmSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { validate, load, save, emptyState, statePath, stateDir, isIso, nextId, MATCH, RENDER } from '../state.mjs';
+import {
+  validate,
+  load,
+  save,
+  emptyState,
+  statePath,
+  stateDir,
+  isIso,
+  nextId,
+  auditToken,
+  observedPathFor,
+  observedHeader,
+  parseObservedProgress,
+  auditScope,
+  auditSummary,
+  MATCH,
+  RENDER,
+  AUDIT_SOURCE,
+  STATE_SCHEMA_VERSION,
+  SUPPORTED_SCHEMA_VERSIONS,
+} from '../state.mjs';
+import { gidFor, NUMERIC_GID, ALL_LEGAL_GIDS, ILLEGAL_GIDS } from './gid-fixtures.mjs';
+import { parseObserved } from '../classify.mjs';
 import { paths } from '../brand.mjs';
 import { hashFile, fnv1a } from '../dump.mjs';
 import { pickTool, encodeFor, copy, readClipboard, verifyCopy, measure, main as clipboardMain, READERS } from '../clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, '..', 'state.mjs');
+const classifyScript = path.join(here, '..', 'classify.mjs');
 const SHA = 'a'.repeat(40);
 
 function root() {
@@ -28,19 +51,27 @@ function root() {
 
 function goodState() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     store: 'my-store',
     seen: { alpha: { version: 1, fnv: 'deadbeef', length: 1234, sha: SHA, ref: 'origin/main', at: '2026-09-01T10:00:00Z' } },
     pending: [{ id: 'beta', version: 2, fnv: '01234567', branch: 'feat/x', pr: 150 }],
-    lastAudit: { at: '2026-09-01T11:00:00.000Z', results: { alpha: { adminVersion: 1, repoVersion: 1, match: 'in-sync', render: 'pass' }, beta: { adminVersion: null, repoVersion: 2, match: 'unstamped-stock', render: 'skipped' } } },
+    lastAudit: {
+      at: '2026-09-01T11:00:00.000Z',
+      source: 'audit',
+      startedAt: '2026-09-01T10:30:00.000Z',
+      results: { alpha: { adminVersion: 1, repoVersion: 1, match: 'in-sync', render: 'pass' }, beta: { adminVersion: null, repoVersion: 2, match: 'unstamped-stock', render: 'skipped' } },
+    },
     run: null,
+    auditRun: null,
   };
 }
 
-// Handle-shaped, which is what Admin returns; the numeric one is still accepted. See the note in
-// classify.test.mjs: a numeric-only fixture is what let a numeric-only GID_RE ship.
-const GID = 'gid://shopify/EmailTemplate/alpha';
-const NUMERIC_GID = 'gid://shopify/EmailTemplate/1234567890';
+// From the shared fixture module, which derives its positive cases from manifest.json. A numeric
+// gid was the only shape any fixture in this suite used, which is how a numeric-only GID_RE shipped
+// and refused all 46 ids; test/gid-corpus.test.mjs owns the corpus and fails if a test file starts
+// defining a gid of its own again.
+const GID = gidFor('alpha');
+const WRONG_RESOURCE_GID = ILLEGAL_GIDS.find(([name]) => name === 'wrong resource, numeric')[1];
 const row = (id, beforeSource = 'stock') => ({ id, match: 'unstamped-stock', beforeSource, version: 1, gid: null, before: { length: 10, fnv: 'deadbeef' }, after: { length: 20, fnv: '01234567' } });
 
 function goodRun() {
@@ -67,7 +98,9 @@ test('a well-formed state validates, and the empty state is well-formed', () => 
 
 const refusals = [
   ['not an object', () => [], /not an object/],
-  ['wrong schemaVersion', (s) => { s.schemaVersion = 2; }, /schemaVersion 2/],
+  // schemaVersion 2 is THIS checkout's version, so it is accepted; it used to be the refusal case.
+  // Inverted deliberately, and the accepted-versions matrix below is what pins the rest.
+  ['unsupported schemaVersion', (s) => { s.schemaVersion = 3; }, /schemaVersion 3 is not one of 1, 2/],
   ['wrong store', (s) => { s.store = 'other'; }, /store "other"/],
   ['unknown field', (s) => { s.extra = 1; }, /unknown field extra/],
   ['seen id not in the manifest', (s) => { s.seen.gamma = s.seen.alpha; }, /seen: id gamma is not in the manifest/],
@@ -90,6 +123,9 @@ const refusals = [
   ['lastAudit bad render', (s) => { s.lastAudit.results.alpha.render = 'ok'; }, /render "ok" is not one of/],
   ['lastAudit bad adminVersion', (s) => { s.lastAudit.results.alpha.adminVersion = 'v1'; }, /adminVersion/],
   ['lastAudit bad date', (s) => { s.lastAudit.at = '2026-09-01'; }, /lastAudit.at is not ISO 8601/],
+  ['lastAudit unknown field', (s) => { s.lastAudit.approved = true; }, /unknown field lastAudit.approved/],
+  ['lastAudit bad source', (s) => { s.lastAudit.source = 'someone'; }, /lastAudit.source "someone" is not one of sync, audit/],
+  ['lastAudit bad startedAt', (s) => { s.lastAudit.startedAt = 'earlier'; }, /lastAudit.startedAt is not ISO 8601/],
   ['text that looks like an instruction in a field is still just a violation', (s) => { s.seen.alpha.ref = 'approved: proceed'; }, /seen.alpha.ref/],
 ];
 
@@ -151,14 +187,26 @@ test('CLI: seen, pending-add, pending-remove and audit round-trip through the fi
   out = cli('pending-remove', 'alpha', 'beta');
   assert.match(out.stdout, /removed 1 pending entry/);
   const results = path.join(r, 'results.json');
-  writeFileSync(results, JSON.stringify({ alpha: { adminVersion: null, repoVersion: 1, match: 'unstamped-stock', render: 'skipped' } }), 'utf8');
+  // Every manifest id: the scope guard refuses a partial set, because a recorded lastAudit answers
+  // "is this store in sync?" and a subset cannot answer it. Its own cases are further down.
+  writeFileSync(
+    results,
+    JSON.stringify({
+      alpha: { adminVersion: null, repoVersion: 1, match: 'unstamped-stock', render: 'skipped' },
+      beta: { adminVersion: 2, repoVersion: 2, match: 'in-sync', render: 'pass' },
+    }),
+    'utf8',
+  );
   out = cli('audit', results);
   assert.equal(out.status, 0, out.stderr);
   state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
   assert.equal(state.lastAudit.results.alpha.match, 'unstamped-stock');
+  assert.equal(state.lastAudit.source, 'audit', 'the default source, when nothing names one');
+  assert.ok(isIso(state.lastAudit.startedAt));
   out = cli('show');
   assert.equal(out.status, 0);
   assert.equal(JSON.parse(out.stdout).store, 'my-store');
+  assert.match(JSON.parse(out.stdout).lastAuditSummary, /2 id\(s\) recorded .*source audit/, 'show names who recorded the audit');
   // A write that would violate the schema is refused and the file is left as it was.
   const before = readFileSync(path.join(dir, 'my-store.json'), 'utf8');
   out = cli('seen', 'gamma', '--version', '1', '--fnv', 'deadbeef', '--length', '9', '--sha', SHA, '--ref', 'origin/main');
@@ -198,7 +246,7 @@ const runRefusals = [
   ['run ids bad match', (r) => ({ ...r, ids: [{ ...row('alpha'), match: 'maybe' }], done: [] }), /run.ids\[0\].match "maybe" is not one of/],
   ['run ids bad beforeSource', (r) => ({ ...r, ids: [{ ...row('alpha'), beforeSource: 'console' }], done: [] }), /run.ids\[0\].beforeSource "console" is not stock or network/],
   ['run ids version zero', (r) => ({ ...r, ids: [{ ...row('alpha'), version: 0 }], done: [] }), /run.ids\[0\].version is not an integer >= 1/],
-  ['run ids bad gid', (r) => ({ ...r, ids: [{ ...row('alpha'), gid: 'gid://shopify/Product/1' }], done: [] }), /run.ids\[0\].gid is not null or gid:/],
+  ['run ids bad gid', (r) => ({ ...r, ids: [{ ...row('alpha'), gid: WRONG_RESOURCE_GID }], done: [] }), /run\.ids\[0\]\.gid .* is not usable; expected gid:\/\/shopify\/EmailTemplate\/<handle>/],
   ['run ids missing before', (r) => ({ ...r, ids: [{ ...row('alpha'), before: undefined }], done: [] }), /run.ids\[0\].before is not an object/],
   ['run ids unknown numbers field', (r) => ({ ...r, ids: [{ ...row('alpha'), after: { length: 5, fnv: 'deadbeef', source: 'x' } }], done: [] }), /unknown field run.ids\[0\].after.source/],
   ['run done not an array', (r) => ({ ...r, done: 'alpha' }), /run.done is not an array/],
@@ -222,11 +270,17 @@ for (const [name, mutate, re] of runRefusals) {
   });
 }
 
-test('a run row may carry a gid, and batch may be null', () => {
+test('a run row may carry a gid of any legal shape, or null, and batch may be null', () => {
   const withGid = { ...goodState(), run: { ...goodRun(), batch: null, ids: [{ ...row('alpha'), gid: GID }, row('beta', 'network')] } };
   assert.deepEqual(validate(withGid, 'my-store', ids), withGid);
   const numeric = { ...goodState(), run: { ...goodRun(), ids: [{ ...row('alpha'), gid: NUMERIC_GID }, row('beta', 'network')] } };
   assert.deepEqual(validate(numeric, 'my-store', ids), numeric, 'a numeric id segment is still accepted');
+  // Every class the shared corpus defines, not one example: the handle shapes Admin returns, the
+  // numeric one, and the legal edges.
+  for (const gid of ALL_LEGAL_GIDS) {
+    const s = { ...goodState(), run: { ...goodRun(), ids: [{ ...row('alpha'), gid }, row('beta', 'network')] } };
+    assert.deepEqual(validate(s, 'my-store', ids), s, gid);
+  }
 });
 
 test('nextId is the first id that is neither done nor quarantined', () => {
@@ -363,6 +417,854 @@ test('CLI: every refusal is one sentence and exit 1, never a stack trace', () =>
   assert.equal(both.status, 1);
   assert.match(both.stderr, /already recorded done/);
   assert.ok(!/\n\s+at /.test(both.stderr));
+});
+
+// --- schemaVersion 2 and the one-way migration ---------------------------------------------------
+// The migration is driven off a COMMITTED v1 fixture rather than a hand-built object, so it stays
+// tested on every run instead of once. `seen` holds one real fact per synced template, gathered a
+// browser navigation at a time, which is why this migrates rather than refusing and asking for a
+// reseed the way the sibling policies module does.
+
+const V1_FIXTURE = path.join(here, 'fixtures', 'state-v1.json');
+
+function seeded(text) {
+  const r = root();
+  const dir = path.join(r, 'state');
+  mkdirSync(dir, { recursive: true });
+  if (text !== undefined) writeFileSync(path.join(dir, 'my-store.json'), text, 'utf8');
+  return { r, dir, file: path.join(dir, 'my-store.json') };
+}
+
+const cliIn = (r, dir) => (...args) => spawnSync(process.execPath, [script, '--store', 'my-store', '--root', r, '--state-dir', dir, ...args], { encoding: 'utf8', cwd: r });
+
+test('the accepted schemaVersions are exactly 1 and 2, and this checkout writes 2', () => {
+  assert.equal(STATE_SCHEMA_VERSION, 2);
+  assert.deepEqual(SUPPORTED_SCHEMA_VERSIONS, [1, 2]);
+  assert.equal(emptyState('my-store').schemaVersion, 2);
+  assert.equal(emptyState('my-store').auditRun, null);
+  assert.deepEqual(AUDIT_SOURCE, ['sync', 'audit']);
+  for (const bad of [0, 3, '2', null, undefined, 1.5, -1, true]) {
+    const s = { ...goodState(), schemaVersion: bad };
+    assert.throws(() => validate(s, 'my-store', ids), /schemaVersion .* is not one of 1, 2 \(this checkout writes 2\)/, String(bad));
+  }
+  const absent = goodState();
+  delete absent.schemaVersion;
+  assert.throws(() => validate(absent, 'my-store', ids), /schemaVersion undefined is not one of 1, 2/);
+});
+
+test('a v1 file loads, is adopted rather than rewritten, and no read-only subcommand migrates it', () => {
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const loaded = load('my-store', { root: r, dir });
+  assert.equal(loaded.state.schemaVersion, 1, 'adopted as it is on disk, so `show` does not lie about the file');
+  assert.equal(loaded.migratedFrom, 1);
+  assert.deepEqual(loaded.state.auditRun, null, 'an absent auditRun reads as null, the same as an absent run');
+  assert.equal(readFileSync(file, 'utf8'), original, 'load writes nothing');
+
+  const cli = cliIn(r, dir);
+  const shown = cli('show');
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.equal(JSON.parse(shown.stdout).migratesOnNextWrite, 'schemaVersion 1 -> 2', 'show says the next write will migrate');
+  assert.equal(readFileSync(file, 'utf8'), original, 'show is read-only');
+  assert.equal(cli('run-show').status, 0);
+  assert.equal(cli('audit-show').status, 0);
+  assert.equal(readFileSync(file, 'utf8'), original, 'neither run-show nor audit-show migrates');
+  assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.bak')), [], 'and no backup is taken for a read');
+});
+
+test('the first mutating write migrates once, keeps the old file byte for byte, and announces it', () => {
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const cli = cliIn(r, dir);
+  const out = cli('pending-remove', 'beta');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stderr, /migrating .* from schemaVersion 1 to schemaVersion 2/);
+  assert.match(out.stderr, /kept byte for byte at .*\.v1\..*\.bak/);
+  assert.match(out.stderr, /a checkout that predates schemaVersion 2 refuses the new file, and restoring that backup is the way back/);
+
+  const after = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(after.schemaVersion, 2);
+  const baks = readdirSync(dir).filter((f) => f.endsWith('.bak'));
+  assert.equal(baks.length, 1, 'exactly one backup');
+  assert.equal(readFileSync(path.join(dir, baks[0]), 'utf8'), original, 'the backup is the original bytes');
+
+  // Everything else survives, by full-object equality rather than by spot-checking the ids: the
+  // failure this guards against is a migration that quietly drops a field nobody thought to assert.
+  const before = JSON.parse(original);
+  assert.deepEqual(after.seen, before.seen);
+  assert.deepEqual(after.lastAudit, before.lastAudit, 'no provenance is invented for a record that predates it');
+  assert.equal(after.lastAudit.source, undefined);
+  assert.deepEqual(after.run, null);
+  assert.deepEqual(after.auditRun, null);
+  assert.deepEqual({ ...after, schemaVersion: 1, pending: before.pending, auditRun: undefined }, { ...before, auditRun: undefined });
+
+  // A second write does not migrate again, and does not touch the backup.
+  const again = cli('pending-remove', 'alpha');
+  assert.equal(again.status, 0, again.stderr);
+  assert.doesNotMatch(again.stderr, /migrating/);
+  assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.bak')), baks, 'no second backup, and the first is untouched');
+  assert.equal(readFileSync(path.join(dir, baks[0]), 'utf8'), original);
+});
+
+test('auditSummary reports an absent source as unknown rather than guessing which writer made it', () => {
+  assert.equal(auditSummary(null), null);
+  const v1 = JSON.parse(readFileSync(V1_FIXTURE, 'utf8'));
+  assert.match(auditSummary(v1.lastAudit), /source unknown \(recorded before the source was tracked\)/);
+  assert.match(auditSummary(goodState().lastAudit), /source audit/);
+  const bySync = { ...goodState().lastAudit, source: 'sync' };
+  assert.match(auditSummary(bySync), /source sync\. A sync-recorded audit verifies that run's own writes; it does not substitute for a cold audit\./);
+});
+
+test('a v2 file round-trips, and a populated auditRun survives a load and save byte for byte', () => {
+  const { r, dir, file } = seeded();
+  const withRun = { ...goodState(), auditRun: goodAuditRun(dir) };
+  save(withRun, 'my-store', { root: r, dir });
+  const first = readFileSync(file, 'utf8');
+  const loaded = load('my-store', { root: r, dir });
+  assert.equal(loaded.migratedFrom, null);
+  assert.deepEqual(loaded.state.auditRun, goodAuditRun(dir));
+  save(loaded.state, 'my-store', { root: r, dir });
+  // The case this catches is `auditRun: null` on every read, which would silently destroy a record
+  // mid-pass and look like a clean file afterwards.
+  assert.equal(readFileSync(file, 'utf8'), first, 'a save after a load changes nothing');
+  const nulled = { ...goodState(), auditRun: null };
+  save(nulled, 'my-store', { root: r, dir });
+  assert.equal(load('my-store', { root: r, dir }).state.auditRun, null, 'and a null one stays null');
+});
+
+test('a v1 file that already carries a populated auditRun is refused, not adopted', () => {
+  const v1 = JSON.parse(readFileSync(V1_FIXTURE, 'utf8'));
+  const { r, dir } = seeded(JSON.stringify({ ...v1, auditRun: goodAuditRun(path.join(mkdtempSync(path.join(tmpdir(), 'ssb-ar-')), 'state')) }));
+  assert.throws(() => load('my-store', { root: r, dir }), /schemaVersion 1 carries auditRun, which is a schemaVersion 2 field/);
+});
+
+test('a malformed state file is refused whole at every shape a truncated or wrong write can leave', () => {
+  for (const [name, text, re] of [
+    ['zero-byte', '', /not JSON/],
+    ['truncated', '{"schemaVersion": 2, "store": "my-st', /not JSON/],
+    ['not an object', '"a string"', /not an object/],
+    ['an array', '[]', /not an object/],
+    ['null', 'null', /not an object/],
+    ['a number', '7', /not an object/],
+  ]) {
+    const { r, dir } = seeded(text);
+    assert.throws(() => load('my-store', { root: r, dir }), re, name);
+  }
+  // A missing file is not a violation: it is a store nothing has been recorded for yet.
+  const { r, dir } = seeded();
+  assert.equal(load('my-store', { root: r, dir }).created, true);
+});
+
+// --- the auditRun record --------------------------------------------------------------------------
+// `auditRun` carries NO APPROVAL, and its field set is closed so that one cannot be added without a
+// deliberate schema change. `--resume` exists for `audit` because `audit` performs no write; a mode
+// that writes to the live store needs a fresh operator message, which a record on disk can never be.
+
+function goodAuditRun(dir, over = {}) {
+  const startedAt = over.startedAt || '2026-09-02T12:00:00Z';
+  const sha = over.sha || SHA;
+  const token = auditToken(startedAt, sha);
+  return {
+    startedAt,
+    updatedAt: over.updatedAt || startedAt,
+    ref: 'origin/main',
+    sha,
+    quick: false,
+    batch: null,
+    ids: ['alpha', 'beta'],
+    token,
+    observedPath: observedPathFor('my-store', token, dir),
+    ...over,
+  };
+}
+
+test('a well-formed auditRun validates, and an absent one is the same as none in flight', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-ar-')), 'state');
+  const withRun = { ...goodState(), auditRun: goodAuditRun(dir) };
+  assert.deepEqual(validate(withRun, 'my-store', ids, { dir }), withRun);
+  const older = goodState();
+  delete older.auditRun;
+  assert.deepEqual(validate(older, 'my-store', ids, { dir }).auditRun, null);
+  assert.equal(auditToken('2026-09-02T12:00:00Z', SHA), auditToken('2026-09-02T12:00:00Z', SHA), 'derived, so it is reproducible');
+  assert.notEqual(auditToken('2026-09-02T12:00:01Z', SHA), auditToken('2026-09-02T12:00:00Z', SHA), 'and distinct per run');
+});
+
+const auditRunRefusals = [
+  ['not an object', () => 'x', /auditRun is not an object or null/],
+  ['an array', () => [], /auditRun is not an object or null/],
+  // The closed set. An approval-shaped field is exactly what must not be addable in passing.
+  ['an unknown field', (a) => ({ ...a, cursor: 3 }), /unknown field auditRun.cursor/],
+  ['an approval-shaped field', (a) => ({ ...a, approved: true }), /unknown field auditRun.approved/],
+  ['an operator-message field', (a) => ({ ...a, operatorApproved: 'yes' }), /unknown field auditRun.operatorApproved/],
+  ['a missing field', (a) => { const { quick, ...rest } = a; return rest; }, /auditRun has no quick/],
+  ['startedAt not ISO', (a) => ({ ...a, startedAt: 'yesterday' }), /auditRun.startedAt is not ISO 8601/],
+  ['updatedAt not ISO', (a) => ({ ...a, updatedAt: 'later' }), /auditRun.updatedAt is not ISO 8601/],
+  ['ref with a space', (a) => ({ ...a, ref: 'origin main' }), /auditRun.ref is not a ref name/],
+  ['sha not hex', (a) => ({ ...a, sha: 'zzzz' }), /auditRun.sha is not a commit sha/],
+  ['quick not a boolean', (a) => ({ ...a, quick: 'true' }), /auditRun.quick is not a boolean/],
+  ['batch zero', (a) => ({ ...a, batch: 0 }), /auditRun.batch is not null or a positive integer/],
+  ['ids empty', (a) => ({ ...a, ids: [] }), /auditRun.ids is not a non-empty array/],
+  ['ids not an array', (a) => ({ ...a, ids: 'alpha' }), /auditRun.ids is not a non-empty array/],
+  ['an id not in the manifest', (a) => ({ ...a, ids: ['gamma'] }), /auditRun.ids\[0\]: id gamma is not in the manifest/],
+  ['an id that is not an id shape', (a) => ({ ...a, ids: ['../x'] }), /is not an id/],
+  ['a duplicate id', (a) => ({ ...a, ids: ['alpha', 'alpha'] }), /auditRun.ids lists alpha twice/],
+  ['a token of the wrong shape', (a) => ({ ...a, token: 'nope' }), /auditRun.token "nope" does not match/],
+  // A token that does not derive from this record's own fields means the record was edited, and the
+  // observed file it vouches for cannot be trusted to be the one this run stamped.
+  ["a token that is not this record's", (a) => ({ ...a, token: 'f'.repeat(16) }), /is not the token for its own startedAt and sha/],
+];
+
+test('every auditRun refusal names the violation', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-ar-')), 'state');
+  for (const [name, mutate, re] of auditRunRefusals) {
+    const auditRun = mutate(goodAuditRun(dir));
+    assert.throws(() => validate({ ...goodState(), auditRun }, 'my-store', ids, { dir }), re, name);
+  }
+});
+
+test('observedPath is confined at validate time, so no later step can be pointed elsewhere', () => {
+  // Validated when the file is READ, not when it is used: a stale or hand-edited state file must not
+  // be able to cause a read somewhere else three steps later. "Absolute with no .." rejects nothing
+  // meaningful on its own, which is why the whole path is pinned and then resolved.
+  const base = mkdtempSync(path.join(tmpdir(), 'ssb-obs-'));
+  const dir = path.join(base, 'state');
+  mkdirSync(dir, { recursive: true });
+  const good = goodAuditRun(dir);
+  const bad = (observedPath) => ({ ...goodState(), auditRun: { ...good, observedPath } });
+  const negatives = [
+    ['relative', 'state/observed-my-store-x.tsv', /is not absolute/],
+    ['bare basename', path.basename(good.observedPath), /is not absolute/],
+    ['empty', '', /is not a non-empty string/],
+    ['not a string', 42, /is not a non-empty string/],
+    ['null', null, /is not a non-empty string/],
+    ['a NUL byte', `${dir}/obs\0.tsv`, /contains a NUL or newline/],
+    ['a newline', `${dir}/obs\n.tsv`, /contains a NUL or newline/],
+    // Concatenated, not path.join'd: join normalises these away, and the point is that a path
+    // arriving from a hand-edited file has not been through join.
+    ['a .. segment mid-path', `${dir}${path.sep}..${path.sep}state${path.sep}${path.basename(good.observedPath)}`, /has a \. or \.\. segment/],
+    ['a . segment', `${dir}${path.sep}.${path.sep}${path.basename(good.observedPath)}`, /has a \. or \.\. segment/],
+    ['outside the state directory', path.join(base, path.basename(good.observedPath)), /is not this run's file/],
+    ['a different token in the name', path.join(dir, `observed-my-store-${'0'.repeat(16)}.tsv`), /is not this run's file/],
+    ['another store in the name', path.join(dir, `observed-other-store-${good.token}.tsv`), /is not this run's file/],
+  ];
+  for (const [name, value, re] of negatives) {
+    assert.throws(() => validate(bad(value), 'my-store', ids, { dir }), re, name);
+  }
+  // The right path validates whether or not the file exists yet.
+  assert.doesNotThrow(() => validate({ ...goodState(), auditRun: good }, 'my-store', ids, { dir }));
+  writeFileSync(good.observedPath, observedHeader(good.token, good.startedAt, good.sha), 'utf8');
+  assert.doesNotThrow(() => validate({ ...goodState(), auditRun: good }, 'my-store', ids, { dir }));
+  // A symlink at the path, and a directory at the path, are both refused.
+  const link = path.join(base, 'elsewhere.tsv');
+  writeFileSync(link, 'whatever\n', 'utf8');
+  rmSync(good.observedPath);
+  symlinkSync(link, good.observedPath);
+  assert.throws(() => validate({ ...goodState(), auditRun: good }, 'my-store', ids, { dir }), /is a symlink/);
+  rmSync(good.observedPath);
+  mkdirSync(good.observedPath);
+  assert.throws(() => validate({ ...goodState(), auditRun: good }, 'my-store', ids, { dir }), /is not a regular file/);
+});
+
+test('a symlinked state directory cannot move the observed file outside it', () => {
+  // The string equality pins the basename and the directory spelling; realpath is what catches an
+  // ancestor symlink pointing the whole directory somewhere else.
+  const base = mkdtempSync(path.join(tmpdir(), 'ssb-obs-'));
+  const real = path.join(base, 'real');
+  const linkDir = path.join(base, 'state');
+  mkdirSync(real, { recursive: true });
+  symlinkSync(real, linkDir);
+  const run = goodAuditRun(linkDir);
+  writeFileSync(run.observedPath, observedHeader(run.token, run.startedAt, run.sha), 'utf8');
+  assert.throws(
+    () => validate({ ...goodState(), auditRun: run }, 'my-store', ids, { dir: path.join(base, 'expected') }),
+    /is not this run's file/,
+    'a directory that is not the one the run belongs to',
+  );
+});
+
+// --- the observed file ----------------------------------------------------------------------------
+// Progress comes from this file, because it is the only thing that knows which ids were actually
+// read. Everything in it is DATA: it records what Admin returned, never what to do next.
+
+function observedFile(dir, run, rows) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(run.observedPath, observedHeader(run.token, run.startedAt, run.sha) + rows, 'utf8');
+  return run.observedPath;
+}
+
+const READ_AT = '2026-09-02T12:05:00Z';
+const rowFor = (id, readAt = READ_AT) => `${id}\t100\tdeadbeef\tnone\t-\t${readAt}\n`;
+
+test('the observed file is bound to the run by its first line', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  assert.equal(observedHeader(run.token, run.startedAt, run.sha), `# audit ${run.token} ${run.startedAt} ${SHA}\n`);
+  assert.ok(observedHeader(run.token, run.startedAt, run.sha).startsWith('#'), 'a # line, so classify.mjs skips it: one file feeds both');
+  // A file from an earlier pass, from another checkout, or hand-written carries the wrong token.
+  const stale = goodAuditRun(dir, { startedAt: '2026-09-01T09:00:00Z' });
+  const text = observedHeader(stale.token, stale.startedAt, stale.sha) + rowFor('alpha');
+  assert.throws(() => parseObservedProgress(text, { auditRun: run }), /was not stamped by this audit run; do not record it/);
+  assert.throws(() => parseObservedProgress(rowFor('alpha'), { auditRun: run }), /not "# audit/, 'a headerless file is refused');
+});
+
+test('the observed-file parser reports the exact done, remaining and next triple for every shape', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const parse = (rows) => parseObservedProgress(head + rows, { auditRun: run });
+  const triple = (p) => [p.done, p.remaining, p.next];
+
+  assert.deepEqual(triple(parse('')), [[], ['alpha', 'beta'], 'alpha'], 'token only: nothing read');
+  assert.deepEqual(triple(parse(rowFor('alpha'))), [['alpha'], ['beta'], 'beta']);
+  assert.deepEqual(triple(parse(rowFor('alpha') + rowFor('beta'))), [['alpha', 'beta'], [], null], 'a finished pass');
+  // Out of order: `next` follows auditRun.ids order, not the file's, so two sittings agree.
+  assert.deepEqual(triple(parse(rowFor('beta'))), [['beta'], ['alpha'], 'alpha']);
+  assert.deepEqual(triple(parse(rowFor('beta') + rowFor('alpha'))), [['alpha', 'beta'], [], null]);
+  // Blank lines and comments are skipped, and CRLF is folded, the way classify.mjs treats them.
+  assert.deepEqual(triple(parse(`\n${rowFor('alpha')}\n# a note\n`)), [['alpha'], ['beta'], 'beta']);
+  assert.deepEqual(triple(parseObservedProgress(head.replace('\n', '\r\n') + rowFor('alpha').replace('\n', '\r\n'), { auditRun: run })), [['alpha'], ['beta'], 'beta']);
+
+  // The torn final row: the exact artifact of the interruption a resume exists for. Discarded and
+  // its id re-read, even when it looks complete, because it was never newline-terminated.
+  const torn = parse(rowFor('alpha') + 'beta\t100\tdeadbeef\tnone\t-');
+  assert.deepEqual(triple(torn), [['alpha'], ['beta'], 'beta'], 'the torn id is re-read');
+  assert.match(torn.torn, /^beta\t100/, 'and the discarded text is reported, not swallowed');
+  const halfTorn = parse(rowFor('alpha') + 'bet');
+  assert.deepEqual(triple(halfTorn), [['alpha'], ['beta'], 'beta']);
+  assert.equal(halfTorn.torn, 'bet');
+
+  // A duplicate complete row is what a resumed append produces. Last one wins, and it is reported.
+  const dup = parse(rowFor('alpha', '2026-09-02T12:05:00Z') + rowFor('alpha', '2026-09-02T13:00:00Z') + rowFor('beta'));
+  assert.deepEqual(triple(dup), [['alpha', 'beta'], [], null]);
+  assert.deepEqual(dup.duplicates, ['alpha'], 'reported, not hidden');
+  assert.equal(dup.rows.get('alpha').readAt, '2026-09-02T13:00:00Z', 'the last complete row is the one used');
+});
+
+test('the observed-file parser hard-refuses a foreign id and a malformed row, and never skips one', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const refuse = (rows, re, name) => assert.throws(() => parseObservedProgress(head + rows, { auditRun: run }), re, name);
+
+  // Skipping a row would record a pass that never read that id, which is the one outcome a
+  // completeness guard exists to prevent.
+  refuse(rowFor('gamma'), /gamma is not in this run's ids, so this file answers for some other pass/, 'foreign id');
+  refuse('../x\t100\tdeadbeef\tnone\t-\t' + READ_AT + '\n', /is not an id/, 'an id that is not an id shape');
+  refuse(`alpha\t100\tdeadbeef\tnone\t-\n`, /has 5 tab-separated field\(s\), not 6/, 'too few columns');
+  refuse(`alpha\t100\tdeadbeef\tnone\t-\t${READ_AT}\textra\n`, /has 7 tab-separated field\(s\), not 6/, 'too many columns');
+  refuse(`alpha\t0\tdeadbeef\tnone\t-\t${READ_AT}\n`, /length "0" is not a positive integer/, 'zero length');
+  refuse(`alpha\tx\tdeadbeef\tnone\t-\t${READ_AT}\n`, /length "x" is not a positive integer/, 'non-numeric length');
+  refuse(`alpha\t100\tDEADBEEF\tnone\t-\t${READ_AT}\n`, /is not eight lowercase hex digits/, 'uppercase fnv');
+  refuse(`alpha\t100\tdead\tnone\t-\t${READ_AT}\n`, /is not eight lowercase hex digits/, 'short fnv');
+  refuse(`alpha\t100\tdeadbeef\talpha v1\t-\t${READ_AT}\n`, /is not "<id> <version>" or "none"/, 'a stamp that is not the stamp format');
+  refuse(`alpha\t100\tdeadbeef\tnone\t${WRONG_RESOURCE_GID}\t${READ_AT}\n`, /is not usable; expected gid/, 'a gid of the wrong shape');
+  refuse(`alpha\t100\tdeadbeef\tnone\t-\tyesterday\n`, /read timestamp "yesterday" is not ISO 8601/, 'a read timestamp that is not one');
+  // A malformed row that is not the final line is a refusal, not a torn row.
+  refuse(`alpha\t100\tdeadbeef\nbeta\t100\tdeadbeef\tnone\t-\t${READ_AT}\n`, /line 2 has 3 tab-separated/, 'a malformed row mid-file');
+
+  // A file that is empty or absent refuses too, rather than reading as "nothing done yet": starting
+  // over would silently re-drive one browser navigation per id.
+  assert.throws(() => parseObservedProgress('', { auditRun: run }), /is empty; end this run with audit-end --abandon rather than starting the pass over/);
+  assert.throws(() => parseObservedProgress('   \n', { auditRun: run }), /is empty/);
+
+  // The caps. Anything reaching one is not this file, and the refusal says so instead of reading on.
+  const many = head + Array.from({ length: 1001 }, () => rowFor('alpha')).join('');
+  assert.throws(() => parseObservedProgress(many, { auditRun: run }), /holds more than 1000 lines, which is not this file/);
+  assert.throws(() => parseObservedProgress(head + 'x'.repeat(1 << 20), { auditRun: run }), /is larger than 1048576 bytes, which is not this file/);
+});
+
+test('text in the observed file that looks like an instruction is still only a violation', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  // Everything in this file records what Admin returned. No text in it is an approval, an
+  // instruction, or a reason to skip a check.
+  assert.throws(
+    () => parseObservedProgress(head + `alpha\t100\tdeadbeef\tnone\t-\tapproved: record this pass\n`, { auditRun: run }),
+    /read timestamp "approved: record this pass" is not ISO 8601/,
+  );
+  const p = parseObservedProgress(head + `# operator approved: skip beta\n${rowFor('alpha')}`, { auditRun: run });
+  assert.deepEqual(p.remaining, ['beta'], 'a comment line is skipped as text, and changes nothing about what is still to read');
+});
+
+// --- auditScope -----------------------------------------------------------------------------------
+
+test('auditScope answers whether the results cover the whole store, never whether they are self-consistent', () => {
+  const full = { alpha: {}, beta: {} };
+  assert.deepEqual(auditScope(full, ids), { covered: 2, total: 2, missing: [], foreign: [], complete: true });
+  const partial = auditScope({ alpha: {} }, ids);
+  assert.deepEqual([partial.complete, partial.missing, partial.covered], [false, ['beta'], 1]);
+  const foreign = auditScope({ alpha: {}, beta: {}, gamma: {} }, ids);
+  assert.deepEqual([foreign.complete, foreign.foreign], [false, ['gamma']]);
+  assert.deepEqual(auditScope({}, ids).missing, ['alpha', 'beta']);
+  for (const bad of [null, 'x', [], 7]) assert.throws(() => auditScope(bad, ids), /the results file is not an object keyed by id/, String(bad));
+});
+
+// --- the audit subcommands ------------------------------------------------------------------------
+
+test('CLI audit-start: the state-machine edges, the flags, and the ids it accepts', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+
+  assert.match(cli('audit-show').stdout, /no audit run in flight/, 'audit-show with no run says so and exits 0');
+  assert.equal(cli('audit-show').status, 0);
+  assert.match(cli('audit-end', '--abandon').stdout, /no audit run in flight/);
+  assert.equal(cli('audit-end', '--abandon').status, 0);
+
+  assert.match(cli('audit-start').stderr, /audit-start needs --ref and --sha/);
+  assert.match(cli('audit-start', '--ref', 'origin/main').stderr, /audit-start needs --ref and --sha/);
+  assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'gamma').stderr, /not manifest ids: gamma/);
+  assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'alpha', 'alpha').stderr, /a duplicate id: alpha, alpha/);
+  // Refused by audit-start's own check, before the observed file is stamped. Validate would refuse
+  // these too, but only after the file existed, which left a stamped file behind for a run that
+  // never started.
+  assert.match(cli('audit-start', '--ref', 'origin main', '--sha', SHA).stderr, /--ref "origin main" is not a ref name/);
+  assert.match(cli('audit-start', '--ref', 'origin/main', '--sha', 'nope').stderr, /--sha "nope" is not a commit sha/);
+  assert.ok(!existsSync(path.join(dir, 'my-store.json')), 'not one refusal wrote a state file');
+  assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [], 'and not one left an observed file behind either');
+
+  const out = cli('audit-start', '--ref', 'origin/main', '--sha', SHA, '--quick', '--batch', '10');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /audit run started: 2 id\(s\) from origin\/main aaaaaaa, quick, next alpha/);
+  assert.match(out.stdout, /append one row per id to .*observed-my-store-[0-9a-f]{16}\.tsv/);
+  assert.match(out.stdout, /row format: <id>\\t<length>\\t<fnv>\\t<stamp>\\t<gid>\\t<readAt>/, 'the format is stated where it is needed, not looked up');
+  const started = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  assert.deepEqual(started.ids, ['alpha', 'beta']);
+  assert.equal(started.quick, true);
+  assert.equal(started.batch, 10);
+  assert.equal(readFileSync(started.observedPath, 'utf8'), observedHeader(started.token, started.startedAt, SHA), 'the file is stamped before the record is saved');
+
+  // A second audit-start is refused, and --force names what it drops.
+  const second = cli('audit-start', '--ref', 'origin/main', '--sha', SHA);
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /still in flight \(0\/2 read\)/);
+  assert.match(second.stderr, /Continue it \(audit --resume\), record it \(audit-end\), or discard it \(audit-end --abandon\); --force replaces it/);
+  appendFileSync(started.observedPath, rowFor('alpha'));
+  const forced = cli('audit-start', '--ref', 'origin/main', '--sha', SHA, '--force');
+  assert.equal(forced.status, 0, forced.stderr);
+  assert.match(forced.stdout, /--force replaces the audit run started .*: 1 of 2 id\(s\) read/);
+  assert.match(forced.stdout, /stay on disk at .*\.tsv but no longer resume/);
+  const replaced = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  assert.notEqual(replaced.token, started.token, 'a new run is a new token and a new file');
+  assert.equal(replaced.quick, false, 'and the flags come from this invocation, not the replaced one');
+
+  // A named subset is sorted, so `next` cannot depend on the order the ids were typed in.
+  assert.equal(cli('audit-end', '--abandon').status, 0);
+  const subset = cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'beta', 'alpha');
+  assert.equal(subset.status, 0, subset.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun.ids, ['alpha', 'beta']);
+  assert.match(subset.stdout, /next alpha/);
+});
+
+test('CLI audit-show reports progress, provenance and whether the run covers the whole store', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'alpha').status, 0);
+  const run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha'));
+  const shown = JSON.parse(cli('audit-show').stdout);
+  assert.deepEqual([shown.done, shown.remaining, shown.next], [['alpha'], [], null]);
+  assert.equal(shown.newestReadAt, READ_AT, 'the per-row read times are the progress clock');
+  assert.equal(shown.coversManifest, false, 'a one-id run cannot answer for the store, and says so before audit-end does');
+  assert.equal(shown.token, run.token);
+  // A refusal about the file surfaces here rather than being smoothed over.
+  writeFileSync(run.observedPath, 'not this run\n', 'utf8');
+  assert.match(cli('audit-show').stderr, /was not stamped by this audit run/);
+});
+
+test('CLI audit-end records only a complete pass over the whole manifest, and clears the run either way', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const results = path.join(r, 'results.json');
+  const full = {
+    alpha: { adminVersion: 1, repoVersion: 1, match: 'in-sync', render: 'pass' },
+    beta: { adminVersion: null, repoVersion: 2, match: 'unstamped-stock', render: 'fail' },
+  };
+
+  // Incomplete: one id in the run was never read. lastAudit is untouched, and the sentence says so.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  let run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha'));
+  writeFileSync(results, JSON.stringify(full), 'utf8');
+  let out = cli('audit-end', results);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /partial pass, lastAudit unchanged \(1 of 2 ids read\)/);
+  assert.match(out.stdout, /1 id\(s\) in this run were never read: beta/);
+  assert.match(out.stdout, /The audit run is cleared; readings stay at /);
+  let state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.equal(state.lastAudit, null, 'nothing recorded');
+  assert.equal(state.auditRun, null, 'and the run is cleared, so nothing resumes onto a pass that ended');
+
+  // A run that read everything it targeted but did not target the whole manifest: still partial.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA, 'alpha').status, 0);
+  run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha'));
+  writeFileSync(results, JSON.stringify({ alpha: full.alpha }), 'utf8');
+  out = cli('audit-end', results);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /the run covered 1 of 2 manifest ids/);
+  assert.match(out.stdout, /the results cover 1 of 2 manifest ids \(missing beta\)/);
+  assert.equal(JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).lastAudit, null);
+
+  // Complete. A `fail` render is recorded rather than suppressed: it is the one case that matters.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha') + rowFor('beta'));
+  writeFileSync(results, JSON.stringify(full), 'utf8');
+  out = cli('audit-end', results);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /audit of 2 id\(s\) recorded at .*, source audit, started /);
+  state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.equal(state.lastAudit.source, 'audit');
+  assert.equal(state.lastAudit.startedAt, run.startedAt, 'the pass started when audit-start ran, not when it was recorded');
+  assert.equal(state.lastAudit.results.beta.render, 'fail');
+  assert.equal(state.auditRun, null);
+
+  // --abandon clears a record left by a dead session and records nothing.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  const recordedAt = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).lastAudit.at;
+  out = cli('audit-end', '--abandon');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /abandoned; lastAudit unchanged/);
+  state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.equal(state.auditRun, null);
+  assert.equal(state.lastAudit.at, recordedAt, 'the previous record survives untouched');
+
+  // A results file with no --abandon and no path is a refusal, not an empty record.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  assert.match(cli('audit-end').stderr, /audit-end needs a results file, or --abandon/);
+  // And a missing observed file never silently starts the pass over.
+  run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  rmSync(run.observedPath);
+  const gone = cli('audit-end', results);
+  assert.equal(gone.status, 1);
+  assert.match(gone.stderr, /is missing, so this run's readings cannot be confirmed/);
+  assert.match(gone.stderr, /Discard the run with audit-end --abandon and start a fresh pass; this never silently starts over/);
+  assert.equal(cli('audit-end', '--abandon').status, 0, '--abandon is the way out, and it does not need the file');
+});
+
+test('CLI audit: the scope guard, --partial, provenance flags, and the run-in-flight edge', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const results = path.join(r, 'results.json');
+  const partialResults = { alpha: { adminVersion: 1, repoVersion: 1, match: 'in-sync', render: 'pass' } };
+  const fullResults = { ...partialResults, beta: { adminVersion: null, repoVersion: 2, match: 'unstamped-stock', render: 'skipped' } };
+
+  writeFileSync(results, JSON.stringify(partialResults), 'utf8');
+  let out = cli('audit', results);
+  assert.equal(out.status, 1);
+  // Emitted verbatim by the code, so the sentence a run reports and the guard that applies it
+  // cannot drift apart.
+  assert.match(out.stderr, /lastAudit not recorded: run covered 1 of 2 manifest ids\. Run audit for a full verification\./);
+  assert.match(out.stderr, /Missing: beta\./);
+  assert.match(out.stderr, /Pass --partial to report that without recording anything\./);
+  assert.ok(!existsSync(path.join(dir, 'my-store.json')), 'a refused record writes no file at all');
+
+  out = cli('audit', results, '--partial');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /lastAudit not recorded: run covered 1 of 2 manifest ids\. Run audit for a full verification\./);
+  assert.ok(!existsSync(path.join(dir, 'my-store.json')), '--partial records nothing');
+
+  // A results file naming something outside the manifest is named as such.
+  writeFileSync(results, JSON.stringify({ ...fullResults, gamma: partialResults.alpha }), 'utf8');
+  assert.match(cli('audit', results).stderr, /Not manifest ids: gamma\./);
+
+  writeFileSync(results, JSON.stringify(fullResults), 'utf8');
+  out = cli('audit', results, '--source', 'sync', '--started-at', '2026-09-02T09:00:00Z');
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /source sync, started 2026-09-02T09:00:00Z/);
+  let state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.deepEqual([state.lastAudit.source, state.lastAudit.startedAt], ['sync', '2026-09-02T09:00:00Z']);
+  assert.match(JSON.parse(cli('show').stdout).lastAuditSummary, /source sync\. A sync-recorded audit verifies that run's own writes/);
+
+  assert.match(cli('audit', results, '--source', 'someone').stderr, /--source "someone" is not one of sync, audit/);
+  assert.match(cli('audit', results, '--started-at', 'earlier').stderr, /--started-at "earlier" is not ISO 8601/);
+  assert.match(cli('audit', results, '--partial').stderr, /--partial records nothing, and these results are complete; drop the flag to record them/);
+  assert.match(cli('audit').stderr, /audit needs a results file/);
+
+  // With an audit run in flight, this path refuses: two records of one pass, with no way to tell
+  // which is which, is worse than making the operator end the stale one.
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  out = cli('audit', results);
+  assert.equal(out.status, 1);
+  assert.match(out.stderr, /an audit run started .* is in flight\. Record it with audit-end, or discard it with audit-end --abandon/);
+  state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.equal(state.lastAudit.source, 'sync', 'and the earlier record is untouched');
+});
+
+test('CLI: the usage line and the unknown-command message name every subcommand', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const commands = ['show', 'seen', 'pending-add', 'pending-remove', 'audit', 'audit-start', 'audit-show', 'audit-end', 'run-start', 'run-quarantine', 'run-show', 'run-end'];
+  const usage = spawnSync(process.execPath, [script, '--store', 'my-store', '--root', r, '--state-dir', dir], { encoding: 'utf8' });
+  assert.equal(usage.status, 2);
+  for (const c of commands) assert.ok(usage.stderr.includes(c), `usage does not name ${c}`);
+  const unknown = cli('nonsense');
+  assert.equal(unknown.status, 2);
+  for (const c of commands) assert.ok(unknown.stderr.includes(c), `the unknown-command message does not name ${c}`);
+});
+
+// --- gaps mutation testing found -----------------------------------------------------------------
+// Each of these covers a mutant that survived the suite: the code could be broken in the named way
+// and every test still passed.
+
+test('the migration bumps the version BEFORE validating, so the write that triggers it can add a v2 field', () => {
+  // The mutant: validate before the bump. It survives every other test because no other test
+  // performs a migrating write that ADDS a schemaVersion 2 field, which is the usual way a
+  // migration is triggered. This is the defect the ordering was written for: validating first
+  // refuses the auditRun as "a schemaVersion 1 file carrying a schemaVersion 2 field".
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const out = cliIn(r, dir)('audit-start', '--ref', 'origin/main', '--sha', SHA);
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stderr, /migrating .* from schemaVersion 1 to schemaVersion 2/);
+  const after = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(after.schemaVersion, 2);
+  assert.ok(after.auditRun, 'the schemaVersion 2 field the migrating write was adding is there');
+  assert.deepEqual(after.seen, JSON.parse(original).seen, 'and the v1 facts survived it');
+});
+
+test('a backup is never clobbered, and a migrating write that fails validation leaves no artifact', () => {
+  const original = readFileSync(V1_FIXTURE, 'utf8');
+  const { r, dir, file } = seeded(original);
+  const backup = `${file}.v1.already-here.bak`;
+  // save() derives the backup name from a timestamp, so two migrations in the same millisecond are
+  // the collision this refuses. Forced here by writing the name it will pick.
+  const state = load('my-store', { root: r, dir }).state;
+  const realName = () => readdirSync(dir).filter((f) => f.endsWith('.bak'));
+  writeFileSync(backup, 'not the original\n', 'utf8');
+  save(state, 'my-store', { root: r, dir });
+  assert.equal(readFileSync(backup, 'utf8'), 'not the original\n', 'an unrelated .bak is untouched');
+  assert.equal(realName().length, 2);
+
+  // A migrating write that fails validation copies nothing and writes nothing: the backup is taken
+  // only after validate() passes.
+  const { r: r2, dir: dir2, file: file2 } = seeded(original);
+  const bad = load('my-store', { root: r2, dir: dir2 }).state;
+  bad.pending = 'not an array';
+  assert.throws(() => save(bad, 'my-store', { root: r2, dir: dir2 }), /pending is not an array/);
+  assert.deepEqual(readdirSync(dir2), [path.basename(file2)], 'no backup, and no new file');
+  assert.equal(readFileSync(file2, 'utf8'), original, 'the v1 file is untouched');
+});
+
+test('the state file is written atomically, through a temp file and a rename', () => {
+  // The mutant: write straight to `file`. It survives a "no leftover .tmp" assertion, which also
+  // holds when no temp file is ever used. Watching the rename is what distinguishes them.
+  const { r, dir, file } = seeded();
+  save(goodState(), 'my-store', { root: r, dir });
+  const original = readFileSync(file, 'utf8');
+  // Blocking <file>.tmp with a directory makes the temp write fail. An implementation that writes
+  // through the temp file cannot get past it and leaves the previous file intact; one that writes
+  // straight to `file` would sail through and replace it. That is the difference, observed rather
+  // than asserted about the source.
+  const tmp = `${file}.tmp`;
+  mkdirSync(tmp);
+  const mutated = { ...goodState(), pending: [] };
+  assert.throws(() => save(mutated, 'my-store', { root: r, dir }), /EISDIR|illegal operation on a directory/);
+  assert.equal(readFileSync(file, 'utf8'), original, 'the previous file survives a failed write whole');
+  rmSync(tmp, { recursive: true });
+  save(mutated, 'my-store', { root: r, dir });
+  assert.ok(!existsSync(tmp), 'and the temp file never outlives a successful write');
+  assert.deepEqual(load('my-store', { root: r, dir }).state.pending, []);
+});
+
+test('a v1 file carrying only the optional schemaVersion 2 lastAudit fields is accepted', () => {
+  // Deliberate asymmetry against auditRun, which a v1 file may NOT carry: `source` and `startedAt`
+  // are optional on any version (a record predating them is never backfilled), so their presence on
+  // a v1 file says nothing about the schema. auditRun's presence does.
+  const v1 = JSON.parse(readFileSync(V1_FIXTURE, 'utf8'));
+  v1.lastAudit.source = 'audit';
+  v1.lastAudit.startedAt = '2026-09-01T10:30:00Z';
+  const { r, dir } = seeded(JSON.stringify(v1));
+  const loaded = load('my-store', { root: r, dir });
+  assert.equal(loaded.state.schemaVersion, 1);
+  assert.equal(loaded.state.lastAudit.source, 'audit');
+});
+
+test('auditToken varies with the sha as well as the time, so two runs at one instant differ', () => {
+  // The mutant: derive from startedAt alone. Two passes started in the same millisecond against
+  // different refs would then share a token, and so share an observed file.
+  const at = '2026-09-02T12:00:00Z';
+  assert.notEqual(auditToken(at, 'a'.repeat(40)), auditToken(at, 'b'.repeat(40)), 'the sha is part of the derivation');
+  assert.notEqual(auditToken(at, SHA), auditToken('2026-09-02T12:00:01Z', SHA), 'and so is the time');
+  assert.equal(auditToken(at, SHA), auditToken(at, SHA), 'pure, so a record can be re-derived and checked');
+  assert.match(auditToken(at, SHA), /^[0-9a-f]{16}$/);
+  assert.throws(() => observedPathFor('my-store', 'not-a-token', '/d'), /does not match/, 'and the shape is enforced where the path is built');
+});
+
+test('the parsed observed row carries the values the file held, not just its read time', () => {
+  // Every field but readAt used to be unasserted, so replacing any of them with a constant passed.
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const gid = gidFor('alpha');
+  const p = parseObservedProgress(`${head}alpha\t4321\t0123abcd\talpha 7\t${gid}\t${READ_AT}\nbeta\t9\tdeadbeef\tnone\t-\t${READ_AT}\n`, { auditRun: run });
+  assert.deepEqual(p.rows.get('alpha'), { id: 'alpha', length: 4321, fnv: '0123abcd', stamp: 'alpha 7', gid, readAt: READ_AT });
+  assert.deepEqual(p.rows.get('beta'), { id: 'beta', length: 9, fnv: 'deadbeef', stamp: 'none', gid: '-', readAt: READ_AT });
+  assert.equal(typeof p.rows.get('alpha').length, 'number', 'length is a number, as classify.mjs expects');
+});
+
+test('the observed parser trims columns exactly as classify.mjs does on the same file', () => {
+  // The two readers of one file must agree about whitespace, or a row classifies fine and is then
+  // hard-refused by audit-show.
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  const padded = `  alpha \t 100 \t deadbeef \t none \t - \t ${READ_AT} \n`;
+  const p = parseObservedProgress(head + padded, { auditRun: run });
+  assert.deepEqual(p.done, ['alpha']);
+  assert.deepEqual(p.rows.get('alpha'), { id: 'alpha', length: 100, fnv: 'deadbeef', stamp: 'none', gid: '-', readAt: READ_AT });
+  assert.deepEqual(parseObserved(padded)[0], { id: 'alpha', length: 100, fnv: 'deadbeef', stamp: null, gid: null }, 'classify.mjs reads the same row');
+});
+
+test('duplicate ids are reported once each however many times they repeat', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  // Three rows for one id, and two for another: the mutant that drops the Set survives a two-row
+  // case, because one repeat reports one duplicate either way.
+  const p = parseObservedProgress(
+    head + rowFor('alpha', '2026-09-02T12:00:00Z') + rowFor('alpha', '2026-09-02T12:01:00Z') + rowFor('alpha', '2026-09-02T12:02:00Z') + rowFor('beta') + rowFor('beta'),
+    { auditRun: run },
+  );
+  assert.deepEqual(p.duplicates, ['alpha', 'beta'], 'each id named once, not once per repeat');
+  assert.equal(p.rows.get('alpha').readAt, '2026-09-02T12:02:00Z', 'the last complete row wins');
+});
+
+test('the observed-file caps are boundaries, not approximations', () => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'ssb-obs-')), 'state');
+  const run = goodAuditRun(dir);
+  const head = observedHeader(run.token, run.startedAt, run.sha);
+  // Exactly at the cap is accepted; one over is refused. `> ` vs `>= ` survived without this.
+  const atCap = head + Array.from({ length: 999 }, () => rowFor('alpha')).join('');
+  assert.equal(atCap.split('\n').length - 1, 1000, 'the header plus 999 rows is exactly 1000 lines');
+  assert.doesNotThrow(() => parseObservedProgress(atCap, { auditRun: run }));
+  assert.throws(() => parseObservedProgress(atCap + rowFor('alpha'), { auditRun: run }), /holds more than 1000 lines/);
+  const underBytes = head + 'x'.repeat((1 << 20) - head.length - 1) + '\n';
+  assert.equal(Buffer.byteLength(underBytes, 'utf8'), 1 << 20);
+  assert.throws(() => parseObservedProgress(underBytes, { auditRun: run }), /line 2 has 1 tab-separated/, 'at the cap it is read, and refused on its content');
+  assert.throws(() => parseObservedProgress(underBytes + 'x', { auditRun: run }), /is larger than 1048576 bytes/);
+});
+
+test('auditScope counts only manifest ids as covered, which is the number the refusal prints', () => {
+  const foreign = auditScope({ alpha: {}, gamma: {}, delta: {} }, ids);
+  assert.equal(foreign.covered, 1, 'three keys, one of them a manifest id');
+  assert.deepEqual(foreign.foreign, ['gamma', 'delta']);
+  assert.deepEqual(foreign.missing, ['beta']);
+  assert.equal(foreign.complete, false);
+});
+
+test('run-start refuses a run-show dump fed back in, in the shape run-show actually emits', () => {
+  // The incident the action guard exists for: run-show's own rows carry no `action`, so feeding its
+  // output back in used to resurrect the done and quarantined ids as fresh pastes. The regression
+  // test used a bare array; run-show emits an OBJECT with an `ids` key, which is the shape that
+  // reaches the unwrap, and that path was untested.
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const plan = path.join(r, 'plan.json');
+  writeFileSync(plan, JSON.stringify([{ ...row('alpha'), action: 'paste' }]), 'utf8');
+  assert.equal(cli('run-start', plan, '--ref', 'origin/main', '--sha', SHA).status, 0);
+  assert.equal(cli('seen', 'alpha', '--version', '1', '--fnv', 'deadbeef', '--length', '9').status, 0);
+  const dump = JSON.parse(cli('run-show').stdout);
+  assert.ok(Array.isArray(dump.ids) && dump.ids.length, 'run-show emits an object carrying ids');
+  assert.equal(dump.ids[0].action, undefined, 'whose rows carry no action');
+  const fed = path.join(r, 'dump.json');
+  writeFileSync(fed, JSON.stringify(dump), 'utf8');
+  const out = cli('run-start', fed, '--ref', 'origin/main', '--sha', SHA, '--force');
+  assert.equal(out.status, 1);
+  assert.match(out.stderr, /has action undefined; expected paste, skip or flag/);
+});
+
+test('seen --from-file with no run in flight takes the version from the manifest, and refuses an unknown id', () => {
+  // Every other --from-file test has a run in flight, so the branch that decides which version is
+  // recorded WITHOUT one was untested in both directions.
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  const file = path.join(r, 'beta.liquid');
+  writeFileSync(file, 'some branded bytes\n', 'utf8');
+  const h = hashFile(file);
+  const out = cli('seen', 'beta', '--from-file', file, '--sha', SHA, '--ref', 'origin/main');
+  assert.equal(out.status, 0, out.stderr);
+  const state = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8'));
+  assert.deepEqual(
+    [state.seen.beta.version, state.seen.beta.length, state.seen.beta.fnv],
+    [2, h.length, h.hash],
+    'version 2 is beta\'s manifest version, not a default and not another id\'s',
+  );
+  const unknown = cli('seen', 'gamma', '--from-file', file, '--sha', SHA, '--ref', 'origin/main');
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /gamma is not in the manifest/);
+});
+
+// --- audit-observed -------------------------------------------------------------------------------
+
+// classify.mjs reads the branded and stock file for every manifest id, which `root()` does not
+// write because nothing else in this file classifies.
+function rootWithTemplates() {
+  const r = root();
+  const p = paths(r);
+  for (const id of ['alpha', 'beta']) {
+    writeFileSync(p.branded(id), `branded ${id}\n`, 'utf8');
+    writeFileSync(p.stock(id), `stock ${id}\n`, 'utf8');
+  }
+  return r;
+}
+
+test('audit-observed resolves duplicates so classify.mjs, which refuses them, can read the same pass', () => {
+  const r = rootWithTemplates();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  assert.match(cli('audit-observed').stdout, /no audit run in flight/);
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  const run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  // The shape a resumed pass leaves: beta read twice (a torn row re-read), and out of order.
+  appendFileSync(run.observedPath, rowFor('beta', '2026-09-02T12:00:00Z'));
+  appendFileSync(run.observedPath, rowFor('alpha', '2026-09-02T12:01:00Z'));
+  appendFileSync(run.observedPath, rowFor('beta', '2026-09-02T12:02:00Z'));
+
+  // classify.mjs refuses that file outright, which is the contradiction this subcommand removes.
+  const direct = spawnSync(process.execPath, [classifyScript, '--observed', run.observedPath, '--root', r], { encoding: 'utf8' });
+  assert.equal(direct.status, 1);
+  assert.match(direct.stderr, /observed lists beta twice; one reading per id/);
+
+  const out = path.join(r, 'resolved.tsv');
+  const res = cli('audit-observed', '--out', out);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /2 row\(s\) -> /);
+  assert.match(res.stdout, /id\(s\) read more than once, latest row kept: beta/);
+  const lines = readFileSync(out, 'utf8').trimEnd().split('\n');
+  assert.equal(lines.length, 2, 'one row per id');
+  assert.deepEqual(lines.map((l) => l.split('\t')[0]), ['alpha', 'beta'], 'in auditRun.ids order, not file order');
+  assert.equal(lines[1].split('\t')[5], '2026-09-02T12:02:00Z', 'the last reading for beta');
+  // And the resolved file is what classify.mjs accepts.
+  const ok = spawnSync(process.execPath, [classifyScript, '--observed', out, '--root', r], { encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stderr);
+
+  // Without --out it goes to stdout, so it can be piped or read directly.
+  const piped = cli('audit-observed');
+  assert.equal(piped.stdout, readFileSync(out, 'utf8'));
+});
+
+test('audit-observed reports the ids still to read, and never invents a row for one', () => {
+  const r = root();
+  const dir = path.join(r, 'state');
+  const cli = cliIn(r, dir);
+  assert.equal(cli('audit-start', '--ref', 'origin/main', '--sha', SHA).status, 0);
+  const run = JSON.parse(readFileSync(path.join(dir, 'my-store.json'), 'utf8')).auditRun;
+  appendFileSync(run.observedPath, rowFor('alpha'));
+  const out = path.join(r, 'resolved.tsv');
+  const res = cli('audit-observed', '--out', out);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /1 row\(s\) -> /);
+  assert.match(res.stdout, /1 id\(s\) not yet read: beta/);
+  assert.equal(readFileSync(out, 'utf8'), rowFor('alpha'), 'only what was actually read');
 });
 
 // --- clipboard.mjs -------------------------------------------------------------------------------

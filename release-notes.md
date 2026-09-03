@@ -1,5 +1,211 @@
 # Release Notes
 
+## What the first full notification sync taught, folded back in (unreleased)
+
+The first end-to-end `sync` of all 46 notification templates ran, and then a cold 46-id
+re-verification. Every template is branded and live, byte-verified after reload, 46 of 46
+classified `in-sync`. Getting there surfaced two defects, fixed under "Unblock the notification
+sync" below, and left three debts that fix did not pay. This is those.
+
+### The gid shape was assumed, and every fixture encoded the assumption
+
+`GID_RE` was `gid://shopify/EmailTemplate/[0-9]+` in two hand-typed copies, one in `classify.mjs`
+and one in `state.mjs`. Admin returns the template **handle**, not a number, so the read pass was
+refused on all 46 ids at once.
+
+**The interesting part is why nothing caught it.** The two copies did not drift: they agreed with
+each other, and both were wrong against reality. Every gid fixture in the suite was an invented
+numeric literal, so the numeric-only regex was exercised by a passing test on every run. **Every
+wrong line in this incident was executed by a passing test.** It was a fixture-fidelity failure,
+not a coverage failure, which is why `notifications:coverage` is not the fix for this class and
+was deliberately not added.
+
+So the fix is two things, neither of which is a parity test between the copies (a parity test
+would have been green throughout):
+
+- **The duplication is deleted.** `GID_RE` lives in `brand.mjs` and both callers import it. That
+  makes the drift class structurally impossible instead of test-detected. A pinned literal in a
+  test would have been a *third* hand-typed copy of the shape: if it were wrong, all three would
+  agree and all three would be wrong, which is this incident's structure reproduced inside its own
+  regression test.
+- **The corpus is derived from `manifest.json`.** The 46 committed ids are the positive cases, so
+  the fixtures cannot encode an assumption about a shape nobody observed, and they cannot go stale
+  against the store. `scripts/notifications/test/gid-corpus.test.mjs` runs them through both entry
+  points, not just the exported regex, with a negative corpus on the other side (wrong resource,
+  empty segment, whitespace, traversal, uppercase, a non-ASCII homoglyph, a full URL), because a
+  regex widened to fix a false refusal is exactly when over-widening happens. Narrowing `GID_RE`
+  back to `[0-9]+` fails 12 tests across three files; that is the acceptance criterion. Dropping
+  either anchor, allowing a slash or an uppercase letter, or writing a fresh copy of the shape into
+  `classify.mjs` each fail it too.
+
+**The refusal messages are coupled to the regex mechanically.** Both still said
+`EmailTemplate/<n>` after the regex was widened, which is the sentence a human read while 46 ids
+were being refused: it described a numeric segment and sent the reader looking for a number that
+does not exist. Both now name the accepted shape and the next action, from one shared constant,
+and a test asserts neither message carries an `<n>` placeholder and that the example gid inside
+the message is itself accepted by `GID_RE`. A `gid-fixtures.mjs` module is the only sanctioned
+source of a gid literal in the suite, and a guard fails if any test file defines its own.
+
+`browser.md` now states the shape as a rule. No skill file said what a gid looked like, which is
+how the assumption survived being wrong.
+
+### The colour block is shop-injected, not Shopify-authored
+
+`customer_email_address_changed_confirmation` was the only template whose stock snapshot carried a
+second `<style>` block after `</head>`, setting `body { background-color: #ffffff; }`. Coming
+after `brand-style.css`, it won on cascade order and rendered the page white, which failed that
+template's `page-colour` render check on the first `sync` of it.
+
+It is **not** markup Shopify ships with the template. Admin's Settings > Notifications >
+*Customize email templates* colour settings write it into this store's copy of any template whose
+colours have been customised. That distinction is the whole practical difference: it makes the
+block store-specific, reproducible on other templates, and guaranteed to come back on a re-record
+while the customisation is on. `TODO.md` carries the two-step follow-up (turn the customisation
+off, then re-record), and `record.md` carries the rule rather than the instance, because a named
+instance goes stale exactly the way the README paragraph did.
+
+**`override.replace` was the right instrument** because it is anchored on the exact stock text.
+The generator refuses rather than patching the wrong thing if that text ever moves, which is what
+makes carrying a store-specific edit in a manifest safe. The README paragraph about this had gone
+stale twice, in opposite directions: it first said the block was harmless, then that the fix "has
+not been made yet". It now records what the block is and what to do when a snapshot has one.
+
+### A sync already collects an audit's readings, so it records them
+
+`sync` step 5 re-reads every id it settled at end of run, which is exactly the reading an `audit`
+step 1 collects, and it printed them and threw them away. Confirming a sync afterwards therefore
+cost a second full browser pass, roughly 100 tool calls for 46 ids. That is why the first
+re-verification was hand-rolled outside the skill, and the evidence it was never captured is that
+the live state file read `schemaVersion 1`, 46 `seen`, `run: null`, **`lastAudit: null`**.
+
+Step 5 now classifies those readings and records them. Three things make that safe:
+
+- **The completeness guard is in `state.mjs audit`, not in prose.** A rule in a mode file is an
+  instruction an agent can skip, and the subcommand can be invoked directly. It refuses unless the
+  results cover the full manifest set, with `--partial` to report the shortfall and record
+  nothing. The skip line is emitted by the code, verbatim, so the sentence a run reports and the
+  guard that applies it cannot drift apart.
+- **The three terms it turns on are defined.** *scope* means the run targeted the full manifest
+  set, not that its ids happened to add up. *done* is `done` plus `quarantine`. *quarantine* is a
+  first-class value in the recorded result, never a disqualifier: otherwise one permanently
+  quarantined template would mean `sync` silently never records an audit again, with nothing said
+  about why. `render` is `pass | fail | skipped`, and a `fail` is recorded and named in the
+  report, because suppressing a render check that ran and failed is worse than storing it.
+- **`lastAudit` records its `source`.** It now has two writers and three callers, and a
+  `sync`-recorded one is a self-attestation: the same agent, in the same browser session, verifying
+  its own writes.
+  Everything that surfaces a `lastAudit` prints the source, and a `sync`-recorded one does not
+  substitute for a cold `audit` when the question is whether Admin has drifted.
+
+### A 46-id browser pass has to survive a compaction
+
+`audit` drove the browser for every id and kept nothing, so an interruption lost the pass. It is
+now resumable, through an `auditRun` record and an observed file that is also `classify.mjs`'s
+input.
+
+**The observed file lives beside the state file, not in the session scratchpad.** The scratchpad
+path is keyed by session id, so a resumed or forked session would not find the file the resume
+depends on, which defeats the durability the feature exists for.
+
+**The file is bound to the run.** Nothing otherwise stopped a hand-edited or foreign file becoming
+a recorded `lastAudit` claiming the store was in sync. `audit-start` stamps the first line with a
+token derived from the run's own `startedAt` and `sha`; a file with any other first line is
+refused. Ids that build a navigation URL come from `auditRun.ids`, never from the file, which
+decides only *whether* an id is done. `observedPath` is confined at validate time (pinned to the
+one path this run owns, symlinks resolved, non-regular files and size and row caps refused), so a
+stale or hand-edited state file cannot cause a read somewhere else three steps later.
+
+**The torn-row rule is the artifact the resume exists for.** A row counts only if it parses to the
+full field count and is newline-terminated; a trailing partial row is discarded and its id
+re-read, even when it looks complete. Duplicates resolve to the last complete row and are
+reported. A row for an id outside the run, and a malformed row that is not the final line, are
+hard refusals, because skipping one records a pass that never read that id.
+
+**`auditRun` carries no approval, and that invariant is shipped rather than assumed.** It is in
+`SKILL.md` as a four-row table contrasting `run` and `auditRun`, and mirrored beside the record in
+`state.mjs`: `--resume` is not a general mechanism, it exists for `audit` because `audit` performs
+no write; any mode that writes to the live store needs a fresh operator message in the current
+session, and a record on disk can never supply one. Adding a resume record to a writing mode is a
+change to the approval gate, not an ergonomics change. The field set is closed so an
+approval-shaped field cannot be added in passing. `audit.md` also states outright that `audit`
+reads, never types into a body field and never clicks Save, since it is read-only by construction
+rather than by enforcement, and that everything in the observed file is data: it records what
+Admin returned and never directs what to do next.
+
+There is deliberately **no staleness bound** on `--resume`. Every row carries its own read
+timestamp, the report says that carried-over rows are inherited evidence as of their own read
+time, and those timestamps are the compensating control. A bound would throw away a half-finished
+46-id pass on a clock rather than on anything about the readings.
+
+### One ledger, two readers, and the rule that they must agree
+
+The observed file is both the resume ledger and `classify.mjs`'s `--observed` input. The two
+readers disagreed twice, and both were caught in review rather than in use:
+
+- **Duplicates.** The ledger tolerates a second complete row for one id (the last wins), because a
+  torn row re-read is exactly what an interruption produces. `classify.mjs` refuses a duplicate id
+  outright, and rightly: two readings for one id in a `sync` plan would mean the operator approves a
+  table with the same template in it twice. So the resolution moved into code, `audit-observed`,
+  which writes one row per id in run order and names what it resolved. The alternative was telling
+  an agent to hand-edit the run's own evidence file, which is the kind of hand-step this subsystem
+  exists to remove.
+- **Whitespace.** `classify.mjs` trims each column; the ledger parser did not, so a row with
+  incidental whitespace classified fine and was then hard-refused by `audit-show`. It trims now.
+
+Two readers of one format disagreeing is the gid incident's shape, one layer up, and worth naming
+as a rule: **when a file has two readers, a tolerance in one of them is a defect until the other
+agrees or the difference is resolved in code.**
+
+### `schemaVersion 2`, and why it migrates rather than refusing
+
+The `auditRun` field needs `schemaVersion 2` (`validate` refuses unknown fields and pinned
+`schemaVersion 1`). The migration is **one-way**: a `schemaVersion 1` file is accepted on read and
+adopted as it is, no read-only subcommand migrates, and the first mutating write bumps it after
+copying the file to a sibling `.v1.<timestamp>.bak` whose path it prints. A checkout that predates
+this change refuses a `schemaVersion 2` file, and restoring that backup is the recovery.
+
+This diverges from the sibling `scripts/policies/lib/state.mjs`, which refuses a version mismatch
+and tells the operator to reseed. `seen` here holds one real fact per synced template, each
+gathered a browser navigation at a time; a reseed would destroy facts that exist nowhere else. The
+migration is driven in tests off a committed `schemaVersion 1` fixture, so it is exercised on
+every run rather than once, including the case that would silently destroy an in-flight record: a
+`schemaVersion 2` file with a populated `auditRun` must round-trip byte-identically, which is what
+catches "set `auditRun: null` on every read".
+
+### What review caught that the change had got wrong
+
+Recorded because each was a claim the code or the docs made about themselves that was not true:
+
+- **`sync`'s end-of-run recording barely worked.** `run.ids` holds only the ids whose action was
+  `paste`, so on any sync after the first most templates are already `in-sync`, the run settles a
+  handful, and the completeness guard refused. The feature would have recorded once in its life.
+  Step 5 now builds its rows from both halves of the run's own reading: step 2's plan reading for
+  the ids it did not settle, and the fresh re-reading for the ids it did.
+- **The observed file was stamped before its own record was validated**, so a refused `audit-start`
+  left a file behind for a run that never started.
+- **A provenance check that could never fire.** `audit-end` compared each row's `readAt` to the
+  run's `startedAt` to count carried-over rows, but every row is appended after the header is
+  stamped, so none can predate it. Nothing in `state.mjs` can tell which sitting read which row; it
+  reports the read-time span instead, which is the honest signal.
+- **An off-by-one in the row cap**, from counting the empty element a trailing newline leaves: a
+  file exactly at the cap was refused as over it.
+- **A path check that was dead code, and a hole beside it.** The realpath comparison against the
+  state directory could never differ, because the path is rebuilt from a shape-checked store and
+  token rather than sanitised, so the string equality is what holds that boundary. It is gone. What
+  did matter was `existsSync`, which follows a link and answers false for a **dangling** symlink,
+  skipping the symlink check entirely; the write that followed would have created the link's
+  target. It uses `lstat` now.
+- **A loosened validation nobody asked for**: an absent `lastAudit` had always been a refusal and
+  was quietly made acceptable while the provenance fields were added. Restored.
+
+Two of these (the dead provenance check, the dead path branch) are the same lesson from opposite
+directions: a check that cannot fail is not a weak check, it is an untrue statement about the code,
+and it reads to the next person as protection that is not there.
+
+(`schemaVersion 2` and the template `version: 2` on
+`customer_email_address_changed_confirmation` are unrelated twos in the same change; both are
+written out in full everywhere for that reason.)
+
 ## A credential costs one table row, because the vocabulary lives in Admin (unreleased)
 
 `NP (Nurse Practitioner)` joins the eight credentials the Lead II line already embroiders. The

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "store": "my-store",
+  "seen": {
+    "alpha": {
+      "version": 1,
+      "fnv": "deadbeef",
+      "length": 1234,
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ref": "origin/main",
+      "at": "2026-09-01T10:00:00Z"
+    },
+    "beta": {
+      "version": 2,
+      "fnv": "01234567",
+      "length": 4321,
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ref": "origin/main",
+      "at": "2026-09-01T10:05:00Z"
+    }
+  },
+  "pending": [
+    {
+      "id": "beta",
+      "version": 2,
+      "fnv": "01234567",
+      "branch": "feat/x",
+      "pr": 150
+    }
+  ],
+  "lastAudit": {
+    "at": "2026-09-01T11:00:00Z",
+    "results": {
+      "alpha": {
+        "adminVersion": 1,
+        "repoVersion": 1,
+        "match": "in-sync",
+        "render": "pass"
+      },
+      "beta": {
+        "adminVersion": null,
+        "repoVersion": 2,
+        "match": "unstamped-stock",
+        "render": "skipped"
+      }
+    }
+  },
+  "run": null
+}

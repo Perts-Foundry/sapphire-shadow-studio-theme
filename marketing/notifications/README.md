@@ -130,8 +130,10 @@ previous document pasted back if that render fails), `audit` (which version each
 whether it renders), `record` (the drift procedure below) and `rollback` (re-paste an earlier
 version from git). It is operator-invoked, drives the Admin editor through the chrome-devtools MCP,
 and keeps a per-store state file outside the checkout: a hint for what Admin holds, and the record
-of a `sync` in flight, so an interrupted run resumes with `sync --resume` rather than a
-hand-written handoff. A single published locale is
+of a run in flight, so an interrupted run resumes with `sync --resume` or `audit --resume` rather
+than a hand-written handoff. The two records are not the same kind of thing: a `sync`'s carries
+the operator's approved plan and a resumed `sync` writes under it, while an `audit`'s carries no
+approval at all, because `audit` performs no write. A single published locale is
 assumed; re-check `shopLocales` in Admin if that changes, since notification templates are per
 language.
 
@@ -204,30 +206,37 @@ do not, the manifest entry carries an `override` object with a `reason` and one 
 
 - **`replace`** (a list of `{ "from", "to" }` pairs): exact substrings swapped for exact
   substrings, each `from` found exactly once outside a Liquid comment, refused if it overlaps any
-  other edit. For a stock markup bug the template must carry as long as Shopify ships it. Two
-  templates carry it: `order_invoice` and `pending_payment_failure`, whose "Amount to pay" block
-  puts a table directly inside a table row with no cell in the branch where nothing has been paid
-  yet; parsers recover by closing the enclosing tables early and leave an empty table whose top
-  border draws a hairline under the card. The two replacements give that branch the spacer and
-  cell the other branch has. Because the manifest carries the exact stock text, an upstream
-  change to that block makes the generator refuse rather than patch the wrong thing.
+  other edit. For markup the template must carry as long as the store's copy ships it. Three
+  templates carry it. `order_invoice` and `pending_payment_failure` carry it for a stock markup
+  bug: their "Amount to pay" block puts a table directly inside a table row with no cell in the
+  branch where nothing has been paid yet; parsers recover by closing the enclosing tables early and
+  leave an empty table whose top border draws a hairline under the card. The two replacements give
+  that branch the spacer and cell the other branch has.
+  `customer_email_address_changed_confirmation` carries it for something different: its `from` is a
+  **shop-injected** colour block rather than a stock markup bug, and the paragraph below explains
+  what that means. Because the manifest carries the exact stock text, an upstream change to any of
+  those blocks makes the generator refuse rather than patch the wrong thing.
 
 A fifth field, `skip`, with a reason string, would leave a template stock: no branded file is
 generated and the check refuses if one exists. No template is skipped today.
 
-**A known defect, recorded here because this paragraph used to say it was harmless.**
-`customer_email_address_changed_confirmation` is the only template with a second `<style>` block,
-Shopify-authored, after `</head>`. It is left in place, and because it comes after
-`brand-style.css` every rule in it wins on cascade order. The note here used to say that was fine
-because the block references no accent colour. It is not fine: the block sets
-`body { background-color: #ffffff; }`, which beats the branded `#e1edf5` and renders the page
-white. The first `sync` of this template failed its `page-colour` render check on exactly that,
-was restored to stock, and the id is still unsynced.
+**A shop-injected colour block, and the fix for it.**
+`customer_email_address_changed_confirmation` is the only template whose stock snapshot carries a
+second `<style>` block, after `</head>`. It is **not** Shopify-authored markup that ships with the
+template: Admin's Settings > Notifications > *Customize email templates* colour settings write it
+into this store's copy of a template whose colours have been customised. That is what makes it
+store-specific and reproducible: it can appear on any template those settings touch, and it will
+come back on a re-record while the customisation is on.
 
-The fix is a `change` run (an override in `manifest.json`, then `npm run notifications:generate`),
-not a `sync` one, and it has not been made yet. Until it is, treat any template with a second
-`<style>` block as suspect and check the render before trusting it; the generator does not
-neutralise the block and nothing offline catches it.
+Because it comes after `brand-style.css`, every rule in it wins on cascade order. The block sets
+`body { background-color: #ffffff; }`, which beats the branded `#e1edf5` and renders the page
+white. The first `sync` of this template failed its `page-colour` render check on exactly that and
+was restored to stock. The fix landed as an `override.replace` that drops the block (template
+`version: 2`), and the template is now synced and render-checked.
+
+**What to do when a stock snapshot carries a `<style>` block after `</head>`:** stop and report it,
+or apply the documented `override.replace` for it; do not sync the template until one of those has
+happened. The generator does not neutralise the block and nothing offline catches it.
 
 ## Drift: catching up with a Shopify change to a stock template
 

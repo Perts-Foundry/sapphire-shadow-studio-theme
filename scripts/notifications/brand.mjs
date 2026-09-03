@@ -36,6 +36,23 @@ export const STAMP_PREFIX = 'sss-notification';
 export const STAMP_RE_SOURCE = '(?<![A-Za-z0-9_-])sss-notification ([a-z0-9_]+) v([1-9][0-9]*)(?![0-9A-Za-z_-])';
 export const STAMP_RE = new RegExp(STAMP_RE_SOURCE);
 
+// The one EmailTemplate gid shape, and the one place it is written down. The id segment of an
+// EmailTemplate gid is the template HANDLE, not a number: Admin returns
+// `gid://shopify/EmailTemplate/buy_online`. It was `[0-9]+` in two hand-typed copies, in
+// classify.mjs and state.mjs, until a sync read all 46 editors and every one of them was refused.
+// Both copies agreed, and every fixture encoded the same invented numeric gid, so nothing was
+// green-to-red about it: the shape had been assumed rather than observed. Deduplicating it here is
+// what makes that class of defect structural rather than something a parity test has to notice;
+// what actually guards against pairing one template's response with another id is the string
+// equality in before-doc.mjs, which this format check only feeds. GID_EXAMPLE is embedded in the
+// refusal messages both callers print, and test/gid-corpus.test.mjs asserts GID_RE accepts it, so
+// a widened regex cannot leave a stale example behind.
+export const GID_HANDLE_RE_SOURCE = '[a-z0-9_]+';
+export const GID_RE = new RegExp(`^gid://shopify/EmailTemplate/${GID_HANDLE_RE_SOURCE}$`);
+export const GID_EXAMPLE = 'gid://shopify/EmailTemplate/buy_online';
+// The shape named in a refusal, so the two callers' messages cannot describe different regexes.
+export const GID_EXPECTED = `expected gid://shopify/EmailTemplate/<handle> (handle matches ${GID_HANDLE_RE_SOURCE}, e.g. ${GID_EXAMPLE})`;
+
 export function isValidVersion(v) {
   return Number.isInteger(v) && v >= 1;
 }
@@ -286,8 +303,11 @@ export function brandCore(stock, { id, css, social, header, override }) {
     for (const [a, b] of logos) edits.push([a, b, '']);
   }
   // The `replace` override: exact substrings swapped for exact substrings, each found exactly once
-  // outside a Liquid comment. For a stock markup bug the template must carry as long as Shopify
-  // ships it; the manifest entry's reason says which.
+  // outside a Liquid comment. For markup the template must carry as long as the store's copy ships
+  // it; the manifest entry's reason says which. That covers two cases, and they are not the same:
+  // a stock markup bug Shopify ships (order_invoice, pending_payment_failure), and a block Admin
+  // INJECTS into this store's copy, which is what customer_email_address_changed_confirmation's
+  // colour block is (marketing/notifications/README.md explains it).
   if (override && override.replace !== undefined) {
     if (!Array.isArray(override.replace) || override.replace.length === 0) {
       throw new BrandError(id, 'replace', 'override.replace must be a non-empty array');

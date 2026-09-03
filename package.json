@@ -31,6 +31,7 @@
     "email-icons:test": "node --test scripts/email-icons/test/*.test.mjs",
     "notifications:generate": "node scripts/notifications/brand.mjs",
     "notifications:check": "node scripts/notifications/brand.mjs --check",
+    "notifications:status": "node scripts/notifications/brand.mjs --status",
     "notifications:test": "node --test scripts/notifications/test/*.test.mjs",
     "policies:check": "node scripts/policies/check.mjs",
     "policies:pull": "node scripts/policies/pull.mjs",
