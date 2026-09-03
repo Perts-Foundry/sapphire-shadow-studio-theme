@@ -54,16 +54,21 @@ Crawl-mode checks and why each exists:
   re-sorted views; the crawl walks sitemap URLs, which are neither, so the suppression never trips
   this check.
 - `h1-count`: exactly one `<h1>` per page. Nothing in CI checks heading structure; the homepage
-  once had two (header + hero) and the FAQ page once had zero.
+  once had two (header + hero), the FAQ page once had zero, and so did the search page until
+  2026-09-03. It has no page-type exemption, and that is not an oversight: a missing `<h1>` is a
+  document structure problem whether or not the page is indexed, so noindexing a page does not clear
+  it. The search page proved it, and the fix there was the heading, not the robots tag.
 - `description-duplicate` (ERROR): the exact defect class of the original audit's worst content
   finding (two products carrying a third product's description verbatim).
 - `og-image-scheme`: `og:image` must be https. Regressed once in inherited Horizon boilerplate.
 - `canonical-host`: canonicals must live on the primary domain, never `*.myshopify.com` and never
   a preview host.
 - `robots-noindex`: an indexable page type carrying noindex is an error; `cart`, `search`, `404`,
-  `password`, and `policy` are exempt. The empty blog listing is deliberately noindexed and is
-  suppressed through `accepted-risks.json`, not through the exempt list: `blog` stays an indexable
-  page type so the day it has articles and still carries noindex, the check reds.
+  `password`, and `policy` are exempt. `/search` carries a deliberate noindex as of 2026-09-03
+  (`snippets/meta-tags.liquid`) and needs no accepted-risks entry precisely because `search` is on
+  that exempt list. The empty blog listing is deliberately noindexed and is suppressed through
+  `accepted-risks.json` instead, not through the exempt list: `blog` stays an indexable page type so
+  the day it has articles and still carries noindex, the check reds.
 - `404-status`: a garbage path must return a real 404 (soft-404s poison crawl budget).
 
 Admin-mode checks read what is **stored**, because the storefront renders fallbacks: a null
@@ -133,5 +138,12 @@ edit here.
   has no DOMParser. Every extractor targets Shopify-rendered markup, tolerates attribute order,
   and is fixture-tested. If a check misfires on real markup, fix the extractor and add the
   fixture, do not loosen the check.
+- **`decodeEntities` is load-bearing for the length checks.** Every `<title>` this theme renders is
+  joined with a literal `&ndash;` (`snippets/meta-tags.liquid`), so an entity table that stops at
+  `&amp;` measures every title on the store 6 characters too long and reports a phantom `title-long`
+  on anything past 54 real characters. It did, on six URLs, until 2026-09-03. It decodes in one pass
+  (a chain that decodes `&amp;` first would turn `&amp;lt;` into `<`) and returns anything it does
+  not recognise exactly as written. Non-ASCII values are `\u` escapes and the tests build theirs with
+  `String.fromCodePoint`, because this repo bans the literal em dash in every file.
 - **Tests**: `npm run seo-review:test` (`node --test scripts/seo-review/test/*.test.mjs`).
   Unit-only; no network, no store access, temp-dir state.

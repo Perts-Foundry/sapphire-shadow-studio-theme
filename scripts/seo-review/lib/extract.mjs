@@ -30,11 +30,63 @@ export function findTags(html, tagName) {
   return out;
 }
 
-/** Decode the handful of HTML entities Shopify emits in head metadata. */
+// Named entities that reach head metadata: the five XML basics Shopify escapes
+// with, plus the typographic ones a merchant can type into a title or
+// description in Admin. The non-ASCII values are written as \u escapes on
+// purpose. This repo bans the literal em dash (U+2014) in every file, and
+// spelling its neighbours the same way keeps the table consistent rather than
+// half-escaped. Null-prototype so a lookup can never reach Object.prototype.
+const NAMED_ENTITIES = Object.assign(Object.create(null), {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  // Folded to a plain space: a non-breaking space is one character either way
+  // for the length checks, and folding it keeps two descriptions that differ
+  // only in whitespace kind from escaping the duplicate check.
+  nbsp: ' ',
+  ndash: '\u2013',
+  mdash: '\u2014',
+  hellip: '\u2026',
+  lsquo: '\u2018',
+  rsquo: '\u2019',
+  ldquo: '\u201c',
+  rdquo: '\u201d',
+});
+
+/**
+ * Decode the HTML entities Shopify emits in head metadata.
+ *
+ * WHY this is worth more than tidiness: every `<title>` the theme renders joins
+ * its parts with a literal `&ndash;` (snippets/meta-tags.liquid), so a table
+ * that stops at `&amp;` measures every title on the store 6 characters too long and
+ * reports a phantom `title-long` on anything past 54 real characters. It did,
+ * on six URLs, until 2026-09-03.
+ *
+ * One pass, not a chain of `.replace()` calls: a chain that decodes `&amp;`
+ * first turns `&amp;lt;` into `<` rather than the literal `&lt;` the page meant.
+ * A single pass over the source cannot double-decode.
+ *
+ * An unknown or malformed entity is left exactly as written, so a decode can
+ * only ever shorten a string it understands, never mangle one it does not.
+ */
 export function decodeEntities(s) {
-  return String(s)
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+  const re = /&(#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{0,31});/g;
+  return String(s).replace(re, (match, body) => {
+    if (body[0] !== '#') {
+      const named = NAMED_ENTITIES[body];
+      return named === undefined ? match : named;
+    }
+    const cp = body[1] === 'x' || body[1] === 'X'
+      ? parseInt(body.slice(2), 16)
+      : parseInt(body.slice(1), 10);
+    // Reject what String.fromCodePoint would throw on, plus lone surrogates,
+    // which are unpaired garbage rather than a character anyone meant to write.
+    if (!Number.isInteger(cp) || cp < 1 || cp > 0x10ffff) return match;
+    if (cp >= 0xd800 && cp <= 0xdfff) return match;
+    return String.fromCodePoint(cp);
+  });
 }
 
 /** <title> text, whitespace-collapsed, or null when absent. */

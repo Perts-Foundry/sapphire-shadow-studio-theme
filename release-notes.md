@@ -1,5 +1,74 @@
 # Release Notes
 
+## A phantom SEO finding, and the two real ones it was hiding (unreleased)
+
+The 2026-09-03 `seo-review` run reported six `title-long` WARNs. All six were the tool's own fault.
+`decodeEntities` in `scripts/seo-review/lib/extract.mjs` knew `&amp; &lt; &gt; &quot; &#39; &#x27;`
+and stopped there, while every `<title>` this theme renders joins its parts with a literal `&ndash;`
+(`snippets/meta-tags.liquid`). So every title on the store measured six characters longer than it
+renders, and anything past 54 real characters tripped a 60-character check. The six URLs measured 61
+to 65 and render 55 to 59. Not one was a defect.
+
+**A check that misfires is worse than a check that is missing**, because it spends attention on every
+run and teaches the reader to skim the category, which is where a real finding would have been
+sitting. The module README already said the fix for a misfiring extractor is the extractor and not
+the threshold; this is that. The table now covers the typographic entities a merchant can type into
+an Admin title alongside the XML five, and numeric entities in both bases.
+
+**The rewrite is a single pass rather than a chain of `.replace()` calls**, which closes a second
+defect nobody had hit yet: decoding `&amp;` first turns `&amp;lt;` into `<` rather than the literal
+`&lt;` the page meant. One pass over the source cannot double-decode. Unknown and malformed entities
+come back exactly as written, so a decode can only ever shorten what it understands, never mangle
+what it does not.
+
+**The non-ASCII values are written as `\u` escapes, and the tests build theirs with
+`String.fromCodePoint`.** This repo bans the literal em dash in every file. Escaping only that one
+and spelling its neighbours as glyphs would leave a table where the reason for each spelling is
+invisible, so the whole set is escaped and both files are pure ASCII.
+
+### The search page rendered zero `<h1>`
+
+`sections/search-header.liquid` captured its heading as an `<h3>`, inherited from Horizon, and
+`sections/search-results.liquid` emits no heading at all. This is the same defect class the July 2026
+audit closed on the FAQ page, and it is an accessibility problem before it is an SEO one: a screen
+reader hears a page with no title. The tag is now `<h1>`. Nothing moved visually, because the size
+comes from the block's `type_preset` in `templates/search.json`, which stays `h2`.
+
+Worth stating plainly, because the first pass at this got it wrong: **noindexing the page would not
+have closed this finding.** `h1-count` in `scripts/seo-review/lib/checks.mjs` is unconditional and
+has no page-type exemption, which is correct, because a missing `<h1>` is a structure problem whether
+or not the page is indexed.
+
+### One meta description was on three URLs
+
+Shopify fills `page_description` on `/search` and `/collections` from the shop's own meta
+description, which is also what the homepage carries, so all three were byte-identical. That is the
+duplicate-description class the July 2026 audit closed on products, arriving by a different route:
+not copied prose, but a fallback firing on page types nobody had looked at.
+
+The homepage keeps it, since that description is about the homepage. `/search` is now noindexed and
+emits no description at all, which is the ordinary treatment for internal search results: they are
+generated per query, so an indexable `/search` mints an unbounded set of thin, near-duplicate URLs
+out of whatever anyone happens to type. `/collections` is indexable and gets its own line from
+`content.collections_list_meta_description`, mirrored into `locales/it.json` and `locales/ro.json`.
+
+**`snippets/meta-tags.liquid` now has one variable, `seo_description`, that the `<meta
+name="description">` tag reads.** A page type that needs to override or suppress its description does
+it there rather than by teaching the tag a new condition. `og:description` keeps the old fallback
+chain onto `shop.description`, so a social card is never blank on a page that deliberately emits no
+meta description.
+
+`search` was already in `NOINDEX_OK` in `checks.mjs`, so the new tag needs no accepted-risks entry.
+The empty-blog tag still does, and the asymmetry is deliberate: `blog` stays an indexable page type
+so that the day it has articles and still carries noindex, the check reds.
+
+### A suppression that suppressed nothing
+
+`variant-sku-missing` left `accepted-risks.json`. It was accepted on 2026-07-29 while the SKU scheme
+was unsettled; coverage is complete now and the check produces no finding for it to catch. An
+accepted risk that matches nothing is not harmless bookkeeping, it is a live rule waiting to absorb
+the next regression in silence, so it goes when the condition behind it does.
+
 ## ACTIVE was never the same as published (unreleased)
 
 The first `add-product` run finished with a product that was ACTIVE, media-complete, SEO-filled and

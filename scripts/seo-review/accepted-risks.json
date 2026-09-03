@@ -16,11 +16,5 @@
     "path": "/blogs/news",
     "note": "Same noindex, seen by the anonymous sweep. Shopify's generated sitemap lists the blog regardless of the robots meta, so a sitemap-listed noindex URL is expected here rather than a defect.",
     "accepted_on": "2026-08-15"
-  },
-  {
-    "check": "variant-sku-missing",
-    "path": null,
-    "note": "Deferred, not dropped: SKU scheme and lifecycle are unsettled (TODO.md row, 2026-07-29). Merchant Center falls back to variant ID, so the SEO cost was overstated.",
-    "accepted_on": "2026-07-29"
   }
 ]
