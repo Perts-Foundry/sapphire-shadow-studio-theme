@@ -1,5 +1,55 @@
 # Release Notes
 
+## A credential costs one table row, because the vocabulary lives in Admin (unreleased)
+
+`NP (Nurse Practitioner)` joins the eight credentials the Lead II line already embroiders. The
+interesting part is how little of the repo had to move: three files, one of which is a doc and one a
+pinned test constant.
+
+**Design values are an Admin-side product option, and the repo deliberately does not restate them.**
+`catalogue.json` declares the axis *name* (`"design": "Design"`) and stops there, so it needed no
+edit. The three `templates/product.lead-ii-*.json` name no credential. The variant picker is
+threshold-based rather than value-aware, and `snippets/variant-main-picker.liquid` says so in its own
+comment: adding a design or a colour needs no settings change. `config/settings_schema.json` leaves
+`variant_dropdown_threshold` at 4, so Design was already a dropdown at eight values and stays one at
+nine. The locale files carry no option values, the blank-inventory thresholds are keyed on
+body+colour+size, and the photo-naming design token is an open kebab string by design.
+
+That leaves exactly two committed places where the credential vocabulary is written down, plus one
+count derived from them: `scripts/sku/tables.json` (the code row), `docs/sku-scheme.md` (the
+`lead-ii` namespace list), and the pinned cross-product in `scripts/sku/test/derive.test.mjs`. Worth
+knowing before the next credential, because the instinct is to go looking for a longer list.
+
+**The test count and the live variant count disagree, on purpose.** The test now pins
+`486 + 72 + 18 + 5 + 1`, where the Lead II term is `3 x (9 designs x 3 colours x 6 sizes)`: all
+three products at all three colours. The live catalogue is smaller, because `catalogue.json`
+declares `"vest-womens": { "colors": ["black"] }`, so taking NP live adds 18 + 18 + 6 = 42 variants,
+not 54. Both numbers are right in their own frame. `scripts/sku/tables.json` carries no per-product
+colour availability, deliberately, so that giving the vest a second colour later needs no scheme
+change; the test therefore walks the full table cross-product and is expected to exceed the store.
+This was re-litigated once during plan review and will be again, which is why the comment above the
+assertion states it and this entry repeats it: do not "reconcile" the two by editing either.
+
+**The doc paragraph about option values carried a third number that matched neither.** It said one
+new colour on the crewneck "creates 48 variants (8 designs x 6 sizes) ... the tool then fills all
+36". The 36 was stale and wrong before NP existed. Both numbers now read 54, matching the nine
+designs. That fix is incidental to this change, not caused by it.
+
+**`.claude/skills/add-product/SKILL.md` had no entry-point row for a design value**, while
+`phase-1-repo-pr.md` already told the reader to add "any new colour/design/size codes". Two files
+disagreeing about whether the skill covers this case is the kind of gap that only surfaces when
+someone hits it, so the row went in here rather than being deferred: "New design value", named in
+full because a bare "design" collides with the Huddle applique patterns, which the SKU scheme
+explicitly excludes. The sentence after the table said "All three entries" while listing four; it
+now says five.
+
+**The live half is a runbook, not a follow-up nobody wrote down.** Taking NP live is in `TODO.md`,
+and its non-obvious cost is the blank-inventory backfill: 42 new variants span 42 distinct blank
+groups, and the inventory-sync Flow's burst limit is roughly four groups per batch, so seeding them
+in one run strands most of them. It is about eleven batched runs with a convergence check between
+each. Ordering matters too: the tables row must merge first, because `sku audit` reports an
+`unmapped-value` for any live option value with no code.
+
 ## An exclusion that held only by coincidence, and the write path it blocked (unreleased)
 
 `unmappedHandles` in `scripts/blank-inventory/lib/bodies.mjs` names every live product the manifest

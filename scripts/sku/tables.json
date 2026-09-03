@@ -16,7 +16,8 @@
       "Medic": "MDC",
       "LVT (Licensed Vet Tech)": "LVT",
       "RVT (Registered Vet Tech)": "RVT",
-      "CVT (Certified Vet Tech)": "CVT"
+      "CVT (Certified Vet Tech)": "CVT",
+      "NP (Nurse Practitioner)": "NP"
     },
     "huddle": {
       "Nurse": "NRS",

@@ -172,10 +172,10 @@ test('every live option value in the committed tables derives a legal SKU', asyn
   }
   // The full table cross-product, which is deliberately wider than the live catalogue: the vest is
   // Black-only today, and the tables carry no per-product colour availability because a colour
-  // added to it later must not need a scheme change. 3 x (8 designs x 3 colours x 6 sizes) for the
+  // added to it later must not need a scheme change. 3 x (9 designs x 3 colours x 6 sizes) for the
   // Lead II family, 4 x 3 x 6 for Huddle, 3 x 6 for Shift Fuel, 5 denominations, and the one bare
   // code of the option-less Shift Fuel Tote (an empty segments list is one combination, not none).
-  assert.equal(seen.size, 432 + 72 + 18 + 5 + 1);
+  assert.equal(seen.size, 486 + 72 + 18 + 5 + 1);
   assert.equal(seen.has('SFTB'), true, 'the option-less product derives its bare product code');
 });
 
