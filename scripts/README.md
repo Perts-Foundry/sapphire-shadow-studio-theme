@@ -161,10 +161,17 @@ internally, the shot carrying a `-<index>`):
 ```
 <line>_<garment>_<colorway>[_<design>]_<shot>-<index>.jpg
 group shot:  <line>_<garment>_group_<shot>-<index>.jpg
+non-garment: <handle>_<shot>-<index>.jpg
 ```
+
+The third form is for a product `catalogue.json` declares with `body: null` (the tote, the gift
+card): no line, garment or colour axis exists, so the filename carries the product handle itself
+(`shift-fuel-tote_flat-1.jpg`). It resolves to that handle with an empty `admin_color`, and its alt
+is colour-free by construction (the product has no Color option to bind against).
 
 | Field | Values (the closed sets are derived from `catalogue.json`; extend it, not this table) |
 | --- | --- |
+| handle (non-garment form only) | any `body: null` product handle, e.g. `shift-fuel-tote` |
 | line | `huddle`, `lead2`, `shift-fuel` |
 | garment | `crew-sweater`, `quarter-zip`, `vest` |
 | colorway | `black`, `classic-navy`, `grey-heather`, `group` (group-shot marker) |
@@ -211,10 +218,14 @@ manifest enter this public repo.
 ### The alt-colour guard
 
 Because alt text drives the gallery colour filter, the processor validates the manifest's `alt`
-column against the reserved-colour rule (`docs/product-media-alt-text.md`): every non-group photo's
-alt must name **exactly one** recognized Color value for its product, and it must be that photo's own
-colour; a group/shared photo must name none. Violations are printed by `--dry-run`, `--verify`, and a
-normal run, and block the uploader. The guard only checks rows whose `alt` you have authored.
+column against the reserved-colour rule (`docs/product-media-alt-text.md`): every non-group photo of
+a garment must name **exactly one** recognized Color value for its product, and it must be that
+photo's own colour; a group/shared photo must name none. A non-garment product has no Color option,
+so its recognized value list is empty and the guard accepts any alt on it (a colour word there is
+plain description, not a binding). Violations are printed by `--dry-run`, `--verify`, and a normal
+run, and block the uploader. The guard only checks rows whose `alt` you have authored. In the
+`--dry-run` table the `admin_color` cell reads `(shared)` for a group/shared row and
+`(no colour option)` for a non-garment row; the uploader's dry run uses the same two labels.
 
 ### Usage
 
@@ -323,7 +334,7 @@ cautious.
   images are read from the manifest's own directory, so a relocated manifest and its images stay
   together.
 - **Preflight without a manifest.** `--check-products` is a standalone read-only mode: it resolves
-  every garment product `catalogue.json` declares against the live store and reports per-product
+  every product `catalogue.json` declares (garment or not) against the live store and reports per-product
   `ok` (with the live Color values) or the GID / Color-option drift that would hard-fail an upload,
   labelling an auth/scope failure (`AUTH`) distinctly from drift (`DRIFT`). It refuses to combine
   with `--product`, `--all`, `--dry-run`, or `--manifest`, and exits non-zero on any product error.

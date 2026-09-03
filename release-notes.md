@@ -684,6 +684,38 @@ substring match.
 that was reversed. Rush production stays "contact us before ordering", so the Custom Orders page
 (its own 2-3 week track) is untouched too.
 
+## Product photos for non-garment products (unreleased)
+
+The product-images pipeline resolved a photo to its product only through the `<line>_<garment>`
+pair of the filename, and `scripts/lib/photo-naming.mjs` built its census from `garmentProducts()`
+alone. A `body: null` product (the gift card, and now the Shift Fuel Tote) was therefore invisible
+to it: the processor left `product` empty, the alt guard reported "not a recorded product", and the
+uploader refused the row outright. The first tote batch hit all three.
+
+**A third filename form, `<handle>_<shot>-<index>.jpg`, keyed by the handle.** A non-garment has
+no line, garment or colour axis, so the only stable token it owns is its handle. The census now
+records every declared product: garments under `<line>/<garment>` as before, non-garments under
+the bare handle (no handle contains `/`, so the two key spaces cannot collide). The processor
+resolves the form to the handle with an empty `admin_color`; the uploader's GID-drift check runs
+against the recorded GID, and its colour-drift check compares the live Color option against an
+empty recorded set, so a Color option appearing on a non-garment is reported as drift rather than
+silently binding alts to values nothing recorded.
+
+**Every alt on a non-garment is colour-free by construction, and that is not the shared-asset
+rule.** The guard runs with `expected = null` against an empty value list, so there is nothing it
+could reject; the storefront gallery filter has no option values to match, so every image shows
+regardless. A non-garment photo is still product-bound: it uploads to one product, from a filename
+that names that product. The shared-asset fan-out (a kebab-named file duplicated by hand across
+products) stays reserved for assets with no identifiable product in frame; reaching for it here
+would have hidden the gap instead of closing it, and its rows would still have failed the
+"recorded product" check.
+
+**Why not a `BODY_PHOTO_TOKEN` entry.** That map translates a body id to a filename token and is
+deliberately hand-authored because tokens are already printed on files. A non-garment has no body
+to map, and inventing a pseudo-body for it would put a non-garment into every garment-only
+derivation (size chart, blank inventory, the reorder matrix). The handle is already a public,
+stable, unique string; using it directly adds no vocabulary.
+
 ## Branded notification templates, generated from committed stock (unreleased)
 
 The 46 customer notification templates (Admin > Settings > Notifications) now have branded,

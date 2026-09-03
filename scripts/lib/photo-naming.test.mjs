@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   createNaming, defaultNaming, matchedColorValues, bodyPhotoToken, photoTokenBodies,
 } from './photo-naming.mjs';
-import { parseCatalogue, garmentProducts, loadCommittedCatalogue } from './catalogue-manifest.mjs';
+import { parseCatalogue, loadCommittedCatalogue } from './catalogue-manifest.mjs';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -15,7 +15,7 @@ const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '
 // these tests the live file would turn every assertion below into a statement about today's
 // catalogue, and would rewrite itself the next time a product shipped. It mirrors the live SHAPE
 // (three bodies, three colours, a Black-only women's vest, a gift card that is not a garment and
-// therefore has no photo key) with synthetic GIDs.
+// is therefore keyed by its handle with no colour vocabulary) with synthetic GIDs.
 const MANIFEST = parseCatalogue(
   JSON.stringify({
     version: 2,
@@ -38,6 +38,9 @@ const MANIFEST = parseCatalogue(
       'lead-ii-vest-womens': { line: 'lead2', body: 'vest-womens', template: 'lead-ii-vest-womens', title: "Lead II Vest - Women's", gid: 'gid://shopify/Product/4' },
       'shift-fuel-crewneck': { line: 'shift-fuel', body: 'crewneck', template: 'shift-fuel-crewneck', title: 'Shift Fuel Crewneck', gid: 'gid://shopify/Product/5' },
       'the-gift-card': { line: null, body: null, template: 'gift-card', title: 'Gift Card', gid: 'gid://shopify/Product/6' },
+      // A non-garment whose handle extends a line token ('shift-fuel'): the shape the live catalogue
+      // has, and the one where hyphen-recovery precedence matters.
+      'shift-fuel-tote': { line: null, body: null, template: 'shift-fuel-tote', title: 'Shift Fuel Tote', gid: 'gid://shopify/Product/7' },
     },
   })
 );
@@ -60,11 +63,51 @@ test('createNaming derives every closed set from the manifest', () => {
     'lead2/quarter-zip',
     'lead2/vest',
     'shift-fuel/crew-sweater',
+    'the-gift-card',
+    'shift-fuel-tote',
   ]);
-  // The gift card has no body, so it has no photo key at all.
-  assert.equal(n.productForHandle('the-gift-card'), null);
-  // The hyphen-recovery vocabulary is every multi-word token, longest first.
-  assert.deepEqual(n.MULTIWORD_TOKENS, ['classic-navy', 'crew-sweater', 'grey-heather', 'quarter-zip', 'shift-fuel']);
+  // The gift card has no body: it is keyed by its handle, with no line, garment or colours.
+  assert.deepEqual(n.NON_GARMENTS, ['the-gift-card', 'shift-fuel-tote']);
+  const card = n.productForHandle('the-gift-card');
+  assert.equal(card.key, 'the-gift-card');
+  assert.deepEqual(card.record, {
+    line: null, garment: null, title: 'Gift Card', handle: 'the-gift-card', gid: 'gid://shopify/Product/6', colorValues: [],
+  });
+  assert.deepEqual(n.recognizedColorValues('the-gift-card'), []);
+  // The hyphen-recovery vocabulary is every multi-word token, longest first; a non-garment handle
+  // is one of them so an all-hyphen source name can still be recovered. Longest-first is what puts
+  // 'shift-fuel-tote' ahead of the line token 'shift-fuel' it extends; the precedence test below
+  // depends on exactly this order.
+  assert.deepEqual(n.MULTIWORD_TOKENS, [
+    'shift-fuel-tote', 'the-gift-card', 'classic-navy', 'crew-sweater', 'grey-heather', 'quarter-zip', 'shift-fuel',
+  ]);
+});
+
+test('a non-garment handle that equals or prefixes a <line>-<garment> name is refused, not silently added', () => {
+  const build = (handle) =>
+    createNaming(
+      parseCatalogue(
+        JSON.stringify({
+          version: 2,
+          options: { color: 'Color', size: 'Size', design: 'Design', denomination: 'Denominations' },
+          colors: { black: { display: 'Black', slug: 'black' } },
+          sizes: { s: { display: 'S' } },
+          bodies: { crewneck: { colors: ['black'], sizes: ['s'] } },
+          products: {
+            'lead-ii-crewneck': { line: 'lead2', body: 'crewneck', template: 'lead-ii-crewneck', title: 'Crew', gid: 'gid://shopify/Product/1' },
+            [handle]: { line: null, body: null, template: handle, title: 'Thing', gid: 'gid://shopify/Product/2' },
+          },
+        })
+      )
+    );
+  // The garment's all-hyphen form is 'lead2-crew-sweater-black-flat-1'. A handle equal to the
+  // '<line>-<garment>' name, or a hyphen-boundary prefix of it, would be consumed first.
+  assert.throws(() => build('lead2-crew-sweater'), /equals or prefixes the garment filename form "lead2-crew-sweater"/);
+  assert.throws(() => build('lead2-crew'), /prefixes the garment filename form/, 'a hyphen-boundary prefix is the same hazard');
+  // The recovery parser only matches a token at a hyphen boundary, so a bare string prefix is safe.
+  assert.doesNotThrow(() => build('lead2-cr'), 'not a hyphen-boundary prefix, never matches');
+  assert.doesNotThrow(() => build('lead2-crew-sweater-bag'), 'a longer handle is consumed first and cannot eat the garment name');
+  assert.doesNotThrow(() => build('lead2'), 'no hyphen, so it never enters the recovery vocabulary');
 });
 
 test('a colour added to the manifest becomes a colorway token with no edit here', () => {
@@ -131,13 +174,23 @@ test('MATCHES PRODUCTION: the filename-token map covers every declared body and 
   for (const body of declared) assert.ok(bodyPhotoToken(body), `${body} has a filename token`);
 });
 
-test('MATCHES PRODUCTION: defaultNaming records every garment product and no other', async () => {
+test('MATCHES PRODUCTION: defaultNaming records every declared product, garment or not, and no other', async () => {
   const manifest = await loadCommittedCatalogue();
   const n = defaultNaming();
   assert.deepEqual(
     Object.values(n.PRODUCTS).map((p) => p.handle).sort(),
-    garmentProducts(manifest).map((p) => p.handle).sort()
+    [...manifest.products.keys()].sort()
   );
+  for (const p of manifest.products.values()) {
+    const hit = n.productForHandle(p.handle);
+    assert.ok(hit, `${p.handle} resolves by handle`);
+    if (p.body === null) {
+      assert.equal(hit.key, p.handle, `${p.handle} is keyed by its handle`);
+      assert.deepEqual(hit.record.colorValues, [], `${p.handle} has no colour vocabulary`);
+    } else {
+      assert.ok(hit.key.includes('/'), `${p.handle} is keyed line/garment`);
+    }
+  }
   assert.equal(n, defaultNaming(), 'the committed manifest is read once and memoised');
 });
 
@@ -282,6 +335,15 @@ test('altColorProblem handles multi-word values', () => {
   assert.match(altColorProblem('Grey Heather and Classic Navy crewnecks', 'Classic Navy', KEY), /expected exactly "Classic Navy"/);
 });
 
+test('altColorProblem on a non-garment product accepts any alt: there is no value to name or to avoid', () => {
+  assert.equal(altColorProblem('Canvas tote, front, flat on white', null, 'the-gift-card'), null);
+  // A garment colour word is not in this product's (empty) vocabulary, so it is plain prose here.
+  assert.equal(altColorProblem('Gift card on a black background', null, 'the-gift-card'), null);
+  // The other direction still holds: a hand-typed admin_color on a non-garment row is refused,
+  // because no alt can name a value the product does not have.
+  assert.match(altColorProblem('Canvas tote', 'Black', 'the-gift-card'), /names no recognized colour value; expected "Black"/);
+});
+
 test('altColorProblem enforces the shared/group rule', () => {
   assert.equal(altColorProblem('the team in matching sweaters', null, KEY), null);
   assert.match(altColorProblem('Black group shot', null, KEY), /would bind instead of staying shared/);
@@ -324,6 +386,78 @@ test('parseName recovers all-hyphen names as a confident (not uncertain) repair'
   assert.equal(p.uncertain, false);
   assert.deepEqual(p.fields, ['lead2', 'quarter-zip', 'black', 'emt', 'flat-1']);
   assert.ok(p.warnings.some((w) => w.includes('field separators were hyphens')));
+});
+
+test('parseName parses the non-garment form <handle>_<shot>-<index> to the handle, with no colour', () => {
+  const p = parseName('the-gift-card_flat-1.jpg');
+  assert.equal(p.ok, true);
+  assert.equal(p.uncertain, false);
+  assert.deepEqual(p.warnings, []);
+  assert.equal(p.product, 'the-gift-card');
+  assert.equal(p.shot, 'flat');
+  assert.equal(p.index, 1);
+  assert.equal(p.line, null);
+  assert.equal(p.garment, null);
+  assert.equal(p.colorway, null);
+  assert.deepEqual(p.fields, ['the-gift-card', 'flat-1']);
+  assert.equal(normalizeName('the-gift-card_flat-1.jpg').canonical, 'the-gift-card_flat-1.jpg');
+  // The garment forms report product null; their product comes from (line, garment).
+  assert.equal(parseName('lead2_crew-sweater_black_flat-1.jpg').product, null);
+});
+
+test('hyphen recovery prefers the longer non-garment handle over the line token it extends, and never eats a garment name', () => {
+  const tote = parseName('shift-fuel-tote-flat-1.jpg');
+  assert.equal(tote.ok, true);
+  assert.equal(tote.uncertain, false);
+  assert.equal(tote.product, 'shift-fuel-tote');
+  assert.deepEqual(tote.fields, ['shift-fuel-tote', 'flat-1']);
+  assert.deepEqual(tote.warnings, ['field separators were hyphens; expected underscores between fields']);
+  // The garment whose line is the tote handle's prefix still parses as a garment.
+  const crew = parseName('shift-fuel-crew-sweater-black-flat-1.jpg');
+  assert.equal(crew.ok, true);
+  assert.equal(crew.product, null);
+  assert.equal(crew.line, 'shift-fuel');
+  assert.equal(crew.garment, 'crew-sweater');
+  assert.equal(productForLineGarment(crew.line, crew.garment).handle, 'shift-fuel-crewneck');
+});
+
+test('parseName lowercases before the non-garment shape test', () => {
+  const p = parseName('Shift-Fuel-Tote_Flat-1.JPG');
+  assert.equal(p.ok, true);
+  assert.equal(p.product, 'shift-fuel-tote');
+  assert.equal(normalizeName('Shift-Fuel-Tote_Flat-1.JPG').canonical, 'shift-fuel-tote_flat-1.jpg');
+});
+
+test('parseName recovers an all-hyphen non-garment name as a confident repair', () => {
+  const p = parseName('the-gift-card-styled-2.jpg');
+  assert.equal(p.ok, true);
+  assert.equal(p.uncertain, false);
+  assert.equal(p.product, 'the-gift-card');
+  assert.equal(p.shot, 'styled');
+  assert.equal(p.index, 2);
+  assert.deepEqual(p.warnings, ['field separators were hyphens; expected underscores between fields']);
+  assert.equal(normalizeName('the-gift-card-styled-2.jpg').canonical, 'the-gift-card_styled-2.jpg');
+});
+
+test('parseName marks a non-garment name uncertain on an unknown shot or a missing index', () => {
+  const badShot = parseName('the-gift-card_portrait-1.jpg');
+  assert.equal(badShot.ok, true);
+  assert.equal(badShot.uncertain, true);
+  assert.ok(badShot.warnings.some((w) => w.includes('unknown shot "portrait"')));
+  const noIndex = parseName('the-gift-card_flat.jpg');
+  assert.equal(noIndex.uncertain, true);
+  assert.ok(noIndex.warnings.some((w) => w.includes('no -<index> suffix')));
+  // Two fields whose first is NOT a declared non-garment handle is still a bad field count.
+  const twoFields = parseName('some-thing_flat-1.jpg');
+  assert.equal(twoFields.ok, false);
+  assert.equal(twoFields.product, null);
+  // A declared handle with the wrong field count gets the two-field diagnostic, not the garment one.
+  const extra = parseName('the-gift-card_black_flat-1.jpg');
+  assert.equal(extra.ok, false);
+  assert.equal(extra.product, null);
+  assert.deepEqual(extra.warnings, [
+    '"the-gift-card" is a non-garment product: expected exactly 2 fields (<handle>_<shot>-<index>), found 3',
+  ]);
 });
 
 test('parseName flags a bad field count as not-ok and uncertain', () => {

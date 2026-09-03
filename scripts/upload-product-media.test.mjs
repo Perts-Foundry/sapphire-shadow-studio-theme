@@ -39,6 +39,18 @@ test('colorDriftProblem flags missing, extra, and renamed values', () => {
   assert.match(colorDriftProblem(['Black', 'Gray', 'Classic Navy'], KEY), /Color option drift/);
 });
 
+test('drift predicates treat a non-garment product as recorded, with an empty colour set', () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  assert.ok(nonGarment, 'the committed catalogue declares at least one non-garment product');
+  const key = nonGarment.handle;
+  assert.equal(PRODUCTS[key].handle, nonGarment.handle, 'a non-garment is keyed by its handle');
+  assert.equal(gidDriftProblem(nonGarment.gid, key), null);
+  assert.match(gidDriftProblem('gid://shopify/Product/1', key), /product GID drift/);
+  assert.equal(colorDriftProblem([], key), null);
+  // A Color option appearing on a non-garment is drift: nothing recorded could bind an alt to it.
+  assert.match(colorDriftProblem(['Black'], key), /Color option drift/);
+});
+
 test('colorDriftProblem returns null for an unknown key', () => {
   assert.equal(colorDriftProblem(['Anything'], 'nope/nope'), null);
 });
@@ -78,6 +90,28 @@ test('checkProducts labels a drift failure DRIFT and reports not-ok', async () =
   const bad = lines.find((l) => l.includes(RECORD.handle));
   assert.match(bad, /^DRIFT /);
   assert.equal(lines.filter((l) => l.startsWith('ok')).length, Object.keys(PRODUCTS).length - 1);
+});
+
+test('checkProducts prints the empty colour list a non-garment actually resolves to', async () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  const { ok, lines } = await checkProducts(PRODUCTS, async (handle) => ({
+    colorValues: handle === nonGarment.handle ? [] : ['Black'],
+  }));
+  assert.equal(ok, true);
+  assert.equal(lines.find((l) => l.includes(nonGarment.handle)), `ok     ${nonGarment.handle} []`);
+});
+
+test('checkProducts surfaces a Color option appearing on a non-garment as DRIFT', async () => {
+  const nonGarment = Object.values(PRODUCTS).find((p) => p.garment === null);
+  const key = nonGarment.handle;
+  const { ok, lines } = await checkProducts(PRODUCTS, async (handle) => {
+    if (handle === key) throw new Error(colorDriftProblem(['Black'], key));
+    return { colorValues: ['Black'] };
+  });
+  assert.equal(ok, false);
+  const bad = lines.find((l) => l.includes(key));
+  assert.match(bad, /^DRIFT /);
+  assert.match(bad, /Color option drift/);
 });
 
 test('checkProducts labels an auth failure distinctly from drift', async () => {
