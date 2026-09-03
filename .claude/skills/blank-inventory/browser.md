@@ -28,6 +28,23 @@ into a second, unaudited write path or a second source of truth about the store.
   loop. Read the console and compare it against what you expect; if the reading is not there yet,
   read once more. A second miss on the same expectation is a browser failure, so report it and stop.
 
+## Where the run list actually is
+
+Observed 2026-09-03 by reading the network log. Recorded here so the next run navigates once
+rather than hunting.
+
+- **The page** is `https://admin.shopify.com/store/<store-handle>/apps/flow/activity`.
+- **Flow is an embedded app.** That page is only the Admin shell; Flow itself runs in a
+  cross-origin iframe and its requests go to `https://flow.shopifyapps.com/flow-core/graphql`.
+- **The query param is `opName=`**, not the `operationName=` the Admin shell uses.
+- **`getWorkflowRunsV2Connection` is the run list**, and the only operation carrying a timestamp:
+  `data.workflowRunsV2Connection.edges[].node` with `id`, `startedAt`, `status`, `retried`,
+  `workflow { name }`, and `pageInfo.hasNextPage`. Note `stepRuns` is empty in this payload.
+- **`getWorkflowRunsSummaries` is not the run list.** It polls specific run ids and has no
+  timestamp, so it can never produce a reading. A matcher that catches it and misses the
+  connection query is worse than no matcher, because it looks like it is working.
+- `pageInfo.hasNextPage` means a single response is a **floor**, not a count. Say so in the report.
+
 ## Preconditions
 
 - **The first navigation must land on the Flow run list.** If it lands on `accounts.shopify.com`,
@@ -75,12 +92,30 @@ is the same rule the photo-transcription section states for a count sheet, and i
 same reason: the probe's narrow field extraction makes an injection unlikely to reach you, and the
 rule is what makes it harmless if one ever does.
 
+### If the probe stays silent: the network-log route
+
+The probe patches `window.fetch`, and whether an `initScript` installs inside Flow's cross-origin
+iframe is **unverified**. If a run produces no `SSSFLOW` line at all, do not widen the matchers to
+chase it. Read the traffic directly instead, which is still navigation-and-reading only:
+
+1. `list_network_requests` filtered to `xhr`/`fetch`, and find a reqid whose URL ends
+   `opName=getWorkflowRunsV2Connection` (it is usually on a later page of the listing).
+2. `get_network_request` on that reqid with a `responseFilePath` **outside the repo** (the
+   scratchpad), because the body holds live run ids and timestamps.
+3. Build `SSSFLOWRUN <id> <status> <retried> <startedAt>` lines from `edges[].node` and feed them
+   to `parseFlowRuns` / `describeFlowRuns`. This keeps "parse it, never eyeball it" intact: the
+   classification, dedupe and age arithmetic still happen in the tested module.
+
+This route needs no clicking and no probe. It is the one that worked on 2026-09-03.
+
 Three readings that are not the same thing, and the difference matters more than the numbers:
 
 - **`SSSFLOWNONE` with no runs** means the probe matched nothing, which is not "the Flow is quiet".
-  Admin's Flow surface is unversioned and this probe's URL match and field names are the plausible
-  shape rather than an observed one, so this is a designed outcome. Report the operation names the
-  line lists, and stop; do not widen the match by guessing.
+  Admin's Flow surface is unversioned, so it can move again even though the URL match and field
+  names were corrected against real traffic on 2026-09-03. Report the operation names the line
+  lists, and stop; do not widen the match by guessing. If the line names no operations at all (a
+  bare `-`), the probe saw no traffic it could even label, which points at the iframe rather than
+  at the pattern: use the network-log route above.
 - **An `UNCLASSIFIED` status** means Admin used a status token the parser does not recognise. Those
   runs are in the total but **not** in the in-progress figure, so the in-progress count is a floor,
   not a measurement. Report the token verbatim. Widening `IN_PROGRESS_STATUSES` is a code change with
