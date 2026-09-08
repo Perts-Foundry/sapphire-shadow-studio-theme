@@ -150,7 +150,8 @@ test('parseArgs still refuses an unscoped run without --check-products', () => {
 // yielded 100 of a 144-variant product's variants and dropped the other 44 without an error, so
 // every variant past the cap would have kept a Black hero for every colour while the run still
 // reported success. 144 is the count that regressed, not a current one: the two design-axis Lead II
-// products gain 18 variants per credential and are at 162 today. `media` had the identical shape, where a truncated read makes pollMediaReady
+// products gain 18 variants per credential, so a live count written here goes stale on the next one
+// and none is stated. `media` had the identical shape, where a truncated read makes pollMediaReady
 // report a processing timeout for media that was actually fine.
 
 const page = (ids, hasNextPage, endCursor = null) => ({

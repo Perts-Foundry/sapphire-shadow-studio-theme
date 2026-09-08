@@ -40,7 +40,25 @@ every new variant is purchasable the moment step 2 creates it: no DRAFT to hide 
 `deploy-verified` between creation and exposure. It will have no SKU until phase 2 step 2 and no
 `custom.inventory_blank_sku` until step 3, so it is a sellable variant that the SKU filters and the
 inventory-sync Flow cannot yet see. Two consequences to act on rather than discover: set the
-variant's inventory policy and quantity at creation the way its siblings are set, not afterwards,
-and treat the gap between phase 0 and phase 2 step 3 as the window to keep short. Do not "fix" this
-by drafting the parent product; taking a live product back to DRAFT delists everything already
-selling on it.
+variant's inventory policy and quantity at creation rather than afterwards, by the split below, and
+treat the gap between phase 0 and phase 2 step 3 as the window to keep short. Do not "fix" this by
+drafting the parent product; taking a live product back to DRAFT delists everything already selling
+on it.
+
+**Quantity at creation splits on whether the parent is exposed, and the intuitive answer is the
+wrong one for an option-value entry.** Matching siblings sounds like the careful choice and is the
+opposite here, for the reason the paragraph above just gave: with no DRAFT to hide behind, a
+quantity typed at creation is live stock on a variant no SKU filter and no inventory-sync Flow can
+yet see, and one group's number typed high oversells a shared blank the Flow will not correct
+because the variant is not yet a member of that group.
+
+- **Parent is a DRAFT** (a new product, phase 0 step 1): match the siblings. Nothing is exposed
+  either way, so arriving at the right end state costs nothing.
+- **Parent is already ACTIVE and published** (a new colour, size or design value): create at
+  quantity 0 against the inherited DENY policy, which makes every new variant unpurchasable until
+  phase 2 step 3 backfills `custom.inventory_blank_sku` and the seed write converges it with its
+  siblings. The cost is that the new option value reads sold out on the storefront for the length
+  of the PR, merge and deploy. That cost is visible and bounded; the other order's is neither.
+
+Weights are not on this split. Set a real one at creation in both cases; a 0-lb weight breaks live
+shipping rates immediately and was a launch-audit P0.

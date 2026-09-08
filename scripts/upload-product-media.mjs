@@ -312,8 +312,8 @@ export function colorDriftProblem(liveValues, key) {
  * WHY THIS EXISTS: the variants query was `variants(first: 100)` with no `hasNextPage` check. The
  * two design-axis Lead II sweatshirts carry one variant per design x colour x size, so both sit far
  * past the 100 cap and gain 18 more with every credential added (144 each at the eight designs this
- * regressed against, 162 since NP). The read stopped at 100 and every variant beyond it was
- * dropped. Those then fell through
+ * regressed against; no current count belongs here, because it goes stale on the next credential).
+ * The read stopped at 100 and every variant beyond it was dropped. Those then fell through
  * `if (!hero.mediaId || !variantIds.length) continue;` with no error, so they silently kept the
  * product-level featured image (a Black garment for every colour) while the run still printed
  * success. A truncated read that reports success is the fail-open shape

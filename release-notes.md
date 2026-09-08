@@ -4,8 +4,9 @@
 
 `DNP (Doctor of Nursing Practice)` is the tenth credential on the Lead II Design option, on all
 three products in The Vitals Collection: 42 new variants, 18 on the crewneck and quarter-zip, 6 on
-the Black-only vest. The repo half was the same three files the NP entry below names, and nothing
-else, which is that entry doing its job rather than a fresh discovery.
+the Black-only vest. The three files the NP entry below names carried it again, as that entry said
+they would. What that entry did not survive is below: its "exactly three places" count was already
+two short by the time this change arrived.
 
 **The new variants were created at quantity 0, not matched to their blank-group siblings.** Phase 0
 of the `add-product` skill says to set inventory policy and quantity at creation "the way its
@@ -20,9 +21,11 @@ blank in a group the Flow will not correct, because the variant is not yet in it
 Creating at 0 against the inherited DENY policy makes every new variant unpurchasable instead. The
 cost is visible and bounded: DNP reads sold out on the storefront until phase 2's metafield backfill
 and seed write converge it with its siblings. The cost of the other order is invisible and
-unbounded. So the sentence needs splitting rather than following: match siblings when the parent is
-a DRAFT, where nothing is exposed either way and the end state is free; create at 0 when the parent
-is already ACTIVE and published.
+unbounded. `phase-0-admin-draft.md` now carries the split rather than the single sentence: match
+siblings when the parent is a DRAFT, where nothing is exposed either way and the end state is free;
+create at 0 when the parent is already ACTIVE and published. Recording the reasoning here and
+leaving the instruction as it was would have meant the next operator reading the skill literally
+reproduced the risk this entry spends three paragraphs explaining away.
 
 **The byte-identity check on the option value earned its keep, in the cheap direction.** The string
 is typed into Admin three times, once per product, and becomes an append-only key in
@@ -32,6 +35,24 @@ string into the table cost one read-only query; `sku audit` then returned 42 act
 **zero** unmapped values, which is the same fact confirmed from the other side. A mismatch would
 otherwise have surfaced as a planner refusal after the PR had merged.
 
+**The fix that was supposed to stop this stranding stranded two counts of its own.** The NP entry
+below closes by describing how the variant counts in `scripts/upload-product-media.mjs` and its test
+were reworded "so the next credential does not strand them again". DNP is that next credential, and
+it stranded them: the rewording correctly marked `144` as the count that regressed, and then set a
+fresh present-tense number beside it in each file. Both said the design-axis products "are at 162
+today", which stopped being true the moment this option value was saved in Admin.
+
+So the hazard survived its own fix, and by the same mechanism it was fixed for: a number that is
+true on the day it is written. Both now state the rate and no current count, because the rate is the
+part that does not decay. The general form, worth more than the two lines: **a comment that
+documents a scaling relationship should carry the relationship, never a sample of it.** Correcting
+`162` to `180` would have re-armed the identical trap for the eleventh credential.
+
+That also corrects the count in the NP entry and in the first draft of this one. There were never
+exactly three committed places once those two comments existed; there were five, and two of them
+were reachable only by searching for a variant count rather than for the vocabulary. With the live
+numbers gone the three-file claim is true again, which is the reason to remove them rather than
+maintain them.
 
 ## Taking NP live, and the step that existed nowhere (unreleased)
 
