@@ -3,6 +3,7 @@
 # Memory (.claude/projects/) stays ignored: it may hold real operator/merchant context.
 .claude/*
 !.claude/skills/
+!.claude/rules/
 
 # Admin API credentials. `.env` is the standard secrets file every script here reads via
 # `node --env-file=.env ...` (SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, MYSHOPIFY_DOMAIN).

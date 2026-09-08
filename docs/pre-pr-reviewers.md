@@ -1,0 +1,9 @@
+# Pre-PR reviewers
+
+Repo-specific reviewer triggers for the global `/pre-pr` gate. The root `CLAUDE.md` keeps the theme-check triage rule (`THEME_CHECK_NON_ACTIONABLE.md`).
+
+The global gate supplies general code review (the headless `/code-review`) and `/security-review`; there is no `code-reviewer`, `architecture-reviewer`, or `security-auditor` agent to invoke. This repo always adds **doc-sync-checker** (diff-scoped), plus these on their own triggers:
+
+- **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
+- **test-engineer**: theme Liquid has no test framework, so skip it for theme changes. Run it when the code behind any `node --test` suite changes: `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/notifications/`, `scripts/policies/`, `scripts/catalogue/`, `scripts/site-check/`, `scripts/lib/`, the top-level `scripts/*.test.mjs`, and `.github/actions/shopify-theme-push/` (the `smoke:test` suites: the post-deploy smoke, the push-rejection audit, the report formatter and the retry helper). `blank-inventory/` writes live inventory and `upload-product-media.mjs` writes live product media, so those two are higher-risk; the `shopify-theme-push` suites are the only automated coverage the live-push path has before a production deploy.
+- **prompt-reviewer**: run when the root `CLAUDE.md`, any of the four reference docs it points at (`docs/theme-conventions.md`, `docs/structured-data.md`, `docs/theme-settings-contracts.md`, `docs/accessibility-patterns.md`), agent definitions, or `.claude/` content change.

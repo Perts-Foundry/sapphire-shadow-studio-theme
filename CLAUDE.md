@@ -57,10 +57,8 @@ Sweep before commit with `git grep -l $'\xe2\x80\x94'`, which should return noth
 
 Browser-driven testing of the storefront or a PR preview theme uses the chrome-devtools MCP. It is opt-in: **do not auto-open preview or storefront URLs.** Drive a browser only when the user asks for visual or behavioural verification, not as a default step after a change.
 
-- **Password-protected storefront.** The storefront (custom domain and `*.myshopify.com`) is password-protected, so anonymous requests (WebFetch, curl, a plain `?preview_theme_id=` link) get a 401 or the password page. To view a PR preview theme, open the store's admin themes page (`https://admin.shopify.com/store/sapphire-shadow-studio/themes`), open the draft theme's "more theme actions" menu, and use its **Preview** link. That link carries a `key=` param that sets the password-bypass cookie for the whole browser session; curl does not pick the bypass up.
-- **hCaptcha blocks automated form submits.** Shopify's invisible hCaptcha will not complete for storefront form submissions from the automation-flagged MCP browser, so full contact-form round trips must be verified manually.
 - **Check for a screenshot before troubleshooting.** When the user references one, and proactively when troubleshooting any issue, look for the newest file in their screenshots directory; ask for that directory the first time it comes up in a session. **Never commit a literal local-machine path** (see Sensitive Content above).
-- **Shopify admin login loops in the MCP browser.** accounts.shopify.com silently rejects the chrome-devtools MCP's automation-flagged Chrome, looping "Continue with email" forever. Workaround: kill the MCP-launched Chrome, relaunch the same binary manually with the same `--user-data-dir` (`~/.cache/chrome-devtools-mcp/chrome-profile`) but no automation flags, log in there, then close it; the next MCP call relaunches the browser and the session cookies carry over until the profile's login expires.
+- Storefront password bypass, hCaptcha, and the admin login-loop workaround: `docs/browser-testing.md`.
 
 ## Workflow
 
@@ -90,28 +88,11 @@ Do not click "Customize" or "Edit code" on the live theme card in admin; use the
 
 ### Smoke test (node fetch; catalog-wide)
 
-The post-deploy smoke (`.github/actions/shopify-theme-push/smoke.mjs`) probes every published product from the sitemap, not a fixed handle list, so a broken template or a missing product HARD-FAILs the deploy. It is node `fetch`, not curl: Cloudflare bot-management blocklists curl's fingerprint, so **do not reintroduce a curl probe**.
-
-**A healthy store can HARD-FAIL too, and that is deliberate.** Zero *product* coverage blocks the deploy: the structural probes satisfy the "at least one PASS" rule on their own, so a run that verified no product page must not green. Two ways in, with two different recoveries (the sitemap unreadable, vs. the time budget exhausted before any product was probed), and an empty catalogue is exempt. The theme is already live by the time the smoke runs, so a block leaves live on the new SHA with the PR unmerged. Full behavior and the four-row decision table: `docs/smoke-test-reference.md`.
+The post-deploy smoke probes every published product from the sitemap and HARD-FAILs a healthy store on zero product coverage by design, leaving live on the new SHA with the PR unmerged; it is node fetch, never curl (Cloudflare blocks curl's fingerprint), so **do not reintroduce a curl probe**. Full behaviour and the four-row decision table: `docs/smoke-test-reference.md`.
 
 ### Deploy gate trust delta
 
-`deploy.yml` is a three-job pipeline (`gate` / `deploy` / `sync`) with no GitHub Environment binding and each secret isolated to one job. Four gates govern auto-deploy; do not weaken any of them in a refactor: **collaborator permission** (comment path), **validate-on-HEAD-SHA** (all paths), the **signed-commit gate** (workflow_run paths), and the **defence-in-depth merge-base assertion** (workflow_run paths).
-
-Three refactor hazards, each already the cause of a regression here:
-
-- Gate on the `validate` **job** (`listJobsForWorkflowRun`), never on `workflow_run.conclusion`: the same run's `deploy-preview` job pushes a preview theme, so a Shopify hiccup there fails the run with all validation green. Do not rename that job; the name is hardcoded, as is the workflow name in `on.workflow_run.workflows`.
-- Do not drop `compareCommits.status === 'identical'` as "redundant" with SHA equality. It is commit-object, not tree, equality, so it independently catches same-tree amends and different-tree force-pushes.
-- Do not add strict equality on `commit.committer.login`. A legitimate `web-flow` committer (web-UI edits, Update-branch/Rebase, `@dependabot rebase`) is not a security signal; that was a prior false-positive regression.
-
-**The Shopify CLI calls share one retry helper, `.github/actions/shopify-theme-push/lib/retry.sh`** (one engine, three named policies: live push, preview push, pre-push `theme list`), sourced by both steps because composite steps do not share shell state. Four rules in it, each already the cause of a regression, and all four fail silently:
-
-- **A timeout retries; it does not stop.** Exit 124/137 means no answer was received, so the classify hook is skipped entirely and the attempt takes its usual backoff. "Short-circuit on 124" does **not** mean "stop retrying"; reading it that way reverses the whole point of the retry.
-- **No `cmd || retry`, and the helper never runs `set -e`.** Every attempt's code is captured explicitly into `RETRY_EXIT` in condition context. The callers' `set +e` is load-bearing: the composite default shell injects `-e`, which otherwise kills the step on attempt 1 before any capture, retry or `GITHUB_OUTPUT` write.
-- **The `theme list` auth filter is anchored in both directions.** Bare digit alternatives match durations and byte counts (`Error: 4031ms` contains `403`); a bare `scope` matches prose. Codes need a status word *and* a trailing non-digit, and `scope` needs nearby context. Widening it abandons retries on the exact transient it exists for.
-- **The retry caps and the calling job's `timeout-minutes` are one coupled pair.** A job timeout cancels the job; it does not stop the loop safely. Change either and re-check the other.
-
-`RETRY_*` environment overrides exist for the unit tests only; nothing in the workflows sets one.
+Before refactoring `deploy.yml` or `.github/actions/shopify-theme-push/`: the four gates, the three refactor hazards and the four retry-helper rules are in `docs/deploy-gate-reference.md`, and each has already caused a regression here, so do not weaken any of them.
 
 Do NOT add `SHOPIFY_SYNC_DEPLOY_KEY` as a bypass actor on any ruleset protecting `main`. It has full repo push capability, and its `Deploy keys` bypass row is scoped to `shopify-sync-protection` alone.
 
@@ -123,11 +104,7 @@ A value is a **secret** if it grants write access to live infrastructure or a th
 
 ## Pre-PR review
 
-The global gate supplies general code review (the headless `/code-review`) and `/security-review`; there is no `code-reviewer`, `architecture-reviewer`, or `security-auditor` agent to invoke. This repo always adds **doc-sync-checker** (diff-scoped), plus these on their own triggers:
-
-- **infra-reviewer**: any change touching `.github/workflows/` or `.github/actions/`. `deploy.yml` is a three-job pipeline (gate / deploy / sync) with secret isolation; `workflow_run` paths depend on the literal name `validate` and the `dependabot/**` glob; no workflow binds a GitHub Environment.
-- **test-engineer**: theme Liquid has no test framework, so skip it for theme changes. Run it when the code behind any `node --test` suite changes: `scripts/size-chart/`, `scripts/blank-inventory/`, `scripts/applique-grid/`, `scripts/email-icons/`, `scripts/notifications/`, `scripts/policies/`, `scripts/catalogue/`, `scripts/site-check/`, `scripts/lib/`, the top-level `scripts/*.test.mjs`, and `.github/actions/shopify-theme-push/` (the `smoke:test` suites: the post-deploy smoke, the push-rejection audit, the report formatter and the retry helper). `blank-inventory/` writes live inventory and `upload-product-media.mjs` writes live product media, so those two are higher-risk; the `shopify-theme-push` suites are the only automated coverage the live-push path has before a production deploy.
-- **prompt-reviewer**: run when this `CLAUDE.md`, any of the four reference docs it points at (`docs/theme-conventions.md`, `docs/structured-data.md`, `docs/theme-settings-contracts.md`, `docs/accessibility-patterns.md`), agent definitions, or `.claude/` content change.
+Repo-specific reviewer triggers for `/pre-pr` (doc-sync-checker always; infra-reviewer, test-engineer and prompt-reviewer on their own triggers): `docs/pre-pr-reviewers.md`.
 
 Before proposing fixes for theme-check warnings, check `THEME_CHECK_NON_ACTIONABLE.md` first; the project may have triaged the finding as a known false positive.
 
@@ -248,56 +225,18 @@ Follow https://shopify.dev/docs/storefronts/themes/best-practices. Fetch a speci
 
 ### Directory structure
 
-README's Repo layout table covers the top-level directories. One convention not there: JSON template alternates use a dot-suffix (`product.alternate.json`) and follow one of two page-alternate patterns: keep `main` enabled and append sections (Contact pattern), or disable `main` and compose from generic primitives like `hero` / `section` / `faq` (Custom Orders pattern, also used by About and FAQ). Pick the simplest fit. A third pattern, disabling `main` for one monolithic app block, is what About used to be and is not to be reintroduced: that block owned its own palette and type scale, so the page ignored the theme's color schemes and fonts entirely (rationale: `release-notes.md`). Also: root templates must include an `order` array + `sections` map; asset references use `{{ 'filename' | asset_url }}` and `{{ 'icon.svg' | inline_asset_content }}` for inline icons. **Placing a `_product-card` block in a template copies hand-maintained JSON that nothing in CI compares across templates**; take the values from "The site-standard product card" in `docs/theme-conventions.md` rather than from whatever the editor emits.
+README's Repo layout table covers the top-level directories; the template-alternate patterns and asset-reference conventions load from `.claude/rules/theme-code.md`.
 
 Root-level `catalogue.json` is the single source of truth for the offering's shape and vocabulary; its own `comment` field says what it holds and names its two order contracts. **Hand-edited in a reviewed PR only, never by a command or an agent.** Every tool derives from it, and `scripts/lib/catalogue-cohesion.mjs` refuses a PR whose other files disagree, so a new product, colour, size or line is declared there first or the tools refuse. Deliberately NOT derived, each its own vocabulary: `BODY_PHOTO_TOKEN` in `scripts/lib/photo-naming.mjs` (those tokens are printed on files already on disk), `scripts/size-chart/lib/garments.mjs` (geometry, byte-pinned by the render golden), and prose outside a `catalogue:begin`/`catalogue:end` marker region. **A product's `template` suffix and its handle are different strings**; conflating them has shipped a bug here already, and the a11y label rule, the size-chart template list and the seo-review breadcrumb allowlist all turn on it. Rationale: `release-notes.md`.
 
 ### Structured data
 
-**Before editing `snippets/structured-data*.liquid`, or adding any `application/ld+json` block, read `docs/structured-data.md`.** All hand-authored JSON-LD routes through one snippet, `snippets/structured-data.liquid`, rendered from `layout/theme.liquid`'s head and deliberately not from `layout/password.liquid`. These five have no automatic check behind them and fail silently:
-
-- **Entity nodes (Organization, WebSite) are homepage-only**, guarded on `request.page_type == 'index'` so the store has exactly one of each. And **do not put JSON-LD back in `sections/header.liquid`**, where the Organization node used to live.
-- **Derive `@id` and `url` from `shop.url`, never `request.origin`.** A preview theme and the `*.myshopify.com` host differ in origin, which would mint a second identifier for one entity.
-- **Never emit an unguarded trailing comma.** A blank setting inside an array or object silently invalidates the whole node, with no browser parse error. Collect non-blank values first, then emit with `forloop.last`.
-- **Do not divide by an image's `aspect_ratio` inside a script tag.** An SVG can report it as zero or nil, and Liquid renders the divide-by-zero as an error string that lands inside the JSON-LD.
-- **`hasMerchantReturnPolicy` is hardcoded on the Organization node, not a theme setting.** Do not add a settings dropdown for the category; the categories are not one-field swaps.
-
-`snippets/breadcrumbs.liquid` emits its own `BreadcrumbList` and picks a product's parent collection through a four-step cascade whose second step is the `custom.breadcrumb_collection` product metafield. Read `docs/breadcrumb-collection-metafield.md` before setting a value, changing the cascade, or renaming a collection; the metafield definition's Storefronts-read access setting is the setup step whose omission fails silently.
+JSON-LD, breadcrumbs and FAQPage rules load from `.claude/rules/structured-data.md` with the snippets involved. **Before adding an `application/ld+json` block anywhere, read it and `docs/structured-data.md`.**
 
 ## Theme conventions
 
-**Before creating or editing a block, section, snippet, or `assets/component.js`, read `docs/theme-conventions.md`.** It holds the component framework (refs, `on:` event binding, parent/child communication), the theme-editor lifecycle event names, the block file structure, and the Liquid / CSS / HTML / JavaScript standards. Inline here, because each of these fails silently or only at CI time, never at authoring time:
-
-- **Zero external JavaScript dependencies**; native browser APIs only. BEM class names, and scope component CSS with `{% stylesheet %}` inside the section or block rather than adding to `assets/`.
-- **NEVER edit a `{% schema %}` block that is generated from source** (e.g. by `scripts/size-chart/`); modify the source and regenerate.
-- **Only ONE `{% content_for 'blocks' %}` per file.** Need the region in two places? Capture it once into a variable and emit the variable.
-- **A block cannot read another block's settings.** When two must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`); a setting duplicated per block is two sources of truth that drift apart silently.
-- **Do not "fix" the bare `#SizeChart` anchor to `SizeChart-{{ block.id }}`.** Link anchors are deliberately unsuffixed so they stay hand-authorable; suffixing it breaks `snippets/size-guide-link.liquid` and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` catches it, but at CI time, not while you are editing.
-
-### Accessibility
-
-`docs/accessibility-patterns.md` holds both the global rules (skip link, live regions, form-error summaries, touch targets, `title` only on `<iframe>`) and the per-widget role / attribute / keyboard sets. **Load it before implementing or modifying any of these widgets: accordion, breadcrumb, cart drawer, chat window, color swatch, combobox, carousel, disclosure, dropdown navigation, flip card, form, jump nav, modal, product card, slider, switch, tab, tooltip.** Anything that maps to one of these primitives (`<dialog>` is a modal; toasts are an `aria-live` region; a bare "dropdown" is a combobox, disclosure, or dropdown navigation depending on behaviour) uses the nearest match. Anything else: that file's global rules plus WCAG.
-
-One rule that lives outside any widget: **the homepage `<h1>` is the hero lockup**, in `templates/index.json` under section `hero_jVaWmY`, block `headline_lockup`. `sections/header.liquid` deliberately emits no heading; it used to carry an `index`-guarded visually-hidden `<h1>`, which gave the homepage two. Nothing in CI checks heading structure, so verify exactly one `<h1>` per page type by hand after any header or hero change.
-
-## Translations
-
-- Keys live in `locales/en.default.json` (storefront) and `locales/en.default.schema.json` (schema).
-- **Add the key to the locale file before referencing it**; theme-check fails red on dangling keys.
-- When adding storefront-visible strings, mirror into `locales/it.json` and `locales/ro.json` with `TODO: ` placeholders. Those two only, not the other 30: the store publishes exactly one locale, so nothing else is served, and these are the two anyone has kept current (the rest carry the same 8 upstream-era `TODO:` keys and nothing since). Nothing in CI checks either direction (`MatchingTranslations` is off; pa11y audits the default locale), and the premise is an Admin setting, so confirm it rather than assuming: `{ shopLocales { locale primary published } }` through the Admin client, using the snippet under "Shipping copy" in `docs/theme-settings-contracts.md`. More than one published locale means backfill the rest first.
+Theme code (blocks, sections, snippets, templates, layout, assets, locales): `.claude/rules/theme-code.md` loads when one is read and carries the conventions, accessibility and translation rules. **Before creating a new file of any of those kinds, read it plus `docs/theme-conventions.md`** (and `docs/accessibility-patterns.md` for any widget).
 
 ## Theme settings
 
-**Before changing any social, navigation, vacation-mode or shipping-copy setting, the shipping predicates in `snippets/shipping-info.liquid` / `snippets/cart-summary.liquid` / `snippets/cart-products.liquid`, or the fieldset-indexing logic in `snippets/variant-main-picker.liquid` / `assets/variant-picker.js`, read `docs/theme-settings-contracts.md`.** Every item below fails silently, and nothing in CI checks any of them:
-
-1. **Adding a social platform means editing two hardcoded lists**, `social_platforms` in `snippets/social-links.liquid` and `social_keys` in `snippets/structured-data-organization.liquid`, or `sameAs` silently drifts from the storefront links. The one source of truth is `settings.social_*_link`, rendered only by `snippets/social-links.liquid`; `blocks/social-links.liquid`, `blocks/_social-link.liquid` and `blocks/_footer-social-icons.liquid` are dead upstream leftovers, so never edit them or place one.
-2. **The main menu's collections dropdown is generated, not authored.** A top-level `catalog_link` / `collections_link` with no children builds its own submenu; giving that link even one child in Admin silently turns the generated list off, and a second catalog link silently gets a second dropdown.
-3. **Never add a `settings.social_twitter_link`.** The setting alone reactivates a broken `twitter:site` handle parse that mishandles `x.com` URLs; `snippets/meta-tags.liquid` carries a comment saying so.
-4. **Vacation mode is one toggle, four surfaces, four sync traps.** Four independently dated settings (popup body, checkbox terms, shipping note, `vacation_processing_date`) must be updated together before each enable; nothing reconciles them, and `vacation_processing_date` is the record of what each customer agreed to.
-5. **Shipping copy has five sources of truth and only the Admin shipping-rate names sit outside the repo.** The `/policies/shipping-policy` body is `marketing/policies/shipping_policy.html`, so grep it too, but a grep proves the *intended* text, not the live one: a green `policies:check` proves repo consistency only, never that Admin is in sync (`policies:pull -- --check`). No product template may restate a duration; each defers to the policy, byte-identical, per `scripts/policies/test/templates-cohesion.test.mjs`.
-6. **`requires_shipping` is the predicate for all shipping math and gating, never `cart.total_price`** (right for displaying a cart total, wrong for anything shipping): checkout excludes gift card value from its price-based rate conditions, so a mixed cart over the threshold is still charged the flat rate. Spellings differ by object: `product.gift_card?` carries the question mark, `item.gift_card` does not, and `product.gift_card` / `item.product.gift_card` are both nil with no error and no `theme-check` warning. Canonical shape: `snippets/shipping-info.liquid`.
-7. **`data-fieldset-index` counts rendered fieldsets, not options.** An option collapsed by `settings.variant_dropdown_threshold` emits no fieldset, so numbering by `forloop.index0` in `snippets/variant-main-picker.liquid` silently no-ops or mutates the wrong fieldset when the collapsed option is not last.
-
-**The FAQ page is its own silent-failure surface, and the two triggers above do not name it.** Before editing `sections/faq.liquid` or `templates/page.faq.json`, read the `FAQPage` rules in `docs/structured-data.md` (a new block type defining a `question` starts appearing in the markup with no other change, and rewording a question rewrites its `handleize`d anchor, breaking every shared link) and the vacation-mode entry in `docs/theme-settings-contracts.md` (the announcement slide, popup body and checkbox terms all deep-link to `/pages/faq#away-from-studio`, which resolves only while `faq_item_vacation` keeps `custom_anchor: "away-from-studio"`; nothing checks the link).
-
-**Product media alt text drives the gallery.** `snippets/product-media-gallery-content.liquid` filters media by matching alt text against the values of that product's option named by `settings.color_option_name`, so those values are reserved words in alt text. The data lives in Admin, no test reaches it, and every failure is silent. Read `docs/product-media-alt-text.md` before authoring alt text or changing the filter.
+Social, navigation, vacation-mode, shipping-copy, variant-picker, FAQ and product-alt-text contracts load from `.claude/rules/theme-settings-contracts.md` with the files involved. Vacation-mode enables and main-menu edits happen in Admin and fire no rule, so **read `docs/theme-settings-contracts.md` before either**.

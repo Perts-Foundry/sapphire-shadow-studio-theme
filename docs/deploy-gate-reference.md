@@ -107,3 +107,24 @@ decoupled from human role membership.
 
 A preview-only Shopify token; a long-lived `auto-deploy-audit` issue for forensics beyond
 90-day log retention.
+
+## Refactor hazards and the retry helper
+
+Formerly the "Deploy gate trust delta" section of the root `CLAUDE.md`; the four gates and their per-gate API calls are described above.
+
+`deploy.yml` is a three-job pipeline (`gate` / `deploy` / `sync`) with no GitHub Environment binding and each secret isolated to one job. Four gates govern auto-deploy; do not weaken any of them in a refactor: **collaborator permission** (comment path), **validate-on-HEAD-SHA** (all paths), the **signed-commit gate** (workflow_run paths), and the **defence-in-depth merge-base assertion** (workflow_run paths).
+
+Three refactor hazards, each already the cause of a regression here:
+
+- Gate on the `validate` **job** (`listJobsForWorkflowRun`), never on `workflow_run.conclusion`: the same run's `deploy-preview` job pushes a preview theme, so a Shopify hiccup there fails the run with all validation green. Do not rename that job; the name is hardcoded, as is the workflow name in `on.workflow_run.workflows`.
+- Do not drop `compareCommits.status === 'identical'` as "redundant" with SHA equality. It is commit-object, not tree, equality, so it independently catches same-tree amends and different-tree force-pushes.
+- Do not add strict equality on `commit.committer.login`. A legitimate `web-flow` committer (web-UI edits, Update-branch/Rebase, `@dependabot rebase`) is not a security signal; that was a prior false-positive regression.
+
+**The Shopify CLI calls share one retry helper, `.github/actions/shopify-theme-push/lib/retry.sh`** (one engine, three named policies: live push, preview push, pre-push `theme list`), sourced by both steps because composite steps do not share shell state. Four rules in it, each already the cause of a regression, and all four fail silently:
+
+- **A timeout retries; it does not stop.** Exit 124/137 means no answer was received, so the classify hook is skipped entirely and the attempt takes its usual backoff. "Short-circuit on 124" does **not** mean "stop retrying"; reading it that way reverses the whole point of the retry.
+- **No `cmd || retry`, and the helper never runs `set -e`.** Every attempt's code is captured explicitly into `RETRY_EXIT` in condition context. The callers' `set +e` is load-bearing: the composite default shell injects `-e`, which otherwise kills the step on attempt 1 before any capture, retry or `GITHUB_OUTPUT` write.
+- **The `theme list` auth filter is anchored in both directions.** Bare digit alternatives match durations and byte counts (`Error: 4031ms` contains `403`); a bare `scope` matches prose. Codes need a status word *and* a trailing non-digit, and `scope` needs nearby context. Widening it abandons retries on the exact transient it exists for.
+- **The retry caps and the calling job's `timeout-minutes` are one coupled pair.** A job timeout cancels the job; it does not stop the loop safely. Change either and re-check the other.
+
+`RETRY_*` environment overrides exist for the unit tests only; nothing in the workflows sets one.
