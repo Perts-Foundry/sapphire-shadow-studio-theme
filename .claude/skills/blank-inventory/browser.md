@@ -48,7 +48,7 @@ rather than hunting.
 ## Preconditions
 
 - **The first navigation must land on the Flow run list.** If it lands on `accounts.shopify.com`,
-  that is the login loop the repo's CLAUDE.md describes under Browser testing: point the operator at
+  that is the login loop the repo's docs/browser-testing.md describes: point the operator at
   the manual-login workaround (relaunch the same Chrome binary with the same `--user-data-dir` and no
   automation flags, log in, close it) and **stop the run**. Do not retry the navigation.
 - If the first navigation lands anywhere else at all, stop and report the URL rather than hunting for

@@ -33,7 +33,7 @@ const GARMENT_MARKERS = [SIZE_CHART_ANCHOR, GARMENT_ACK_INPUT];
 
 export const MARKER_TABLE = Object.freeze({
   byTemplate: {
-    // The homepage h1 is the hero lockup (CLAUDE.md, Accessibility); the class is authored in
+    // The homepage h1 is the hero lockup (.claude/rules/theme-code.md, Accessibility); the class is authored in
     // templates/index.json, so it is committed markup, not theme-editor prose.
     'templates/index.json': { markers: ['hero-lockup'] },
     'templates/list-collections.json': { noMarker: true, why: 'generic listing; nothing committed beyond the section shell' },
@@ -56,7 +56,7 @@ export const MARKER_TABLE = Object.freeze({
     'templates/cart.json': { markers: ['cart-page'] },
     'templates/search.json': { noMarker: true, why: 'results are Admin data; the h1 rule covers the page' },
     'templates/page.about.json': { noMarker: true, why: 'composed from generic primitives; body copy is editor prose' },
-    // The vacation deep link target (CLAUDE.md, Theme settings): the FAQ item keeps
+    // The vacation deep link target (.claude/rules/theme-settings-contracts.md): the FAQ item keeps
     // custom_anchor "away-from-studio" or every announcement / popup link breaks.
     'templates/page.faq.json': { markers: ['away-from-studio'] },
     'templates/page.contact.json': { noMarker: true, why: 'contact form markup is Shopify-owned and behind hCaptcha' },

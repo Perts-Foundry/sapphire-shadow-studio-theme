@@ -2,7 +2,7 @@
 
 Full reference for authoring theme code in this repo: the component framework, theme-editor
 integration, the block / snippet / section split, block file structure, and the Liquid / CSS /
-HTML / JavaScript standards. CLAUDE.md's "Theme conventions" section carries the condensed,
+HTML / JavaScript standards. The path-scoped rule `.claude/rules/theme-code.md` carries the condensed,
 load-bearing directives; this file is the detailed reference for when you are actually creating or
 editing a block, section, snippet, or `assets/component.js`.
 

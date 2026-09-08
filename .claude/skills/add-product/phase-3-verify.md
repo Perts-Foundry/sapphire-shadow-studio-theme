@@ -1,6 +1,6 @@
 # Phase 3: verify
 
-All read-only. Browser steps follow CLAUDE.md's Browser testing rules (opt-in, password bypass via
+All read-only. Browser steps follow CLAUDE.md's Browser testing rules and docs/browser-testing.md (opt-in, password bypass via
 the admin Preview link).
 
 ## Steps
@@ -9,7 +9,7 @@ the admin Preview link).
    same check as phase 2 step 9. Neither of the steps below can name this failure. The crawl is
    blind by construction: `seo-review` reads the sitemap, which an unpublished product is absent
    from, so it reports nothing rather than a finding. The browser step is worse than blind: the
-   theme preview link this phase uses (CLAUDE.md, Browser testing) returns a bare 404 for an
+   theme preview link this phase uses (docs/browser-testing.md) returns a bare 404 for an
    unpublished product, and a 404 there has a dozen other causes, so it misdirects rather than
    informs. One publications read names the cause outright. Running this after either of them is
    how the first run closed green. `status == ACTIVE` is not evidence here.

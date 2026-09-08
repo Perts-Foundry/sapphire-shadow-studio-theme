@@ -6,7 +6,7 @@ the repo's CLAUDE.md; the opt-in ask is one operator turn on its own.
 ## Preconditions
 
 - The first navigation must land on the Admin notification editor. If it lands on
-  accounts.shopify.com (the login loop the repo CLAUDE.md describes under Browser testing), point
+  accounts.shopify.com (the login loop the repo's docs/browser-testing.md describes), point
   the operator at that workaround and stop the run.
 - **"The browser is already running for ... chrome-profile"**: the profile lock. Its recovery kills
   a process, so it has its own section below rather than a line here.
@@ -247,7 +247,7 @@ navigation lands in the login loop.
 1. **Identify the process, and refuse to guess.** `ps` for the Chrome whose `--user-data-dir=` is
    `~/.cache/chrome-devtools-mcp/chrome-profile`, excluding every `--type=` child. The MCP's own
    Chrome carries `--remote-debugging-port` (and usually `--enable-automation`); the Chrome from
-   the login-loop workaround in the repo CLAUDE.md is launched on the **same profile** with neither,
+   the login-loop workaround in the repo's docs/browser-testing.md is launched on the **same profile** with neither,
    which is exactly what makes it a plausible cause of this message. So: if that filter does not
    match **exactly one** process carrying `--remote-debugging-port`, kill nothing. Report the
    process list and stop, because the other candidate is an operator's half-finished login and the

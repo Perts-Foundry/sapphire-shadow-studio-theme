@@ -3,7 +3,7 @@
 //
 // THIS TEST IS WHAT MAKES "removes six drift sites permanently" TRUE. Without it the claim is
 // aspirational: six hand-maintained identical strings is the exact failure mode this repo has
-// already documented for product cards (`_product-card` blocks, CLAUDE.md "Directory structure").
+// already documented for product cards (`_product-card` blocks, .claude/rules/theme-code.md "Directory conventions").
 // Nothing else in CI compares copy across templates.
 
 import test from 'node:test';
