@@ -24,7 +24,7 @@ The heavy lifting is deterministic Node tooling under `scripts/seo-review/` (rea
 first: check ids, thresholds, and the rationale for each check live there). This skill is the
 glue: it picks the layers that can run, runs them, layers the repo-invariant review on top, and
 turns findings into proposals for the operator. The authorities on intent are `docs/structured-data.md`
-(condensed in CLAUDE.md's "Structured data" section) and `docs/shopify-mcp-notes.md`
+(condensed in `.claude/rules/structured-data.md`) and `docs/shopify-mcp-notes.md`
 (Admin read path).
 
 Everything here is read-only. There are no write gates because there are no writes; the one STOP

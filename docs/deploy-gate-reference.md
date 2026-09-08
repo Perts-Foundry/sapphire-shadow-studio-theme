@@ -110,11 +110,7 @@ A preview-only Shopify token; a long-lived `auto-deploy-audit` issue for forensi
 
 ## Refactor hazards and the retry helper
 
-Formerly the "Deploy gate trust delta" section of the root `CLAUDE.md`; the four gates and their per-gate API calls are described above.
-
-`deploy.yml` is a three-job pipeline (`gate` / `deploy` / `sync`) with no GitHub Environment binding and each secret isolated to one job. Four gates govern auto-deploy; do not weaken any of them in a refactor: **collaborator permission** (comment path), **validate-on-HEAD-SHA** (all paths), the **signed-commit gate** (workflow_run paths), and the **defence-in-depth merge-base assertion** (workflow_run paths).
-
-Three refactor hazards, each already the cause of a regression here:
+Do not weaken any of the four gates above in a refactor. Three refactor hazards, each already the cause of a regression here:
 
 - Gate on the `validate` **job** (`listJobsForWorkflowRun`), never on `workflow_run.conclusion`: the same run's `deploy-preview` job pushes a preview theme, so a Shopify hiccup there fails the run with all validation green. Do not rename that job; the name is hardcoded, as is the workflow name in `on.workflow_run.workflows`.
 - Do not drop `compareCommits.status === 'identical'` as "redundant" with SHA equality. It is commit-object, not tree, equality, so it independently catches same-tree amends and different-tree force-pushes.

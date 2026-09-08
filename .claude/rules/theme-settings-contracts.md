@@ -13,6 +13,15 @@ paths:
   - "snippets/product-media-gallery-content.liquid"
   - "assets/variant-picker.js"
   - "sections/header.liquid"
+  - "snippets/header-drawer.liquid"
+  - "blocks/_header-menu.liquid"
+  - "snippets/mega-menu-list.liquid"
+  - "snippets/vacation-popup.liquid"
+  - "blocks/_vacation-announcement.liquid"
+  - "blocks/vacation-acknowledgment.liquid"
+  - "blocks/_announcement.liquid"
+  - "sections/header-announcements.liquid"
+  - "blocks/accelerated-checkout.liquid"
   - "sections/faq.liquid"
   - "templates/page.faq.json"
   - "config/settings_schema.json"
@@ -32,6 +41,6 @@ paths:
 6. **`requires_shipping` is the predicate for all shipping math and gating, never `cart.total_price`** (right for displaying a cart total, wrong for anything shipping): checkout excludes gift card value from its price-based rate conditions, so a mixed cart over the threshold is still charged the flat rate. Spellings differ by object: `product.gift_card?` carries the question mark, `item.gift_card` does not, and `product.gift_card` / `item.product.gift_card` are both nil with no error and no `theme-check` warning. Canonical shape: `snippets/shipping-info.liquid`.
 7. **`data-fieldset-index` counts rendered fieldsets, not options.** An option collapsed by `settings.variant_dropdown_threshold` emits no fieldset, so numbering by `forloop.index0` in `snippets/variant-main-picker.liquid` silently no-ops or mutates the wrong fieldset when the collapsed option is not last.
 
-**The FAQ page is its own silent-failure surface, and the structured-data and theme-conventions triggers do not name it.** Before editing `sections/faq.liquid` or `templates/page.faq.json`, read the `FAQPage` rules in `docs/structured-data.md` (a new block type defining a `question` starts appearing in the markup with no other change, and rewording a question rewrites its `handleize`d anchor, breaking every shared link) and the vacation-mode entry in `docs/theme-settings-contracts.md` (the announcement slide, popup body and checkbox terms all deep-link to `/pages/faq#away-from-studio`, which resolves only while `faq_item_vacation` keeps `custom_anchor: "away-from-studio"`; nothing checks the link).
+**The FAQ page is its own silent-failure surface, and neither the structured-data trigger nor this file's opening trigger names it.** Before editing `sections/faq.liquid` or `templates/page.faq.json`, read the `FAQPage` rules in `docs/structured-data.md` (a new block type defining a `question` starts appearing in the markup with no other change, and rewording a question rewrites its `handleize`d anchor, breaking every shared link) and the vacation-mode entry in `docs/theme-settings-contracts.md` (the announcement slide, popup body and checkbox terms all deep-link to `/pages/faq#away-from-studio`, which resolves only while `faq_item_vacation` keeps `custom_anchor: "away-from-studio"`; nothing checks the link).
 
 **Product media alt text drives the gallery.** `snippets/product-media-gallery-content.liquid` filters media by matching alt text against the values of that product's option named by `settings.color_option_name`, so those values are reserved words in alt text. The data lives in Admin, no test reaches it, and every failure is silent. Read `docs/product-media-alt-text.md` before authoring alt text or changing the filter.

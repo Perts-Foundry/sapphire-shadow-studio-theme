@@ -235,7 +235,7 @@ JSON-LD and breadcrumb rules load from `.claude/rules/structured-data.md` with t
 
 ## Theme conventions
 
-Theme code (blocks, sections, snippets, templates, layout, assets, locales): `.claude/rules/theme-code.md` loads when one is read and carries the conventions, accessibility and translation rules. **Before creating a new file of any of those kinds, read it plus `docs/theme-conventions.md`** (and `docs/accessibility-patterns.md` for any widget).
+Theme code (blocks, sections, snippets, templates, layout, assets, locales and the settings schema): `.claude/rules/theme-code.md` loads when one is read and carries the conventions, accessibility and translation rules. **Before creating a new file of any of those kinds, read it plus `docs/theme-conventions.md`** (and `docs/accessibility-patterns.md` for any widget).
 
 ## Theme settings
 

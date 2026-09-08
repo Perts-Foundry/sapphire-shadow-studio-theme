@@ -4,7 +4,7 @@
 // trees in memory. Every check is exported on its own so a test can target it; runRepoChecks
 // concatenates them all.
 //
-// Each check exists because the thing it compares fails silently (.claude/rules/theme-settings-contracts.md
+// Each check exists because the thing it compares fails silently (docs/theme-settings-contracts.md
 // lists them): announcement copy vs shipping settings, four dated vacation settings, the FAQ deep
 // link, the price block's show_shipping_info per template, the catalogue census vs template files,
 // the two hardcoded social lists, and the two mirrored locales.

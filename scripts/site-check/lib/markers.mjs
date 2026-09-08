@@ -56,7 +56,7 @@ export const MARKER_TABLE = Object.freeze({
     'templates/cart.json': { markers: ['cart-page'] },
     'templates/search.json': { noMarker: true, why: 'results are Admin data; the h1 rule covers the page' },
     'templates/page.about.json': { noMarker: true, why: 'composed from generic primitives; body copy is editor prose' },
-    // The vacation deep link target (CLAUDE.md, Theme settings): the FAQ item keeps
+    // The vacation deep link target (.claude/rules/theme-settings-contracts.md): the FAQ item keeps
     // custom_anchor "away-from-studio" or every announcement / popup link breaks.
     'templates/page.faq.json': { markers: ['away-from-studio'] },
     'templates/page.contact.json': { noMarker: true, why: 'contact form markup is Shopify-owned and behind hCaptcha' },

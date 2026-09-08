@@ -13,7 +13,7 @@ paths:
 
 # Theme code
 
-Loaded when a block, section, snippet, layout, template, asset or locale file is read. The root `CLAUDE.md` keeps the pointer for creating a new file of any of these kinds.
+Loaded when a block, section, snippet, layout, template, asset, locale file or the settings schema is read. The root `CLAUDE.md` keeps the pointer for creating a new file of any of these kinds.
 
 ## Directory conventions
 
