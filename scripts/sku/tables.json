@@ -17,7 +17,8 @@
       "LVT (Licensed Vet Tech)": "LVT",
       "RVT (Registered Vet Tech)": "RVT",
       "CVT (Certified Vet Tech)": "CVT",
-      "NP (Nurse Practitioner)": "NP"
+      "NP (Nurse Practitioner)": "NP",
+      "DNP (Doctor of Nursing Practice)": "DNP"
     },
     "huddle": {
       "Nurse": "NRS",

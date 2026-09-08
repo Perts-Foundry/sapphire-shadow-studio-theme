@@ -1,5 +1,59 @@
 # Release Notes
 
+## Adding DNP, and the inventory question phase 0 leaves open (unreleased)
+
+`DNP (Doctor of Nursing Practice)` is the tenth credential on the Lead II Design option, on all
+three products in The Vitals Collection: 42 new variants, 18 on the crewneck and quarter-zip, 6 on
+the Black-only vest. The three files the NP entry below names carried it again, as that entry said
+they would. What that entry did not survive is below: its "exactly three places" count was already
+two short by the time this change arrived.
+
+**The new variants were created at quantity 0, not matched to their blank-group siblings.** Phase 0
+of the `add-product` skill says to set inventory policy and quantity at creation "the way its
+siblings are set". That reads as the cautious instruction and is the wrong half of the trade for an
+option-value entry on an already-published product, because the same paragraph names the reason:
+there is no DRAFT to hide behind, so all 42 variants are purchasable the instant Admin saves them,
+while they carry no SKU until phase 2 step 2 and no `custom.inventory_blank_sku` until step 3. That
+is precisely the window in which the inventory-sync Flow cannot see them. Matching siblings by hand
+means 42 quantities typed across 42 blank groups, and any one of them typed high oversells a shared
+blank in a group the Flow will not correct, because the variant is not yet in it.
+
+Creating at 0 against the inherited DENY policy makes every new variant unpurchasable instead. The
+cost is visible and bounded: DNP reads sold out on the storefront until phase 2's metafield backfill
+and seed write converge it with its siblings. The cost of the other order is invisible and
+unbounded. `phase-0-admin-draft.md` now carries the split rather than the single sentence: match
+siblings when the parent is a DRAFT, where nothing is exposed either way and the end state is free;
+create at 0 when the parent is already ACTIVE and published. Recording the reasoning here and
+leaving the instruction as it was would have meant the next operator reading the skill literally
+reproduced the risk this entry spends three paragraphs explaining away.
+
+**The byte-identity check on the option value earned its keep, in the cheap direction.** The string
+is typed into Admin three times, once per product, and becomes an append-only key in
+`scripts/sku/tables.json`, where a trailing space or a non-breaking space would be invisible in
+every rendering anyone would check it in. Comparing the three hex encodings before copying the
+string into the table cost one read-only query; `sku audit` then returned 42 actionable nulls and
+**zero** unmapped values, which is the same fact confirmed from the other side. A mismatch would
+otherwise have surfaced as a planner refusal after the PR had merged.
+
+**The fix that was supposed to stop this stranding stranded two counts of its own.** The NP entry
+below closes by describing how the variant counts in `scripts/upload-product-media.mjs` and its test
+were reworded "so the next credential does not strand them again". DNP is that next credential, and
+it stranded them: the rewording correctly marked `144` as the count that regressed, and then set a
+fresh present-tense number beside it in each file. Both said the design-axis products "are at 162
+today", which stopped being true the moment this option value was saved in Admin.
+
+So the hazard survived its own fix, and by the same mechanism it was fixed for: a number that is
+true on the day it is written. Both now state the rate and no current count, because the rate is the
+part that does not decay. The general form, worth more than the two lines: **a comment that
+documents a scaling relationship should carry the relationship, never a sample of it.** Correcting
+`162` to `180` would have re-armed the identical trap for the eleventh credential.
+
+That also corrects the count in the NP entry and in the first draft of this one. There were never
+exactly three committed places once those two comments existed; there were five, and two of them
+were reachable only by searching for a variant count rather than for the vocabulary. With the live
+numbers gone the three-file claim is true again, which is the reason to remove them rather than
+maintain them.
+
 ## Taking NP live, and the step that existed nowhere (unreleased)
 
 `NP (Nurse Practitioner)` is live on all three Lead II products: 42 variants, all with derived SKUs,
