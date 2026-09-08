@@ -1,6 +1,9 @@
 ---
 paths:
   - "snippets/social-links.liquid"
+  - "blocks/social-links.liquid"
+  - "blocks/_social-link.liquid"
+  - "blocks/_footer-social-icons.liquid"
   - "snippets/structured-data-organization.liquid"
   - "snippets/meta-tags.liquid"
   - "snippets/shipping-info.liquid"

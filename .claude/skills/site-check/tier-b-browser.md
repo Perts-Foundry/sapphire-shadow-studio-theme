@@ -56,7 +56,7 @@ render the theme.
 
 1. Storefront while LOCKED: open the Admin themes page, open the live theme's "more theme
    actions" menu, click **Preview**. The bypass cookie is now set for the session. If Admin
-   login loops, stop; the workaround in CLAUDE.md > Browser testing is a manual operator step.
+   login loops, stop; the workaround in docs/browser-testing.md is a manual operator step.
    While PUBLIC: navigate straight to the storefront.
 2. Generate the nonce. Every `navigate_page` from here on carries an `initScript` that prints the
    banner (guarded as above) and, where the check needs it, computed state via `console.log`.

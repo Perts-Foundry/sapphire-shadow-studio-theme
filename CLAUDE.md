@@ -231,7 +231,7 @@ Root-level `catalogue.json` is the single source of truth for the offering's sha
 
 ### Structured data
 
-JSON-LD, breadcrumbs and FAQPage rules load from `.claude/rules/structured-data.md` with the snippets involved. **Before adding an `application/ld+json` block anywhere, read it and `docs/structured-data.md`.**
+JSON-LD and breadcrumb rules load from `.claude/rules/structured-data.md` with the snippets involved (the FAQPage rules load with the FAQ files from `.claude/rules/theme-settings-contracts.md`). **Before adding an `application/ld+json` block anywhere, read it and `docs/structured-data.md`.** Setting or changing a product's `breadcrumb_collection` metafield happens in Admin and fires no rule; read `docs/breadcrumb-collection-metafield.md` first.
 
 ## Theme conventions
 
@@ -239,4 +239,4 @@ Theme code (blocks, sections, snippets, templates, layout, assets, locales): `.c
 
 ## Theme settings
 
-Social, navigation, vacation-mode, shipping-copy, variant-picker, FAQ and product-alt-text contracts load from `.claude/rules/theme-settings-contracts.md` with the files involved. Vacation-mode enables, main-menu edits and shipping-rate renames happen in Admin and fire no rule, so **read `docs/theme-settings-contracts.md` before any of them**.
+Social, navigation, vacation-mode, shipping-copy, variant-picker, FAQ and product-alt-text contracts load from `.claude/rules/theme-settings-contracts.md` with the files involved. Vacation-mode enables, main-menu edits, shipping-rate renames and product-media alt-text authoring happen in Admin and fire no rule, so **read `docs/theme-settings-contracts.md` (and `docs/product-media-alt-text.md` for alt text) before any of them**.
