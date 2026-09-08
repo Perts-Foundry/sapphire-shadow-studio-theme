@@ -9,6 +9,7 @@ paths:
   - "snippets/shipping-info.liquid"
   - "snippets/cart-summary.liquid"
   - "snippets/cart-products.liquid"
+  - "blocks/price.liquid"
   - "snippets/variant-main-picker.liquid"
   - "snippets/product-media-gallery-content.liquid"
   - "assets/variant-picker.js"
@@ -31,7 +32,7 @@ paths:
 
 # Theme settings contracts
 
-**Before changing any social, navigation, vacation-mode or shipping-copy setting, the shipping predicates in `snippets/shipping-info.liquid` / `snippets/cart-summary.liquid` / `snippets/cart-products.liquid`, or the fieldset-indexing logic in `snippets/variant-main-picker.liquid` / `assets/variant-picker.js`, read `docs/theme-settings-contracts.md`.** Every item below fails silently, and nothing in CI checks any of them:
+**Before changing any social, navigation, vacation-mode or shipping-copy setting, the shipping predicates in `snippets/shipping-info.liquid` / `snippets/cart-summary.liquid` / `snippets/cart-products.liquid` / `blocks/price.liquid`, or the fieldset-indexing logic in `snippets/variant-main-picker.liquid` / `assets/variant-picker.js`, read `docs/theme-settings-contracts.md`.** Every item below fails silently, and nothing in CI checks any of them:
 
 1. **Adding a social platform means editing two hardcoded lists**, `social_platforms` in `snippets/social-links.liquid` and `social_keys` in `snippets/structured-data-organization.liquid`, or `sameAs` silently drifts from the storefront links. The one source of truth is `settings.social_*_link`, rendered only by `snippets/social-links.liquid`; `blocks/social-links.liquid`, `blocks/_social-link.liquid` and `blocks/_footer-social-icons.liquid` are dead upstream leftovers, so never edit them or place one.
 2. **The main menu's collections dropdown is generated, not authored.** A top-level `catalog_link` / `collections_link` with no children builds its own submenu; giving that link even one child in Admin silently turns the generated list off, and a second catalog link silently gets a second dropdown.

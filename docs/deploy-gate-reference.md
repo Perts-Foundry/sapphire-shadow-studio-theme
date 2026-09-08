@@ -1,9 +1,9 @@
 # Deploy gate reference
 
 Full mechanical breakdown of `deploy.yml`'s auto-deploy gates. CLAUDE.md's "Deploy gate trust
-delta" section carries the condensed, load-bearing version of this (the "do not remove/weaken
-this" directives); this file is the detailed reference for when you're actually touching
-`deploy.yml`. Design rationale, alternatives considered, and incident history are in
+delta" section points here; the load-bearing "do not remove/weaken this" directives live in this
+file, in "Refactor hazards and the retry helper" below, and the sections above are the detailed
+reference for when you're actually touching `deploy.yml`. Design rationale, alternatives considered, and incident history are in
 `release-notes.md`, not here.
 
 ## Pipeline shape
