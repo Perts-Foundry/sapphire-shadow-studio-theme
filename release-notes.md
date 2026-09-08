@@ -1,5 +1,38 @@
 # Release Notes
 
+## Adding DNP, and the inventory question phase 0 leaves open (unreleased)
+
+`DNP (Doctor of Nursing Practice)` is the tenth credential on the Lead II Design option, on all
+three products in The Vitals Collection: 42 new variants, 18 on the crewneck and quarter-zip, 6 on
+the Black-only vest. The repo half was the same three files the NP entry below names, and nothing
+else, which is that entry doing its job rather than a fresh discovery.
+
+**The new variants were created at quantity 0, not matched to their blank-group siblings.** Phase 0
+of the `add-product` skill says to set inventory policy and quantity at creation "the way its
+siblings are set". That reads as the cautious instruction and is the wrong half of the trade for an
+option-value entry on an already-published product, because the same paragraph names the reason:
+there is no DRAFT to hide behind, so all 42 variants are purchasable the instant Admin saves them,
+while they carry no SKU until phase 2 step 2 and no `custom.inventory_blank_sku` until step 3. That
+is precisely the window in which the inventory-sync Flow cannot see them. Matching siblings by hand
+means 42 quantities typed across 42 blank groups, and any one of them typed high oversells a shared
+blank in a group the Flow will not correct, because the variant is not yet in it.
+
+Creating at 0 against the inherited DENY policy makes every new variant unpurchasable instead. The
+cost is visible and bounded: DNP reads sold out on the storefront until phase 2's metafield backfill
+and seed write converge it with its siblings. The cost of the other order is invisible and
+unbounded. So the sentence needs splitting rather than following: match siblings when the parent is
+a DRAFT, where nothing is exposed either way and the end state is free; create at 0 when the parent
+is already ACTIVE and published.
+
+**The byte-identity check on the option value earned its keep, in the cheap direction.** The string
+is typed into Admin three times, once per product, and becomes an append-only key in
+`scripts/sku/tables.json`, where a trailing space or a non-breaking space would be invisible in
+every rendering anyone would check it in. Comparing the three hex encodings before copying the
+string into the table cost one read-only query; `sku audit` then returned 42 actionable nulls and
+**zero** unmapped values, which is the same fact confirmed from the other side. A mismatch would
+otherwise have surfaced as a planner refusal after the PR had merged.
+
+
 ## Taking NP live, and the step that existed nowhere (unreleased)
 
 `NP (Nurse Practitioner)` is live on all three Lead II products: 42 variants, all with derived SKUs,
