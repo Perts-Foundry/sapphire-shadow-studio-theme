@@ -1,6 +1,6 @@
 # TODO
 
-Single backlog for the whole repo. Everything goes here; there are no per-directory TODO files. The one exception is `TODO-list.md`, which holds only findings deferred from a pre-PR review, per the org rules.
+Single backlog for the whole repo. Everything goes here; there are no per-directory TODO files.
 
 **This file holds only work that still needs doing.** When an item lands, delete it from this file;
 do not tick it and leave it behind. There is no done section and no checked-off history here. If the
