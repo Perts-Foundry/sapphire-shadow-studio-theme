@@ -1,6 +1,6 @@
 # Accessibility patterns for component widgets
 
-This file documents both the **global accessibility rules** for this theme and the exact role / attribute / keyboard-interaction set required when implementing or modifying common widget components. CLAUDE.md names the widget list and points here; the globals below are the full text, not a summary of anything in CLAUDE.md.
+This file documents both the **global accessibility rules** for this theme and the exact role / attribute / keyboard-interaction set required when implementing or modifying common widget components. The path-scoped rule `.claude/rules/theme-code.md` names the widget list and points here; the globals below are the full text, not a summary of anything in CLAUDE.md.
 
 ## Global rules
 

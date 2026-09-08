@@ -1,7 +1,7 @@
 # Theme settings contracts
 
-Full reference for the theme-settings surfaces whose failure modes are silent. CLAUDE.md's "Theme
-settings" section carries the condensed, load-bearing index (trigger, failure mode, and file or
+Full reference for the theme-settings surfaces whose failure modes are silent. The path-scoped rule
+`.claude/rules/theme-settings-contracts.md` carries the condensed, load-bearing index (trigger, failure mode, and file or
 setting name for each); this file is the detailed reference for when you are actually changing a
 social, navigation, vacation-mode, shipping-copy, or variant-fieldset setting.
 

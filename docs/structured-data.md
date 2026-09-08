@@ -1,6 +1,6 @@
 # Structured data
 
-Full reference for the theme's hand-authored JSON-LD. CLAUDE.md's "Structured data" section
+Full reference for the theme's hand-authored JSON-LD. The path-scoped rule `.claude/rules/structured-data.md`
 carries the condensed, load-bearing directives (the silent-failure prohibitions); this file is the
 detailed reference for when you are actually editing `snippets/structured-data*.liquid` or adding
 an `application/ld+json` block.

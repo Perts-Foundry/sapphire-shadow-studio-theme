@@ -33,7 +33,7 @@ const GARMENT_MARKERS = [SIZE_CHART_ANCHOR, GARMENT_ACK_INPUT];
 
 export const MARKER_TABLE = Object.freeze({
   byTemplate: {
-    // The homepage h1 is the hero lockup (CLAUDE.md, Accessibility); the class is authored in
+    // The homepage h1 is the hero lockup (.claude/rules/theme-code.md, Accessibility); the class is authored in
     // templates/index.json, so it is committed markup, not theme-editor prose.
     'templates/index.json': { markers: ['hero-lockup'] },
     'templates/list-collections.json': { noMarker: true, why: 'generic listing; nothing committed beyond the section shell' },

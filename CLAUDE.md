@@ -239,4 +239,4 @@ Theme code (blocks, sections, snippets, templates, layout, assets, locales): `.c
 
 ## Theme settings
 
-Social, navigation, vacation-mode, shipping-copy, variant-picker, FAQ and product-alt-text contracts load from `.claude/rules/theme-settings-contracts.md` with the files involved. Vacation-mode enables and main-menu edits happen in Admin and fire no rule, so **read `docs/theme-settings-contracts.md` before either**.
+Social, navigation, vacation-mode, shipping-copy, variant-picker, FAQ and product-alt-text contracts load from `.claude/rules/theme-settings-contracts.md` with the files involved. Vacation-mode enables, main-menu edits and shipping-rate renames happen in Admin and fire no rule, so **read `docs/theme-settings-contracts.md` before any of them**.
