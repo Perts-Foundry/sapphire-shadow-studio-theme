@@ -57,8 +57,14 @@ const ARCHIVE_DIR = path.join(WORK_DIR, ARCHIVE_DIR_NAME);
 
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const [command, ...rest] = argv;
-  const opts = { command, _: [] };
+  // A leading flag is a flag, not a command: `blank-inventory --help` must reach the help path
+  // rather than being read as a command literally named "--help".
+  const hasCommand = argv.length > 0 && !argv[0].startsWith('--');
+  const command = hasCommand ? argv[0] : undefined;
+  const rest = hasCommand ? argv.slice(1) : argv;
+  // `_flags` keeps the flags as the operator spelled them, so an unknown-flag refusal can quote the
+  // typo back instead of its camelCased form.
+  const opts = { command, _: [], _flags: [] };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (!a.startsWith('--')) {
@@ -73,6 +79,7 @@ function parseArgs(argv) {
       key = key.slice(0, eq);
     }
     const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    opts._flags.push({ raw: `--${key}`, camel });
     if (val === undefined) {
       const next = rest[i + 1];
       if (next && !next.startsWith('--')) {
@@ -92,6 +99,87 @@ const fail = (msg) => {
   console.error(`\nERROR: ${msg}\n`);
   process.exit(1);
 };
+
+/**
+ * Every LIVE flag each command accepts, camelCased as parseArgs yields them. This list is also what
+ * a refusal prints, so it holds only flags that do something.
+ *
+ * Unknown flags are refused rather than ignored, because silently ignoring one is how a run does
+ * something other than what the operator asked for: `backfill --help` was read as
+ * `backfill --stage propose` and wrote a proposal artifact nobody wanted, and a mistyped
+ * `--timeout-ms` on a paced apply would quietly restore the default timeout mid-cascade.
+ *
+ * A missing entry is the dangerous direction, and it is not hypothetical: `apply --receipt` was left
+ * out of the first version of this registry, which turned the CLI's own advice for recovering a
+ * mismatched resume into an error, at the one moment an operator is following it. The registry is
+ * therefore checked against the source in both directions by
+ * `every flag a command reads is registered, and every registered flag is read`.
+ */
+const COMMAND_FLAGS = {
+  bodies: [],
+  audit: ['json', 'group', 'stale'],
+  reorder: ['json', 'body', 'below', 'purchaseList'],
+  demand: ['days', 'json'],
+  vocab: ['check', 'mode', 'format'],
+  show: ['plan'],
+  plan: ['input', 'mode', 'format', 'out'],
+  repair: ['receipt', 'out'],
+  apply: ['plan', 'receipt', 'dryRun', 'resume', 'batchSize', 'noBatch', 'timeoutMs'],
+  verify: ['receipt', 'timeoutMs'],
+  backfill: [
+    'stage',
+    'plan',
+    'body',
+    'color',
+    'size',
+    'product',
+    'blank',
+    'allowOverCap',
+    'dryRun',
+    'batchSize',
+    'noBatch',
+    'timeoutMs',
+    'out',
+  ],
+  untag: ['variant', 'quantity', 'dryRun'],
+};
+
+/**
+ * Flags that are parsed but do nothing except reach a better refusal than the generic one.
+ *
+ * `bodies --stage/--proposal` answers "that workflow is gone, the body map is declared in
+ * catalogue.json", and `apply --input/--mode` answers "apply takes the artifact the operator
+ * approved". They are accepted so those messages keep firing, and kept OUT of `COMMAND_FLAGS` so a
+ * refusal never advertises them as options: an operator who reads `--input` off an error message
+ * and tries it has been sent on a detour by the error that was meant to help.
+ */
+const RETIRED_FLAGS = {
+  bodies: ['stage', 'proposal'],
+  apply: ['input', 'mode'],
+};
+
+/** Accepted everywhere, whatever the command. */
+const GLOBAL_FLAGS = ['help'];
+
+/**
+ * Refuse a flag the command does not take.
+ *
+ * @param {{command: string, _flags?: Array<{raw: string, camel: string}>}} opts
+ * @param {(msg: string) => void} [refuse] - injectable so a test need not exit the process
+ */
+function assertKnownFlags(opts, refuse = fail) {
+  const accepted = COMMAND_FLAGS[opts.command];
+  if (!accepted) return; // an unknown command is already answered with the usage text
+  const known = new Set([...accepted, ...(RETIRED_FLAGS[opts.command] ?? []), ...GLOBAL_FLAGS]);
+  const unknown = [...new Set((opts._flags ?? []).filter((f) => !known.has(f.camel)).map((f) => f.raw))];
+  if (!unknown.length) return;
+  const listed = accepted.map((c) => `--${c.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)}`).sort();
+  return refuse(
+    `"${opts.command}" does not take ${unknown.join(', ')}.\n` +
+      `       It accepts: ${listed.length ? listed.join(' ') : '(no flags)'}\n` +
+      `       Run "blank-inventory.mjs --help" for the full usage.`
+  );
+}
 
 const heading = (s) => console.log(`\n${s}\n${'-'.repeat(s.length)}`);
 
@@ -345,7 +433,21 @@ function liveWatchDeps() {
  * @returns {Promise<{verdicts: Map<string, string>, converged: Set<string>, stale: Set<string>, missing: Set<string>, elapsedMs: number, reads: number}>}
  */
 async function waitForGroups({ targets, timeoutMs = DEFAULT_TIMEOUT_MS, intervalMs, onTick, deps = liveWatchDeps() }) {
-  return watchToConvergence(deps, { targets, timeoutMs, intervalMs, onTick });
+  return watchToConvergence(deps, { targets, timeoutMs, intervalMs, onTick, onReadRetry: warnReadRetry });
+}
+
+/**
+ * A poll read that dropped its connection and is being re-read. Printed rather than swallowed: a
+ * run that takes an extra few seconds should say why, and a store that produces these on every tick
+ * is telling the operator something even though the watch survives.
+ *
+ * @param {{attempt: number, attempts: number, delayMs: number, error: Error}} info
+ */
+function warnReadRetry({ attempt, attempts, delayMs, error }) {
+  console.warn(
+    `  transient read failure (${error.message}); re-reading in ${Math.round(delayMs / 100) / 10}s ` +
+      `(retry ${attempt} of ${attempts - 1}). Nothing was written.`
+  );
 }
 
 /**
@@ -1905,7 +2007,7 @@ async function cmdBackfill(opts) {
         return new Map(affected.map((b) => [b, groupSignature(s.groups.get(b) ?? [])]));
       },
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    });
+    }, { onReadRetry: warnReadRetry });
     if (q.timedOut) fail(`Groups still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. Try again later.`);
     console.log(`Quiet after ${q.reads} reads.`);
 
@@ -2096,6 +2198,8 @@ blank-inventory: shared-blank stock and metafield tooling.
 
 Input CSV is "body,color,size,value[,raw]" with a header row, or pass --format.
 --product takes a product HANDLE, not a title or an id.
+--help prints this text, on its own or after any command. A flag a command does not take is an
+error, never ignored.
 
 Env: MYSHOPIFY_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET.
      BLANK_INVENTORY_DIR overrides the working directory.
@@ -2149,10 +2253,17 @@ async function main() {
     untag: cmdUntag,
   }[opts.command];
 
+  // --help wins over everything, on any command. It used to fall through to the command itself:
+  // `backfill --help` ran `backfill --stage propose` and left a proposal artifact behind.
+  if (opts.help || opts.command === 'help' || !opts.command) {
+    console.log(USAGE);
+    process.exit(0);
+  }
   if (!run) {
     console.log(USAGE);
-    process.exit(opts.command ? 1 : 0);
+    process.exit(1);
   }
+  assertKnownFlags(opts);
   const isWrite = writeCommands.has(opts.command) && !opts.dryRun;
   assertNoOrphanWorkDir(opts.command, isWrite);
   if (isWrite) await withLock(() => run(opts));
@@ -2184,4 +2295,25 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 // confirmation, and both were previously unreachable from a test: a regression in the batch-size
 // validation, the resume receipt check, the out-of-artifact refusal or the exit-code wiring would
 // have been caught only by an operator running against production.
-export { parseArgs, numericOpt, boolOpt, makeWriter, loadReceipts, archiveStaleSeedReceipts, waitForGroups, cmdRepair, cmdApply, cmdVerify };
+// `assertKnownFlags`, `COMMAND_FLAGS` and `RETIRED_FLAGS` join them because an over-tight registry
+// turns a documented invocation into an error at the worst moment, which it already did once
+// (`apply --receipt`): their test checks the registry against the source in both directions and
+// replays every invocation the skill and the docs tell an operator to run. `warnReadRetry` is
+// exported because it is the only operator-visible sign that a retry happened.
+export {
+  parseArgs,
+  numericOpt,
+  boolOpt,
+  makeWriter,
+  loadReceipts,
+  archiveStaleSeedReceipts,
+  waitForGroups,
+  cmdRepair,
+  cmdApply,
+  cmdVerify,
+  assertKnownFlags,
+  COMMAND_FLAGS,
+  RETIRED_FLAGS,
+  USAGE,
+  warnReadRetry,
+};

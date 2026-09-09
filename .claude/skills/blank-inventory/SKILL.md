@@ -94,6 +94,12 @@ tool says so, and deleting it is the operator's call.
 
 ## Pipeline
 
+The CLI contract, before the steps: `--help` prints the usage, on its own or after any command, and
+a flag a command does not take is an error rather than something ignored. Both matter here.
+`backfill --help` used to fall through to `backfill --stage propose` and leave a proposal artifact
+behind, and an ignored flag means the run did something other than what was asked. A refusal lists
+what that command accepts, so read it rather than guessing another spelling.
+
 Gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own and `untag` has one. (There used to
 be a body-approval STOP above this list; the body map is declared in a reviewed PR now, so the gate
 that replaced it is code review, not a runtime prompt.) Ask the specific question, stop, and do not proceed without an explicit yes. Do
@@ -140,6 +146,14 @@ not batch gates.
    minute, and that is the point. Tell the operator the expected duration before starting, and offer
    to pause the low-stock alert workflow. `--batch-size n` and `--no-batch` exist; neither is a way
    to make a run finish sooner.
+
+   **A dropped connection during a poll is not a halt.** The convergence poll and the backfill
+   quiesce re-read through a transient transport failure (`fetch failed`, a reset socket, a 5xx),
+   three attempts with a bounded backoff, and print a line saying so. Only the read is re-driven;
+   nothing is written twice, and a retry is one observation, so it cannot make a still-moving
+   cascade look converged. Throttling is not handled there: it has its own backoff inside the Admin
+   client. If a run still dies on a transport error, that is a real network fault, not a flake to
+   loop on by hand.
 
    **A halt is not a failure to retry past.** If a batch's fan-out does not converge, `apply` stops
    and leaves every remaining group **not attempted**, which is what `--resume` picks up later.

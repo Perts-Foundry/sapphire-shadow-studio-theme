@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path, { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,11 @@ import {
   cmdApply,
   cmdVerify,
   untaggedHoldingStock,
+  assertKnownFlags,
+  COMMAND_FLAGS,
+  RETIRED_FLAGS,
+  USAGE,
+  warnReadRetry,
 } from '../blank-inventory.mjs';
 import { MODE_ABSOLUTE, MODE_DELTA } from '../lib/input.mjs';
 import { createArtifact, verifyArtifact, receiptArtifactMismatch, writeJsonAtomic, readJson, ROW_APPLIED } from '../lib/receipt.mjs';
@@ -1087,4 +1093,262 @@ test('tagged, zero-quantity and untracked variants are all outside the finding s
 test('an empty exemption set changes nothing for garments', () => {
   const rows = untaggedHoldingStock([v({ quantity: 1 })], new Set());
   assert.equal(rows.length, 1);
+});
+
+// --- help and unknown flags --------------------------------------------------
+//
+// Ignoring a flag is how a run does something other than what was asked: `backfill --help` was read
+// as `backfill --stage propose` and wrote a proposal artifact nobody wanted. The refusal is only
+// safe if the registry is complete, so the last two tests here are what make it safe: every flag
+// the usage text advertises must be accepted, and every invocation the docs hand an operator must
+// still parse.
+
+test('a leading flag is a flag, not a command', () => {
+  const opts = parseArgs(['--help']);
+  assert.equal(opts.command, undefined, '"--help" is not a command named "--help"');
+  assert.equal(opts.help, true);
+});
+
+test('parseArgs records flags as the operator spelled them', () => {
+  const opts = parseArgs(['apply', '--batch-size', '4', '--no-batch']);
+  assert.deepEqual(
+    opts._flags.map((f) => f.raw),
+    ['--batch-size', '--no-batch']
+  );
+});
+
+test('a flag the command does not take is refused, not ignored', () => {
+  const refusals = [];
+  assertKnownFlags(parseArgs(['backfill', '--stage', 'seed', '--resume']), (m) => refusals.push(m));
+  assert.equal(refusals.length, 1);
+  assert.match(refusals[0], /--resume/);
+  assert.match(refusals[0], /backfill/);
+  assert.match(refusals[0], /--stage/, 'the refusal lists what the command does accept');
+});
+
+test('--help is accepted on every command', () => {
+  for (const command of Object.keys(COMMAND_FLAGS)) {
+    const refusals = [];
+    assertKnownFlags(parseArgs([command, '--help']), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `${command} --help must reach the help path, not a refusal`);
+  }
+});
+
+test('an unknown command is answered with the usage text, not a flag refusal', () => {
+  const refusals = [];
+  assertKnownFlags(parseArgs(['nonsense', '--whatever']), (m) => refusals.push(m));
+  assert.deepEqual(refusals, [], 'main prints USAGE for an unknown command; this check stays out of it');
+});
+
+test('the retired flags keep their own explanations rather than the generic refusal', () => {
+  // `bodies --stage` and `apply --input/--mode` each have a message that says WHY the workflow is
+  // gone. Dropping them from the registry would replace an explanation with "unknown flag".
+  for (const argv of [['bodies', '--stage', 'propose'], ['apply', '--input', 'counts.csv'], ['apply', '--mode', 'absolute']]) {
+    const refusals = [];
+    assertKnownFlags(parseArgs(argv), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `${argv.join(' ')} must reach its bespoke refusal`);
+  }
+});
+
+test('every flag a command reads is registered, and every registered flag is read', async () => {
+  // The check that would have caught `apply --receipt`, which the first version of the registry
+  // omitted: the CLI's own resume-mismatch refusal tells the operator to pass it, so the omission
+  // turned that advice into an error at the one moment someone follows it.
+  //
+  // Source-scanned rather than declared, on purpose. A second hand-written list is a second thing to
+  // drift, and the drift would be invisible in exactly the direction that hurts. Precedent:
+  // scripts/applique-grid/test/help.test.mjs.
+  const src = await readFile(fileURLToPath(new URL('../blank-inventory.mjs', import.meta.url)), 'utf8');
+  const lines = src.split('\n');
+  // Every top-level function, so a cmd body ends where the NEXT function begins, whatever its name.
+  // Bounding only at the next cmd swept main() into cmdUntag and read its --help handling as a flag.
+  const tops = [];
+  lines.forEach((line, i) => {
+    const m = line.match(/^(?:async )?function (\w+)\(/);
+    if (m) tops.push({ name: m[1], line: i });
+  });
+  const starts = tops
+    .map((t, n) => ({ ...t, end: tops[n + 1]?.line ?? lines.length }))
+    .filter((t) => /^cmd[A-Z]/.test(t.name))
+    .map((t) => ({ ...t, command: t.name.slice(3).toLowerCase() }));
+  assert.equal(starts.length, Object.keys(COMMAND_FLAGS).length, 'every cmd function was located, and only those');
+
+  const ignored = new Set(['command', '_', '_flags', 'help']);
+  for (const { command, line, end } of starts) {
+    const body = lines.slice(line, end).join('\n');
+    const read = new Set([...body.matchAll(/opts\.([a-zA-Z]+)/g)].map((m) => m[1]).filter((f) => !ignored.has(f)));
+    const registered = COMMAND_FLAGS[command];
+    assert.ok(registered, `cmd${command} has no registry entry`);
+    const accepted = new Set([...registered, ...(RETIRED_FLAGS[command] ?? [])]);
+
+    for (const flag of read) {
+      assert.ok(accepted.has(flag), `"${command}" reads opts.${flag}, but the registry would refuse --${flag}`);
+    }
+    for (const flag of registered) {
+      // The other direction: an entry nothing reads re-opens the silently-ignored-flag bug for that
+      // one flag, which is the failure this whole registry exists to close.
+      assert.ok(read.has(flag), `the registry accepts --${flag} for "${command}", but nothing reads it`);
+    }
+  }
+});
+
+test('the retired flags are accepted but never advertised', () => {
+  // They exist so the bespoke refusals keep firing. Printing them in an "It accepts" list would send
+  // an operator who mistyped an unrelated flag off to a different refusal.
+  for (const [command, flags] of Object.entries(RETIRED_FLAGS)) {
+    for (const flag of flags) {
+      assert.ok(!COMMAND_FLAGS[command].includes(flag), `--${flag} must not be advertised for "${command}"`);
+    }
+  }
+  const refusals = [];
+  assertKnownFlags(parseArgs(['apply', '--nonsense']), (m) => refusals.push(m));
+  assert.equal(refusals.length, 1);
+  assert.doesNotMatch(refusals[0], /--input|--mode/, 'the refusal does not advertise a flag it will then refuse');
+});
+
+test('every flag the usage text advertises is in the registry', () => {
+  // The registry is what turns a typo into an error, so a flag documented but not registered would
+  // refuse an invocation the tool's own help told the operator to run.
+  const lines = USAGE.split('\n');
+  let current = null;
+  const documented = new Map();
+  for (const line of lines) {
+    if (current && line.trim() === '') break; // the command block ends at the first blank line
+    const start = line.match(/^ {2}([a-z]+)\b/);
+    if (start && COMMAND_FLAGS[start[1]]) current = start[1];
+    if (!current) continue;
+    for (const [, flag] of line.matchAll(/--([a-z][a-z-]*)/g)) {
+      if (!documented.has(current)) documented.set(current, new Set());
+      documented.get(current).add(flag.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
+    }
+  }
+  // Equality against an explicit exemption, not a count: a bound of "one fewer than the commands"
+  // happens to hold today only because `bodies` is the single flagless command, and it would fail
+  // for an unrelated reason the moment a second one appears.
+  assert.deepEqual(
+    [...documented.keys()].sort(),
+    Object.keys(COMMAND_FLAGS)
+      .filter((c) => c !== 'bodies')
+      .sort(),
+    'every command but the flagless one was parsed out of the usage text'
+  );
+  for (const [command, flags] of documented) {
+    for (const flag of flags) {
+      assert.ok(
+        COMMAND_FLAGS[command].includes(flag),
+        `usage advertises --${flag} for "${command}", but the registry would refuse it`
+      );
+    }
+  }
+});
+
+test('every invocation the docs hand an operator still parses', async () => {
+  // SCRAPED, not copied. A hand-maintained list is a snapshot that drifts the moment a doc gains an
+  // invocation, and the drift is invisible in the direction that hurts: the doc tells the operator
+  // to run something the tool now refuses.
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
+  const sources = [
+    '.claude/skills/blank-inventory/SKILL.md',
+    'scripts/blank-inventory/README.md',
+    'docs/blank-inventory-sync-flow.md',
+  ];
+
+  const invocations = new Map();
+  for (const rel of sources) {
+    const text = await readFile(path.join(root, rel), 'utf8');
+    for (const [, tail] of text.matchAll(/blank-inventory\.mjs ([a-z]+[^`\n|)]*)/g)) {
+      // Strip the doc conventions that are not argv: [optional] brackets and <placeholders>.
+      const argv = tail
+        .replace(/[[\]]/g, ' ')
+        .replace(/<[^>]*>/g, 'PLACEHOLDER')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      if (argv.length) invocations.set(argv.join(' '), argv);
+    }
+  }
+
+  // Positive control: a green result must mean the docs were read, never that the scrape matched
+  // nothing. The count is a floor, not a pin, so adding a documented invocation cannot fail here.
+  assert.ok(invocations.size >= 20, `the docs were scraped (${invocations.size} invocations found)`);
+  const commands = new Set([...invocations.values()].map((a) => a[0]));
+  for (const command of ['audit', 'apply', 'verify', 'backfill', 'plan']) {
+    assert.ok(commands.has(command), `the scrape found the documented "${command}" invocations`);
+  }
+
+  for (const argv of invocations.values()) {
+    const refusals = [];
+    assertKnownFlags(parseArgs(argv), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `documented invocation refused: ${argv.join(' ')}`);
+  }
+});
+
+// --- the help path, end to end ----------------------------------------------
+//
+// main() is not exported, and the bug being fixed lives in its ORDER (help before the command
+// dispatch, before assertKnownFlags, before any write). Only a real process can pin that, and the
+// artifact assertion is the only one that actually proves `backfill --help` no longer falls through
+// to `--stage propose`. Precedent: scripts/applique-grid/test/help.test.mjs.
+
+const CLI = fileURLToPath(new URL('../blank-inventory.mjs', import.meta.url));
+
+async function runCli(argv, env = {}) {
+  return new Promise((resolve) => {
+    execFile(process.execPath, [CLI, ...argv], { env: { ...process.env, ...env } }, (err, stdout, stderr) => {
+      resolve({ code: err?.code ?? 0, stdout, stderr });
+    });
+  });
+}
+
+test('--help prints the usage and exits 0, on its own or after any command', async () => {
+  for (const argv of [['--help'], ['help'], [], ['bodies', '--help'], ['apply', '--help']]) {
+    const { code, stdout } = await runCli(argv);
+    assert.equal(code, 0, `"${argv.join(' ')}" should exit 0`);
+    assert.match(stdout, /^\s*blank-inventory: shared-blank stock and metafield tooling\./);
+  }
+});
+
+test('an unknown command exits 1 with the usage, and an unknown flag exits 1 with the refusal', async () => {
+  const bogus = await runCli(['bogus']);
+  assert.equal(bogus.code, 1);
+  assert.match(bogus.stdout, /blank-inventory: shared-blank stock/);
+
+  const badFlag = await runCli(['apply', '--nonsense']);
+  assert.equal(badFlag.code, 1);
+  assert.match(badFlag.stderr, /"apply" does not take --nonsense/);
+});
+
+test('backfill --help writes no artifact: the fall-through to --stage propose is gone', async () => {
+  // The incident itself. `--stage` defaults to propose, so before the help path existed this run
+  // reached cmdBackfill and left a proposal artifact in the working directory.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'blank-inventory-help-'));
+  try {
+    const { code, stdout } = await runCli(['backfill', '--help'], { BLANK_INVENTORY_DIR: dir });
+    assert.equal(code, 0);
+    assert.match(stdout, /blank-inventory: shared-blank stock/);
+    // The usage text itself names the propose stage, so the tell is the stage's own output, not the
+    // word. These are the headings and lines cmdBackfill prints once it actually runs.
+    // The usage text names the backfill command and its stages, so the tell is the stage's own
+    // output: the headings and the "Proposal:" line cmdBackfill prints once it actually runs.
+    assert.doesNotMatch(stdout, /Backfill proposal|Proposal:|Nothing written|Seed writes|New-blank bootstrap/, 'the propose stage did not run');
+    assert.deepEqual(await readdir(dir), [], 'the working directory is untouched');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('warnReadRetry names the wait, the budget, and that nothing was written', () => {
+  const lines = [];
+  const warn = console.warn;
+  console.warn = (s) => lines.push(s);
+  try {
+    warnReadRetry({ attempt: 1, attempts: 3, delayMs: 1500, error: new Error('fetch failed') });
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /transient read failure \(fetch failed\)/);
+  assert.match(lines[0], /re-reading in 1\.5s/);
+  assert.match(lines[0], /retry 1 of 2/, 'the budget reads as retries, not as a fourth attempt');
+  assert.match(lines[0], /Nothing was written/);
 });

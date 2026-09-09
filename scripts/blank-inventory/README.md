@@ -40,7 +40,15 @@ old gate approved and deleting it is the operator's call.
 
 ## Commands
 
+`--help` prints the usage, on its own or after any command. A flag a command does not take is an
+error naming what that command does accept, never something quietly ignored: an ignored flag means
+the run did something other than what was asked, and `backfill --help` used to be read as
+`backfill --stage propose` and write a proposal artifact.
+
 ```bash
+# The usage, from anywhere.
+node scripts/blank-inventory/blank-inventory.mjs --help
+
 # Print the declared garment body of each product, from catalogue.json. Read-only: it takes no
 # flags, writes nothing, and there is nothing to approve. To change an assignment, or to add a
 # product, edit catalogue.json in a reviewed PR.

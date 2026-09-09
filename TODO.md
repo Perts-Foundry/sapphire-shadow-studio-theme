@@ -160,8 +160,9 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   - **No retry around live Admin writes.** `upload-product-media.mjs` has none, and one run hit
     three transient WSL2 IPv6/IPv4 connect failures. It survived because a re-run reported
     `skip(dupe)`, so the write path is idempotent; that property is load-bearing and currently
-    untested and undocumented. (The read-only convergence poll in `blank-inventory` has the same
-    shape of problem and is being fixed separately; this one is the write path, which is harder.)
+    untested and undocumented. (The read-only convergence poll in `blank-inventory` had the same
+    shape of problem and now retries; see `release-notes.md`. This one is the write path, where
+    re-driving is not safe on its own, so the idempotency property has to come first.)
   - **Approved artefacts were overwritten with no backup.** An approved final image was replaced
     between sessions and recovered only because the operator had shared it elsewhere. Consider a
     rule that anything past an approval gate is copied aside before being rewritten.
