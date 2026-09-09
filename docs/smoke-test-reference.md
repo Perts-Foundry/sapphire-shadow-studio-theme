@@ -94,7 +94,10 @@ diagnosing a deploy failure it reported.
   back to a single hardcoded fixture. Caps: `SMOKE_MAX_PRODUCTS`, `SMOKE_MAX_SECONDS` (see
   `smoke.mjs` for current defaults; exhausting the time cap soft-warns the remainder, never
   blocks).
-- **Locked vs public.** The store is password-protected pre-launch. When
+- **Locked vs public.** The store is now **public** (verified 2026-09-08), so the smoke takes the
+  PUBLIC path and the paragraph below describes the locked mode it no longer runs in. Keep the
+  paragraph: the mode is still reachable, since re-enabling the password in Admin puts the smoke
+  straight back into it with no code change. When
   `STOREFRONT_PASSWORD` (repo **secret**, isolated to the `deploy` job's push step) is set,
   the smoke authenticates the password gate and probes real pages while locked. A password
   that the gate **refuses** (wrong / rotated secret) is a HARD-FAIL, so a stale secret cannot

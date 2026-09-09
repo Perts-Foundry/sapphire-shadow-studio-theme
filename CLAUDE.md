@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repo. The repo is a custom Shopify them
 
 This repository is **public**: personal contact metadata, internal strategy/legal-advisory content, and dev-machine identifiers must never appear in the repo, git history, PRs, issues, comments, or release artifacts. Brand-personality copy already on the storefront (founder narrative, About/FAQ pages, photography filenames without personal identifiers) is fine to commit. The repo was deleted-and-recreated once to scrub embedded metadata; do not reintroduce it.
 
-The `secret-scan` job (Gitleaks) catches token-shaped strings but does not catch personal emails, addresses, or merchant-keyed prose; the author's responsibility per the checklist below.
+The Gitleaks scan catches token-shaped strings but does not catch personal emails, addresses, or merchant-keyed prose; the author's responsibility per the checklist below. **It is a step inside the `validate` job, not a job of its own**, and the PR comment surfaces it as the **Secret Scan** row; looking for a `secret-scan` job in the checks list finds nothing and has already cost one run several minutes.
 
 ### What is sensitive (do not commit)
 
@@ -34,7 +34,7 @@ Before every `git push`, every `gh pr create`, every `gh pr comment`, and every 
 
 1. **Scan the full branch diff** (`git diff origin/main..HEAD`) and **every commit message** (`git log origin/main..HEAD --format=%B`) for: personal emails, personal phone, machine paths, tokens, merchant-keyed strategy framing, sub-state location detail.
 2. **Scan the rendered PR / issue / comment body** for the same categories; `gh ... --body` text skips both the diff scan and Gitleaks.
-3. **Verify the `secret-scan` CI check is green** on the latest PR run. Red means stop and triage, not "rebase past it."
+3. **Verify the Secret Scan result is green** on the latest PR run: the `validate` job's conclusion is the check to read, and the **Secret Scan** row in its PR comment names the Gitleaks result inside it. Red means stop and triage, not "rebase past it."
 4. **Verify `git config --local user.email`** is `seth@pertsfoundry.com` or the no-reply form; Gmail in author metadata is the leak no diff ever shows (see Commit-author email above).
 5. If anything sensitive is found:
    - **Pre-push (history not yet on remote)**: rewrite locally with `git rebase -i` or `git commit --amend`. Replace with neutral descriptors. Re-run all checks before pushing.

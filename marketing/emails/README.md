@@ -610,6 +610,8 @@ There is no automated check for these files, by design:
   committed under `assets/` stop matching what the renderer produces. Nothing tests the templates
   themselves.
 - **Confirm every CDN asset URL returns 200 to an anonymous request** after changing one. The
-  storefront is password-protected and the CDN is not, so it is easy to paste a URL that works in
-  your logged-in browser and reaches no subscriber.
+  storefront is public as of 2026-09-08, so the old password gate no longer makes this trap
+  automatic, but the check stays: a signed-in browser also carries a session that an unexpired
+  staged-upload URL, a draft-theme asset path, or a file the store later removes will still answer
+  for, and none of those reach a subscriber. Check it logged out.
 - **The test send is the real test.** Nothing before it proves the email renders in an inbox.

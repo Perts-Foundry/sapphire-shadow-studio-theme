@@ -89,9 +89,22 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   never an overwrite). Rationale and the resulting CDN URLs:
   [`../marketing/emails/README.md`](../marketing/emails/README.md).
 
+- `add-product/`: the `add-product` skill's own tooling: its per-product state file (`state.mjs`,
+  the only writer, outside the repo), three read-only completion checks (`check-variants.mjs`,
+  `media-survey.mjs`, `publication-check.mjs`), and `add-option-value.mjs`, which adds a new colour,
+  size or design value to an already-published product on the **live store** behind the same class
+  of gates as `policies:push`. It exists because runs kept re-deriving the same read-only checks
+  with throwaway scripts. Adding the value and attaching the per-colour hero media are two separate
+  invocations with two dry runs and two approvals, on purpose. See
+  [`add-product/README.md`](add-product/README.md).
+
 The `product-images` Claude skill (`.claude/skills/product-images/`) drives the whole pipeline end to
 end (normalise, process, draft alt text, upload) with human-approval gates; these scripts are what it
 runs.
+
+`run-all-tests.mjs` backs `npm run test:all`: it discovers every `*:test` script in `package.json`,
+runs them one at a time, prints one line per suite and rolls the results up. Discovery rather than a
+hand-written list, so a new `<area>:test` cannot be silently left unrun.
 
 ## Credentials
 

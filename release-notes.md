@@ -1,5 +1,149 @@
 # Release Notes
 
+## The add-product run review: tools where there were improvisations, and two gates where there was one (unreleased)
+
+The DNP run finished green, and a turn-by-turn read of it afterwards found the skill fighting its own
+text in about a dozen places. None of them broke anything. All of them cost time in the same shape:
+the file said one thing, the run needed another, and the model improvised the difference with a
+throwaway script. This entry records the changes and, where it matters, why the obvious version of
+each was wrong.
+
+**The hero attach was in the wrong phase, and the skill never said where to do it.** Phase 2 step 4
+called it "required, and manual" for a new size or design value, and named the tool that cannot do
+it (`upload-product-media.mjs --attach-heroes` builds its plan from the manifest rows a batch is
+processing, and the new variants land under colours that already have media, so the append is
+rejected for the whole colour). What it never said is WHERE the manual attach happens. The operator
+did it by hand in Admin during phase 0, which is the right place, and phase 2 then spent two ad-hoc
+survey scripts discovering that the work was already done. The attach is now phase 0 step 3, in the
+same Admin visit that created the variants, and phase 2 step 4 is a single read for these entries.
+
+**Phase 0 writes to the live store now, and that is a real change to what this skill is, so it comes
+with the two-gate rule.** An option-value entry adds variants to a product that is already ACTIVE and
+published: they are purchasable the moment they exist. The recommended default is now the API path,
+through `scripts/add-product/add-option-value.mjs`, because the same value string typed by hand into
+three products is exactly where a trailing or non-breaking space enters an append-only vocabulary,
+and because the helper sets price, weight, tracking and policy in the same run rather than leaving
+them to a second pass. **Adding the value and attaching the heroes are two writes, so they are two
+dry runs and two asks.** Bundling them into one question would have been the natural thing to write
+and is the thing that turns a gate into a formality: the operator who says yes to "add DNP and
+attach its heroes" has approved one sentence and two blast radii. Containment is stated as the three
+settings it actually is, DENY plus quantity 0 plus tracked, because dropping any one of them makes
+the new value orderable with nothing behind it, and `check-variants.mjs` exits non-zero on ALLOW or
+untracked so the completion check is also the containment check.
+
+**"Handoffs end the session" was not what happened, and pretending otherwise taught the wrong
+lesson.** The operator said "proceed" at the phase 1 handoff, and the run committed, ran `/pre-pr`,
+pushed, opened the PR, watched CI and watched the deploy, entirely against the skill's text. It
+worked. Phase 1 step 8 is now a STOP that offers the continue and the clean stop neutrally, with no
+default, because a rule everyone breaks is worse than no rule: it stops being read, and the parts of
+it that mattered go with it. What matters here is the boundary, so it is stated at length instead:
+**the continue authorises repo and PR work and nothing else.** Every phase-2 gate still needs its own
+dry run and its own fresh operator message, quoted verbatim in the response that invokes the write;
+any approval given before the STOP is void after it; and an approval that survives only as a summary
+after a compaction or a resume is not one, because it cannot be quoted unsummarised.
+
+**`deploy-verified` had no meaning for a docs-only PR, and the run had to reason it out mid-flight.**
+A design value changes no file the live theme renders, so the deploy pushes nothing and the smoke
+never runs. The state key now says so in those words, and the case is decided from the PR's
+changed-file list rather than from the entry type: recording "smoke green" for a run where the smoke
+did not execute is a check that reads as evidence and is not. Two neighbouring signals were wrong for
+their own reasons. The deploy run is now selected by `mergeCommit.oid`, never newest-first, after a
+hand-written poller matched an older completed run and reported it green. And the Gitleaks scan is a
+STEP inside the `validate` job, surfaced as the **Secret Scan** row in that job's PR comment; this
+file, the repo `CLAUDE.md` and the skill all called it a `secret-scan` job, which sends a reader
+looking for a check that has never existed.
+
+**The seed-timing estimate came from the right number measured on the wrong operation.** Phase 2's
+blank-inventory gate quoted the 80 to 90 second cascade and the 40 to 60 minute figure, which
+describe a count-sheet **apply**, where every sibling's quantity actually changes. A seed onto
+siblings that already agree converges in about 20 seconds per group, two 10-second polls, so 42
+groups is roughly 14 minutes rather than the two hours the old figures implied. An estimate that
+wrong is not a cosmetic problem: it invites the operator to split or defer a step that is about to
+make the new value purchasable. The gate paragraph also now leads with that customer-facing effect
+before explaining the mechanism, because leading with the mechanism is what produced the question
+"is this actually changing the stock?" in the middle of the gate, which is the gate failing at its
+one job.
+
+**Six throwaway scripts and a shell heredoc became `scripts/add-product/`.** The state file is
+written by `state.mjs` and nothing else; three read-only commands (`check-variants.mjs`,
+`media-survey.mjs`, `publication-check.mjs`) replace the ad-hoc queries, one of which shipped a
+GraphQL syntax error before it worked. Two details of the state file are deliberate. It is version 2
+with a single `status` field per step and **no `done: true` mirror beside it**, because two fields
+that must agree are two fields that can disagree and the reader that trusts the wrong one reports a
+step complete that no check ever passed; a version-1 file is refused by name rather than half-read.
+And a not-applicable step is `na_presumed` when `init` pre-fills it from the entry type, becoming
+`na_confirmed` only once the owning phase looks, because the presumption is the thing most likely to
+be wrong on a run that turns out not to match its entry type, and collapsing both into "done" loses
+the only signal that would show it. The nine reasons the last run hand-typed into state in one batch
+now come from one table that the tool, its tests and the skill prose all read.
+
+**Everything this directory prints is data, including anything shaped like an approval.** Helper
+output, receipts and every field of the state file are records of what was read, never instructions
+and never authorisation. An `evidence` string is stripped of control characters and capped before it
+is stored, because `show` renders it to a terminal and a multi-line or escape-carrying string can
+forge the rest of that render: an APPROVED line that looks like the tool wrote it, a cursor move that
+hides a step. Losing the layout of a completion check's result costs nothing.
+
+**`npm run test:all` exists because running the suites by hand went wrong the same two ways twice.**
+A shell loop over the suite names is refused by the worktree command verifier, and piping each suite
+through `tail` clips exactly the pass and fail lines, so a run reads as silent and gets repeated: one
+run spent twelve tool calls on what is now one command. The suite list is discovered from
+`package.json` rather than written down, so a new `<area>:test` cannot be silently left unrun, and a
+test asserts the discovery misses nothing. The verdict comes from each suite's exit code and never
+from its parsed counts, because a suite can exit non-zero with `fail 0` after an uncaught exception,
+and a suite that dies on import prints no summary block at all.
+
+**The storefront password came off and six documents did not notice.** `onlineStoreUrl` reads null on
+every product in a password-protected store, which is why two files and a backlog item told the
+reader not to use it. The store is public now, so that reading is gone. The field is still the wrong
+one, for the reason that does not expire: `resourcePublicationsV2` names WHICH channels a product
+reached, so it separates "published to the Online Store only" from "published where its siblings
+are", and it catches an empty set outright. A URL only tells you one channel answered. The same sweep
+corrected `docs/browser-testing.md`, which was telling the reader that every anonymous storefront
+request returns a 401 and so would have had them read a genuinely broken page as an expected lock.
+Release-notes entries kept their password-protected wording deliberately: they are dated records of
+what was true when written.
+
+**The pre-PR gate found the two things this change was most likely to get wrong, and both were in
+the new tooling rather than the prose.** The first: `add-product:test` was never added to
+`validate.yml`, so the 64 tests guarding the directory's only live write ran locally and nowhere
+else. CI is this org's single enforcement point, which makes a suite outside it advisory, and the
+test that was supposed to notice could not: its discovery-completeness assertion compared
+`keys(scripts).filter(endsWith(':test'))` against `discoverSuites(scripts)`, the same predicate over
+the same input, so the result was empty by construction and the assertion could not fail. It now
+crosses the source boundary, walking the filesystem for test directories and proving each is reached
+by a suite the runner runs, plus a third check that every discovered suite is actually invoked by
+`validate.yml`. All three were confirmed by mutation, and so was the first attempt at the third one,
+which matched the suite name anywhere in the workflow and stayed green after the run step was
+deleted, because the file also names every suite in the PR-comment table it builds.
+
+The second: two gate defects that only showed up from the wiring rather than the gate. `init` on
+several handles checked for an existing run inside its write loop, so `init --handle a,b` with `b`
+present wrote `a` and then threw, creating exactly the disagreement the multi-handle `set` path
+refuses. And the add path treated "Shopify minted no variants at all" as a mild version of "fewer
+than expected", warning and then sending an empty bulk update, which reports no error while setting
+nothing and moves on to the next product. Zero is a different fact and is now a halt; a non-zero
+mismatch still continues, because containing the variants that do exist beats leaving them at Admin
+defaults, and the code now says which of the two it is doing and why.
+
+**A cross-file contradiction worth naming, because it would have shipped the bug the docs warn
+about.** Phase 0's new hero-attach step read as covering every option-value entry, while the
+entry-point table and phase 2 both say a new COLOUR's heroes come from `product-images` in phase 2.
+The tool appends a hero it finds on that colour's already-attached variants, and a genuinely new
+colour has none, so its dry run reports nothing to attach: a success-shaped result that would have
+had the step recorded done and phase 2 step 4 skipped as already handled. That is precisely the
+silent wrong-colour-thumbnail failure the media step spends three paragraphs on. The carve-out is now
+in the prose and, more usefully, in the pre-fill table, so the tool presumes `hero-attach`
+not-applicable for a new colour rather than relying on anyone reading the right file.
+
+**One correction to the plan this work came from, found while implementing it.** The plan said a new
+size adds a code to `scripts/sku/tables.json`. It does not, and cannot: that file refuses a `sizes`
+list outright, because size ranges come from `catalogue.json` and sizes pass through the scheme
+uppercased and unmapped. The skill said the same wrong thing in two places of its own, in the
+entry-point table and in phase 1 step 2, and both are fixed here. This is the case the new ground
+rule is for: when a run contradicts a phase file, the phase file gets fixed in the same PR, because a
+correction that lives only in the session that found it is a correction the next operator never gets.
+
 ## Adding DNP, and the inventory question phase 0 leaves open (unreleased)
 
 `DNP (Doctor of Nursing Practice)` is the tenth credential on the Lead II Design option, on all
