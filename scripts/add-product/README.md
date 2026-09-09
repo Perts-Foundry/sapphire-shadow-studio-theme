@@ -18,6 +18,10 @@ Run the suite with `npm run add-product:test`.
 Every command takes `--help` (prints usage, exits 0) and treats an unknown flag as an error. Handles
 come either from `--all` (derived from `scripts/sku/tables.json` by `--namespace`) or from
 `--handle a,b,c`. A handle must match `^[a-z0-9-]+$`; anything else is refused, never sanitised.
+`add-option-value.mjs` takes `--namespace <ns>` on its own for the whole namespace, since it has no
+read-only mode to run over an arbitrary set.
+
+A usage error or a refused gate exits 2; a check that ran and found a problem exits 1.
 
 Admin credentials come from the environment (`MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID`,
 `SHOPIFY_CLIENT_SECRET`) through the shared client in `scripts/blank-inventory/lib/admin.mjs`. From
@@ -26,8 +30,8 @@ a worktree the `.env` file lives in the primary checkout, so pass
 
 ### `state.mjs` (writes only under the state dir)
 
-One file per handle at `<state-dir>/<handle>.json`, where `<state-dir>` is
-`$XDG_STATE_HOME/add-product/` or `~/.local/state/add-product/`. Outside any checkout on purpose:
+One file per handle at `<state-dir>/<handle>.json`, where `<state-dir>` is `$ADD_PRODUCT_DIR`, else
+`$XDG_STATE_HOME/add-product/`, else `~/.local/state/add-product/`. Outside any checkout on purpose:
 it holds live-store facts and belongs in no PR.
 
 | Invocation | Effect |
@@ -40,8 +44,11 @@ it holds live-store facts and belongs in no PR.
 | `show [--handle h]` | Renders the run. `na_presumed` and `na_confirmed` render differently. |
 | `close --handle h --archive` | Marks the run closed and moves the file under `<state-dir>/archive/`. |
 
-The schema is fixed. Unknown keys are reported and ignored, never merged. Evidence is stripped of
-control characters and capped at 2000 characters.
+The schema is fixed, and `version` is 2: a step is `{ status, verified_at, evidence }` where status
+is `done`, `na_presumed` or `na_confirmed`, with no `done` mirror field beside it. A file whose
+version this tool does not recognise is refused by name and nothing is read from it. Unknown keys
+are reported and ignored, never merged. Evidence is stripped of control characters and capped at
+2000 characters. `init` refuses to overwrite an existing run.
 
 ### `check-variants.mjs` (read-only)
 
@@ -63,8 +70,10 @@ colour carries more than one distinct id or any variant has no attached media.
 ### `publication-check.mjs` (read-only)
 
 `--all|--handle ... --sibling x --sibling y`. Status and published channel set per product, compared
-by name against each sibling. Fails on an empty published set on either side, and on a sibling that
-is itself part of the run.
+by name against each sibling. Exit 1 on an empty published set on either side (the run's product is
+invisible; a sibling published to nothing is not a reference) or a channel-set mismatch against any
+sibling. A sibling that is itself part of the run is refused: that comparison is the run against
+itself.
 
 ### `add-option-value.mjs` (LIVE WRITE, gated)
 
@@ -75,14 +84,15 @@ variant count per handle, price, per-handle weight, policy `DENY`, quantity 0, t
 pre-flight assertion that the value does not already exist on any handle, then exits without
 writing.
 
-A live run additionally requires `--operator-approved --expect-handles a,b,c --expect-new-variants n`
-copied from the dry run; the command aborts on any mismatch, and an abort voids the approval.
+A live run additionally requires `--expect-handles a,b,c --expect-new-variants n` copied from the
+dry run, and `--operator-approved` whenever there is no TTY, which is every agent-run session; the
+command aborts on any mismatch, and an abort voids the approval.
 
 Sequence: `productOptionUpdate` adds the value and Shopify mints the variants, then
 `productVariantsBulkUpdate` sets price, weight, tracked and policy `DENY` on the new variant ids.
 If the first lands and the second fails, the store holds new variants at Admin defaults on ACTIVE
-products; `--repair --value "<string>"` re-runs only the bulk update over variants matching the
-value and is idempotent. Rollback is destructive (deleting variants loses ids and history), which is
+products; `--repair --value "<string>"` with the same `--price` and `--weight-lb` re-runs only the
+bulk update over variants matching the value and is idempotent. Rollback is destructive (deleting variants loses ids and history), which is
 why the dry run is the gate.
 
 `--attach-heroes` is a **separate invocation** with its own `--dry-run` and its own approval. It
