@@ -102,10 +102,10 @@ its steps, tags, and per-step completion checks):
 
 ## State
 
-One file per handle at `<state-dir>/<handle>.json`, where `<state-dir>` is
-`$XDG_STATE_HOME/add-product/` or `~/.local/state/add-product/` (the path is always derived from the
-handle, never read from the file). Outside the checkout on purpose: it holds live-store facts and
-belongs in no PR.
+One file per handle at `<state-dir>/<handle>.json`, where `<state-dir>` is `$ADD_PRODUCT_DIR`, else
+`$XDG_STATE_HOME/add-product/`, else `~/.local/state/add-product/` (the path is always derived from
+the handle, never read from the file). Outside the checkout on purpose: it holds live-store facts
+and belongs in no PR.
 
 **`scripts/add-product/state.mjs` is the only writer.** Not a heredoc, not a one-off node script,
 not a hand-edited file. The schema is fixed and the helper enforces it; a hand-written file passes
@@ -115,16 +115,20 @@ re-deriving what it had already learned. The commands and their exact flags are 
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "handle": "", "title": "", "gid": "", "template_suffix": "",
   "body": "(the garment body key from catalogue.json, not the product description)",
   "entry": "new-product | new-non-garment | new-colour | new-size | new-design-value",
-  "steps": { "<step-id>": { "done": true, "verified_at": "ISO date", "evidence": "" } }
+  "closed_at": null,
+  "steps": { "<step-id>": { "status": "done | na_presumed | na_confirmed", "verified_at": "ISO date", "evidence": "" } }
 }
 ```
 
-A not-applicable step carries a `status` of `na_presumed` or `na_confirmed` instead of a plain
-`done`, which is the distinction below.
+**`status` is the only completion field; there is no `done: true` beside it.** Two fields that must
+agree are two fields that can disagree, and the reader that trusts the wrong one reports a step
+complete that no check ever passed. A version-1 file (the old `done: true` shape) is refused by name
+rather than half-read. `STEP_IDS` in `scripts/add-product/lib/state.mjs` is the id list, in run
+order, and `set` on an id outside it is an error rather than a new key.
 
 - **Steps.** The ids are the ones the phase files name, and the phase-1 continue path adds three:
   `pre-pr`, `ci-verified`, and `post-merge-housekeeping`. A step is recorded with

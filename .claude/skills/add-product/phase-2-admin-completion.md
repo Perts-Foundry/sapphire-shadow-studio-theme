@@ -8,12 +8,16 @@ invokes the write.
 
 ## Entry-type step matrix
 
-For `new-design-value` and `new-size`, five of the nine steps below do not apply, because they
-belong to the PRODUCT and the product already has them. `state.mjs init` pre-fills those five as
+For every option-value entry (`new-colour`, `new-size`, `new-design-value`) five of the nine steps
+below do not apply, because they belong to the PRODUCT and the product already has them. The same
+five, for the same reason, whichever axis gained the value. `state.mjs init` pre-fills those five as
 `na_presumed` with a fixed reason each, which is the point: nine not-applicable steps written to
 state in one batch at the end of a run, with reasons typed from memory, is how a step that DID apply
 gets waved through. Print this list once at the start of the phase, then let each owning step
 promote its own row with `state.mjs confirm-na` after the one-line check.
+
+The reasons themselves live in one place, `NA_PREFILL` in `scripts/add-product/lib/state.mjs`, read
+by the tool and by its tests. The column below paraphrases them; that file is authoritative.
 
 | Step | Why it is presumed N/A for an option-value entry | The check that promotes it to `na_confirmed` |
 |---|---|---|
