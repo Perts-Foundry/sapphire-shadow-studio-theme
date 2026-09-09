@@ -41,13 +41,21 @@ variants that string mints.
 1. `resolve-scope` (verify): the affected products come from `scripts/sku/tables.json`, not from a
    collection name and not from memory: every product whose `designNamespace` matches for a design
    value, every product declaring the affected body for a size or a colour. Read the current option
-   values off the live store with `check-variants.mjs --survey --all` and present them, so the
+   values off the live store with `check-variants.mjs --all --namespace <ns> --option Design --survey`
+   and present them, so the
    operator sees the vocabulary the new value joins and the pattern it has to match (`ABBR (Long
    Form)` on the Design axis, for instance). **Ask for exactly one thing: the exact string**, with
    its spacing and parentheses as it will be typed. That string becomes an append-only key in
    `scripts/sku/tables.json` and an Admin option value on several products at once, so a stray
    trailing or non-breaking space is invisible everywhere anyone would look for it, and permanent
    once shipped.
+   - **`--all` and `--handle` are not interchangeable, and which one is right is decided here.**
+     Every helper takes `--all --namespace <ns>`, which resolves the products whose
+     `designNamespace` matches, or `--handle a,b,c`. Those coincide for a DESIGN value and only for
+     a design value: the namespace IS the design vocabulary's scope. A colour or a size affects
+     every product declaring the affected body, which no namespace expresses and no helper derives,
+     so read that list off `catalogue.json` and pass it as `--handle`. `--all` on its own is a usage
+     error rather than a default, which is the failure you want here.
    - **Ordering note.** A design value has no `catalogue.json` entry at all, while a new colour or
      size does; either way Admin still goes first, because the catalogue cohesion gate live-checks
      Admin, which is the same draft-first rule track A follows for a different reason.
@@ -97,7 +105,7 @@ variants that string mints.
 
 ### Completion check for steps 2 and 3
 
-`check-variants.mjs --all --option Design --value "<string>"` (the option name is whichever axis
+`check-variants.mjs --all --namespace <ns> --option Design --value "<string>"` (the option name is whichever axis
 gained the value). It reports, per product: the total variant count; the new variants' price, weight,
 policy, quantity and SKU; the zero-weight count; the ALLOW-or-untracked count; the per-colour
 distinct media ids with the unattached count; and the option value's hex encoding with an

@@ -16,7 +16,8 @@ still does, through the admin theme-actions Preview link.
    informs. One publications read names the cause outright. Running this after either of them is
    how the first run closed green. `status == ACTIVE` is not evidence here.
    - Completion check: the same read as phase 2 step 9, through the same helper
-     (`scripts/add-product/publication-check.mjs --all --sibling <handle> --sibling <handle>`), run
+     (`scripts/add-product/publication-check.mjs --all --namespace <ns> --sibling <handle> --sibling
+     <handle>`, or `--handle a,b,c` for a single new product), run
      fresh rather than trusted from the state file. That is deliberate duplication, not waste: it
      catches a state file claiming done, and a channel unpublished between the phases.
    - On failure this is a HALT, not a finding. Stop phase 3, return to phase 2 step 9, and say

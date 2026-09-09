@@ -81,7 +81,8 @@ Steps 2, 3, 4 and 9 apply to every entry type and are never pre-filled.
    - Completion check: that skill's final handoff summary lists this product's uploads.
    - **For an option-value entry this step is VERIFY ONLY.** The heroes were attached in phase 0
      step 3, in the same visit that created the variants, so what is left here is one read:
-     `scripts/add-product/media-survey.mjs --all`, which reports per product and per colour the
+     `scripts/add-product/media-survey.mjs --all --namespace <ns>` (or `--handle a,b,c`), which
+     reports per product and per colour the
      variant count, the distinct media ids, the unattached count and the hero id, and exits non-zero
      if any colour carries more than one distinct id or any variant has none. Do not write ad-hoc
      survey scripts for this; two of them, one with a GraphQL syntax error, were the cost of not
@@ -158,8 +159,9 @@ Steps 2, 3, 4 and 9 apply to every entry type and are never pre-filled.
    store later cannot be silently missed.
    This step is its own approval like every other write here; routing, or a continue given in
    phase 1, does not cover it.
-   - Completion check: `scripts/add-product/publication-check.mjs --all --sibling huddle-crewneck
-     --sibling shift-fuel-crewneck`, which reads
+   - Completion check: `scripts/add-product/publication-check.mjs --all --namespace <ns> --sibling
+     huddle-crewneck --sibling shift-fuel-crewneck` (`--handle a,b,c` for a single new product,
+     which no namespace covers), which reads
      `resourcePublicationsV2(first: 25) { nodes { isPublished publication { name } } }` per product
      and compares the published set by name against each sibling. It must return a **non-empty**
      published set matching a sibling's. Three ways this
