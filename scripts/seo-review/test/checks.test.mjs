@@ -4,6 +4,7 @@ import {
   evaluatePage, crossPageChecks, partitionAccepted, diffFindings,
   findingKey, exitCodeFor, pathOf, ERROR, WARN,
 } from '../lib/checks.mjs';
+import { jsonLdTypes } from '../lib/extract.mjs';
 
 const HOST = 'example.com';
 
@@ -132,6 +133,29 @@ test('collection page without an ItemList warns, and other page types do not', (
 test('product without Product/ProductGroup markup warns', () => {
   const f = evaluatePage(page('product', goodExtract({ jsonLd: [{ raw: '', parsed: {}, types: ['BreadcrumbList'], error: null }] })), HOST);
   assert.ok(f.some((x) => x.check === 'jsonld-product-missing' && x.severity === WARN));
+});
+
+test('more than one top-level Product node on a product page errors', () => {
+  const bc = { raw: '', parsed: {}, types: ['BreadcrumbList'], error: null };
+  const themeProduct = { raw: '', parsed: {}, types: ['Product'], error: null };
+  const appProduct = { raw: '', parsed: {}, types: ['Product'], error: null };
+
+  // Theme filter plus an app's own block: the anticipated overlap, flagged as ERROR.
+  const dup = evaluatePage(page('product', goodExtract({ jsonLd: [bc, themeProduct, appProduct] })), HOST);
+  assert.ok(dup.some((x) => x.check === 'jsonld-product-duplicate' && x.severity === ERROR));
+
+  // One block: clean.
+  assert.deepEqual(evaluatePage(page('product', goodExtract({ jsonLd: [bc, themeProduct] })), HOST), []);
+
+  // One ProductGroup whose variants are nested Products counts once: the
+  // extractor flattens only top-level nodes.
+  const group = {
+    '@type': 'ProductGroup',
+    hasVariant: [{ '@type': 'Product' }, { '@type': 'Product' }],
+  };
+  const groupBlock = { raw: '', parsed: group, types: jsonLdTypes(group), error: null };
+  assert.deepEqual(groupBlock.types, ['ProductGroup']);
+  assert.deepEqual(evaluatePage(page('product', goodExtract({ jsonLd: [bc, groupBlock] })), HOST), []);
 });
 
 test('crossPageChecks flags duplicated descriptions as errors (the B1 class)', () => {

@@ -44,6 +44,15 @@ Crawl-mode checks and why each exists:
 - `jsonld-entity-home` / `jsonld-entity-leak`: Organization and WebSite exactly once on the
   homepage, never elsewhere. Emitting them per page is the defect `snippets/structured-data.liquid`
   replaced (see `docs/structured-data.md`).
+- `jsonld-product-duplicate` (ERROR): more than one top-level `Product` / `ProductGroup` node on a
+  product page. Red is expected once the first review is published: Judge.me's rich snippets emit
+  their own Product node beside the one from Shopify's `structured_data` filter, and this check is
+  the signal that the overlap is now live. ERROR rather than WARN because the exit code blocks only
+  on errors new since the baseline, so the first red run is the one-time signal and later runs
+  report it as unchanged. The one sanctioned response is the `TODO.md` decision item (run the crawl
+  and the Rich Results test, let the operator pick the owner); never suppress the app block, the
+  theme's node, or this check. Directive in `.claude/rules/structured-data.md`, rationale in
+  `docs/structured-data.md`.
 - `jsonld-breadcrumb-missing` / `breadcrumb-missing` / `breadcrumb-unexpected`: visible trail and
   `BreadcrumbList` follow the allow-list in `snippets/breadcrumbs.liquid` (`product`, `collection`,
   `page`, `article`, `blog`, `list-collections`; `policy` deliberately absent). The constant in
