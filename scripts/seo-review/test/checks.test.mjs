@@ -156,6 +156,30 @@ test('more than one top-level Product node on a product page errors', () => {
   const groupBlock = { raw: '', parsed: group, types: jsonLdTypes(group), error: null };
   assert.deepEqual(groupBlock.types, ['ProductGroup']);
   assert.deepEqual(evaluatePage(page('product', goodExtract({ jsonLd: [bc, groupBlock] })), HOST), []);
+
+  // The likeliest real trip: the theme's ProductGroup (multi-variant product)
+  // beside an app's Product. The count is the only diagnostic the operator gets,
+  // so pin it too.
+  const mixed = evaluatePage(page('product', goodExtract({ jsonLd: [bc, groupBlock, appProduct] })), HOST);
+  const mixedFinding = mixed.find((x) => x.check === 'jsonld-product-duplicate');
+  assert.equal(mixedFinding?.severity, ERROR);
+  assert.match(mixedFinding.detail, /^2 Product\/ProductGroup nodes/);
+
+  // One block carrying two Products in a @graph counts as two top-level nodes.
+  const graph = { '@graph': [{ '@type': 'Product' }, { '@type': 'Product' }] };
+  const graphBlock = { raw: '', parsed: graph, types: jsonLdTypes(graph), error: null };
+  assert.ok(evaluatePage(page('product', goodExtract({ jsonLd: [bc, graphBlock] })), HOST).some((x) => x.check === 'jsonld-product-duplicate'));
+
+  // A block that fails to parse contributes no types: the theme's node plus a
+  // broken app block is a parse error, not a duplicate.
+  const broken = { raw: '{', parsed: null, types: [], error: 'Unexpected end of JSON input' };
+  assert.deepEqual(checksOf(evaluatePage(page('product', goodExtract({ jsonLd: [bc, themeProduct, broken] })), HOST)), ['jsonld-parse']);
+
+  // The check is gated on the product page type: a collection page with
+  // product-card markup never trips it.
+  const itemList = { raw: '', parsed: {}, types: ['ItemList'], error: null };
+  const coll = evaluatePage(page('collection', goodExtract({ jsonLd: [bc, themeProduct, appProduct, itemList] })), HOST);
+  assert.ok(!coll.some((x) => x.check === 'jsonld-product-duplicate'));
 });
 
 test('crossPageChecks flags duplicated descriptions as errors (the B1 class)', () => {
