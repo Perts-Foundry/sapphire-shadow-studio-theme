@@ -1,5 +1,48 @@
 # Release Notes
 
+## One dropped socket should not end a paced write, and an ignored flag should not exist (unreleased)
+
+Two small fixes to `blank-inventory`, split out of the add-product run review below because they
+guard live inventory writes and are the likeliest thing here to want reverting on its own.
+
+**A read-only poll now survives a transport blip; a write still does not get re-driven.** The paced
+seed of 42 groups in the DNP run halted at batch 15 on a single `fetch failed` inside the
+convergence poll. Nothing was wrong with the store: the writes had landed, the Flow was
+mid-cascade, and one socket went away during a read. The run ended anyway, and picking it back up
+cost a fresh operator approval to resume, which is the expensive kind of interruption because the
+approval gate is not something to spend lightly on a flake.
+
+The retry is deliberately confined to the read module. Re-reading is safe precisely because a read
+has no effect; re-driving a write is not, because an inventory set that timed out may well have
+landed, and that is the failure this tool exists to avoid. So `withReadRetry` lives in
+`convergence.mjs`, is used only by the poll, the watch and the quiesce, and a test walks the other
+modules asserting none of them reference it. The property is stated about the tree rather than
+about one caller, because the next person to want a retry will be looking at a write path.
+
+Two things that look like details and are the whole safety argument. A successful retry yields
+**one** observation, which feeds one `pollStep`, so a flaky network can never advance the
+consecutive-converged counter and make a still-moving cascade read as settled. And throttling is
+**not** handled here: a 429 and the GraphQL `THROTTLED` error already have their own backoff inside
+the Admin client, so `isTransientReadError` refuses HTTP 429 explicitly rather than letting a
+future edit to either layer quietly stack two backoffs on the same wait. The recognised set is
+narrow on purpose (dropped connections and 5xx); anything else propagates on the first failure,
+because retrying a real error only delays the report by three waits.
+
+**`--help` was not a flag, and that had a cost.** There was no help path at all: `backfill --help`
+parsed as a `backfill` with an unrecognised flag, fell through to the default `--stage propose`, and
+wrote a proposal artifact nobody asked for. The general shape of that bug is worse than the
+instance. A flag this tool did not recognise was silently ignored, so a mistyped `--timeout-ms` on a
+paced apply restored the default timeout mid-cascade and said nothing.
+
+Both are fixed: `--help` prints the usage on its own or after any command, and an unrecognised flag
+is refused with the list of what that command does accept. The registry is the risk, since one
+missing entry turns a documented invocation into an error at the worst possible moment, so it is
+guarded from both sides: one test asserts every flag the usage text advertises is accepted, another
+replays every invocation the skill and the docs hand an operator. Four entries in the registry are
+not live options at all (`bodies --stage`, `bodies --proposal`, `apply --input`, `apply --mode`);
+they are listed so the bespoke "that workflow is gone" and "apply takes the approved artifact"
+refusals keep answering, instead of being replaced by a generic one that explains nothing.
+
 ## The add-product run review: tools where there were improvisations, and two gates where there was one (unreleased)
 
 The DNP run finished green, and a turn-by-turn read of it afterwards found the skill fighting its own
