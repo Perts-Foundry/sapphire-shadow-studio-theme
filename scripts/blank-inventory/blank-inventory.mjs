@@ -101,20 +101,22 @@ const fail = (msg) => {
 };
 
 /**
- * Every flag each command accepts, camelCased as parseArgs yields them.
+ * Every LIVE flag each command accepts, camelCased as parseArgs yields them. This list is also what
+ * a refusal prints, so it holds only flags that do something.
  *
  * Unknown flags are refused rather than ignored, because silently ignoring one is how a run does
  * something other than what the operator asked for: `backfill --help` was read as
  * `backfill --stage propose` and wrote a proposal artifact nobody wanted, and a mistyped
  * `--timeout-ms` on a paced apply would quietly restore the default timeout mid-cascade.
  *
- * Two entries here are not live options: `bodies` accepts `--stage` and `--proposal`, and `apply`
- * accepts `--input` and `--mode`, only so the bespoke "that workflow is gone" and "apply takes an
- * approved artifact" refusals keep answering instead of this generic one. Deleting them from the
- * list would replace a message that explains with a message that just says no.
+ * A missing entry is the dangerous direction, and it is not hypothetical: `apply --receipt` was left
+ * out of the first version of this registry, which turned the CLI's own advice for recovering a
+ * mismatched resume into an error, at the one moment an operator is following it. The registry is
+ * therefore checked against the source in both directions by
+ * `every flag a command reads is registered, and every registered flag is read`.
  */
 const COMMAND_FLAGS = {
-  bodies: ['stage', 'proposal'],
+  bodies: [],
   audit: ['json', 'group', 'stale'],
   reorder: ['json', 'body', 'below', 'purchaseList'],
   demand: ['days', 'json'],
@@ -122,7 +124,7 @@ const COMMAND_FLAGS = {
   show: ['plan'],
   plan: ['input', 'mode', 'format', 'out'],
   repair: ['receipt', 'out'],
-  apply: ['plan', 'dryRun', 'resume', 'batchSize', 'noBatch', 'timeoutMs', 'input', 'mode'],
+  apply: ['plan', 'receipt', 'dryRun', 'resume', 'batchSize', 'noBatch', 'timeoutMs'],
   verify: ['receipt', 'timeoutMs'],
   backfill: [
     'stage',
@@ -142,6 +144,20 @@ const COMMAND_FLAGS = {
   untag: ['variant', 'quantity', 'dryRun'],
 };
 
+/**
+ * Flags that are parsed but do nothing except reach a better refusal than the generic one.
+ *
+ * `bodies --stage/--proposal` answers "that workflow is gone, the body map is declared in
+ * catalogue.json", and `apply --input/--mode` answers "apply takes the artifact the operator
+ * approved". They are accepted so those messages keep firing, and kept OUT of `COMMAND_FLAGS` so a
+ * refusal never advertises them as options: an operator who reads `--input` off an error message
+ * and tries it has been sent on a detour by the error that was meant to help.
+ */
+const RETIRED_FLAGS = {
+  bodies: ['stage', 'proposal'],
+  apply: ['input', 'mode'],
+};
+
 /** Accepted everywhere, whatever the command. */
 const GLOBAL_FLAGS = ['help'];
 
@@ -154,13 +170,13 @@ const GLOBAL_FLAGS = ['help'];
 function assertKnownFlags(opts, refuse = fail) {
   const accepted = COMMAND_FLAGS[opts.command];
   if (!accepted) return; // an unknown command is already answered with the usage text
-  const known = new Set([...accepted, ...GLOBAL_FLAGS]);
-  const unknown = (opts._flags ?? []).filter((f) => !known.has(f.camel));
+  const known = new Set([...accepted, ...(RETIRED_FLAGS[opts.command] ?? []), ...GLOBAL_FLAGS]);
+  const unknown = [...new Set((opts._flags ?? []).filter((f) => !known.has(f.camel)).map((f) => f.raw))];
   if (!unknown.length) return;
   const listed = accepted.map((c) => `--${c.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)}`).sort();
   return refuse(
-    `"${opts.command}" does not take ${unknown.map((f) => f.raw).join(', ')}.\n` +
-      `       It accepts: ${listed.join(' ')}\n` +
+    `"${opts.command}" does not take ${unknown.join(', ')}.\n` +
+      `       It accepts: ${listed.length ? listed.join(' ') : '(no flags)'}\n` +
       `       Run "blank-inventory.mjs --help" for the full usage.`
   );
 }
@@ -430,7 +446,7 @@ async function waitForGroups({ targets, timeoutMs = DEFAULT_TIMEOUT_MS, interval
 function warnReadRetry({ attempt, attempts, delayMs, error }) {
   console.warn(
     `  transient read failure (${error.message}); re-reading in ${Math.round(delayMs / 100) / 10}s ` +
-      `(attempt ${attempt} of ${attempts - 1}). Nothing was written.`
+      `(retry ${attempt} of ${attempts - 1}). Nothing was written.`
   );
 }
 
@@ -2279,9 +2295,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 // confirmation, and both were previously unreachable from a test: a regression in the batch-size
 // validation, the resume receipt check, the out-of-artifact refusal or the exit-code wiring would
 // have been caught only by an operator running against production.
-// `assertKnownFlags` and `COMMAND_FLAGS` join them because an over-tight registry turns a
-// documented invocation into an error at the worst moment: its test replays every invocation the
-// skill and the docs tell an operator to run.
+// `assertKnownFlags`, `COMMAND_FLAGS` and `RETIRED_FLAGS` join them because an over-tight registry
+// turns a documented invocation into an error at the worst moment, which it already did once
+// (`apply --receipt`): their test checks the registry against the source in both directions and
+// replays every invocation the skill and the docs tell an operator to run. `warnReadRetry` is
+// exported because it is the only operator-visible sign that a retry happened.
 export {
   parseArgs,
   numericOpt,
@@ -2295,5 +2313,7 @@ export {
   cmdVerify,
   assertKnownFlags,
   COMMAND_FLAGS,
+  RETIRED_FLAGS,
   USAGE,
+  warnReadRetry,
 };

@@ -26,7 +26,10 @@ consecutive-converged counter and make a still-moving cascade read as settled. A
 the Admin client, so `isTransientReadError` refuses HTTP 429 explicitly rather than letting a
 future edit to either layer quietly stack two backoffs on the same wait. The recognised set is
 narrow on purpose (dropped connections and 5xx); anything else propagates on the first failure,
-because retrying a real error only delays the report by three waits.
+because retrying a real error only delays the report by three waits. When the retries are exhausted
+the watch dies rather than polling on: a watch that cannot read is not evidence about the store in
+either direction, and the retry backoff is spent from the watch's own deadline rather than added to
+it, so a store that blips on every tick still reports stale on time.
 
 **`--help` was not a flag, and that had a cost.** There was no help path at all: `backfill --help`
 parsed as a `backfill` with an unrecognised flag, fell through to the default `--stage propose`, and
@@ -35,13 +38,25 @@ instance. A flag this tool did not recognise was silently ignored, so a mistyped
 paced apply restored the default timeout mid-cascade and said nothing.
 
 Both are fixed: `--help` prints the usage on its own or after any command, and an unrecognised flag
-is refused with the list of what that command does accept. The registry is the risk, since one
-missing entry turns a documented invocation into an error at the worst possible moment, so it is
-guarded from both sides: one test asserts every flag the usage text advertises is accepted, another
-replays every invocation the skill and the docs hand an operator. Four entries in the registry are
-not live options at all (`bodies --stage`, `bodies --proposal`, `apply --input`, `apply --mode`);
-they are listed so the bespoke "that workflow is gone" and "apply takes the approved artifact"
-refusals keep answering, instead of being replaced by a generic one that explains nothing.
+is refused with the list of what that command does accept.
+
+**The registry that makes the refusal possible is also the risk, and the first version of it was
+already wrong.** A missing entry turns a documented invocation into an error, and the one it missed
+was `apply --receipt`: the tool's own refusal on a mismatched resume tells the operator to point
+`--receipt` at the right receipt, so the omission broke that advice at the single moment anyone
+follows it, after a halted paced apply. Two guards written against the docs (every flag the usage
+text advertises, every invocation the docs hand an operator) both passed, because neither doc
+spells that flag.
+
+What catches it is a third guard that does not consult prose at all: it reads the source, collects
+the `opts.<flag>` each command actually uses, and requires the registry to match in both directions.
+A flag read but not registered is the refusal-by-omission above; a flag registered but never read
+re-opens the silently-ignored-flag bug for that one flag. Four flags are deliberately accepted
+without being advertised (`bodies --stage`, `bodies --proposal`, `apply --input`, `apply --mode`),
+so the bespoke "that workflow is gone" and "apply takes the approved artifact" refusals keep
+answering instead of a generic one that explains nothing; they are held in a separate list, and kept
+out of what a refusal prints, because an error message that offers a flag it will then refuse is
+worse than one that stays quiet about it.
 
 ## The add-product run review: tools where there were improvisations, and two gates where there was one (unreleased)
 

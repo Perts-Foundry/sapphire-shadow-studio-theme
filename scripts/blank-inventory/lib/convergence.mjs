@@ -149,11 +149,34 @@ const TRANSIENT_READ_ERRORS = [
  */
 export function isTransientReadError(err) {
   if (!err) return false;
+
+  // A numeric status, wherever it is hung: `code` and `status` are both used in the wild, and a
+  // number never matches the text patterns below, so it is read on its own terms.
+  const codes = [err.status, err.code, err.cause?.status, err.cause?.code].filter((n) => typeof n === 'number');
+  if (codes.some((n) => n === 429)) return false; // the Admin client's throttle path owns this
+  if (codes.some((n) => n >= 500 && n <= 599)) return true;
+
   const text = [err.message, err.code, err.cause?.message, err.cause?.code]
     .filter((s) => typeof s === 'string' || typeof s === 'number')
     .join(' ');
-  if (/\bHTTP 429\b/.test(text)) return false; // the Admin client's throttle path owns this
+  if (/\bHTTP 429\b/.test(text)) return false; // same, in the shape the Admin client throws
   return TRANSIENT_READ_ERRORS.some((re) => re.test(text));
+}
+
+/**
+ * Merge the two ways a caller can configure the retry.
+ *
+ * A plain spread of both, with the top-level key last, wins with `undefined` whenever the
+ * top-level option is absent, so a handler passed inside `readRetry` was dropped and the retry went
+ * unreported. The top-level `onReadRetry` is the documented path and still takes precedence; it just
+ * has to be present to do so.
+ *
+ * @param {object} [readRetry]
+ * @param {Function} [onReadRetry]
+ * @returns {object}
+ */
+function retryOpts(readRetry, onReadRetry) {
+  return { ...readRetry, ...(onReadRetry === undefined ? {} : { onReadRetry }) };
 }
 
 /**
@@ -175,6 +198,7 @@ export function withReadRetry(read, { sleep }, opts = {}) {
     isTransient = isTransientReadError,
     backoff = backoffDelayMs,
   } = opts;
+  if (typeof onReadRetry !== 'function') throw new TypeError('onReadRetry must be a function.');
 
   return async function readWithRetry() {
     for (let attempt = 0; ; attempt++) {
@@ -203,7 +227,7 @@ export function withReadRetry(read, { sleep }, opts = {}) {
  */
 export async function pollToConvergence({ read, now, sleep }, opts = {}) {
   const { intervalMs = 10_000, readRetry, onReadRetry, ...rest } = opts;
-  const readOnce = withReadRetry(read, { sleep }, { ...readRetry, onReadRetry });
+  const readOnce = withReadRetry(read, { sleep }, retryOpts(readRetry, onReadRetry));
   const startedAt = now();
   let state = createPollState();
   for (;;) {
@@ -304,7 +328,7 @@ export async function watchToConvergence({ readAll, now, sleep }, opts = {}) {
   const { targets, intervalMs = 10_000, onTick = () => {}, readRetry, onReadRetry, ...rest } = opts;
   if (!(targets instanceof Map)) throw new Error('watchToConvergence needs a Map of blankId to target.');
 
-  const readOnce = withReadRetry(readAll, { sleep }, { ...readRetry, onReadRetry });
+  const readOnce = withReadRetry(readAll, { sleep }, retryOpts(readRetry, onReadRetry));
   const startedAt = now();
   let state = createWatchState(targets.keys());
   let last = { converged: new Set(), stale: new Set(), pending: new Set(targets.keys()), missing: new Set() };
@@ -396,7 +420,7 @@ export async function quiesce({ readSignatures, sleep }, opts = {}) {
     readRetry,
     onReadRetry,
   } = opts;
-  const readOnce = withReadRetry(readSignatures, { sleep }, { ...readRetry, onReadRetry });
+  const readOnce = withReadRetry(readSignatures, { sleep }, retryOpts(readRetry, onReadRetry));
   let state = createQuiesceState();
   let last = { stable: new Set(), moving: new Set() };
   for (let i = 0; i < maxReads; i++) {

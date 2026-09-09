@@ -94,16 +94,16 @@ tool says so, and deleting it is the operator's call.
 
 ## Pipeline
 
+The CLI contract, before the steps: `--help` prints the usage, on its own or after any command, and
+a flag a command does not take is an error rather than something ignored. Both matter here.
+`backfill --help` used to fall through to `backfill --stage propose` and leave a proposal artifact
+behind, and an ignored flag means the run did something other than what was asked. A refusal lists
+what that command accepts, so read it rather than guessing another spelling.
+
 Gates 3 and 5 are hard STOPs. `backfill` has two STOPs of its own and `untag` has one. (There used to
 be a body-approval STOP above this list; the body map is declared in a reviewed PR now, so the gate
 that replaced it is code review, not a runtime prompt.) Ask the specific question, stop, and do not proceed without an explicit yes. Do
 not batch gates.
-
-`--help` prints the usage, on its own or after any command, and a flag a command does not take is an
-error rather than something ignored. Both matter here: `backfill --help` used to fall through to
-`backfill --stage propose` and leave a proposal artifact behind, and an ignored flag means the run
-did something other than what was asked. A refusal lists what that command accepts, so read it
-rather than guessing another spelling.
 
 1. **Preflight.** `node scripts/blank-inventory/blank-inventory.mjs audit`. Report coverage, group
    health, unmapped products, and any DRIFT. **DRIFT means the Flow is failing: stop and
