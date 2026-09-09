@@ -156,8 +156,8 @@ order. So `extractHeadings` does derive the same heading text a browser's `textC
 this body. Re-do it if either `slugify` or `extractHeadings` changes, or if a policy gains a heading
 with nested markup or an entity that the current bodies do not exercise.
 
-How, since the storefront is password-protected: open the page in a browser with a storefront
-session, and read the ids back with
+How: open the page in a browser and read the ids back with (the storefront is public as of
+2026-09-08, so this no longer needs a password-bypassed session; any browser will do)
 
 ```js
 [...document.querySelectorAll('.shopify-policy__body h2')].map((h) => h.id)

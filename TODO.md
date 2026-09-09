@@ -185,8 +185,12 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   and a `product-unpublished` ERROR needs no new query and no new scope; the read works today, only
   the write scope is missing. That covers every product forever, including ones added outside
   `add-product` and channels changed months later, which is what the skill's prose cannot do.
-  **Do not use `onlineStoreUrl` for this**, the obvious-looking field: it is null on every product
-  in this store, published or not, because the storefront is password-protected, so it would fail
-  every product until the password comes off and then silently start working. Verified 2026-09-03
-  against both `shift-fuel-tote` and the long-live `shift-fuel-crewneck`.
+  **Do not use `onlineStoreUrl` for this**, the obvious-looking field. Its old disqualification was
+  that it read null on every product, published or not, because the storefront was
+  password-protected (verified 2026-09-03 against both `shift-fuel-tote` and the long-live
+  `shift-fuel-crewneck`); the store went public before 2026-09-08 and it is non-null on published
+  products now. The reason it is still the wrong field is the one that does not expire:
+  `resourcePublicationsV2` names the channels, so it distinguishes "published to the Online Store
+  only" from "published everywhere its siblings are", and it is the check that catches an empty
+  set outright. A URL tells you one channel answered.
 
