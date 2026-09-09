@@ -13,9 +13,10 @@ the admin Preview link).
    unpublished product, and a 404 there has a dozen other causes, so it misdirects rather than
    informs. One publications read names the cause outright. Running this after either of them is
    how the first run closed green. `status == ACTIVE` is not evidence here.
-   - Completion check: the same read as phase 2 step 9, run fresh rather than trusted from the state
-     file. That is deliberate duplication, not waste: it catches a state file claiming done, and a
-     channel unpublished between the phases.
+   - Completion check: the same read as phase 2 step 9, through the same helper
+     (`scripts/add-product/publication-check.mjs --all --sibling <handle> --sibling <handle>`), run
+     fresh rather than trusted from the state file. That is deliberate duplication, not waste: it
+     catches a state file claiming done, and a channel unpublished between the phases.
    - On failure this is a HALT, not a finding. Stop phase 3, return to phase 2 step 9, and say
      plainly that no customer can see the product. Do not run the steps below; they will read green
      around it, which is exactly how this got missed the first time.
@@ -31,5 +32,15 @@ the admin Preview link).
    - Completion check: its report exists and any finding is presented to the operator.
 4. `converge` (verify): the sku skill's verify and, where run, blank-inventory's verify both
    report convergence (propagation is not atomic).
-5. `close`: mark the state file's last step, summarise the whole run (every step, its evidence),
-   and note that the state file can be deleted once the operator is satisfied.
+5. `close`: summarise the whole run (every step, its evidence, and every `na_confirmed` with the
+   reason it was confirmed under), then `scripts/add-product/state.mjs close --archive`, which marks
+   the run closed and moves the file under the state dir's `archive/`.
+   - **Then clean up, by list and not by pattern.** List the artifacts the state file recorded
+     (receipts, plan artifacts, survey output), and delete only those, and only the ones git does
+     not track. Anything inside the checkout that `git status` reports is not yours to delete here:
+     an untracked file in a worktree is as likely to be work in progress as it is to be scratch, and
+     a wildcard cleanup cannot tell them apart. Receipts hold live-store ids, so they are deleted or
+     left under the state dir, never moved into the repo.
+   - Completion check: the worktree the run used is gone, the primary checkout is on `main`, and the
+     state file is under `archive/`. Phase 1 step 10 is what leaves the first two true; if it did
+     not run, run it now rather than closing over it.
