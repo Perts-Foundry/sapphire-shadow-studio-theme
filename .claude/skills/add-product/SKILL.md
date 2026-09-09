@@ -226,9 +226,10 @@ command verifier, `cd`, git command shape, and em dashes are in the global `CLAU
 - **Open the PR with `gh pr create --body-file <path>`.** The GitHub MCP token here carries no
   PR-create scope, so `create_pull_request` is denied and the CLI is the path; `--body-file` also
   keeps a multi-line body out of the command line.
-- **`secret-scan` is a STEP inside the `validate` job, not a job of its own.** Waiting for a check
-  by that name finds nothing and reads as a gate that never ran. The signal is `validate`'s own
-  conclusion.
+- **There is no `secret-scan` job.** The Gitleaks scan is a step inside the `validate` job, named
+  `Gitleaks` in the workflow and surfaced as the **Secret Scan** row in that job's PR comment.
+  Waiting for a check called `secret-scan` finds nothing and reads as a gate that never ran; the
+  signal is `validate`'s own conclusion.
 
 ## Failure recovery
 
@@ -279,8 +280,8 @@ data (`docs/structured-data.md`), settings and shipping predicates
 ## Non-goals
 
 This skill does NOT: write to the live store or Admin outside phase 0's operator-gated variant
-creation and hero attach; edit catalogue.json (it proposes);
-commit, push, or open the PR **before** the phase 1 step 8 STOP, or comment `deploy` ever; run a sub-skill's steps inline instead of routing
+creation and hero attach; edit catalogue.json (it proposes); commit, push, or open the PR **before**
+the phase 1 step 8 STOP, or comment `deploy` ever; run a sub-skill's steps inline instead of routing
 to it; carry an approval from one gate, skill, or session to another; or continue past a halted
 deploy gate (a reconcile PR that deletes a theme file, or a smoke HARD-FAIL, is the operator's
 call, not a step to route around).

@@ -1,7 +1,9 @@
 # Phase 3: verify
 
-All read-only. Browser steps follow CLAUDE.md's Browser testing rules and docs/browser-testing.md (opt-in, password bypass via
-the admin Preview link).
+All read-only. Browser steps follow CLAUDE.md's Browser testing rules and `docs/browser-testing.md`
+(opt-in: do not open a storefront or preview URL unless the operator asked for a visual check). The
+storefront password is off, so the LIVE product page needs no bypass; an unpublished PREVIEW theme
+still does, through the admin theme-actions Preview link.
 
 ## Steps
 
