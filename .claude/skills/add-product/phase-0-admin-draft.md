@@ -75,28 +75,45 @@ variants that string mints.
      --expect-new-variants n`, all three copied from the dry run rather than retyped. The helper
      aborts on any mismatch, an abort voids the approval, and a re-run after an abort needs a fresh
      ask. Quote the operator's words, and your own ask with them, in the same response that invokes
-     the command.
+     the command. **An approval you cannot quote unsummarised is not one.** If the transcript has
+     been compacted, summarised, resumed or forked since they answered, what you have is a
+     description of an approval, not the approval; ask again. This is the phase with the least
+     safety margin, so the rule is restated here rather than left to the ground rule in SKILL.md.
    - **The sequence, and the state it can stop in.** `productOptionUpdate` adds the value and
      Shopify mints the variants; `productVariantsBulkUpdate` then sets price, weight, tracked and
      policy `DENY` on the new variant ids. If the first lands and the second fails, the store is
      holding new variants at Admin defaults on ACTIVE products, which is the one outcome containment
-     exists to prevent. The repair is `add-option-value.mjs --repair --value "<string>"`, which
-     re-runs only the bulk update over variants matching the value and is idempotent; it is a live
-     write, so it has its own ask. Do not reach for rollback instead: deleting the variants destroys
+     exists to prevent. The repair is `add-option-value.mjs --repair --value "<string>" --price <p>
+     --weight-lb <handle>=<lb>,...`, which re-runs only the bulk update over variants matching the
+     value and is idempotent; it needs the price and the weights because it rewrites those fields
+     and cannot infer them, and it is a live write, so it has its own dry run and its own ask. Do not reach for rollback instead: deleting the variants destroys
      their ids and their history, and that asymmetry is why the dry run is the gate rather than the
      undo.
    - The Admin UI variant table remains a legal alternative. The gates are the same, and so is the
      completion check.
-3. `hero-attach` (LIVE WRITE, gated, SEPARATE): a variant with no attached media falls back to the
+3. `hero-attach` (LIVE WRITE, gated, SEPARATE; **a new SIZE or DESIGN value only, never a new
+   COLOUR**): a variant with no attached media falls back to the
    PRODUCT-level featured image, which is one colour, so new variants under Grey Heather or Classic
    Navy show a Black garment in cart line-item thumbnails and on collection cards. It is invisible on
    the product page, which is where anyone would look. Attach here, in the same visit that created
    the variants, rather than leaving it for phase 2 to discover.
+   - **A new COLOUR skips this step entirely, and the skip is not a shortcut.** This command works
+     by finding the hero already attached to that colour's existing variants and appending it to the
+     new ones. A genuinely new colour has no existing variants and no photography yet, so there is
+     nothing to find: a dry run reports nothing to attach, which reads like success and is not.
+     Recording the step done on the strength of that is how phase 2 step 4 gets skipped as already
+     handled, and the product then ships showing a Black garment on every Grey Heather card. A new
+     colour's heroes come from `product-images --attach-heroes` in phase 2, in the same run that
+     ships its new photography, which is the one case that tool handles correctly (SKILL.md's
+     entry-point table says the same). `state.mjs init` pre-fills `hero-attach` as `na_presumed` for
+     `new-colour` for exactly this reason.
    - `add-option-value.mjs --attach-heroes --dry-run` lists, per colour, the hero media id found on
      that colour's existing variants and the new variant ids it will append to, skipping any already
      attached, so a retry is idempotent. **More than one distinct id on a colour is a STOP**, not a
      choice to make: it means that colour is already half-attached, and picking one of the two
-     spreads the split further.
+     spreads the split further. Concretely: report both ids and the colour to the operator, end the
+     turn, and do not run `--attach-heroes` for that colour again until they have resolved it by
+     hand. The other colours are unaffected and can proceed under their own ask.
    - **Its own ask, answered by its own operator message.** A yes to step 2 covers step 2, and
      nothing else. Two writes, two dry runs, two asks, under the same ask conditions as above.
    - If the operator attached the heroes by hand in Admin instead, nothing about the completion check

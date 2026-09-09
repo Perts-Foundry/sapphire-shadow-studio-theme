@@ -36,7 +36,7 @@ it holds live-store facts and belongs in no PR.
 
 | Invocation | Effect |
 |---|---|
-| `init --handle a,b,c --entry <entry> [--title T] [--gid G] [--body B] [--template-suffix S]` | Creates the file(s) and pre-fills the entry type's not-applicable steps with `status: "na_presumed"` and a fixed reason each. |
+| `init --handle a,b,c --entry <entry> [--title T] [--gid G] [--body B] [--template-suffix S]` | Creates the file(s) and pre-fills the entry type's not-applicable steps with `status: "na_presumed"` and a fixed reason each. All-or-nothing: if any named handle already has a run, none are written. |
 | `set <step> --handle h --evidence "<text>"` | Records a step done with the completion check's concrete result. |
 | `set <step> --handle h --evidence-file <path>` | Same, reading the evidence from a file. Use it when the text would trip the worktree command verifier (an evidence string containing the word `git`, for instance). |
 | `set <step> --handle a,b,c --all-handles ...` | Multi-handle write. `--all-handles` is required, and per-handle evidence (repeated `--evidence`, or repeated `--evidence-file`) is the default; a single shared string needs `--shared-evidence`. Refuses when any named handle's prior step state disagrees. |

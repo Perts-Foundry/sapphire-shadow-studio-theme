@@ -181,11 +181,24 @@ function cmdInit({ positionals, flags, dir, now, log }) {
     );
   }
   const stamp = now();
+
+  // Check EVERY handle before writing ANY of them. Interleaving the check with the write means
+  // `init --handle a,b` where b already exists writes a, then throws, leaving the run half
+  // initialised: a state file for one product of a set that is meant to move together, and a
+  // command that reported failure. The multi-handle `set` path refuses outright when the named
+  // handles disagree, and init has to hold the same line or the disagreement it refuses is one
+  // init created.
+  const existing = handles.filter((handle) => stateExists(dir, handle));
+  if (existing.length) {
+    throw new AddProductError(
+      existing.join(', '),
+      `already ${existing.length > 1 ? 'have state files' : 'has a state file'}; read ${existing.length > 1 ? 'them' : 'it'} ` +
+        `with show rather than re-initialising, and nothing was written for the others either (${dir})`,
+    );
+  }
+
   const written = [];
   for (const handle of handles) {
-    if (stateExists(dir, handle)) {
-      throw new AddProductError(handle, `already has a state file; read it with show rather than re-initialising (${dir})`);
-    }
     const state = createState({
       handle,
       entry: flags.entry,

@@ -75,11 +75,28 @@ test('the na_presumed pre-fill matches the entry type, with the table reason as 
   assert.equal('catalogue-entry' in size.steps, false);
   assert.equal(size.steps.activate.status, STATUS_NA_PRESUMED);
 
+  // A new product has no parent to inherit from, so nothing product-level is presumed. What IS
+  // presumed is the two phase-0 track B steps that only an option-value entry has: there is no
+  // existing scope to resolve and no existing hero to append.
   s.run(['init', '--handle', 'brand-new-thing', '--entry', 'new-product']);
-  assert.deepEqual(s.read('brand-new-thing').steps, {});
+  assert.deepEqual(Object.keys(s.read('brand-new-thing').steps).sort(), ['hero-attach', 'resolve-scope']);
 
   s.run(['init', '--handle', 'shift-fuel-tote', '--entry', 'new-non-garment']);
-  assert.deepEqual(Object.keys(s.read('shift-fuel-tote').steps).sort(), ['photo-token', 'size-chart']);
+  assert.deepEqual(
+    Object.keys(s.read('shift-fuel-tote').steps).sort(),
+    ['hero-attach', 'photo-token', 'resolve-scope', 'size-chart'],
+  );
+
+  // The three option-value entries all presume draft-product: the parent exists already. Only a
+  // new colour also presumes hero-attach, because it has no attached sibling to take a hero from
+  // and product-images does that job in phase 2 with its new photography.
+  for (const entry of ['new-colour', 'new-size', 'new-design-value']) {
+    s.run(['init', '--handle', `probe-${entry}`, '--entry', entry]);
+    const steps = s.read(`probe-${entry}`).steps;
+    assert.equal(steps['draft-product'].status, STATUS_NA_PRESUMED, `${entry} should presume draft-product`);
+    assert.equal(steps.publish.status, STATUS_NA_PRESUMED, `${entry} should presume publish`);
+    assert.equal('hero-attach' in steps, entry === 'new-colour', `${entry} hero-attach presumption`);
+  }
 });
 
 test('confirm-na promotes a presumption and refuses anything else', () => {
@@ -228,6 +245,23 @@ test('init refuses to overwrite an existing run', () => {
   assert.equal(s.read('lead-ii-crewneck').steps.skus.evidence, 'keep me');
 });
 
+test('a multi-handle init that hits an existing run writes none of them', () => {
+  // The check used to run inside the write loop, so `init --handle a,b` with b already present
+  // wrote a, then threw: a half-initialised run, reported as a failure, for a set of products that
+  // are meant to move together. The multi-handle `set` path refuses when the named handles
+  // disagree, and this is where that disagreement was being created.
+  const s = sandbox();
+  s.run(['init', '--handle', 'lead-ii-quarter-zip', '--entry', 'new-design-value']);
+  assert.equal(
+    s.run(['init', '--handle', 'lead-ii-crewneck,lead-ii-quarter-zip,lead-ii-vest-womens', '--entry', 'new-design-value']),
+    2,
+  );
+  assert.match(s.err.text(), /already has a state file/);
+  assert.match(s.err.text(), /nothing was written for the others/);
+  assert.equal(fs.existsSync(path.join(s.dir, 'lead-ii-crewneck.json')), false);
+  assert.equal(fs.existsSync(path.join(s.dir, 'lead-ii-vest-womens.json')), false);
+});
+
 test('show renders presumed and confirmed n/a differently', () => {
   const s = sandbox();
   s.run(['init', '--handle', 'lead-ii-crewneck', '--entry', 'new-colour']);
@@ -236,7 +270,9 @@ test('show renders presumed and confirmed n/a differently', () => {
   const text = s.out.text();
   assert.match(text, /\[na!\] activate/);
   assert.match(text, /\[na\?\] publish/);
-  assert.match(text, /\[ \]  draft-product/);
+  // A step nothing has touched renders as neither: `resolve-scope` applies to a new colour and
+  // has not been recorded yet.
+  assert.match(text, /\[ \]  resolve-scope/);
 });
 
 test('close --archive stamps closed_at and moves the file', () => {

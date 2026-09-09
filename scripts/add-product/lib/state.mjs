@@ -34,6 +34,7 @@ export const STATUS_ABSENT = 'not-done';
  */
 export const STEP_IDS = [
   'draft-product',
+  'resolve-scope',
   'variant-matrix',
   'hero-attach',
   'catalogue-entry',
@@ -79,12 +80,19 @@ export const ENTRY_TYPES = ['new-product', 'new-non-garment', 'new-colour', 'new
  * `confirm-na` is for.
  */
 export const NA_PREFILL = {
-  'new-product': {},
+  'new-product': {
+    'resolve-scope': 'phase 0 track B only; a new product resolves no existing option-value scope.',
+    'hero-attach': 'a new product has no existing hero to append; its heroes arrive with its photos in phase 2.',
+  },
   'new-non-garment': {
+    'resolve-scope': 'phase 0 track B only; a new product resolves no existing option-value scope.',
+    'hero-attach': 'a new product has no existing hero to append; its heroes arrive with its photos in phase 2.',
     'photo-token': 'body is null, so there is no garment body and no BODY_PHOTO_TOKEN to add.',
     'size-chart': 'body is null, so there is no garment geometry and no size chart.',
   },
   'new-colour': {
+    'draft-product': 'the parent product already exists; re-recording its identity proves nothing.',
+    'hero-attach': 'a new colour has no already-attached variant to take a hero from; product-images attaches it in phase 2 with the new photography.',
     'photo-token': 'no new garment body, so BODY_PHOTO_TOKEN is unchanged.',
     'product-template': 'the parent product already has its template.',
     'size-chart': 'a colour changes no garment geometry, so the chart is unchanged.',
@@ -96,6 +104,7 @@ export const NA_PREFILL = {
     publish: 'the parent product is already published to its channels.',
   },
   'new-size': {
+    'draft-product': 'the parent product already exists; re-recording its identity proves nothing.',
     'photo-token': 'no new garment body, so BODY_PHOTO_TOKEN is unchanged.',
     'product-template': 'the parent product already has its template.',
     'template-suffix': 'the parent product already carries its template suffix.',
@@ -106,6 +115,7 @@ export const NA_PREFILL = {
     publish: 'the parent product is already published to its channels.',
   },
   'new-design-value': {
+    'draft-product': 'the parent product already exists; re-recording its identity proves nothing.',
     'catalogue-entry': 'catalogue.json declares the design axis by name and holds no design values.',
     'photo-token': 'no new garment body, so BODY_PHOTO_TOKEN is unchanged.',
     'product-template': 'the parent product already has its template.',

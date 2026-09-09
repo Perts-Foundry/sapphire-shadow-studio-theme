@@ -209,7 +209,7 @@ async function runAdd(ctx, products) {
   assertValueAbsent(products, option, value);
 
   const plan = planAddition({ products, option, value, price: flags.price, weights });
-  log(renderPlan({ plan, option, value, mode: 'add' }));
+  log(renderPlan({ plan, option, value }));
 
   if (flags.dryRun) {
     log('');
@@ -243,6 +243,25 @@ async function runAdd(ctx, products) {
     const [after] = await ctx.load([row.handle]);
     const created = variantsCarrying(after, option, value);
     receipt.created.push({ handle: row.handle, variantIds: created.map((v) => v.id), expected: row.expectedNew });
+    // Zero is not "fewer than expected", it is a different fact, and it is the one case where
+    // continuing is wrong. The bulk update below would carry an empty variant list, so it would
+    // report no error while setting nothing, and the run would go on to the next product having
+    // silently skipped this one. The option update landed, so the value may still exist here:
+    // stop and let the operator look, the same way a userError above stops the run.
+    if (created.length === 0) {
+      ctx.errLog(
+        `error: ${row.handle}: the option update reported no error, but no variant carries "${value}". ` +
+          'Nothing was set up here and no further product is attempted. Read the product in Admin before re-running: ' +
+          'if the variants do exist, finish them with --repair under a fresh approval.',
+      );
+      problems++;
+      break;
+    }
+
+    // Fewer (or more) than expected, but not none: containment is still the safer end state, so
+    // set up what exists rather than leaving live variants at Admin defaults. Unlike the zero
+    // case this continues deliberately, and the count is surfaced because the matrix, not this
+    // command, is what has to be checked before selling.
     if (created.length !== row.expectedNew) {
       ctx.errLog(
         `warning: ${row.handle}: expected ${row.expectedNew} new variant(s), found ${created.length} carrying the value. ` +

@@ -8,9 +8,9 @@ invokes the write.
 
 ## Entry-type step matrix
 
-For every option-value entry (`new-colour`, `new-size`, `new-design-value`) five of the nine steps
+For every option-value entry (`new-colour`, `new-size`, `new-design-value`) six of the nine steps
 below do not apply, because they belong to the PRODUCT and the product already has them. The same
-five, for the same reason, whichever axis gained the value. `state.mjs init` pre-fills those five as
+six, for the same reason, whichever axis gained the value. `state.mjs init` pre-fills those six as
 `na_presumed` with a fixed reason each, which is the point: nine not-applicable steps written to
 state in one batch at the end of a run, with reasons typed from memory, is how a step that DID apply
 gets waved through. Print this list once at the start of the phase, then let each owning step
@@ -26,8 +26,19 @@ by the tool and by its tests. The column below paraphrases them; that file is au
 | 6 `category-metafields` | category and its metafields are product-level; no new category is involved | `category { name }` reads back unchanged |
 | 7 `collections` | collection membership is per product, not per variant | the product is still listed in its collections |
 | 8 `activate` | the product is already ACTIVE, which is exactly why phase 0 needed its containment | status reads ACTIVE |
+| 9 `publish` | channel membership is per product, and the parent is already published where its siblings are | `publication-check.mjs` returns a non-empty set matching a reachable sibling |
 
-Steps 2, 3, 4 and 9 apply to every entry type and are never pre-filled.
+Steps 2, 3 and 4 apply to every entry type and are never pre-filled.
+
+**Step 9 is on this list and it is the one to be uneasy about.** `publish` is the step whose absence
+once shipped a product that was ACTIVE, media-complete, in two collections and visible to nobody, so
+presuming it not-applicable is exactly the move that failure was made of. It is presumed here for a
+narrow and checkable reason: an option value adds no product, so there is no new resource to publish
+and the parent's channel set is the answer. That reason is a claim about the parent, and a claim can
+be wrong (a product unpublished by hand between runs, a channel added store-wide since). So this row
+in particular gets its `confirm-na` from a real read rather than a glance, and phase 3 step 1 runs
+`publication-check.mjs` again from scratch regardless of what this file says. Two reads is the
+deliberate cost of presuming this one at all.
 
 ## Steps
 

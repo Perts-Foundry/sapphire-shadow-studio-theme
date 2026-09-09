@@ -104,6 +104,38 @@ request returns a 401 and so would have had them read a genuinely broken page as
 Release-notes entries kept their password-protected wording deliberately: they are dated records of
 what was true when written.
 
+**The pre-PR gate found the two things this change was most likely to get wrong, and both were in
+the new tooling rather than the prose.** The first: `add-product:test` was never added to
+`validate.yml`, so the 64 tests guarding the directory's only live write ran locally and nowhere
+else. CI is this org's single enforcement point, which makes a suite outside it advisory, and the
+test that was supposed to notice could not: its discovery-completeness assertion compared
+`keys(scripts).filter(endsWith(':test'))` against `discoverSuites(scripts)`, the same predicate over
+the same input, so the result was empty by construction and the assertion could not fail. It now
+crosses the source boundary, walking the filesystem for test directories and proving each is reached
+by a suite the runner runs, plus a third check that every discovered suite is actually invoked by
+`validate.yml`. All three were confirmed by mutation, and so was the first attempt at the third one,
+which matched the suite name anywhere in the workflow and stayed green after the run step was
+deleted, because the file also names every suite in the PR-comment table it builds.
+
+The second: two gate defects that only showed up from the wiring rather than the gate. `init` on
+several handles checked for an existing run inside its write loop, so `init --handle a,b` with `b`
+present wrote `a` and then threw, creating exactly the disagreement the multi-handle `set` path
+refuses. And the add path treated "Shopify minted no variants at all" as a mild version of "fewer
+than expected", warning and then sending an empty bulk update, which reports no error while setting
+nothing and moves on to the next product. Zero is a different fact and is now a halt; a non-zero
+mismatch still continues, because containing the variants that do exist beats leaving them at Admin
+defaults, and the code now says which of the two it is doing and why.
+
+**A cross-file contradiction worth naming, because it would have shipped the bug the docs warn
+about.** Phase 0's new hero-attach step read as covering every option-value entry, while the
+entry-point table and phase 2 both say a new COLOUR's heroes come from `product-images` in phase 2.
+The tool appends a hero it finds on that colour's already-attached variants, and a genuinely new
+colour has none, so its dry run reports nothing to attach: a success-shaped result that would have
+had the step recorded done and phase 2 step 4 skipped as already handled. That is precisely the
+silent wrong-colour-thumbnail failure the media step spends three paragraphs on. The carve-out is now
+in the prose and, more usefully, in the pre-fill table, so the tool presumes `hero-attach`
+not-applicable for a new colour rather than relying on anyone reading the right file.
+
 **One correction to the plan this work came from, found while implementing it.** The plan said a new
 size adds a code to `scripts/sku/tables.json`. It does not, and cannot: that file refuses a `sizes`
 list outright, because size ranges come from `catalogue.json` and sizes pass through the scheme

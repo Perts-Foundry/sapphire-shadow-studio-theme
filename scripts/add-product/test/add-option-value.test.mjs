@@ -208,6 +208,70 @@ test('a live run without the expectation flags is refused', async () => {
   assert.match(err.text(), /--expect-handles and --expect-new-variants are required for a live run/);
 });
 
+// The three live paths each call requireExpectations separately, and assertExpectations is a no-op
+// on a missing expectation, so requireExpectations is the only thing standing between a live run
+// and no expectation check at all. Only the add path was covered; deleting the call from either of
+// the other two survived the suite. One test per path, each asserting nothing reached the client.
+for (const [label, extraArgv] of [
+  ['--repair', ['--repair']],
+  ['--attach-heroes', ['--attach-heroes']],
+]) {
+  test(`a live ${label} without the expectation flags is refused before any call`, async () => {
+    const err = makeLogger();
+    const client = makeFakeClient();
+    const code = await runAddOptionValue({
+      argv: [...DRY_RUN_ARGV.filter((a) => a !== '--dry-run'), '--operator-approved', ...extraArgv],
+      env: sandboxEnv(),
+      isTTY: false,
+      client,
+      tables: TABLES,
+      loadProducts: async () => after(),
+      log: err.write,
+      errLog: err.write,
+    });
+    assert.equal(code, 2);
+    assert.match(err.text(), /--expect-handles and --expect-new-variants are required for a live run/);
+    assert.equal(client.calls.length, 0, `${label} reached the Admin API without an expectation check`);
+  });
+}
+
+test('supplying only one expectation flag is still refused', async () => {
+  // requireExpectations uses ||, so both must be present. Flipping it to && lets one flag through,
+  // and the other side then passes assertExpectations vacuously.
+  const err = makeLogger();
+  const client = makeFakeClient();
+  const code = await runAddOptionValue({
+    argv: [
+      ...DRY_RUN_ARGV.filter((a) => a !== '--dry-run'),
+      '--operator-approved',
+      '--expect-handles',
+      'lead-ii-crewneck,lead-ii-quarter-zip',
+    ],
+    env: sandboxEnv(),
+    isTTY: false,
+    client,
+    tables: TABLES,
+    loadProducts: async () => before(),
+    log: err.write,
+    errLog: err.write,
+  });
+  assert.equal(code, 2);
+  assert.match(err.text(), /--expect-handles and --expect-new-variants are required for a live run/);
+  assert.equal(client.calls.length, 0);
+});
+
+test('assertExpectations is a no-op on a missing expectation, which is why requireExpectations exists', () => {
+  // Pins the coupling that the three tests above depend on. If this ever starts throwing, those
+  // tests are testing something else and requireExpectations may look redundant.
+  assert.doesNotThrow(() =>
+    assertExpectations({ handles: ['a'], newVariants: 1, expectHandles: null, expectNewVariants: null }),
+  );
+  assert.throws(
+    () => assertExpectations({ handles: ['a'], newVariants: 1, expectHandles: 'b', expectNewVariants: null }),
+    /--expect-handles does not match/,
+  );
+});
+
 test('an approved live run adds the value, then sets weight, price, tracking and DENY', async () => {
   const out = makeLogger();
   const client = makeFakeClient();
@@ -250,8 +314,21 @@ test('an approved live run adds the value, then sets weight, price, tracking and
 
   const setup = client.calls[1].variables.variants;
   assert.equal(setup.length, 4);
+
+  // WHICH variants, not just how many. The earlier version of this compared `id` against
+  // `setup[0].id`, which asserts nothing: sending the first four variants of the product instead of
+  // the four carrying the new value passed it. That mutation is a live productVariantsBulkUpdate
+  // rewriting price, weight, tracking and DENY onto variants that are already selling.
+  const expectedIds = after()
+    .find((p) => p.handle === 'lead-ii-crewneck')
+    .variants.filter((v) => v.selectedOptions.some((o) => o.name === 'Design' && o.value === NEW_VALUE))
+    .map((v) => v.id)
+    .sort();
+  assert.equal(expectedIds.length, 4);
+  assert.deepEqual(setup.map((v) => v.id).sort(), expectedIds);
+
   assert.deepEqual(setup[0], {
-    id: setup[0].id,
+    id: expectedIds.includes(setup[0].id) ? setup[0].id : 'NOT-A-NEW-VARIANT',
     price: '48.00',
     inventoryPolicy: 'DENY',
     inventoryItem: { tracked: true, measurement: { weight: { value: 1.6, unit: 'POUNDS' } } },
@@ -264,6 +341,44 @@ test('an approved live run adds the value, then sets weight, price, tracking and
   assert.equal(receipt.value, NEW_VALUE);
   assert.equal(receipt.created.length, 2);
   assert.equal(receipt.created[0].variantIds.length, 4);
+});
+
+test('an option update that mints no variant stops the run instead of setting up nothing', async () => {
+  // The one count that is not "fewer than expected" but a different fact. The bulk update would
+  // carry an empty variant list, report no error, and the run would move to the next product having
+  // silently skipped this one. It halts like a userError does, and the second product is never
+  // attempted.
+  const out = makeLogger();
+  const client = makeFakeClient();
+  let read = 0;
+  const code = await runAddOptionValue({
+    argv: [
+      ...DRY_RUN_ARGV.filter((a) => a !== '--dry-run'),
+      '--operator-approved',
+      '--expect-handles',
+      'lead-ii-crewneck,lead-ii-quarter-zip',
+      '--expect-new-variants',
+      '8',
+    ],
+    env: sandboxEnv(),
+    isTTY: false,
+    client,
+    tables: TABLES,
+    // The re-read shows the store exactly as it was: the value minted nothing.
+    loadProducts: async (handles) => {
+      read += 1;
+      return handles.map((h) => before().find((p) => p.handle === h));
+    },
+    now: () => '2026-09-08T00:00:00.000Z',
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 1);
+  assert.match(out.text(), /no variant carries "DNP \(Doctor of Nursing Practice\)"/);
+  assert.match(out.text(), /no further product is attempted/);
+  // The option update for the FIRST product only, and no variant setup at all.
+  assert.deepEqual(client.calls.map((c) => c.opName), ['AddProductOptionValue']);
+  assert.equal(read, 2, 'it should have re-read the first product and then stopped');
 });
 
 test('a userError on the option update stops the run before the next product', async () => {

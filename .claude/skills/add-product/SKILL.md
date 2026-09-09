@@ -174,8 +174,9 @@ unsummarised. Report unknown keys and ignore them.
 All five entries start in phase 0 (Admin: create the product, or add the variants for the new
 colour/size/design, weights included) so the GID and variants exist before the repo PR; then
 phase 1 covers only that entry's artifact set, and phases 2 and 3 run the sub-skills listed.
-**Where a phase step and this table's Sub-skills column disagree about routing, this table wins**;
-the phase steps carry the defaults for a new product. Respect catalogue.json's two order contracts
+**This table is authoritative on routing for every entry type, new product included.** The phase
+files are written to agree with it, so a real disagreement is itself a bug: follow the table, and fix
+the phase file in the same PR per the ground rule above. Respect catalogue.json's two order contracts
 when proposing the diff (its own `comment` states them). For the two option-value rows the artifact
 set is small and fixed, and the next section names it outright rather than leaving it to be
 rediscovered.
