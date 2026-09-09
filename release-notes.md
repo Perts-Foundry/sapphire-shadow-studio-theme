@@ -1,5 +1,76 @@
 # Release Notes
 
+## Judge.me readiness: the defaults become decisions, and one overlap gets a signal instead of a fix (unreleased)
+
+An audit of the review pipeline before the first orders shipped found it wired but running on
+defaults, with one defect that would have shown in the very first request email and one SEO hazard
+that only appears once a review is published. This entry records what was found, what was decided
+in the app's admin, and the one code change. The admin state has no history on Judge.me's side, so
+this is the record of the old values too.
+
+**The request email's logo was a dead link.** The stored logo URL pointed at a temporary-file bucket
+that returns a permission error, so every request email would have rendered a broken-image icon in
+place of the brand. Re-uploading the storefront's horizontal logo replaced it with a permanent
+image-CDN URL, and the sample email confirmed the render. The primary colour moved from the logo's
+highlight blue, which fails the AA contrast floor for text on white, to the median of the logo's
+core sapphire band, which passes as text and as a button background; the hex is recorded in the
+app, not here, because it belongs to whichever logo file is current.
+
+**Every other setting was a default, and each is now a decision.** The "Write a review" button in
+the widget was hidden from everyone and is now visible to everyone; manual moderation and the
+after-submit email confirmation stay as the gates, and the operator weighed confirming before
+submission and chose to keep the lower-friction flow. Request timing moved from fourteen days after
+fulfilment to ten. The intended follow-up reminder could not be set: reminders are gated behind the
+paid plan, and starting that trial was explicitly out of scope, so the decision is recorded as
+"ten days, no reminder" rather than as the plan's original "ten days plus one reminder". The
+scheduling page also states that timing changes apply to new orders only, so anything already
+fulfilled keeps the schedule it was given. The star badge under product titles now hides itself
+until a product has a review, instead of rendering empty stars and a "No reviews" label on every
+page; that is an app setting, so the theme's app-block values did not change. Low ratings are
+flagged in the admin notification email at three stars or below, and the app couples that threshold
+with a separate notification address, which the operator set by hand to the brand's contact
+mailbox after the app pre-filled it from a stale stored value; see the memory note on that address
+for the guard that came out of it.
+
+**The dashboard badge "Review requests disabled" is about international orders, not the pipeline.**
+It links to the request-timing section, where the only disabled row is international orders.
+Domestic requests are on and scheduling. The store ships within the United States today, so the
+row stays off and the badge stays on the dashboard; enabling it is a one-row change on that page
+whenever international shipping opens.
+
+**Product JSON-LD: the middle path, with a one-time signal.** Shopify's `structured_data` filter
+already emits a ProductGroup node on every product page. Judge.me's rich snippets will emit a
+second Product node on the same page once the first review is published, because that node is
+where the app's AggregateRating and Review markup live. Three options were weighed: suppress the
+app's node (which throws away the reason the app is installed), drop the theme's node (which
+throws away the offer, variant and merchant data the app's node does not carry), or keep both and
+decide from evidence. The third won. `seo-review` now reports `jsonld-product-duplicate` as an
+ERROR when a product page carries more than one top-level Product or ProductGroup node; it is an
+error rather than a warning because the tool's exit code blocks only on errors new since its
+baseline, so the first red run is the signal and later runs report it as unchanged. The revisit
+trigger is the first published review, when the crawl and Google's Rich Results test on that page
+show which node Google reads and whether the two disagree; the operator picks the owner from that.
+The rules layer records what not to do in the meantime (no app-block edits, no Liquid that
+suppresses app output, no deleting the theme's node, no silencing the check), and the extractor's
+flattening means a ProductGroup with nested variant Products still counts as one node, so the check
+cannot trip on the theme alone.
+
+**Product-card stars wait for ratings to exist.** Horizon's review block reads the app-written
+`reviews.rating` metafields and renders nothing until they exist, so adding it to the collection
+and homepage product cards today would be an invisible change that nothing could verify. It goes
+in when the first rating lands.
+
+**The template's app-block values are decisions, not bugs.** The review widget block in the product
+templates carries a sample-data flag that renders only in the theme editor, and an empty-state
+value that is the chosen live state. Both looked like misconfiguration during the audit and are
+not; the rule now lives beside the template conventions so the next reader does not "fix" them.
+
+**Recorded admin state, deliberately untouched:** auto-publish stays off; the sender address stays
+on the store domain with DKIM and the return path verified and a DMARC record on the domain;
+review requests still go to customers who opted out of marketing email (a request is
+transactional, not marketing); the paid-plan trial was not started; no Review Widget app-block
+setting in the templates changed.
+
 ## One dropped socket should not end a paced write, and an ignored flag should not exist (unreleased)
 
 Two small fixes to `blank-inventory`, split out of the add-product run review below because they

@@ -41,7 +41,19 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
 - [ ] **Update the inventory.**
 - [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
-- [ ] **Confirm the judge.me review setup is correct for our store at this point.**
+- [ ] **When the first Judge.me review is published and visible on a product page, decide which
+  Product JSON-LD node owns the page.** Run `seo-review` and Google's Rich Results test on that
+  page; the two candidate owners are the theme's `structured_data` output and the app's rich
+  snippets. Present the evidence and let the operator choose. Do not edit or suppress the app block,
+  and do not silence `jsonld-product-duplicate`; a theme-side change happens only if the operator
+  picks the theme as owner. Reasoning in the Judge.me readiness entry in `release-notes.md`.
+- [ ] **When the first ratings exist, add a `review` block to the static product-card children in
+  `templates/collection.json` and `templates/index.json`** (inside the `_product-card` block's
+  children, beside the product-title and price blocks). It renders nothing until the app writes the
+  `reviews.rating` metafields, which is why it waits.
+- [ ] **Thank-you card or packing-slip artwork carrying the Judge.me review QR.** The link and QR
+  are generated in the app's admin (Settings > Request reviews > Links, QR codes > Manage); the
+  artwork lives outside the repo.
 - [ ] **Figure out the blog skill for the store**
 
 - [ ] **Re-record `customer_email_address_changed_confirmation`'s stock snapshot without the

@@ -28,6 +28,7 @@ README's Repo layout table covers the top-level directories. One convention not 
 - **Only ONE `{% content_for 'blocks' %}` per file.** Need the region in two places? Capture it once into a variable and emit the variable.
 - **A block cannot read another block's settings.** When two must agree on a value, put it in `settings_schema.json` and share a snippet that reads it (see `snippets/size-option-position.liquid`); a setting duplicated per block is two sources of truth that drift apart silently.
 - **Do not "fix" the bare `#SizeChart` anchor to `SizeChart-{{ block.id }}`.** Link anchors are deliberately unsuffixed so they stay hand-authorable; suffixing it breaks `snippets/size-guide-link.liquid` and every bookmarked link. `scripts/size-chart/test/anchor-contract.test.mjs` catches it, but at CI time, not while you are editing.
+- **The Judge.me review widget app block in `templates/product.*.json` is not misconfigured.** Its `review_data: sample_data` renders only in the theme editor, and `empty_state: empty_widget` is the chosen live state, so a live product page showing an empty widget before the first review is working as decided. Do not edit either value to "fix" the empty widget; the rating badge under the title is hidden by an app setting, not a template one.
 
 ## Accessibility
 
