@@ -17,6 +17,9 @@ import {
   cmdApply,
   cmdVerify,
   untaggedHoldingStock,
+  assertKnownFlags,
+  COMMAND_FLAGS,
+  USAGE,
 } from '../blank-inventory.mjs';
 import { MODE_ABSOLUTE, MODE_DELTA } from '../lib/input.mjs';
 import { createArtifact, verifyArtifact, receiptArtifactMismatch, writeJsonAtomic, readJson, ROW_APPLIED } from '../lib/receipt.mjs';
@@ -1087,4 +1090,127 @@ test('tagged, zero-quantity and untracked variants are all outside the finding s
 test('an empty exemption set changes nothing for garments', () => {
   const rows = untaggedHoldingStock([v({ quantity: 1 })], new Set());
   assert.equal(rows.length, 1);
+});
+
+// --- help and unknown flags --------------------------------------------------
+//
+// Ignoring a flag is how a run does something other than what was asked: `backfill --help` was read
+// as `backfill --stage propose` and wrote a proposal artifact nobody wanted. The refusal is only
+// safe if the registry is complete, so the last two tests here are what make it safe: every flag
+// the usage text advertises must be accepted, and every invocation the docs hand an operator must
+// still parse.
+
+test('a leading flag is a flag, not a command', () => {
+  const opts = parseArgs(['--help']);
+  assert.equal(opts.command, undefined, '"--help" is not a command named "--help"');
+  assert.equal(opts.help, true);
+});
+
+test('parseArgs records flags as the operator spelled them', () => {
+  const opts = parseArgs(['apply', '--batch-size', '4', '--no-batch']);
+  assert.deepEqual(
+    opts._flags.map((f) => f.raw),
+    ['--batch-size', '--no-batch']
+  );
+});
+
+test('a flag the command does not take is refused, not ignored', () => {
+  const refusals = [];
+  assertKnownFlags(parseArgs(['backfill', '--stage', 'seed', '--resume']), (m) => refusals.push(m));
+  assert.equal(refusals.length, 1);
+  assert.match(refusals[0], /--resume/);
+  assert.match(refusals[0], /backfill/);
+  assert.match(refusals[0], /--stage/, 'the refusal lists what the command does accept');
+});
+
+test('--help is accepted on every command', () => {
+  for (const command of Object.keys(COMMAND_FLAGS)) {
+    const refusals = [];
+    assertKnownFlags(parseArgs([command, '--help']), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `${command} --help must reach the help path, not a refusal`);
+  }
+});
+
+test('an unknown command is answered with the usage text, not a flag refusal', () => {
+  const refusals = [];
+  assertKnownFlags(parseArgs(['nonsense', '--whatever']), (m) => refusals.push(m));
+  assert.deepEqual(refusals, [], 'main prints USAGE for an unknown command; this check stays out of it');
+});
+
+test('the retired flags keep their own explanations rather than the generic refusal', () => {
+  // `bodies --stage` and `apply --input/--mode` each have a message that says WHY the workflow is
+  // gone. Dropping them from the registry would replace an explanation with "unknown flag".
+  for (const argv of [['bodies', '--stage', 'propose'], ['apply', '--input', 'counts.csv'], ['apply', '--mode', 'absolute']]) {
+    const refusals = [];
+    assertKnownFlags(parseArgs(argv), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `${argv.join(' ')} must reach its bespoke refusal`);
+  }
+});
+
+test('every flag the usage text advertises is in the registry', () => {
+  // The registry is what turns a typo into an error, so a flag documented but not registered would
+  // refuse an invocation the tool's own help told the operator to run.
+  const lines = USAGE.split('\n');
+  let current = null;
+  const documented = new Map();
+  for (const line of lines) {
+    if (current && line.trim() === '') break; // the command block ends at the first blank line
+    const start = line.match(/^ {2}([a-z]+)\b/);
+    if (start && COMMAND_FLAGS[start[1]]) current = start[1];
+    if (!current) continue;
+    for (const [, flag] of line.matchAll(/--([a-z][a-z-]*)/g)) {
+      if (!documented.has(current)) documented.set(current, new Set());
+      documented.get(current).add(flag.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
+    }
+  }
+  assert.ok(documented.size >= Object.keys(COMMAND_FLAGS).length - 1, 'the usage text was parsed, not skipped');
+  for (const [command, flags] of documented) {
+    for (const flag of flags) {
+      assert.ok(
+        COMMAND_FLAGS[command].includes(flag),
+        `usage advertises --${flag} for "${command}", but the registry would refuse it`
+      );
+    }
+  }
+});
+
+test('every invocation the docs hand an operator still parses', () => {
+  // Copied from .claude/skills/blank-inventory/SKILL.md, scripts/blank-inventory/README.md and
+  // docs/. If a change here makes one of these an error, the doc is wrong or the registry is.
+  const documented = [
+    ['bodies'],
+    ['audit'],
+    ['audit', '--json'],
+    ['audit', '--stale'],
+    ['audit', '--group', 'BLACK_CREWNECK_0001_M'],
+    ['reorder'],
+    ['reorder', '--json'],
+    ['reorder', '--purchase-list'],
+    ['reorder', '--body', 'crewneck', '--below'],
+    ['reorder', '--body', 'crewneck', '--purchase-list'],
+    ['demand'],
+    ['demand', '--days', '30', '--json'],
+    ['vocab'],
+    ['vocab', '--check', 'counts.csv', '--mode', 'absolute'],
+    ['plan', '--input', 'counts.csv', '--mode', 'absolute'],
+    ['show', '--plan', 'plan.json'],
+    ['repair', '--receipt', 'receipt.json'],
+    ['apply', '--plan', 'plan.json'],
+    ['apply', '--plan', 'plan.json', '--dry-run'],
+    ['apply', '--plan', 'plan.json', '--batch-size', '1'],
+    ['apply', '--plan', 'plan.json', '--no-batch'],
+    ['apply', '--plan', 'plan.json', '--resume'],
+    ['verify', '--receipt', 'receipt.json'],
+    ['verify', '--receipt', 'receipt.json', '--timeout-ms', '300000'],
+    ['backfill', '--stage', 'propose'],
+    ['backfill', '--stage', 'propose', '--blank', 'BLACK_CREWNECK_0001_M', '--product', 'lead-ii-crewneck'],
+    ['backfill', '--stage', 'tag', '--plan', 'backfill.json'],
+    ['backfill', '--stage', 'seed', '--plan', 'backfill.json'],
+    ['untag', '--variant', 'gid://shopify/ProductVariant/123'],
+  ];
+  for (const argv of documented) {
+    const refusals = [];
+    assertKnownFlags(parseArgs(argv), (m) => refusals.push(m));
+    assert.deepEqual(refusals, [], `documented invocation refused: ${argv.join(' ')}`);
+  }
 });

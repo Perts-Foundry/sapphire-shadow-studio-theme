@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   allAtTarget,
   groupSignature,
@@ -12,6 +15,10 @@ import {
   createWatchState,
   watchStep,
   watchToConvergence,
+  isTransientReadError,
+  withReadRetry,
+  DEFAULT_READ_RETRY_ATTEMPTS,
+  READ_RETRY_BACKOFF,
   CONTINUE,
   CONVERGED,
   STALE,
@@ -291,4 +298,152 @@ test('quiesce gives up rather than waiting forever on a group that never settles
   }, { maxReads: 4 });
   assert.equal(res.timedOut, true);
   assert.equal(res.moving.has('B'), true);
+});
+
+// --- transport retry on the read path ---------------------------------------
+//
+// The incident: a paced seed of 42 groups died at batch 15 on one `fetch failed` inside the
+// read-only convergence poll, with the writes applied and the Flow mid-cascade. Re-reading is safe;
+// re-driving a write is not, which is why these tests pin BOTH the retry and its blast radius.
+
+const transportError = (message) => Object.assign(new Error(message), { code: 'ECONNRESET' });
+
+test('isTransientReadError recognises transport failures and nothing else', () => {
+  assert.equal(isTransientReadError(new Error('fetch failed')), true);
+  assert.equal(isTransientReadError(new Error('socket hang up')), true);
+  assert.equal(isTransientReadError(new Error('read ECONNRESET')), true);
+  assert.equal(isTransientReadError(new Error('HTTP 502: {}')), true);
+  assert.equal(isTransientReadError(Object.assign(new Error('boom'), { cause: { code: 'ETIMEDOUT' } })), true);
+
+  // Throttling has its own backoff inside the Admin client. Retrying it out here would stack two
+  // backoffs on one wait, so a 429 must NOT be transient to this layer.
+  assert.equal(isTransientReadError(new Error('HTTP 429: {}')), false);
+  assert.equal(isTransientReadError(new Error('GraphQL errors: [{"message":"Field does not exist"}]')), false);
+  assert.equal(isTransientReadError(new Error('HTTP 403: {}')), false);
+  assert.equal(isTransientReadError(undefined), false);
+});
+
+test('withReadRetry re-reads a transient failure and yields ONE result', async () => {
+  let calls = 0;
+  const slept = [];
+  const read = withReadRetry(
+    async () => {
+      calls++;
+      if (calls === 1) throw transportError('fetch failed');
+      return 'catalogue';
+    },
+    { sleep: async (ms) => slept.push(ms) }
+  );
+
+  assert.equal(await read(), 'catalogue');
+  assert.equal(calls, 2, 'the read was re-driven once');
+  assert.equal(slept.length, 1, 'one backoff between the two reads');
+  assert.ok(slept[0] > 0 && slept[0] <= READ_RETRY_BACKOFF.maxMs, 'the added wall-clock is bounded');
+});
+
+test('withReadRetry rethrows anything it does not recognise, on the first failure', async () => {
+  let calls = 0;
+  const read = withReadRetry(
+    async () => {
+      calls++;
+      throw new Error('GraphQL errors: [{"message":"Access denied"}]');
+    },
+    { sleep: async () => {} }
+  );
+  await assert.rejects(read, /Access denied/);
+  assert.equal(calls, 1, 'a real error is reported at once, not after three waits');
+});
+
+test('withReadRetry gives up after its attempt budget and reports the last failure', async () => {
+  let calls = 0;
+  const read = withReadRetry(
+    async () => {
+      calls++;
+      throw transportError('fetch failed');
+    },
+    { sleep: async () => {} }
+  );
+  await assert.rejects(read, /fetch failed/);
+  assert.equal(calls, DEFAULT_READ_RETRY_ATTEMPTS, 'the original read plus its retries, and no more');
+});
+
+test('a retried read is ONE observation: it cannot advance the converged counter', async () => {
+  // Two consecutive converged reads are required. If a retry counted as an observation of its own,
+  // a single converged tick plus a flaky socket would look like convergence and greenlight a
+  // still-moving cascade.
+  const frames = [{ A: [12, 11] }, { A: [12, 12] }, { A: [12, 12] }];
+  let calls = 0;
+  const state = { t: 0 };
+  const deps = {
+    readAll: async () => {
+      // Fail transiently between the two converged reads, the worst possible moment.
+      if (calls === 2) {
+        calls++;
+        throw transportError('fetch failed');
+      }
+      const frame = frames[Math.min(calls, frames.length - 1)];
+      calls++;
+      return new Map(Object.entries(frame).map(([b, qs]) => [b, qs.map((q) => ({ quantity: q }))]));
+    },
+    now: () => state.t,
+    sleep: async (ms) => {
+      state.t += ms;
+    },
+  };
+
+  const retries = [];
+  const res = await watchToConvergence(deps, {
+    targets: new Map([['A', 12]]),
+    onReadRetry: (info) => retries.push(info),
+  });
+
+  assert.equal(res.verdicts.get('A'), CONVERGED);
+  assert.equal(retries.length, 1, 'the watch reported the blip rather than swallowing it');
+  assert.equal(res.reads, 3, 'three observations: not-converged, converged, converged');
+});
+
+test('pollToConvergence and quiesce survive a transient read the same way', async () => {
+  let pollCalls = 0;
+  const poll = await pollToConvergence(
+    {
+      read: async () => {
+        pollCalls++;
+        if (pollCalls === 1) throw transportError('fetch failed');
+        return true;
+      },
+      now: () => 0,
+      sleep: async () => {},
+    },
+    { requiredConvergedReads: 2 }
+  );
+  assert.equal(poll.verdict, CONVERGED);
+  assert.equal(poll.reads, 2, 'the retry did not count as one of the two converged reads');
+
+  let quiesceCalls = 0;
+  const q = await quiesce({
+    readSignatures: async () => {
+      quiesceCalls++;
+      if (quiesceCalls === 1) throw transportError('fetch failed');
+      return new Map([['B', 'steady']]);
+    },
+    sleep: async () => {},
+  });
+  assert.equal(q.timedOut, false);
+  assert.equal(q.stable.has('B'), true);
+});
+
+test('no write path can reach the retry wrapper', async () => {
+  // Stated as a property of the tree, not of one caller: the reason a read may be re-driven (a read
+  // has no effect) is exactly the reason a write may not, and an inventory set that timed out may
+  // well have landed. If this fails, the fix is to delete the import, never to relax the test.
+  const libDir = fileURLToPath(new URL('../lib/', import.meta.url));
+  const offenders = [];
+  for (const name of (await readdir(libDir)).sort()) {
+    if (!name.endsWith('.mjs') || name === 'convergence.mjs') continue;
+    const src = await readFile(path.join(libDir, name), 'utf8');
+    if (src.includes('withReadRetry')) offenders.push(name);
+  }
+  const cli = await readFile(fileURLToPath(new URL('../blank-inventory.mjs', import.meta.url)), 'utf8');
+  if (cli.includes('withReadRetry')) offenders.push('blank-inventory.mjs');
+  assert.deepEqual(offenders, [], 'the retry wrapper is imported by the read module and nothing else');
 });

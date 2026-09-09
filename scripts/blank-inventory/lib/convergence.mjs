@@ -15,7 +15,10 @@
 // partial convergence. So backfill waits for stillness first.
 //
 // Pure module: no clock, no network, no sleeping. Callers feed observations and elapsed time, which
-// is what makes all of this testable with a fake clock.
+// is what makes all of this testable with a fake clock. The one import is `backoffDelayMs`, which is
+// itself pure (it computes a delay, it does not wait).
+
+import { backoffDelayMs } from './admin.mjs';
 
 export const CONTINUE = 'continue';
 export const CONVERGED = 'converged';
@@ -99,6 +102,94 @@ export function pollStep(state, { converged, elapsedMs }, opts = {}) {
   return { consecutive, reads, flaggedStale, verdict: CONTINUE };
 }
 
+// ---------------------------------------------------------------------------
+// Transport retry, on the READ path only.
+//
+// A poll is read-only and a poll loop is long: a five-minute watch makes tens of full catalogue
+// reads, so one dropped socket anywhere in that window ends the run. That is what happened during a
+// paced seed of 42 groups: batch 15 died on a single `fetch failed` inside the convergence poll,
+// with the writes already applied and the Flow mid-cascade, and recovery cost a fresh operator
+// approval to resume.
+//
+// The retry lives HERE, in the read module, and nowhere else. Re-reading is safe because a read has
+// no effect, and because a successful retry yields ONE observation feeding ONE `pollStep`: the
+// consecutive-converged counter can never be advanced by a retry, so a flaky network cannot fake
+// convergence. Re-driving a WRITE is not safe (an inventory set that timed out may well have
+// landed), so no write path may import this wrapper; `convergence.test.mjs` asserts that.
+//
+// THROTTLING IS NOT HANDLED HERE. A 429, and the GraphQL THROTTLED error, already have their own
+// backoff inside the Admin client; re-driving them from out here would stack two backoffs on the
+// same wait. `isTransientReadError` refuses HTTP 429 explicitly, so a change to either layer cannot
+// quietly turn into both.
+
+/** Three attempts total: the original read plus two retries. */
+export const DEFAULT_READ_RETRY_ATTEMPTS = 3;
+
+/** Bounded on purpose: at most ~3s of added wall-clock against a 300s watch. */
+export const READ_RETRY_BACKOFF = { baseMs: 1000, maxMs: 4000 };
+
+const TRANSIENT_READ_ERRORS = [
+  /fetch failed/i,
+  /socket hang up/i,
+  /ECONNRESET/,
+  /ECONNREFUSED/,
+  /ETIMEDOUT/,
+  /EAI_AGAIN/,
+  /\bHTTP 5\d\d\b/,
+];
+
+/**
+ * Is this a transport-level failure worth re-reading through?
+ *
+ * Deliberately narrow. Anything unrecognised (a GraphQL error, a bad query, a missing scope, any
+ * other 4xx) propagates on the first failure, because retrying those only delays the report.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function isTransientReadError(err) {
+  if (!err) return false;
+  const text = [err.message, err.code, err.cause?.message, err.cause?.code]
+    .filter((s) => typeof s === 'string' || typeof s === 'number')
+    .join(' ');
+  if (/\bHTTP 429\b/.test(text)) return false; // the Admin client's throttle path owns this
+  return TRANSIENT_READ_ERRORS.some((re) => re.test(text));
+}
+
+/**
+ * Wrap a read so a transient transport failure is re-read rather than ending the loop.
+ *
+ * @param {() => Promise<any>} read
+ * @param {{sleep: (ms: number) => Promise<void>}} deps
+ * @param {object} [opts]
+ * @param {number} [opts.attempts]
+ * @param {(info: {attempt: number, attempts: number, delayMs: number, error: Error}) => void} [opts.onReadRetry]
+ * @param {(err: unknown) => boolean} [opts.isTransient] - injectable for tests
+ * @param {(attempt: number, opts?: object) => number} [opts.backoff] - injectable for tests
+ * @returns {() => Promise<any>}
+ */
+export function withReadRetry(read, { sleep }, opts = {}) {
+  const {
+    attempts = DEFAULT_READ_RETRY_ATTEMPTS,
+    onReadRetry = () => {},
+    isTransient = isTransientReadError,
+    backoff = backoffDelayMs,
+  } = opts;
+
+  return async function readWithRetry() {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await read();
+      } catch (err) {
+        if (attempt >= attempts - 1 || !isTransient(err)) throw err;
+        const delayMs = backoff(attempt, READ_RETRY_BACKOFF);
+        onReadRetry({ attempt: attempt + 1, attempts, delayMs, error: err });
+        await sleep(delayMs);
+      }
+    }
+  };
+}
+
 /**
  * Run a poll loop to a verdict. The clock and the reader are injected, so tests drive it
  * deterministically with no real waiting.
@@ -111,11 +202,12 @@ export function pollStep(state, { converged, elapsedMs }, opts = {}) {
  * @returns {Promise<{verdict: string, elapsedMs: number, reads: number, flaggedStale: boolean}>}
  */
 export async function pollToConvergence({ read, now, sleep }, opts = {}) {
-  const { intervalMs = 10_000, ...rest } = opts;
+  const { intervalMs = 10_000, readRetry, onReadRetry, ...rest } = opts;
+  const readOnce = withReadRetry(read, { sleep }, { ...readRetry, onReadRetry });
   const startedAt = now();
   let state = createPollState();
   for (;;) {
-    const converged = await read();
+    const converged = await readOnce();
     state = pollStep(state, { converged, elapsedMs: now() - startedAt }, rest);
     if (state.verdict !== CONTINUE) {
       return { verdict: state.verdict, elapsedMs: now() - startedAt, reads: state.reads, flaggedStale: state.flaggedStale };
@@ -209,16 +301,17 @@ export function watchStep(state, { converged, elapsedMs }, opts = {}) {
  * @returns {Promise<{verdicts: Map<string, string>, converged: Set<string>, stale: Set<string>, missing: Set<string>, elapsedMs: number, reads: number}>}
  */
 export async function watchToConvergence({ readAll, now, sleep }, opts = {}) {
-  const { targets, intervalMs = 10_000, onTick = () => {}, ...rest } = opts;
+  const { targets, intervalMs = 10_000, onTick = () => {}, readRetry, onReadRetry, ...rest } = opts;
   if (!(targets instanceof Map)) throw new Error('watchToConvergence needs a Map of blankId to target.');
 
+  const readOnce = withReadRetry(readAll, { sleep }, { ...readRetry, onReadRetry });
   const startedAt = now();
   let state = createWatchState(targets.keys());
   let last = { converged: new Set(), stale: new Set(), pending: new Set(targets.keys()), missing: new Set() };
   let reads = 0;
 
   while (state.size) {
-    const members = await readAll();
+    const members = await readOnce();
     reads++;
     /** @type {Map<string, boolean>} */
     const converged = new Map();
@@ -300,11 +393,14 @@ export async function quiesce({ readSignatures, sleep }, opts = {}) {
     requiredStableReads = DEFAULT_QUIESCE_READS,
     intervalMs = DEFAULT_QUIESCE_INTERVAL_MS,
     maxReads = 20,
+    readRetry,
+    onReadRetry,
   } = opts;
+  const readOnce = withReadRetry(readSignatures, { sleep }, { ...readRetry, onReadRetry });
   let state = createQuiesceState();
   let last = { stable: new Set(), moving: new Set() };
   for (let i = 0; i < maxReads; i++) {
-    const signatures = await readSignatures();
+    const signatures = await readOnce();
     const stepped = quiesceStep(state, signatures, { requiredStableReads });
     state = stepped.state;
     last = { stable: stepped.stable, moving: stepped.moving };
