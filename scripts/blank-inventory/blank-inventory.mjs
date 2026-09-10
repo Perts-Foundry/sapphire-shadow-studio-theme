@@ -397,17 +397,23 @@ async function loadStore({ requireWrite }) {
   return { client, locationId, ...catalogue, variants, vocab, conflicts, unbodied, display, unmapped, groups };
 }
 
+const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * The live half of a convergence watch: one full catalogue read per tick, a real clock, a real
  * sleep. Separated from `waitForGroups` so a test can drive the same decision logic on a fake one.
  *
+ * `load` and `sleep` are parameters so a command can hand in its own deps: the reads then go through
+ * the same `load` as the rest of the command, which is what the dry-run backstop wraps.
+ *
+ * @param {{load?: typeof loadStore, sleep?: (ms: number) => Promise<void>}} [deps]
  * @returns {{readAll: () => Promise<Map<string, object[]>>, now: () => number, sleep: (ms: number) => Promise<void>}}
  */
-function liveWatchDeps() {
+function liveWatchDeps({ load = loadStore, sleep = realSleep } = {}) {
   return {
-    readAll: async () => (await loadStore({ requireWrite: false })).groups,
+    readAll: async () => (await load({ requireWrite: false })).groups,
     now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    sleep,
   };
 }
 
@@ -1593,13 +1599,29 @@ export function outOfArtifactUnconverged(artifact, classified) {
 }
 
 /**
- * @param {object} opts
- * @param {object} [deps] - injected so the refusal paths that stand between an operator flag and a
- *   live write are reachable from a test. `load` stands in for loadStore, `refuse` for the exiting
- *   `fail`, and `runBatches` for the apply engine, so a test can assert that a refusal happened
- *   BEFORE the engine was ever called.
+ * What the three write-capable commands (apply, backfill, untag) reach the store, the disk and the
+ * clock through. Each takes these as an optional second argument, so a test can stand in a
+ * synthetic store, a trap writer and a no-op sleep.
+ *
+ * `load` stands in for loadStore, `refuse` for the exiting `fail`, `writeJson` for writeJsonAtomic,
+ * `runBatches` for the apply engine, and `sleep` for the quiesce wait.
  */
-async function cmdApply(opts, { load = loadStore, refuse = fail, runBatches = applyPlanInBatches } = {}) {
+const DEFAULT_DEPS = {
+  load: loadStore,
+  refuse: fail,
+  writeJson: writeJsonAtomic,
+  runBatches: applyPlanInBatches,
+  sleep: realSleep,
+};
+
+/**
+ * @param {object} opts
+ * @param {object} [injected] - see DEFAULT_DEPS. Injected so the refusal paths that stand between an
+ *   operator flag and a live write are reachable from a test, and a test can assert that a refusal
+ *   happened BEFORE the engine was ever called.
+ */
+async function cmdApply(opts, injected = {}) {
+  const { load, refuse, writeJson, runBatches, sleep } = { ...DEFAULT_DEPS, ...injected };
   if (opts.input || opts.mode) {
     return refuse(
       `apply takes --plan <artifact>, never --input/--mode. The artifact is what the operator ` +
@@ -1620,7 +1642,7 @@ async function cmdApply(opts, { load = loadStore, refuse = fail, runBatches = ap
   const byBlank = (blankId) => store.groups.get(blankId) ?? [];
   // Fresh read per row, NOT the snapshot above. The drift check only works if it sees the store as
   // it is at the moment of each write; a cached snapshot silently disables it.
-  const readGroupLive = createGroupReader(async () => (await loadStore({ requireWrite: false })).groups);
+  const readGroupLive = createGroupReader(async () => (await load({ requireWrite: false })).groups);
 
   const { receipts: onDiskReceipts } = await loadReceipts();
   const blockedOutside = outOfArtifactUnconverged(
@@ -1695,7 +1717,7 @@ async function cmdApply(opts, { load = loadStore, refuse = fail, runBatches = ap
     receipt,
     readGroup: readGroupLive,
     write: makeWriter(store.client, store.locationId),
-    persist: (r) => writeJsonAtomic(receiptPath, r),
+    persist: (r) => writeJson(receiptPath, r),
     only: opts.resume ? pendingBlankIds(receipt) : null,
     batchSize,
     gate: !noBatch,
@@ -1711,7 +1733,7 @@ async function cmdApply(opts, { load = loadStore, refuse = fail, runBatches = ap
           return [blankId, group.target];
         })
       );
-      return waitForGroups({ targets, timeoutMs });
+      return waitForGroups({ targets, timeoutMs, deps: liveWatchDeps({ load, sleep }) });
     },
     onRow: (e) => console.log(`  ${e.status.toUpperCase().padEnd(13)} ${e.blankId}${e.detail ? `  ${e.detail}` : ''}`),
     onBatch: (b) => {
@@ -1932,12 +1954,17 @@ async function cmdVerify(opts, { refuse = fail, wait = waitForGroups } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-async function cmdBackfill(opts) {
+/**
+ * @param {object} opts
+ * @param {object} [injected] - see DEFAULT_DEPS
+ */
+async function cmdBackfill(opts, injected = {}) {
+  const { load, refuse, writeJson, runBatches, sleep } = { ...DEFAULT_DEPS, ...injected };
   const stage = opts.stage ?? 'propose';
   // Required even at propose: with no declared body every variant is unresolvable, so the proposal
   // would be an empty report that looks like "nothing to do" rather than "cannot tell".
   await ensureBodies();
-  const store = await loadStore({ requireWrite: stage !== 'propose' });
+  const store = await load({ requireWrite: stage !== 'propose' });
   const filter = { body: opts.body, color: opts.color, size: opts.size, productHandle: opts.product };
 
   if (stage === 'propose' && opts.blank) {
@@ -1956,7 +1983,7 @@ async function cmdBackfill(opts) {
 
     const planId = randomUUID();
     const out = opts.out ?? path.join(WORK_DIR, `backfill-${planId}.json`);
-    await writeJsonAtomic(out, { version: 1, planId, createdAt: new Date().toISOString(), bootstrap: true, tags: boot.tags });
+    await writeJson(out, { version: 1, planId, createdAt: new Date().toISOString(), bootstrap: true, tags: boot.tags });
     console.log(`\nProposal: ${out}`);
     console.log(`Nothing written. Minting an id does not move stock; tag, then set the level:`);
     console.log(`  1. backfill --stage tag  --plan '${out}'`);
@@ -1985,7 +2012,7 @@ async function cmdBackfill(opts) {
 
     const planId = randomUUID();
     const out = opts.out ?? path.join(WORK_DIR, `backfill-${planId}.json`);
-    await writeJsonAtomic(out, { version: 1, planId, createdAt: new Date().toISOString(), tags });
+    await writeJson(out, { version: 1, planId, createdAt: new Date().toISOString(), tags });
     console.log(`\nProposal: ${out}`);
     console.log(`Nothing written. Tagging alone moves NO stock, so it is followed by a seed write:`);
     console.log(`  1. backfill --stage tag  --plan '${out}'`);
@@ -1993,7 +2020,7 @@ async function cmdBackfill(opts) {
     return;
   }
 
-  if (!opts.plan) fail(`backfill --stage ${stage} needs --plan <backfill.json>.`);
+  if (!opts.plan) return refuse(`backfill --stage ${stage} needs --plan <backfill.json>.`);
   const proposal = await readJson(opts.plan);
 
   if (stage === 'tag') {
@@ -2003,12 +2030,12 @@ async function cmdBackfill(opts) {
     console.log(`Waiting for ${affected.length} group(s) to go quiet before tagging...`);
     const q = await quiesce({
       readSignatures: async () => {
-        const s = await loadStore({ requireWrite: false });
+        const s = await load({ requireWrite: false });
         return new Map(affected.map((b) => [b, groupSignature(s.groups.get(b) ?? [])]));
       },
-      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      sleep,
     }, { onReadRetry: warnReadRetry });
-    if (q.timedOut) fail(`Groups still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. Try again later.`);
+    if (q.timedOut) return refuse(`Groups still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. Try again later.`);
     console.log(`Quiet after ${q.reads} reads.`);
 
     const { written, errors } = await setBlankMetafields(
@@ -2027,7 +2054,7 @@ async function cmdBackfill(opts) {
       startedAt: new Date().toISOString(),
       rows: affectedBlanks.map((blankId) => ({ blankId, status: 'not-attempted', detail: null, at: null, target: null })),
     };
-    await writeJsonAtomic(path.join(WORK_DIR, `receipt-seed-${proposal.planId}.json`), receipt);
+    await writeJson(path.join(WORK_DIR, `receipt-seed-${proposal.planId}.json`), receipt);
     console.log(
       `\nThese variants are tagged but still at 0, and they will STAY at 0: a metafield write fires ` +
         `no inventory event, so the Flow has not run. Seed them:\n  backfill --stage seed --plan '${opts.plan}'`
@@ -2069,25 +2096,25 @@ async function cmdBackfill(opts) {
     // and fans out through the same Flow, so a backfill covering many groups amplifies identically
     // (mechanic 5). Leaving this on the raw unpaced loop would have left the incident shape reachable
     // through the other write path, which is the same hole in a different command.
-    const seedBatchSize = boolOpt('--no-batch', opts.noBatch)
+    const seedBatchSize = boolOpt('--no-batch', opts.noBatch, refuse)
       ? Infinity
-      : numericOpt('--batch-size', opts.batchSize, DEFAULT_BATCH_SIZE);
-    const seedTimeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS);
+      : numericOpt('--batch-size', opts.batchSize, DEFAULT_BATCH_SIZE, refuse);
+    const seedTimeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS, refuse);
     console.log(`\nPacing: ${seedBatchSize === Infinity ? 'disabled (--no-batch)' : `${seedBatchSize} group(s) per batch`}.`);
 
-    const result = await applyPlanInBatches({
+    const result = await runBatches({
       artifact,
       receipt,
-      readGroup: createGroupReader(async () => (await loadStore({ requireWrite: false })).groups),
+      readGroup: createGroupReader(async () => (await load({ requireWrite: false })).groups),
       write: makeWriter(store.client, store.locationId),
-      persist: (r) => writeJsonAtomic(receiptPath, r),
+      persist: (r) => writeJson(receiptPath, r),
       batchSize: seedBatchSize,
       gate: seedBatchSize !== Infinity,
       awaitBatch: async (blankIds) => {
         const targets = new Map(
           blankIds.map((blankId) => [blankId, artifact.groups.find((g) => g.blankId === blankId).target])
         );
-        return waitForGroups({ targets, timeoutMs: seedTimeoutMs });
+        return waitForGroups({ targets, timeoutMs: seedTimeoutMs, deps: liveWatchDeps({ load, sleep }) });
       },
       onRow: (e) => console.log(`  ${e.status.toUpperCase().padEnd(13)} ${e.blankId}${e.detail ? `  ${e.detail}` : ''}`),
       onBatch: (b) => console.log(`  BATCH ${b.index + 1}: seeded ${b.appliedBlankIds.length}/${b.blankIds.length}${b.halted ? '  HALTED' : ''}`),
@@ -2105,24 +2132,29 @@ async function cmdBackfill(opts) {
     return;
   }
 
-  fail(`Unknown --stage "${stage}". Use propose | tag | seed.`);
+  return refuse(`Unknown --stage "${stage}". Use propose | tag | seed.`);
 }
 
 // ---------------------------------------------------------------------------
-async function cmdUntag(opts) {
+/**
+ * @param {object} opts
+ * @param {object} [injected] - see DEFAULT_DEPS
+ */
+async function cmdUntag(opts, injected = {}) {
+  const { load, refuse } = { ...DEFAULT_DEPS, ...injected };
   const ids = opts.variant ?? [];
-  if (!ids.length) fail('untag needs at least one --variant <gid://shopify/ProductVariant/...>.');
+  if (!ids.length) return refuse('untag needs at least one --variant <gid://shopify/ProductVariant/...>.');
   // Validate the flags before the catalogue read, so a bad --quantity costs nothing and cannot be
   // discovered after the lock is held.
-  const quantity = numericOpt('--quantity', opts.quantity, 0);
+  const quantity = numericOpt('--quantity', opts.quantity, 0, refuse);
   if (!Number.isInteger(quantity) || quantity < 0) {
-    fail(`--quantity must be a whole number of units, zero or more; got ${quantity}.`);
+    return refuse(`--quantity must be a whole number of units, zero or more; got ${quantity}.`);
   }
-  const store = await loadStore({ requireWrite: true });
+  const store = await load({ requireWrite: true });
 
   const targets = store.variants.filter((v) => ids.includes(v.id));
   if (targets.length !== ids.length) {
-    fail(`Only ${targets.length} of ${ids.length} variant id(s) matched the catalogue.`);
+    return refuse(`Only ${targets.length} of ${ids.length} variant id(s) matched the catalogue.`);
   }
 
   heading(`Untag ${targets.length} variant(s), then set quantity ${quantity}`);
@@ -2152,7 +2184,7 @@ async function cmdUntag(opts) {
     targetQuantity: quantity,
     deleteTags: (variantIds) => deleteBlankMetafields(store.client, variantIds),
     readVariants: async (variantIds) => {
-      const fresh = await loadStore({ requireWrite: false });
+      const fresh = await load({ requireWrite: false });
       return fresh.variants.filter((v) => variantIds.includes(v.id));
     },
     setQuantity: async (v, q) => {
@@ -2311,6 +2343,8 @@ export {
   cmdRepair,
   cmdApply,
   cmdVerify,
+  cmdBackfill,
+  cmdUntag,
   assertKnownFlags,
   COMMAND_FLAGS,
   RETIRED_FLAGS,
