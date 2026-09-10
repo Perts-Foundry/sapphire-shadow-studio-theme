@@ -1,5 +1,26 @@
 # Release Notes
 
+## add-product's deploy check matched on a SHA no deploy run carries (unreleased)
+
+Phase 1 step 9 of the add-product skill found a PR's deploy run by matching the PR's `mergeCommit.oid`
+against the run's `headSha`. That match could never succeed. The comment-deploy path runs on
+`issue_comment`, which Actions runs on the default branch's HEAD at the moment of the comment, so
+the run records `main` from before the merge; and the merge happens inside that same run, after it
+posts its Deployment Report, so no deploy run can carry its own merge commit. The auto-deploy paths
+record the PR head instead, which is not the merge commit either. The lookup found nothing on PR #175
+and on PR #180: #180's deploy run recorded `b829f48`, main's previous commit, and the PR merged as
+`e2e851b`.
+
+The corrected rule ties the run to the PR by run id and PR number, never by `headSha`. Step 9 finds
+the run by its title, `deploy (comment #<n> by @<login>)`, which `deploy.yml`'s run-name builds from
+the event, and accepts only a queued or in-progress one: a retried `deploy` comment reuses the
+title, so a completed run with it is an earlier attempt, and picking one would repeat the "older
+run reported green" failure one step earlier. The run's own event, title and job conclusions are
+checked first, as the primary signal; the github-actions Deployment Report then corroborates it:
+its Commit row must equal the PR head, its Workflow run link must name the run that was watched, and
+the PR must be merged. The step states why `headSha` cannot be used, so the old match is not
+restored by someone tidying it up.
+
 ## A dry run that wrote: `backfill --stage tag` ignored `--dry-run` (unreleased)
 
 During a product addition on 2026-09-10, `blank-inventory.mjs backfill --stage tag --plan <proposal>
