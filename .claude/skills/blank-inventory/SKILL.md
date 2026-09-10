@@ -276,8 +276,8 @@ So, concretely, at any STOP:
 
 The second STOP is not ceremony: `tag` moves no stock, but `seed` writes real quantities. Show the
 operator the seed target and quantity per group before running it. `propose` **writes a file** (the
-proposal artifact, containing every blank id) to the working directory; it is Shopify-write-free but
-not read-only, so never describe it as such.
+proposal artifact, containing every blank id) to the working directory unless run with `--dry-run`;
+it is Shopify-write-free but not read-only, so never describe it as such.
 
 Backfill reuses an id that already exists on the store. To introduce a **new** blank id, use the
 bootstrap: `backfill --stage propose --blank <id> --product <handle>`. It is scoped to one product
@@ -285,6 +285,41 @@ deliberately, caps how many variants one call may tag, and refuses to fold a var
 family whose stock differs. A newly minted family has no seed source, so its level is set afterwards
 with `plan`, not `--stage seed`. The `--blank` value must follow the approved naming scheme
 (`COLOUR_BODY_STYLE_SIZE`); it is not sensitive, since it encodes no supplier or style name.
+
+**What `--dry-run` does at each stage.** It works at every stage, and writes nothing at any of them:
+
+- at `propose`, and the `--blank` bootstrap, it prints the full proposal and writes no proposal file;
+- at `tag` it waits for the affected groups to go quiet by reading the live store (reads only), then
+  prints every variant in the proposal with its live tag state (`untagged`,
+  `already holds this id (no-op)`, or `holds a DIFFERENT id: a real run would overwrite it`), and
+  writes no metafield and no seeding receipt;
+- at `seed` it prints the seed writes and makes none.
+
+Every dry run ends with the exact line `DRY RUN: nothing written.`
+
+**The tag STOP, in order.**
+
+1. Run `backfill --stage tag --plan <f> --dry-run`.
+2. **Check that its last line is exactly `DRY RUN: nothing written.`** If that line is missing, treat
+   the run as a live write, however it looked: a checkout that predates the fix for this ignores the
+   flag at this stage and tags every variant in the proposal. Stop, run `audit --group <blankId>`
+   (read-only) to see what changed, and report to the operator.
+3. Present the dry-run output verbatim, per "Every gate table shows the FULL variant identity". Call
+   out any `holds a DIFFERENT id` row by name: a real run re-tags that variant into another group
+   without asking.
+4. Ask a separate, explicit question: does the operator approve tagging these variants? Then wait
+   for the answer.
+5. **A dry run's output, however clean, is not operator approval.** The STOP is satisfied only by an
+   explicit yes to a question asked after the dry run was shown. Never run the tag stage without
+   `--dry-run` on the strength of the preview alone.
+6. **On any `DRY RUN: refused ...` error** (to send a mutation, to write a file, or to run the apply
+   engine):
+   - stop immediately;
+   - do not re-run without `--dry-run` to get past it, and do not retry the same dry run;
+   - do not assume nothing was written: check with `audit --group <blankId>` and a listing of the
+     working directory;
+   - report it to the operator as a bug in the tool. The error means a stage reached a write path on
+     a dry run, and the backstop stopped it there.
 
 ### Untag
 

@@ -27,7 +27,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-import { createAdminClient, assertScopes, assertSingleLocation } from './lib/admin.mjs';
+import { createAdminClient, assertScopes, assertSingleLocation, readOnlyClient } from './lib/admin.mjs';
 import { readCatalogue, liveFetchers, createGroupReader } from './lib/catalogue.mjs';
 import { learnVocab, buildGroups, classifyGroups, conventionWarnings, multiLevelVariants, resolveBlank, nearMatches, groupHistogram, coverageGaps, unconvergedGroups, vocabKey, normaliseAxis, CONVERGED, DRIFT, AWAITING_SEED } from './lib/groups.mjs';
 import { parseInput, MODE_ABSOLUTE, MODE_DELTA, MODES, FORMATS } from './lib/input.mjs';
@@ -1614,6 +1614,43 @@ const DEFAULT_DEPS = {
   sleep: realSleep,
 };
 
+/** The last line of every dry run. The skill tells the operator to check for it verbatim. */
+const DRY_RUN_DONE = 'DRY RUN: nothing written.';
+
+/**
+ * On a dry run, make the write paths unreachable rather than merely unvisited.
+ *
+ * Each command still checks `opts.dryRun` and returns before its write; that is what produces an
+ * honest preview. This is the backstop for the path that forgets, as `backfill --stage tag` did on
+ * 2026-09-10: the store `load` returns now carries a client that refuses every mutation, and the
+ * file writer and the apply engine refuse outright. A forgotten check then aborts with
+ * `DRY RUN: refused ...` instead of writing.
+ *
+ * It covers a write only if nothing in these commands reaches the store or the disk another way, so
+ * dry-run.test.mjs checks that structurally: no bare loadStore() or writeJsonAtomic() in their
+ * bodies, and loadStore is the only place an Admin client is built.
+ *
+ * @param {{dryRun?: unknown}} opts
+ * @param {typeof DEFAULT_DEPS} deps
+ * @returns {typeof DEFAULT_DEPS}
+ */
+function dryRunDeps(opts, deps) {
+  if (!opts.dryRun) return deps;
+  return {
+    ...deps,
+    load: async (params) => {
+      const store = await deps.load(params);
+      return { ...store, client: readOnlyClient(store.client) };
+    },
+    writeJson: async (filePath) => {
+      throw new Error(`DRY RUN: refused to write ${filePath}; a dry run reached a write path (a bug)`);
+    },
+    runBatches: async () => {
+      throw new Error('DRY RUN: refused to run the apply engine; a dry run reached a write path (a bug)');
+    },
+  };
+}
+
 /**
  * @param {object} opts
  * @param {object} [injected] - see DEFAULT_DEPS. Injected so the refusal paths that stand between an
@@ -1621,7 +1658,7 @@ const DEFAULT_DEPS = {
  *   happened BEFORE the engine was ever called.
  */
 async function cmdApply(opts, injected = {}) {
-  const { load, refuse, writeJson, runBatches, sleep } = { ...DEFAULT_DEPS, ...injected };
+  const { load, refuse, writeJson, runBatches, sleep } = dryRunDeps(opts, { ...DEFAULT_DEPS, ...injected });
   if (opts.input || opts.mode) {
     return refuse(
       `apply takes --plan <artifact>, never --input/--mode. The artifact is what the operator ` +
@@ -1701,7 +1738,7 @@ async function cmdApply(opts, injected = {}) {
     if (blockedOutside.length) {
       console.log(`  ${blockedOutside.length} group(s) outside this artifact are not converged; a real run would refuse.`);
     }
-    console.log('\nNothing written.');
+    console.log(`\n${DRY_RUN_DONE}`);
     return;
   }
 
@@ -1954,13 +1991,67 @@ async function cmdVerify(opts, { refuse = fail, wait = waitForGroups } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+/** Every `--stage` backfill accepts. The dry-run test derives one case per entry from this list. */
+const BACKFILL_STAGES = ['propose', 'tag', 'seed'];
+
+/** Proposal tags grouped by blank id, in blank-id order. */
+function tagsByBlank(tags) {
+  const byBlank = new Map();
+  for (const t of tags) {
+    if (!byBlank.has(t.blankId)) byBlank.set(t.blankId, []);
+    byBlank.get(t.blankId).push(t);
+  }
+  return [...byBlank].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** What a real tag run would do to one variant, read from the live store. */
+const TAG_STATES = {
+  untagged: { line: 'untagged', count: 'untagged' },
+  same: { line: 'already holds this id (no-op)', count: 'already hold this id' },
+  other: { line: 'holds a DIFFERENT id: a real run would overwrite it', count: 'hold a DIFFERENT id' },
+  missing: { line: 'not on the store: a real run would fail on it', count: 'not on the store' },
+};
+
+/**
+ * The tag stage's dry run: every variant in the proposal, grouped by blank, with its live state.
+ *
+ * Every row, never a sample: the gate this preview feeds requires the full variant identity, and
+ * the tool's own label carries the Design value that the group key leaves out.
+ *
+ * @param {{planId: string, tags: object[]}} proposal
+ * @param {object[]} variants - the live store's variants
+ */
+function printTagPreview(proposal, variants) {
+  const live = new Map(variants.map((v) => [v.id, v]));
+  const counts = new Map(Object.keys(TAG_STATES).map((k) => [k, 0]));
+  heading(`DRY RUN, tag stage, plan ${proposal.planId}`);
+  console.log('  Quiesce read the live store; nothing was written.\n');
+  for (const [blankId, items] of tagsByBlank(proposal.tags)) {
+    console.log(`  ${blankId}  (${items.length} variant(s))`);
+    for (const t of items) {
+      const v = live.get(t.variantId);
+      const state = !v ? 'missing' : !v.blankId ? 'untagged' : v.blankId === t.blankId ? 'same' : 'other';
+      counts.set(state, counts.get(state) + 1);
+      const now = state === 'other' ? `, now ${v.blankId}` : '';
+      console.log(`      ${t.label}  [${TAG_STATES[state].line}${now}]`);
+    }
+  }
+  console.log(`\n  ${[...counts].map(([k, n]) => `${n} ${TAG_STATES[k].count}`).join(', ')}`);
+  console.log(`  No metafield and no seeding receipt written.`);
+  console.log(`\n${DRY_RUN_DONE}`);
+}
+
 /**
  * @param {object} opts
  * @param {object} [injected] - see DEFAULT_DEPS
  */
 async function cmdBackfill(opts, injected = {}) {
-  const { load, refuse, writeJson, runBatches, sleep } = { ...DEFAULT_DEPS, ...injected };
+  const { load, refuse, writeJson, runBatches, sleep } = dryRunDeps(opts, { ...DEFAULT_DEPS, ...injected });
   const stage = opts.stage ?? 'propose';
+  // Both before any read: a bad flag should cost nothing, and an unknown stage used to be refused
+  // only after a full catalogue load.
+  if (!BACKFILL_STAGES.includes(stage)) return refuse(`Unknown --stage "${stage}". Use ${BACKFILL_STAGES.join(' | ')}.`);
+  if (stage !== 'propose' && !opts.plan) return refuse(`backfill --stage ${stage} needs --plan <backfill.json>.`);
   // Required even at propose: with no declared body every variant is unresolvable, so the proposal
   // would be an empty report that looks like "nothing to do" rather than "cannot tell".
   await ensureBodies();
@@ -1981,6 +2072,12 @@ async function cmdBackfill(opts, injected = {}) {
     for (const t of boot.tags) console.log(`  ${t.label}  (${t.body} / ${t.color} / ${t.size}, qty ${t.quantity})`);
     console.log(`\n  ${boot.isNew ? 'This id is NEW to the store' : 'Joining an existing family'}; current quantity ${boot.quantity}.`);
 
+    if (opts.dryRun) {
+      console.log(`\nNo proposal file written. Re-run without --dry-run to create one.`);
+      console.log(`\n${DRY_RUN_DONE}`);
+      return;
+    }
+
     const planId = randomUUID();
     const out = opts.out ?? path.join(WORK_DIR, `backfill-${planId}.json`);
     await writeJson(out, { version: 1, planId, createdAt: new Date().toISOString(), bootstrap: true, tags: boot.tags });
@@ -1998,17 +2095,20 @@ async function cmdBackfill(opts, injected = {}) {
   if (stage === 'propose') {
     const { tags, unresolvable } = planBackfill({ variants: store.variants, vocab: store.vocab, filter });
     heading(`Backfill proposal: ${tags.length} variant(s) to tag`);
-    const byBlank = new Map();
-    for (const t of tags) {
-      if (!byBlank.has(t.blankId)) byBlank.set(t.blankId, []);
-      byBlank.get(t.blankId).push(t);
-    }
-    for (const [blankId, items] of [...byBlank].sort()) {
+    // Every variant, never the first five and a count. This listing feeds the tag STOP, and the
+    // hidden rows are exactly the ones the gate exists for: on 2026-09-10 the row cut from every
+    // group was the newest design value's variant.
+    for (const [blankId, items] of tagsByBlank(tags)) {
       console.log(`  ${blankId}  (${items.length} variant(s))`);
-      for (const it of items.slice(0, 5)) console.log(`      ${it.label}`);
-      if (items.length > 5) console.log(`      ... and ${items.length - 5} more`);
+      for (const it of items) console.log(`      ${it.label}`);
     }
     for (const u of unresolvable) console.log(`  UNRESOLVABLE ${u.variant.productHandle} | ${u.variant.title}: ${u.reason}`);
+
+    if (opts.dryRun) {
+      console.log(`\nNo proposal file written. Re-run without --dry-run to create one.`);
+      console.log(`\n${DRY_RUN_DONE}`);
+      return;
+    }
 
     const planId = randomUUID();
     const out = opts.out ?? path.join(WORK_DIR, `backfill-${planId}.json`);
@@ -2020,7 +2120,6 @@ async function cmdBackfill(opts, injected = {}) {
     return;
   }
 
-  if (!opts.plan) return refuse(`backfill --stage ${stage} needs --plan <backfill.json>.`);
   const proposal = await readJson(opts.plan);
 
   if (stage === 'tag') {
@@ -2035,8 +2134,21 @@ async function cmdBackfill(opts, injected = {}) {
       },
       sleep,
     }, { onReadRetry: warnReadRetry });
-    if (q.timedOut) return refuse(`Groups still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. Try again later.`);
-    console.log(`Quiet after ${q.reads} reads.`);
+    // The quiesce is read-only, so a dry run keeps it: whether a real run would get past it is part
+    // of what the preview is for. A dry run reports a timeout rather than refusing, as apply does.
+    if (q.timedOut && !opts.dryRun) {
+      return refuse(`Groups still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. Try again later.`);
+    }
+    console.log(
+      q.timedOut
+        ? `Still moving after ${q.reads} reads: ${[...q.moving].join(', ')}. A real run would refuse here.`
+        : `Quiet after ${q.reads} reads.`
+    );
+
+    if (opts.dryRun) {
+      printTagPreview(proposal, store.variants);
+      return;
+    }
 
     const { written, errors } = await setBlankMetafields(
       store.client,
@@ -2080,10 +2192,11 @@ async function cmdBackfill(opts, injected = {}) {
     }
     if (!seeds.length) {
       console.log('  nothing to seed; every group already agrees.');
+      if (opts.dryRun) console.log(`\n${DRY_RUN_DONE}`);
       return;
     }
     if (opts.dryRun) {
-      console.log('\nDRY RUN: nothing written.');
+      console.log(`\n${DRY_RUN_DONE}`);
       return;
     }
 
@@ -2129,10 +2242,7 @@ async function cmdBackfill(opts, injected = {}) {
       console.log(`\nVerify once the Flow settles:\n  blank-inventory.mjs verify --receipt '${receiptPath}'`);
     }
     if (result.failed) process.exitCode = 1;
-    return;
   }
-
-  return refuse(`Unknown --stage "${stage}". Use propose | tag | seed.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2141,7 +2251,7 @@ async function cmdBackfill(opts, injected = {}) {
  * @param {object} [injected] - see DEFAULT_DEPS
  */
 async function cmdUntag(opts, injected = {}) {
-  const { load, refuse } = { ...DEFAULT_DEPS, ...injected };
+  const { load, refuse } = dryRunDeps(opts, { ...DEFAULT_DEPS, ...injected });
   const ids = opts.variant ?? [];
   if (!ids.length) return refuse('untag needs at least one --variant <gid://shopify/ProductVariant/...>.');
   // Validate the flags before the catalogue read, so a bad --quantity costs nothing and cannot be
@@ -2163,9 +2273,10 @@ async function cmdUntag(opts, injected = {}) {
     // Removing a tag changes group membership for everyone else in that group, so show them.
     const siblings = (store.groups.get(v.blankId) ?? []).filter((m) => m.id !== v.id);
     if (siblings.length) {
+      // Every sibling, never a sample: this is the untag STOP, and a hidden member is one the
+      // operator agreed to change without seeing.
       console.log(`      leaves a group of ${siblings.length} other member(s):`);
-      for (const s of siblings.slice(0, 5)) console.log(`        ${s.productHandle} | ${s.title} (qty ${s.quantity})`);
-      if (siblings.length > 5) console.log(`        ... and ${siblings.length - 5} more`);
+      for (const s of siblings) console.log(`        ${s.productHandle} | ${s.title} (qty ${s.quantity})`);
     }
   }
   console.log(
@@ -2175,7 +2286,7 @@ async function cmdUntag(opts, injected = {}) {
   );
 
   if (opts.dryRun) {
-    console.log('\nDRY RUN: nothing written.');
+    console.log(`\n${DRY_RUN_DONE}`);
     return;
   }
 
@@ -2265,9 +2376,26 @@ function assertNoOrphanWorkDir(command, isWrite) {
   }
 }
 
+const writeCommands = new Set(['apply', 'backfill', 'untag']);
+
+/**
+ * Whether this invocation takes the write lock and the stray-workdir refusal.
+ *
+ * A dry run does not, so a preview can run alongside a live paced seed. That is safe only because a
+ * dry run cannot write: every stage returns before its write, and `dryRunDeps` turns a stage that
+ * forgets into an abort. Both are checked by dry-run.test.mjs, including that nothing in these
+ * commands can go around the backstop. Before the backstop existed, this same rule let
+ * `backfill --stage tag --dry-run` write live tags with no lock held.
+ *
+ * @param {{command?: string, dryRun?: unknown}} opts
+ * @returns {boolean}
+ */
+function isWriteRun(opts) {
+  return writeCommands.has(opts.command) && !opts.dryRun;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const writeCommands = new Set(['apply', 'backfill', 'untag']);
   const run = {
     bodies: cmdBodies,
     audit: cmdAudit,
@@ -2296,7 +2424,7 @@ async function main() {
     process.exit(1);
   }
   assertKnownFlags(opts);
-  const isWrite = writeCommands.has(opts.command) && !opts.dryRun;
+  const isWrite = isWriteRun(opts);
   assertNoOrphanWorkDir(opts.command, isWrite);
   if (isWrite) await withLock(() => run(opts));
   else await run(opts);
@@ -2332,6 +2460,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 // (`apply --receipt`): their test checks the registry against the source in both directions and
 // replays every invocation the skill and the docs tell an operator to run. `warnReadRetry` is
 // exported because it is the only operator-visible sign that a retry happened.
+// `cmdBackfill` and `cmdUntag` join `cmdApply` for the dry-run contract: dry-run.test.mjs runs every
+// write-capable path with --dry-run against trap deps, because `backfill --stage tag` once wrote
+// live on a dry run and nothing could reach it from a test. `BACKFILL_STAGES` lets that test derive
+// one case per stage, `isWriteRun` pins which runs take the lock, and `dryRunDeps` is the backstop
+// it checks.
 export {
   parseArgs,
   numericOpt,
@@ -2345,6 +2478,9 @@ export {
   cmdVerify,
   cmdBackfill,
   cmdUntag,
+  BACKFILL_STAGES,
+  isWriteRun,
+  dryRunDeps,
   assertKnownFlags,
   COMMAND_FLAGS,
   RETIRED_FLAGS,

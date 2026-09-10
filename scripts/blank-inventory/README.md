@@ -109,7 +109,8 @@ node scripts/blank-inventory/blank-inventory.mjs show --plan <workdir>/plan-<id>
 # emits an ordinary hashed artifact for the same show/apply path. Targets come from the RECEIPT.
 node scripts/blank-inventory/blank-inventory.mjs repair --receipt <workdir>/receipt-<id>.json
 
-# Execute an APPROVED artifact. --dry-run prints the writes without making them.
+# Execute an APPROVED artifact. --dry-run prints the writes without making them. On every command, a
+# dry run that reaches a write path aborts with "DRY RUN: refused ..." rather than writing.
 # PACED: one group per batch by default, waiting for each batch's fan-out before the next write, and
 # halting if a batch does not converge. --batch-size raises it; --no-batch turns the pacing off.
 node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json [--batch-size 1] [--no-batch]
@@ -124,6 +125,14 @@ node scripts/blank-inventory/blank-inventory.mjs verify --receipt <workdir>/rece
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan <workdir>/backfill-<id>.json
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan <workdir>/backfill-<id>.json
+
+# Every stage takes --dry-run and writes nothing: propose prints the proposal without writing the
+# file; tag waits for quiet by reading the live store, then prints every variant with its live tag
+# state; seed prints its writes. The last line is always "DRY RUN: nothing written.", and a tag
+# dry run without it is a checkout that predates that guarantee.
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose --dry-run
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan <workdir>/backfill-<id>.json --dry-run
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan <workdir>/backfill-<id>.json --dry-run
 
 # Mint a NEW blank id onto a scoped set of untagged variants (the bootstrap escape hatch).
 # Scoped to one product, capped, and refuses to overwrite an existing family's stock.
