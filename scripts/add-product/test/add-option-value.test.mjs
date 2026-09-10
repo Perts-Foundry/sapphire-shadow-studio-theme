@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import { runAddOptionValue } from '../add-option-value.mjs';
 import { assertExpectations, assertGates } from '../lib/gates.mjs';
-import { expectedNewVariants, parseWeights, planHeroAttach, variantSetupInput } from '../lib/option-value.mjs';
+import { copiedSkus, expectedNewVariants, parseWeights, planHeroAttach, variantSetupInput } from '../lib/option-value.mjs';
 import { makeFakeClient, makeLogger, makeProduct, media } from './fixtures.mjs';
 
 const NEW_VALUE = 'DNP (Doctor of Nursing Practice)';
@@ -331,7 +331,7 @@ test('an approved live run adds the value, then sets weight, price, tracking and
     id: expectedIds.includes(setup[0].id) ? setup[0].id : 'NOT-A-NEW-VARIANT',
     price: '48.00',
     inventoryPolicy: 'DENY',
-    inventoryItem: { tracked: true, measurement: { weight: { value: 1.6, unit: 'POUNDS' } } },
+    inventoryItem: { sku: '', tracked: true, measurement: { weight: { value: 1.6, unit: 'POUNDS' } } },
   });
   // The second product carries its own weight from --weight-lb.
   assert.equal(client.calls[3].variables.variants[0].inventoryItem.measurement.weight.value, 2.1);
@@ -518,12 +518,187 @@ test('a missing weight for one handle refuses the whole run', async () => {
   assert.match(err.text(), /has no weight for lead-ii-quarter-zip/);
 });
 
+/** A bulk-update responder that reports every variant it was sent as still carrying `sku`. */
+function skuSurvives(sku) {
+  return {
+    AddProductVariantSetup: (vars) => ({
+      productVariantsBulkUpdate: {
+        productVariants: vars.variants.map((v) => ({ id: v.id, inventoryItem: { sku } })),
+        userErrors: [],
+      },
+    }),
+  };
+}
+
+test('a live add whose setup leaves a copied SKU in place exits 1 and names it', async () => {
+  const out = makeLogger();
+  let read = 0;
+  const code = await runAddOptionValue({
+    argv: [
+      ...DRY_RUN_ARGV.filter((a) => a !== '--dry-run'),
+      '--operator-approved',
+      '--expect-handles',
+      'lead-ii-crewneck,lead-ii-quarter-zip',
+      '--expect-new-variants',
+      '8',
+    ],
+    env: sandboxEnv(),
+    isTTY: false,
+    client: makeFakeClient(skuSurvives('L2CN-RN-BLK-S')),
+    tables: TABLES,
+    loadProducts: async (handles) => {
+      read += 1;
+      const source = read === 1 ? before() : after();
+      return handles.map((h) => source.find((p) => p.handle === h));
+    },
+    now: () => '2026-09-10T00:00:00.000Z',
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 1);
+  assert.match(out.text(), /lead-ii-crewneck: 4 new variant\(s\) still carry a SKU after the setup cleared it \(first: L2CN-RN-BLK-S\)/);
+  assert.match(out.text(), /--repair under a fresh approval/);
+});
+
+test('a live --repair clears the SKU, and exits 1 if the payload shows one surviving', async () => {
+  const run = (client) =>
+    runAddOptionValue({
+      argv: [
+        '--namespace',
+        'lead-ii',
+        '--value',
+        NEW_VALUE,
+        '--price',
+        '48.00',
+        '--weight-lb',
+        'lead-ii-crewneck=1.6,lead-ii-quarter-zip=2.1',
+        '--repair',
+        '--operator-approved',
+        '--expect-handles',
+        'lead-ii-crewneck,lead-ii-quarter-zip',
+        '--expect-new-variants',
+        '8',
+      ],
+      env: sandboxEnv(),
+      isTTY: false,
+      client,
+      tables: TABLES,
+      loadProducts: async (handles) => handles.map((h) => after().find((p) => p.handle === h)),
+      now: () => '2026-09-10T00:00:00.000Z',
+      log: () => {},
+      errLog: () => {},
+    });
+
+  const clean = makeFakeClient();
+  assert.equal(await run(clean), 0);
+  const sent = clean.calls.filter((c) => c.opName === 'AddProductVariantSetup').flatMap((c) => c.variables.variants);
+  assert.equal(sent.length, 8);
+  assert.ok(sent.every((v) => v.inventoryItem.sku === ''));
+
+  assert.equal(await run(makeFakeClient(skuSurvives('L2CN-RN-BLK-S'))), 1);
+});
+
+test('a live add whose setup payload describes fewer variants than were sent exits 1', async () => {
+  // copiedSkus reads only what the payload describes, so a payload describing nothing would pass
+  // every sent variant as cleared on no evidence at all.
+  const out = makeLogger();
+  let read = 0;
+  const code = await runAddOptionValue({
+    argv: [
+      ...DRY_RUN_ARGV.filter((a) => a !== '--dry-run'),
+      '--operator-approved',
+      '--expect-handles',
+      'lead-ii-crewneck,lead-ii-quarter-zip',
+      '--expect-new-variants',
+      '8',
+    ],
+    env: sandboxEnv(),
+    isTTY: false,
+    client: makeFakeClient({ AddProductVariantSetup: { productVariantsBulkUpdate: { productVariants: [], userErrors: [] } } }),
+    tables: TABLES,
+    loadProducts: async (handles) => {
+      read += 1;
+      const source = read === 1 ? before() : after();
+      return handles.map((h) => source.find((p) => p.handle === h));
+    },
+    now: () => '2026-09-10T00:00:00.000Z',
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 1);
+  assert.match(out.text(), /lead-ii-crewneck: the setup payload described 0 of 4 variant\(s\), so the SKU clear on the rest is unconfirmed/);
+});
+
+test('the --repair dry run counts the targets still holding a SKU', async () => {
+  // The clear is the one field a repair changes that is not already right, so it is the column the
+  // operator approves; a copied SKU is invisible in every other one.
+  const out = makeLogger();
+  const copied = after({ overrides: () => ({ sku: 'L2CN-RN-BLK-S' }) });
+  const code = await runAddOptionValue({
+    argv: [...DRY_RUN_ARGV, '--repair'],
+    env: sandboxEnv(),
+    isTTY: false,
+    client: makeFakeClient(),
+    tables: TABLES,
+    loadProducts: async (handles) => handles.map((h) => copied.find((p) => p.handle === h)),
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 0);
+  assert.match(out.text(), /holding a SKU/);
+  assert.match(out.text(), /lead-ii-crewneck +4 +4 +48\.00/);
+});
+
+test('--repair refuses when a target holds a SKU no other variant shares, writing nothing', async () => {
+  // A copied SKU duplicates its sibling; a SKU the sku skill assigned is unique on the product. The
+  // setup clears every target's SKU, so after phase 2 a repair would wipe correct ones.
+  const out = makeLogger();
+  const client = makeFakeClient();
+  const assigned = after({ overrides: (spec) => ({ sku: `L2CN-DNP-${spec.color.toUpperCase()}-${spec.size}` }) });
+  const code = await runAddOptionValue({
+    argv: [...DRY_RUN_ARGV, '--repair'],
+    env: sandboxEnv(),
+    isTTY: false,
+    client,
+    tables: TABLES,
+    loadProducts: async (handles) => handles.map((h) => assigned.find((p) => p.handle === h)),
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 2);
+  assert.match(out.text(), /refuses: 8 target\(s\) hold a SKU no other variant shares/);
+  assert.equal(client.calls.length, 0);
+});
+
 test('the variant setup input carries weight, tracking and policy for every id', () => {
   const input = variantSetupInput([{ id: 'v1' }, { id: 'v2' }], { price: '48.00', weightLb: 1.6 });
   assert.equal(input.length, 2);
   assert.ok(input.every((v) => v.inventoryPolicy === 'DENY'));
   assert.ok(input.every((v) => v.inventoryItem.tracked === true));
   assert.ok(input.every((v) => v.inventoryItem.measurement.weight.unit === 'POUNDS'));
+});
+
+// productOptionUpdate copies the first design value's SKU onto each new variant (L2CN-RN-BLK-XS on a
+// CPT variant, the first live run). The sku planner refuses drift, so a copied SKU is not a gap the
+// sku skill fills later; the setup has to clear it, explicitly, with an empty string.
+test('the variant setup input clears the SKU the option update copied from a sibling', () => {
+  const input = variantSetupInput([{ id: 'v1', sku: 'L2CN-RN-BLK-XS' }], { price: '48.00', weightLb: 1.6 });
+  assert.equal(input[0].inventoryItem.sku, '');
+});
+
+test('copiedSkus reports only variants the payload shows still carrying a SKU', () => {
+  const payload = {
+    productVariants: [
+      { id: 'v1', inventoryItem: { sku: '' } },
+      { id: 'v2', inventoryItem: { sku: null } },
+      { id: 'v3', inventoryItem: { sku: '  ' } },
+      { id: 'v4', inventoryItem: { sku: 'L2CN-RN-BLK-S' } },
+      { id: 'v5' },
+    ],
+  };
+  assert.deepEqual(copiedSkus(payload), [{ id: 'v4', sku: 'L2CN-RN-BLK-S' }]);
+  assert.deepEqual(copiedSkus(undefined), []);
+  assert.deepEqual(copiedSkus({ productVariants: [] }), []);
 });
 
 test('assertExpectations passes only on an exact match, in order', () => {

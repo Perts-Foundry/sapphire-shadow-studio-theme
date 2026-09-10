@@ -30,6 +30,7 @@ import {
   addOptionValue,
   appendHeroes,
   assertValueAbsent,
+  copiedSkus,
   parseWeights,
   planAddition,
   planHeroAttach,
@@ -54,7 +55,8 @@ export const USAGE = `Usage: add-option-value.mjs (--namespace <ns> | --handle a
                              variants, skipping any already attached
 
 Sequence: productOptionUpdate adds the value and Shopify mints the variants, then
-productVariantsBulkUpdate sets price, weight, tracked and inventoryPolicy DENY on them. If the first
+productVariantsBulkUpdate sets price, weight, tracked and inventoryPolicy DENY on them and clears
+the SKU Shopify copied from a sibling. If the first
 lands and the second fails, --repair finishes the job; it is idempotent.
 
 Gates: CI set is an unconditional refusal, dry run included. No TTY means no write unless
@@ -282,6 +284,8 @@ async function runAdd(ctx, products) {
           'The variants exist at Admin defaults on a live product. Re-run with --repair once the cause is fixed.',
       );
       problems++;
+    } else if (reportCopiedSkus(ctx, row.handle, setup, created.length)) {
+      problems++;
     }
   }
 
@@ -299,19 +303,50 @@ async function runRepair(ctx, products) {
   const { flags, option, value, handles, log } = ctx;
   if (!flags.price) throw new AddProductError('--price', 'is required; --repair rewrites price as well as weight');
   const weights = parseWeights(flags.weightLb);
+  // The setup clears every target's SKU. That is right for a SKU productOptionUpdate copied, which
+  // always duplicates the sibling it came from, and wrong for one the sku skill has since assigned,
+  // which no other variant on the product holds. A repair run after phase 2 would wipe those, so a
+  // target holding a SKU nobody else shares is a refusal, before the dry run prints anything.
+  const assignedSkus = (product, targets) => {
+    const held = new Map();
+    for (const v of product.variants) {
+      const sku = String(v.sku ?? '').trim();
+      if (sku) held.set(sku, (held.get(sku) ?? 0) + 1);
+    }
+    return targets.filter((v) => {
+      const sku = String(v.sku ?? '').trim();
+      return sku !== '' && held.get(sku) === 1;
+    });
+  };
   const rows = products.map((product) => {
     const targets = variantsCarrying(product, option, value);
     if (!weights.has(product.handle)) {
       throw new AddProductError('--weight-lb', `has no weight for ${product.handle}; every affected handle needs one`);
     }
-    return { handle: product.handle, productId: product.id, targets, weightLb: weights.get(product.handle) };
+    return { handle: product.handle, productId: product.id, targets, assigned: assignedSkus(product, targets), weightLb: weights.get(product.handle) };
   });
+  const assigned = rows.flatMap((r) => r.assigned.map((v) => `${r.handle} ${String(v.sku).trim()}`));
+  if (assigned.length) {
+    throw new AddProductError(
+      '--repair',
+      `refuses: ${assigned.length} target(s) hold a SKU no other variant shares (first: ${assigned[0]}). ` +
+        'That is an assigned SKU, not a copied one, and the setup would clear it. Nothing was written.',
+    );
+  }
   const total = rows.reduce((acc, r) => acc + r.targets.length, 0);
 
   log(OUTPUT_IS_DATA);
   log(`# --repair: re-running the variant setup for "${value}" (hex ${hexOf(value)}) on option "${option}"`);
   log('');
-  log(table(['handle', 'variants carrying the value', 'price', 'weight lb'], rows.map((r) => [r.handle, r.targets.length, flags.price, r.weightLb])));
+  // The SKU column is what the operator is approving a clear of: a copied SKU is invisible in every
+  // other column, and the clear is the one field this rewrite changes that is not already right.
+  const holdingSku = (r) => r.targets.filter((v) => String(v.sku ?? '').trim() !== '').length;
+  log(
+    table(
+      ['handle', 'variants carrying the value', 'holding a SKU', 'price', 'weight lb'],
+      rows.map((r) => [r.handle, r.targets.length, holdingSku(r), flags.price, r.weightLb]),
+    ),
+  );
   if (flags.dryRun) {
     log('');
     log(copyLine(handles, total));
@@ -335,10 +370,42 @@ async function runRepair(ctx, products) {
     if (errors.length) {
       ctx.errLog(`error: ${row.handle}: productVariantsBulkUpdate refused: ${errors.map((e) => e.message).join('; ')}`);
       problems++;
+    } else if (reportCopiedSkus(ctx, row.handle, setup, row.targets.length)) {
+      problems++;
     }
   }
   log(`receipt: ${writeReceipt(ctx, receipt)}`);
   return problems ? 1 : 0;
+}
+
+/**
+ * Say so when the setup left a SKU in place, or cannot show that it did not. Returns true on either.
+ *
+ * productOptionUpdate copies the sibling's SKU onto every new variant and the setup input clears it;
+ * a SKU read back here is a duplicate still sitting on a live product, which the sku skill will
+ * later see as drift rather than a gap to fill. A payload describing fewer variants than were sent
+ * is the other failure: copiedSkus reads only what the payload describes, so the missing ones would
+ * pass as cleared on no evidence. A problem, not a crash: the rest of the setup landed.
+ */
+function reportCopiedSkus(ctx, handle, setup, sent) {
+  let problem = false;
+  const described = setup?.productVariants?.length ?? 0;
+  if (described < sent) {
+    ctx.errLog(
+      `error: ${handle}: the setup payload described ${described} of ${sent} variant(s), so the SKU clear on the rest is unconfirmed. ` +
+        'Run check-variants before anything else.',
+    );
+    problem = true;
+  }
+  const left = copiedSkus(setup);
+  if (left.length > 0) {
+    ctx.errLog(
+      `error: ${handle}: ${left.length} new variant(s) still carry a SKU after the setup cleared it ` +
+        `(first: ${left[0].sku}). These duplicate a sibling's SKU; re-run with --repair under a fresh approval.`,
+    );
+    problem = true;
+  }
+  return problem;
 }
 
 // ---------------------------------------------------------------------------------------------
