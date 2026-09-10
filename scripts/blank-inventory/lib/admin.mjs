@@ -188,6 +188,40 @@ export function createAdminClient(opts = {}) {
 }
 
 /**
+ * A client that refuses to send a mutation: the dry-run backstop.
+ *
+ * Every `--dry-run` path is meant to return before its write. Handing a dry run this client instead
+ * of the real one turns a path that forgets into a loud abort rather than a live write, which is
+ * what `backfill --stage tag --dry-run` did on 2026-09-10 (see release-notes.md).
+ *
+ * DETECTION IS A HEURISTIC, and it assumes one operation per document: `#` comments are stripped
+ * and the document's first keyword is read, so a query followed by a mutation in one document would
+ * pass. That holds for every document this tool sends (the single-operation `M_*` constants in
+ * mutations.mjs and the catalogue queries), and admin.test.mjs pins it by iterating the `M_*`
+ * exports, so a new mutation constant is covered the day it is added.
+ *
+ * @param {AdminClient} client
+ * @returns {AdminClient}
+ */
+export function readOnlyClient(client) {
+  return {
+    async gql(query, variables) {
+      const doc = String(query ?? '').replace(/#[^\n]*/g, '').trim();
+      if (/^mutation\b/.test(doc)) {
+        const name = doc.match(/^mutation\s+([_A-Za-z][_0-9A-Za-z]*)/)?.[1] ?? '(anonymous)';
+        throw new Error(`DRY RUN: refused to send mutation ${name}; a dry run reached a write path (a bug)`);
+      }
+      return client.gql(query, variables);
+    },
+    scopes: () => client.scopes(),
+    apiVersion: client.apiVersion,
+    get redact() {
+      return client.redact;
+    },
+  };
+}
+
+/**
  * Verify the app grants what this tool needs. Capability is not authorization: a passing scope
  * check never substitutes for an operator approval gate.
  *

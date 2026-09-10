@@ -7,8 +7,10 @@ import {
   backoffDelayMs,
   assertSingleLocation,
   createAdminClient,
+  readOnlyClient,
   REQUIRED_SCOPES,
 } from '../lib/admin.mjs';
+import * as mutations from '../lib/mutations.mjs';
 
 test('makeRedactor scrubs every secret it was given', () => {
   const redact = makeRedactor('shpat_secret', 'client_secret_value');
@@ -141,6 +143,59 @@ test('gql throws on a non-throttle GraphQL error, with the token redacted', asyn
       }
     );
   });
+});
+
+// --- the dry-run backstop -----------------------------------------------------
+//
+// A dry run's store client refuses every mutation, and its file writer refuses every write, so a
+// stage that forgets to check --dry-run aborts instead of writing. That is what backfill --stage tag
+// did on 2026-09-10. The command-level half (dryRunDeps, and each command wired through it) is
+// tested in dry-run.test.mjs, which is also the only file that loads the CLI with a temp working
+// directory.
+
+function recordingClient() {
+  const calls = [];
+  return {
+    calls,
+    gql: async (query, variables) => {
+      calls.push({ query, variables });
+      return { ok: true };
+    },
+  };
+}
+
+test('readOnlyClient refuses a mutation, and the inner client never sees it', async () => {
+  for (const doc of [
+    'mutation BlankInventoryTag { x }',
+    '\n    mutation BlankInventoryTag { x }',
+    '# a comment first\n  mutation BlankInventoryTag { x }',
+  ]) {
+    const inner = recordingClient();
+    await assert.rejects(
+      () => readOnlyClient(inner).gql(doc, {}),
+      /^Error: DRY RUN: refused to send mutation BlankInventoryTag; a dry run reached a write path \(a bug\)/
+    );
+    assert.deepEqual(inner.calls, [], `the mutation must not reach the network: ${JSON.stringify(doc)}`);
+  }
+});
+
+test('readOnlyClient passes a query through, named or anonymous', async () => {
+  for (const doc of ['query Shop { shop { id } }', '{ shop { id } }', '# note\nquery Shop { shop { id } }']) {
+    const inner = recordingClient();
+    assert.deepEqual(await readOnlyClient(inner).gql(doc, { a: 1 }), { ok: true });
+    assert.deepEqual(inner.calls, [{ query: doc, variables: { a: 1 } }]);
+  }
+});
+
+test('readOnlyClient refuses every mutation document this tool can send', async () => {
+  // Iterated, not listed: a new M_* constant is covered the day it is added.
+  const docs = Object.entries(mutations).filter(([name]) => name.startsWith('M_'));
+  assert.ok(docs.length >= 4, `the mutation constants were found (${docs.length})`);
+  for (const [name, doc] of docs) {
+    const inner = recordingClient();
+    await assert.rejects(() => readOnlyClient(inner).gql(doc, {}), /DRY RUN: refused to send mutation/, `${name} is refused`);
+    assert.deepEqual(inner.calls, [], `${name} never reaches the network`);
+  }
 });
 
 test('the token is minted once and reused across calls', async () => {

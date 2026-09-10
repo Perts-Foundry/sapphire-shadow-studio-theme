@@ -1,5 +1,71 @@
 # Release Notes
 
+## add-product's deploy check matched on a SHA no deploy run carries (unreleased)
+
+Phase 1 step 9 of the add-product skill found a PR's deploy run by matching the PR's `mergeCommit.oid`
+against the run's `headSha`. That match could never succeed. The comment-deploy path runs on
+`issue_comment`, which Actions runs on the default branch's HEAD at the moment of the comment, so
+the run records `main` from before the merge; and the merge happens inside that same run, after it
+posts its Deployment Report, so no deploy run can carry its own merge commit. The auto-deploy paths
+record the PR head instead, which is not the merge commit either. The lookup found nothing on PR #175
+and on PR #180: #180's deploy run recorded `b829f48`, main's previous commit, and the PR merged as
+`e2e851b`.
+
+The corrected rule ties the run to the PR by run id and PR number, never by `headSha`. Step 9 finds
+the run by its title, `deploy (comment #<n> by @<login>)`, which `deploy.yml`'s run-name builds from
+the event, and accepts only a queued or in-progress one: a retried `deploy` comment reuses the
+title, so a completed run with it is an earlier attempt, and picking one would repeat the "older
+run reported green" failure one step earlier. The run's own event, title and job conclusions are
+checked first, as the primary signal; the github-actions Deployment Report then corroborates it:
+its Commit row must equal the PR head, its Workflow run link must name the run that was watched, and
+the PR must be merged. The step states why `headSha` cannot be used, so the old match is not
+restored by someone tidying it up.
+
+## A dry run that wrote: `backfill --stage tag` ignored `--dry-run` (unreleased)
+
+During a product addition on 2026-09-10, `blank-inventory.mjs backfill --stage tag --plan <proposal>
+--dry-run` was run as a preview before the operator's tag gate. It was not a preview. It wrote 252
+live `custom.inventory_blank_sku` metafields and a seeding receipt. The operator reviewed the tags
+afterwards and kept them, so nothing was reverted, but the approval that gate exists to collect was
+never asked for.
+
+**Why nothing caught it.** The tag branch never read `opts.dryRun`; the seed stage, `apply` and
+`untag` all did. The registry test that should have noticed (`every flag a command reads is
+registered, and every registered flag is read`) works per command, and `cmdBackfill` reads the flag
+in its seed branch, so the flag counted as honoured for every stage. `main()` then made it worse: it
+treated any dry run as a read (`writeCommands.has(cmd) && !opts.dryRun`), so the ignored flag also
+skipped the write lock and the stray-working-directory refusal, and the 252 writes ran unlocked. The
+tool's own contract, that a flag a command does not honour is an error and never ignored, broke on
+the one path where a no-op was most expected.
+
+**The fix, in three layers.** First, every stage honours the flag: `propose` and the `--blank`
+bootstrap print the proposal and write no file; `tag` keeps its read-only quiesce, then prints every
+variant in the proposal with its live tag state and writes nothing; `seed` was already correct. Every
+dry run on every command now ends with one line, `DRY RUN: nothing written.`, and the skill's tag
+STOP tells the operator to check for it, because a checkout predating this fix prints no such line
+at the tag stage. Second, a runtime backstop, so the next forgotten check aborts instead of writing:
+on a dry run, `apply`, `backfill` and `untag` get a store client that refuses any mutation document,
+and a file writer and apply engine that refuse outright. Third, two guards on the guard. A
+completeness test derives one dry-run case per command that registers `--dry-run` and one per
+backfill stage, runs each against traps that fail on any Admin call, file write or engine call, and
+pairs each with a live positive control that proves the fixture reaches its write. A structural test
+checks that those three commands read and write only through their injected dependencies, and that
+`loadStore` is the only place an Admin client is built, because the backstop covers only what flows
+through it. Dry runs stay lock-free, so a preview can still run alongside a live seed; the backstop is
+what makes that safe now. `--stage` is also validated before the catalogue read instead of after it.
+
+**The truncated gates.** The propose listing showed at most five variants per group and then
+"... and N more", and the untag sibling list did the same. Both hid rows the skill's "Every gate
+table shows the FULL variant identity" rule requires, and in the incident the hidden row in every
+group was the newest design value's variant. Both now print every row. No flag was added for the long
+form: an opt-in flag keeps the truncated form as the default, and the default is exactly where that
+rule forbids it.
+
+**Not changed.** A real tag run still silently overwrites a variant that already holds a different
+blank id. The preview now shows that case (`holds a DIFFERENT id: a real run would overwrite it`) and
+the skill tells the operator to call it out, but refusing it changes live-write behaviour, so it
+belongs in its own change.
+
 ## Six credentials in one run, and the SKU Shopify copied onto every one of them (unreleased)
 
 `CPT (Certified Phlebotomy Technician)`, `PBT (Phlebotomy Technician)`, `PCT (Patient Care

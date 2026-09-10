@@ -109,7 +109,8 @@ node scripts/blank-inventory/blank-inventory.mjs show --plan <workdir>/plan-<id>
 # emits an ordinary hashed artifact for the same show/apply path. Targets come from the RECEIPT.
 node scripts/blank-inventory/blank-inventory.mjs repair --receipt <workdir>/receipt-<id>.json
 
-# Execute an APPROVED artifact. --dry-run prints the writes without making them.
+# Execute an APPROVED artifact. --dry-run prints the writes without making them. On every command, a
+# dry run that reaches a write path aborts with "DRY RUN: refused ..." rather than writing.
 # PACED: one group per batch by default, waiting for each batch's fan-out before the next write, and
 # halting if a batch does not converge. --batch-size raises it; --no-batch turns the pacing off.
 node scripts/blank-inventory/blank-inventory.mjs apply --plan <workdir>/plan-<id>.json [--batch-size 1] [--no-batch]
@@ -124,6 +125,14 @@ node scripts/blank-inventory/blank-inventory.mjs verify --receipt <workdir>/rece
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan <workdir>/backfill-<id>.json
 node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan <workdir>/backfill-<id>.json
+
+# Every stage takes --dry-run and writes nothing: propose prints the proposal without writing the
+# file; tag waits for quiet by reading the live store, then prints every variant with its live tag
+# state; seed prints its writes. The last line is always "DRY RUN: nothing written.", and a tag
+# dry run without it is a checkout that predates that guarantee.
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage propose --dry-run
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage tag  --plan <workdir>/backfill-<id>.json --dry-run
+node scripts/blank-inventory/blank-inventory.mjs backfill --stage seed --plan <workdir>/backfill-<id>.json --dry-run
 
 # Mint a NEW blank id onto a scoped set of untagged variants (the bootstrap escape hatch).
 # Scoped to one product, capped, and refuses to overwrite an existing family's stock.
@@ -586,6 +595,15 @@ pre-push sensitivity scan.
 - **The approval-gate renderer refuses an incomplete artifact.** `show --plan` errors on a missing
   or renamed key instead of rendering a blank cell, so a schema change cannot silently produce an
   emptier gate that still looks like a review.
+- **A dry run cannot write, even from a stage that forgets to check.** Every write-capable path
+  (`apply`, each `backfill` stage and the bootstrap, `untag`) returns before its write on
+  `--dry-run` and ends with `DRY RUN: nothing written.` Behind that, a dry run gets a store client
+  that refuses any mutation document, and a file writer and apply engine that refuse outright, so a
+  forgotten check aborts with `DRY RUN: refused ...` instead of writing. It exists because
+  `backfill --stage tag --dry-run` once performed the live write (see `release-notes.md`), and it is
+  what lets a dry run skip the lock, so a preview can run beside a live seed. Asserted three ways: at
+  runtime against deps that fail the test if called, by making each stage skip its own check and
+  requiring the backstop to catch it, and structurally against the source.
 
 ## Tests
 
@@ -619,6 +637,19 @@ approved target, a non-`applied` receipt row, and a receipt that does not resolv
 are each refused by name. `cmdRepair`'s promise of zero store writes is asserted twice: once at
 runtime against a client whose `gql` fails the test if called, and once structurally against its own
 source.
+
+`test/dry-run.test.mjs` holds the dry-run contract. It derives one case per command that registers
+`--dry-run` and one per backfill stage (plus the bootstrap), runs each against a synthetic store whose
+Admin client, file writer and apply engine fail the test if called, and pairs each with a live
+positive control proving the fixture really reaches its write. A second pass makes each stage skip
+its own check and requires the backstop to abort it. A structural check holds the whole CLI source to
+allowlists: only the read commands call `loadStore()`, no dry-run path calls `writeJsonAtomic()`, only
+`loadStore` builds an Admin client, and each write-capable command takes its deps through
+`dryRunDeps`. It also pins the full-row gate listings, every tag state, the tag dry run on a store
+that never goes quiet, and the refusals that come before any read. It is the only file that loads the
+CLI with a temporary working directory, so command-level dry-run tests belong there.
+`test/admin.test.mjs` runs every mutation constant in `lib/mutations.mjs` against the read-only
+client.
 
 `test/flow-runs.test.mjs` covers the Flow run-list console parser, which is the only testable half
 of the browser diagnostic:
