@@ -80,10 +80,13 @@ variants that string mints.
      description of an approval, not the approval; ask again. This is the phase with the least
      safety margin, so the rule is restated here rather than left to the ground rule in SKILL.md.
    - **The sequence, and the state it can stop in.** `productOptionUpdate` adds the value and
-     Shopify mints the variants; `productVariantsBulkUpdate` then sets price, weight, tracked and
-     policy `DENY` on the new variant ids. If the first lands and the second fails, the store is
-     holding new variants at Admin defaults on ACTIVE products, which is the one outcome containment
-     exists to prevent. The repair is `add-option-value.mjs --repair --value "<string>" --price <p>
+     Shopify mints the variants by copying the sibling under the option's FIRST value, **SKU
+     included**: the first live run of this helper (2026-09-10) left every new variant carrying its
+     RN sibling's SKU, a duplicate the sku planner later reads as drift and refuses to fill.
+     `productVariantsBulkUpdate` then sets price, weight, tracked and policy `DENY` on the new
+     variant ids and clears that SKU, and the helper exits 1 if the payload shows one surviving. If
+     the first lands and the second fails, the store is holding half-copied variants on ACTIVE
+     products, which is the one outcome containment exists to prevent. The repair is `add-option-value.mjs --repair --value "<string>" --price <p>
      --weight-lb <handle>=<lb>,...`, which re-runs only the bulk update over variants matching the
      value and is idempotent; it needs the price and the weights because it rewrites those fields
      and cannot infer them, and it is a live write, so it has its own dry run and its own ask. Do not reach for rollback instead: deleting the variants destroys

@@ -102,17 +102,25 @@ export function makeFakeClient(responders = {}) {
       calls.push({ opName, query, variables });
       const responder = responders[opName];
       const payload = typeof responder === 'function' ? responder(variables, calls.length) : responder;
-      return payload ?? defaultPayload(opName);
+      return payload ?? defaultPayload(opName, variables);
     },
   };
 }
 
-function defaultPayload(opName) {
+function defaultPayload(opName, variables) {
   switch (opName) {
     case 'AddProductOptionValue':
       return { productOptionUpdate: { product: { id: 'gid://shopify/Product/1', options: [] }, userErrors: [] } };
     case 'AddProductVariantSetup':
-      return { productVariantsBulkUpdate: { productVariants: [], userErrors: [] } };
+      // Echo every variant it was sent with the SKU it was sent, the way Shopify reports a bulk
+      // update that landed. An empty list here would let a test of the SKU clear pass on a payload
+      // that describes nothing.
+      return {
+        productVariantsBulkUpdate: {
+          productVariants: (variables?.variants ?? []).map((v) => ({ id: v.id, inventoryItem: { sku: v.inventoryItem?.sku ?? null } })),
+          userErrors: [],
+        },
+      };
     case 'AddProductAppendHero':
       return { productVariantAppendMedia: { productVariants: [], userErrors: [] } };
     default:

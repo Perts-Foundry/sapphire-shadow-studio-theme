@@ -88,9 +88,11 @@ A live run additionally requires `--expect-handles a,b,c --expect-new-variants n
 dry run, and `--operator-approved` whenever there is no TTY, which is every agent-run session; the
 command aborts on any mismatch, and an abort voids the approval.
 
-Sequence: `productOptionUpdate` adds the value and Shopify mints the variants, then
-`productVariantsBulkUpdate` sets price, weight, tracked and policy `DENY` on the new variant ids.
-If the first lands and the second fails, the store holds new variants at Admin defaults on ACTIVE
+Sequence: `productOptionUpdate` adds the value and Shopify mints the variants by copying the sibling
+under the option's first value, SKU included, then `productVariantsBulkUpdate` sets price, weight,
+tracked and policy `DENY` on the new variant ids and clears the copied SKU (the sku skill fills a
+missing SKU in phase 2 but refuses to overwrite a wrong one). A SKU still present in that payload
+exits 1. If the first lands and the second fails, the store holds half-copied variants on ACTIVE
 products; `--repair --value "<string>"` with the same `--price` and `--weight-lb` re-runs only the
 bulk update over variants matching the value and is idempotent. Rollback is destructive (deleting variants loses ids and history), which is
 why the dry run is the gate.

@@ -18,7 +18,13 @@
       "RVT (Registered Vet Tech)": "RVT",
       "CVT (Certified Vet Tech)": "CVT",
       "NP (Nurse Practitioner)": "NP",
-      "DNP (Doctor of Nursing Practice)": "DNP"
+      "DNP (Doctor of Nursing Practice)": "DNP",
+      "CPT (Certified Phlebotomy Technician)": "CPT",
+      "PBT (Phlebotomy Technician)": "PBT",
+      "PCT (Patient Care Technician)": "PCT",
+      "MA (Medical Assistant)": "MA",
+      "RRT (Registered Respiratory Therapist)": "RRT",
+      "FNP (Family Nurse Practitioner)": "FNP"
     },
     "huddle": {
       "Nurse": "NRS",

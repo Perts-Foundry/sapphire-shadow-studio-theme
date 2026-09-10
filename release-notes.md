@@ -1,5 +1,45 @@
 # Release Notes
 
+## Six credentials in one run, and the SKU Shopify copied onto every one of them (unreleased)
+
+`CPT (Certified Phlebotomy Technician)`, `PBT (Phlebotomy Technician)`, `PCT (Patient Care
+Technician)`, `MA (Medical Assistant)`, `RRT (Registered Respiratory Therapist)` and `FNP (Family
+Nurse Practitioner)` join the Lead II Design option on all three products in The Vitals Collection,
+taking it from ten credentials to sixteen: 252 new variants, 108 each on the crewneck and quarter-zip
+and 36 on the Black-only vest. This was also the first run of `add-option-value.mjs` against the live
+store, and the first thing it did was something its own documentation said could not happen.
+
+**`productOptionUpdate` copies the sibling's SKU.** Phase 0 said a new variant "will have no SKU until
+phase 2 step 2", and the DNP entry below recorded exactly that, but DNP's variants predate this
+helper. With `variantStrategy: MANAGE`, Shopify fills each new variant from the variant with the same
+colour and size under the option's FIRST value, SKU included, so every CPT variant arrived holding an
+`RN` SKU: 42 duplicates on live products. Nothing flagged it. `check-variants.mjs` reported clean
+because it never compared SKUs, and `sku audit`'s collision check only looks at SKUs it can derive,
+which excludes every variant of a value with no code yet. It was seen only because the completion
+check prints the SKU column and somebody read the column.
+
+**Why it had to be cleared now rather than repaired in phase 2.** Once the six codes land in
+`tables.json` the copied SKUs stop reading as "not derivable" and start reading as drift, and the sku
+planner refuses drift without `--include-mismatches`, which the sku skill reserves for an explicitly
+requested repair of values that may already be on packing slips. Left alone, phase 2's ordinary
+fill-the-gaps run would have skipped all 252 and reported the job finished. The setup mutation now
+sends `inventoryItem.sku: ""`, reads the SKU back, and exits 1 if one survives or if the payload
+describes fewer variants than were sent; `--repair`'s dry run gained a column counting the targets
+that still hold one. CPT, already written, was cleared with `--repair`; the other five were cleared
+in the same run that created them. The audit after the last value read 516 correct, 252 actionable
+nulls, zero drift and zero unmapped, which is the shape phase 2 expects.
+
+An empty string rather than null, because an explicit null on a nullable input can be read as "leave
+unchanged", and the read-back makes either failure loud rather than silent. The sku tooling
+normalises an empty SKU to null, so the two are one fact to every reader downstream.
+`phase-0-admin-draft.md`, the helper's README and its usage text now say all of this.
+
+**Six values was twelve gated writes, and that was the point.** The helper takes one `--value`, and
+adding a value and attaching its heroes are separate writes with separate approvals, so the run was
+six adds and six attaches, each behind its own dry run and its own ask. Batching them would have put
+252 variants behind a single yes; the SKU copy was caught on the first 42 because the first write
+was small enough to read in full before the second one existed.
+
 ## Judge.me readiness: the defaults become decisions, and one overlap gets a signal instead of a fix (unreleased)
 
 An audit of the review pipeline before the first orders shipped found it wired but running on

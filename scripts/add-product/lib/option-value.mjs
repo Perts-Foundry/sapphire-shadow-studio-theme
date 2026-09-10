@@ -7,18 +7,21 @@
 // operator approves and the live run that follows compute the same numbers from the same code.
 //
 // WHY THE SEQUENCE IS TWO MUTATIONS AND NOT ONE. productOptionUpdate with variantStrategy MANAGE
-// mints the new variants at Admin defaults: no weight, tracked as the shop default, and whatever
-// price Shopify picks. On a product that is already ACTIVE and published those variants are
-// purchasable immediately, so the second mutation is not a tidy-up, it is the rest of the write.
-// If the first lands and the second does not, the store is holding variants at defaults and
-// `--repair` exists to finish the job. Rollback is not the answer there: deleting a variant loses
-// its id and its history for good.
+// mints the new variants by copying fields from an existing sibling: the variant with the same
+// colour and size under the option's FIRST value. That copy includes the sibling's SKU, so a new
+// "CPT" variant arrives carrying the RN variant's L2CN-RN-BLK-XS, a duplicate SKU on a live product
+// (the first live run, 2026-09-10). On a product that is already ACTIVE and published those variants
+// are purchasable immediately, so the second mutation is not a tidy-up, it is the rest of the write:
+// it sets price, weight, tracking and policy, and it CLEARS the copied SKU so the sku skill later
+// sees an actionable null rather than drift it refuses to touch. If the first lands and the second
+// does not, the store is holding half-copied variants and `--repair` exists to finish the job.
+// Rollback is not the answer there: deleting a variant loses its id and its history for good.
 //
 // Mutation shapes and the read queries were validated against the Admin schema with
 // validate_graphql_codeblocks (productOptionUpdate with OptionUpdateInput plus OptionValueCreateInput
 // and variantStrategy MANAGE; productVariantsBulkUpdate with price, inventoryPolicy and
-// inventoryItem.measurement.weight; productVariantAppendMedia with ProductVariantAppendMediaInput).
-// Re-validate rather than trusting this comment if you change a field.
+// inventoryItem.sku plus inventoryItem.measurement.weight; productVariantAppendMedia with
+// ProductVariantAppendMediaInput). Re-validate rather than trusting this comment if you change a field.
 
 import { COLOR_OPTION_NAME, NO_COLOUR_KEY, findOption, optionValue } from './admin-reads.mjs';
 import { findLiveValue, hexOf, looseKey } from './checks.mjs';
@@ -34,7 +37,7 @@ mutation AddProductOptionValue($productId: ID!, $option: OptionUpdateInput!, $op
 export const M_VARIANTS_BULK_UPDATE = `
 mutation AddProductVariantSetup($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
   productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-    productVariants { id price inventoryPolicy inventoryItem { tracked measurement { weight { value unit } } } }
+    productVariants { id price inventoryPolicy inventoryItem { sku tracked measurement { weight { value unit } } } }
     userErrors { field message code }
   }
 }`;
@@ -184,6 +187,11 @@ export function variantsCarrying(product, option, value) {
 
 /**
  * The productVariantsBulkUpdate input for the new variants.
+ *
+ * `sku: ''` clears the SKU that productOptionUpdate copied from the sibling variant (see the header).
+ * A new variant's right SKU is the one the sku skill derives from tables.json in phase 2, and it can
+ * only fill a variant that has none: a copied one reads as drift, which its planner refuses.
+ *
  * @param {object[]} variants
  * @param {{price: string, weightLb: number}} o
  * @returns {object[]}
@@ -193,8 +201,24 @@ export function variantSetupInput(variants, { price, weightLb }) {
     id: v.id,
     price,
     inventoryPolicy: 'DENY',
-    inventoryItem: { tracked: true, measurement: { weight: { value: weightLb, unit: WEIGHT_UNIT } } },
+    inventoryItem: { sku: '', tracked: true, measurement: { weight: { value: weightLb, unit: WEIGHT_UNIT } } },
   }));
+}
+
+/**
+ * The variants a productVariantsBulkUpdate payload reports as still carrying a SKU.
+ *
+ * The setup input clears the SKU, so any non-blank one read back here is a clear that did not land.
+ * A variant the payload does not describe is not reported: absence proves nothing either way, and
+ * check-variants reads the store itself afterwards.
+ *
+ * @param {object|null|undefined} payload - the productVariantsBulkUpdate field of the response
+ * @returns {Array<{id: string, sku: string}>}
+ */
+export function copiedSkus(payload) {
+  return (payload?.productVariants ?? [])
+    .map((v) => ({ id: v.id, sku: String(v.inventoryItem?.sku ?? '').trim() }))
+    .filter((v) => v.sku !== '');
 }
 
 /**
