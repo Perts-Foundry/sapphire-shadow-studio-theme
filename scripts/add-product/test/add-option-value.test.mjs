@@ -649,6 +649,27 @@ test('the --repair dry run counts the targets still holding a SKU', async () => 
   assert.match(out.text(), /lead-ii-crewneck +4 +4 +48\.00/);
 });
 
+test('--repair refuses when a target holds a SKU no other variant shares, writing nothing', async () => {
+  // A copied SKU duplicates its sibling; a SKU the sku skill assigned is unique on the product. The
+  // setup clears every target's SKU, so after phase 2 a repair would wipe correct ones.
+  const out = makeLogger();
+  const client = makeFakeClient();
+  const assigned = after({ overrides: (spec) => ({ sku: `L2CN-DNP-${spec.color.toUpperCase()}-${spec.size}` }) });
+  const code = await runAddOptionValue({
+    argv: [...DRY_RUN_ARGV, '--repair'],
+    env: sandboxEnv(),
+    isTTY: false,
+    client,
+    tables: TABLES,
+    loadProducts: async (handles) => handles.map((h) => assigned.find((p) => p.handle === h)),
+    log: out.write,
+    errLog: out.write,
+  });
+  assert.equal(code, 2);
+  assert.match(out.text(), /refuses: 8 target\(s\) hold a SKU no other variant shares/);
+  assert.equal(client.calls.length, 0);
+});
+
 test('the variant setup input carries weight, tracking and policy for every id', () => {
   const input = variantSetupInput([{ id: 'v1' }, { id: 'v2' }], { price: '48.00', weightLb: 1.6 });
   assert.equal(input.length, 2);

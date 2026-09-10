@@ -142,8 +142,8 @@ it.
    not.
 
 New **option values on an existing product** are the real ongoing cost, not new products. One new
-colour on `lead-ii-crewneck` creates 96 variants (16 designs x 6 sizes) and needs exactly one new
-table row; the tool then fills all 96. A half-populated SKU field is worse than an empty one,
+colour on `lead-ii-crewneck` creates one variant per design per size and needs exactly one new
+table row; the tool then fills every one of them. A half-populated SKU field is worse than an empty one,
 because a SKU filter silently returns an incomplete set, so run `audit` after any option change.
 
 ## Applique patterns are not in the SKU

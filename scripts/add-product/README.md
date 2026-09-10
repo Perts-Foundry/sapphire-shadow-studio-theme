@@ -94,7 +94,10 @@ tracked and policy `DENY` on the new variant ids and clears the copied SKU (the 
 missing SKU in phase 2 but refuses to overwrite a wrong one). A SKU still present in that payload
 exits 1. If the first lands and the second fails, the store holds half-copied variants on ACTIVE
 products; `--repair --value "<string>"` with the same `--price` and `--weight-lb` re-runs only the
-bulk update over variants matching the value and is idempotent. Rollback is destructive (deleting variants loses ids and history), which is
+bulk update over variants matching the value and is idempotent. Because that setup clears the SKU,
+`--repair` refuses when a target holds a SKU no other variant on the product shares: a copied SKU
+always duplicates its sibling, so a unique one was assigned by the sku skill and the clear would
+wipe it. Rollback is destructive (deleting variants loses ids and history), which is
 why the dry run is the gate.
 
 `--attach-heroes` is a **separate invocation** with its own `--dry-run` and its own approval. It

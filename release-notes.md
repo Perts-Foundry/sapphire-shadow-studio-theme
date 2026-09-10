@@ -25,7 +25,9 @@ requested repair of values that may already be on packing slips. Left alone, pha
 fill-the-gaps run would have skipped all 252 and reported the job finished. The setup mutation now
 sends `inventoryItem.sku: ""`, reads the SKU back, and exits 1 if one survives or if the payload
 describes fewer variants than were sent; `--repair`'s dry run gained a column counting the targets
-that still hold one. CPT, already written, was cleared with `--repair`; the other five were cleared
+that still hold one, and it now refuses when a target holds a SKU no other variant shares, since a
+copied SKU always duplicates its sibling and a unique one is an assigned SKU the clear would wipe.
+CPT, already written, was cleared with `--repair`; the other five were cleared
 in the same run that created them. The audit after the last value read 516 correct, 252 actionable
 nulls, zero drift and zero unmapped, which is the shape phase 2 expects.
 

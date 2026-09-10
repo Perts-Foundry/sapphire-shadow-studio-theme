@@ -303,13 +303,36 @@ async function runRepair(ctx, products) {
   const { flags, option, value, handles, log } = ctx;
   if (!flags.price) throw new AddProductError('--price', 'is required; --repair rewrites price as well as weight');
   const weights = parseWeights(flags.weightLb);
+  // The setup clears every target's SKU. That is right for a SKU productOptionUpdate copied, which
+  // always duplicates the sibling it came from, and wrong for one the sku skill has since assigned,
+  // which no other variant on the product holds. A repair run after phase 2 would wipe those, so a
+  // target holding a SKU nobody else shares is a refusal, before the dry run prints anything.
+  const assignedSkus = (product, targets) => {
+    const held = new Map();
+    for (const v of product.variants) {
+      const sku = String(v.sku ?? '').trim();
+      if (sku) held.set(sku, (held.get(sku) ?? 0) + 1);
+    }
+    return targets.filter((v) => {
+      const sku = String(v.sku ?? '').trim();
+      return sku !== '' && held.get(sku) === 1;
+    });
+  };
   const rows = products.map((product) => {
     const targets = variantsCarrying(product, option, value);
     if (!weights.has(product.handle)) {
       throw new AddProductError('--weight-lb', `has no weight for ${product.handle}; every affected handle needs one`);
     }
-    return { handle: product.handle, productId: product.id, targets, weightLb: weights.get(product.handle) };
+    return { handle: product.handle, productId: product.id, targets, assigned: assignedSkus(product, targets), weightLb: weights.get(product.handle) };
   });
+  const assigned = rows.flatMap((r) => r.assigned.map((v) => `${r.handle} ${String(v.sku).trim()}`));
+  if (assigned.length) {
+    throw new AddProductError(
+      '--repair',
+      `refuses: ${assigned.length} target(s) hold a SKU no other variant shares (first: ${assigned[0]}). ` +
+        'That is an assigned SKU, not a copied one, and the setup would clear it. Nothing was written.',
+    );
+  }
   const total = rows.reduce((acc, r) => acc + r.targets.length, 0);
 
   log(OUTPUT_IS_DATA);
