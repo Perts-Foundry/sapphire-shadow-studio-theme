@@ -1742,7 +1742,7 @@ async function cmdApply(opts, injected = {}) {
     return;
   }
 
-  const timeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS);
+  const timeoutMs = numericOpt('--timeout-ms', opts.timeoutMs, DEFAULT_TIMEOUT_MS, refuse);
   console.log(
     noBatch
       ? `Pacing DISABLED (--no-batch): all groups in one pass, no wait between them.`

@@ -13,7 +13,7 @@
 // The tests run sequentially (the node:test default; do not set `concurrency`): they swap
 // `console.log` to capture output, and share one temporary working directory that must stay empty.
 
-import { test, after } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -24,6 +24,7 @@ import { variant, groupSlice, blankIdFor, resetSeq } from './fixtures.mjs';
 import { learnVocab, buildGroups } from '../lib/groups.mjs';
 import { createArtifact, writeJsonAtomic } from '../lib/receipt.mjs';
 import { MODE_ABSOLUTE } from '../lib/input.mjs';
+import * as mutations from '../lib/mutations.mjs';
 
 // The CLI resolves its working directory once, at import, so point it at a temp directory FIRST.
 // Inputs (plan artifacts, proposals) live in a second directory, so "the working directory is still
@@ -38,6 +39,14 @@ const cli = await import('../blank-inventory.mjs');
 after(async () => {
   await rm(WORK, { recursive: true, force: true });
   await rm(INPUTS, { recursive: true, force: true });
+});
+
+// A leaked write fails the test that made it, and only that one: the directory is emptied here, so
+// one stray file cannot cascade into every later "the working directory is still empty" check.
+afterEach(async () => {
+  const left = await readdir(WORK);
+  for (const f of left) await rm(path.join(WORK, f), { recursive: true, force: true });
+  if (left.length) throw new Error(`this test left ${left.join(', ')} in the working directory`);
 });
 
 const DONE = 'DRY RUN: nothing written.';
@@ -197,8 +206,10 @@ const CASES = {
     // all three apart, because a real run silently overwrites the third.
     const alreadyThere = established[0];
     const elsewhere = variant({ body: 'crewneck', color: 'Grey Heather', size: '2XL', blankId: blankIdFor('crewneck', 'Black', '2XL') });
+    // And one the store no longer has: a real run would fail on it, so the preview must say so.
+    const gone = variant({ body: 'crewneck', color: 'Grey Heather', size: '2XL', blankId: null });
     const variants = [...established, elsewhere];
-    const tags = [...untagged, alreadyThere, elsewhere].map((v) => tagOf(v, blankId));
+    const tags = [...untagged, alreadyThere, elsewhere, gone].map((v) => tagOf(v, blankId));
     const plan = await writeInput('backfill-plan-dry-tag.json', { version: 1, planId: 'plan-dry-tag', tags });
     return {
       variants,
@@ -209,7 +220,9 @@ const CASES = {
           ...untagged.map((v) => [label(v), 'untagged']),
           [label(alreadyThere), 'already holds this id (no-op)'],
           [label(elsewhere), 'holds a DIFFERENT id: a real run would overwrite it'],
+          [label(gone), 'not on the store: a real run would fail on it'],
         ],
+        counts: '3 untagged, 1 already hold this id, 1 hold a DIFFERENT id, 1 not on the store',
       },
     };
   },
@@ -235,19 +248,27 @@ const CASES = {
   },
 };
 
-async function runCase(key, { dryRun }) {
+/** The deps every command gets here: a synthetic store, the traps, and no real waiting. */
+function depsFor(variants, t) {
+  return { load: async () => storeOf(variants, t.client), refuse, writeJson: t.writeJson, runBatches: t.runBatches, sleep: async () => {} };
+}
+
+/**
+ * Run one case. `opts` rewrites the parsed flags (the backstop test uses it) and `load` replaces the
+ * synthetic store's reader (the quiesce test uses it). The exit code is saved, restored and
+ * reported: a command that set it would otherwise fail this file without naming a test.
+ */
+async function runCase(key, { dryRun, opts: rewrite = (o) => o, load } = {}) {
   const c = await CASES[key]();
   const t = traps({ live: !dryRun });
-  const deps = {
-    load: async () => storeOf(c.variants, t.client),
-    refuse,
-    writeJson: t.writeJson,
-    runBatches: t.runBatches,
-    sleep: async () => {},
-  };
-  const opts = dryRun ? { ...c.opts, dryRun: true } : c.opts;
+  const deps = depsFor(c.variants, t);
+  if (load) deps.load = load(c, t);
+  const opts = rewrite(dryRun ? { ...c.opts, dryRun: true } : c.opts);
+  const exitCode = process.exitCode;
   const out = await capture(() => c.cmd()(opts, deps));
-  return { ...out, t, c };
+  const exitCodeChanged = process.exitCode !== exitCode;
+  process.exitCode = exitCode;
+  return { ...out, t, c, exitCodeChanged };
 }
 
 /**
@@ -257,7 +278,7 @@ async function runCase(key, { dryRun }) {
  * backstop exists, a stage that forgets the flag throws `DRY RUN: refused ...` instead of writing,
  * which is safe but still a bug in that stage.
  */
-async function assertCleanDryRun(key, { error, lines, t }) {
+async function assertCleanDryRun(key, { error, lines, t, exitCodeChanged }) {
   if (error && /^DRY RUN: refused/.test(error.message)) {
     assert.fail(`stage ${key} did not honour --dry-run (the backstop fired): ${error.message}`);
   }
@@ -266,6 +287,7 @@ async function assertCleanDryRun(key, { error, lines, t }) {
   assert.deepEqual(t.writes.map((w) => w.path), [], `${key} --dry-run called writeJson`);
   assert.equal(t.engine.length, 0, `${key} --dry-run reached the apply engine`);
   assert.deepEqual(await readdir(WORK), [], `${key} --dry-run left a file in the working directory`);
+  assert.equal(exitCodeChanged, false, `${key} --dry-run changed the process exit code`);
   assert.equal(lines.at(-1), DONE, `${key} --dry-run must end with "${DONE}"`);
 }
 
@@ -289,6 +311,7 @@ test('2026-09-10: backfill --stage tag --dry-run shows every variant and its liv
   }
   assert.match(run.text, /Quiesce read the live store; nothing was written\./);
   assert.match(run.text, /No metafield and no seeding receipt written\./);
+  assert.ok(run.lines.some((l) => l.trim() === run.c.expect.counts), `the count line reads "${run.c.expect.counts}"`);
 });
 
 // --- positive controls -------------------------------------------------------
@@ -301,6 +324,9 @@ const REACHES = {
   'backfill:propose': (t) => {
     assert.equal(t.writes.length, 1, 'the proposal file');
     assert.match(path.basename(t.writes[0].path), /^backfill-.+\.json$/);
+    // Without this the empty-directory checks could be watching a directory the CLI never writes
+    // to: WORK_DIR is fixed at import, and only this file sets BLANK_INVENTORY_DIR first.
+    assert.equal(path.dirname(t.writes[0].path), WORK, 'the CLI resolved its working directory to the temp one');
   },
   'backfill:propose-bootstrap': (t) => {
     assert.equal(t.writes.length, 1, 'the proposal file');
@@ -308,15 +334,21 @@ const REACHES = {
   },
   'backfill:tag': (t) => assert.deepEqual(t.events, ['gql:BlankInventoryTag', 'write:receipt-seed-plan-dry-tag.json']),
   'backfill:seed': (t) => assert.deepEqual(t.events, ['engine']),
-  untag: (t) => assert.equal(t.events[0], 'gql:BlankInventoryUntag'),
+  untag: (t) => assert.deepEqual(t.events, ['gql:BlankInventoryUntag']),
 };
 
 for (const key of Object.keys(CASES)) {
   test(`positive control: ${key} without --dry-run reaches the trap`, async () => {
     const run = await runCase(key, { dryRun: false });
-    // untag's live control stops at its own interlock (the synthetic re-read still shows the tag),
-    // AFTER the delete reached the client. Anything else must run clean.
-    if (key !== 'untag') assert.equal(run.error, null, `live ${key} threw: ${run.error?.message}`);
+    if (key === 'untag') {
+      // untag's live control stops at its own interlock, AFTER the delete reached the client: the
+      // synthetic re-read still shows the tag. Pinned to that exact refusal, so a re-read that went
+      // around deps.load (and threw for want of credentials) cannot hide behind a swallowed error.
+      assert.match(run.error?.message ?? '', /still carry the blank metafield/);
+    } else {
+      assert.equal(run.error, null, `live ${key} threw: ${run.error?.message}`);
+    }
+    assert.equal(run.exitCodeChanged, false, `live ${key} changed the process exit code`);
     REACHES[key](run.t);
   });
 }
@@ -387,36 +419,54 @@ test('isWriteRun: live writes take the lock and the stray-workdir refusal; dry r
 
 // --- structure: the backstop cannot be bypassed ------------------------------
 
-test('every read and write in apply, backfill and untag goes through the injected deps', async () => {
-  // The runtime backstop wraps what `deps.load` returns and replaces `deps.writeJson`. That covers a
-  // write only if nothing in these bodies reaches the store or the disk another way, so check it.
+test('nothing in apply, backfill or untag can reach the store or the disk around the backstop', async () => {
+  // The runtime backstop wraps what `deps.load` returns and replaces `deps.writeJson` and
+  // `deps.runBatches`. That covers a write only if nothing reaches the store or the disk another way,
+  // so this checks the WHOLE FILE against allowlists, not just the three bodies: a helper that a
+  // command calls is as much a bypass as a direct call. A new caller fails here until someone has
+  // decided it cannot be reached from a dry run.
+  //
   // Comments are stripped first, so prose naming a function neither satisfies nor trips the search.
+  // Top-level boundaries are `function` or `const` at column 0; erring wide includes too much code in
+  // a body, which can only make this stricter.
   const src = await readFile(fileURLToPath(new URL('../blank-inventory.mjs', import.meta.url)), 'utf8');
   const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
   const lines = stripped.split('\n');
   const tops = [];
   lines.forEach((line, i) => {
-    const m = line.match(/^(?:export )?(?:async )?function (\w+)\(/);
-    if (m) tops.push({ name: m[1], line: i });
+    const m = line.match(/^(?:export )?(?:async )?function (\w+)\(|^(?:export )?const (\w+) = /);
+    if (m) tops.push({ name: m[1] ?? m[2], line: i });
   });
   const bodyOf = (name) => {
     const i = tops.findIndex((t) => t.name === name);
     assert.ok(i > -1, `${name} was located`);
     return lines.slice(tops[i].line, tops[i + 1]?.line ?? lines.length).join('\n');
   };
+  const callers = (needle) => {
+    const names = new Set();
+    lines.forEach((l, i) => {
+      if (l.includes(needle)) names.add(tops.filter((t) => t.line <= i).at(-1)?.name ?? '(module)');
+    });
+    return [...names].sort();
+  };
+
+  assert.deepEqual(
+    callers('loadStore('),
+    ['cmdAudit', 'cmdDemand', 'cmdPlan', 'cmdReorder', 'cmdVocab', 'loadStore'],
+    'only the read commands call loadStore() directly (and it is defined once)'
+  );
+  assert.deepEqual(callers('writeJsonAtomic('), ['cmdPlan', 'cmdRepair', 'withLock'], 'no dry-run path calls writeJsonAtomic()');
+  // The client the backstop wraps is the only one: loadStore is the one place a client is built.
+  assert.deepEqual(callers('createAdminClient('), ['loadStore'], 'only loadStore builds an Admin client');
 
   for (const name of ['cmdApply', 'cmdBackfill', 'cmdUntag']) {
     const body = bodyOf(name);
-    assert.ok(!body.includes('loadStore('), `${name} must read through deps.load, not loadStore()`);
-    assert.ok(!body.includes('writeJsonAtomic('), `${name} must write through deps.writeJson, not writeJsonAtomic()`);
+    // The line the forgetful-stage tests below depend on, pinned independently of read order.
+    assert.ok(body.includes('dryRunDeps(opts, { ...DEFAULT_DEPS, ...injected })'), `${name} takes its deps through dryRunDeps`);
+    assert.equal(body.split('DEFAULT_DEPS').length - 1, 1, `${name} names DEFAULT_DEPS only to hand it to dryRunDeps`);
+    // liveWatchDeps() with no argument reads through loadStore, around the wrapped load.
+    assert.doesNotMatch(body, /liveWatchDeps\(\s*\)/, `${name} passes its own load to liveWatchDeps`);
   }
-
-  // And the client the backstop wraps is the only one: loadStore is the one place a client is built.
-  const loadStoreBody = bodyOf('loadStore');
-  const everywhere = stripped.split('createAdminClient(').length - 1;
-  const inside = loadStoreBody.split('createAdminClient(').length - 1;
-  assert.equal(inside, 1, 'loadStore builds the Admin client');
-  assert.equal(everywhere, inside, 'and nothing else does');
 });
 
 // --- full rows at the gates --------------------------------------------------
@@ -451,4 +501,109 @@ test('untag prints every sibling of the group it leaves, never "... and N more"'
   assert.equal(siblings.length, 6);
   for (const s of siblings) assert.ok(text.includes(label(s)), `the untag gate names sibling ${label(s)}`);
   assert.doesNotMatch(text, /\.\.\. and \d+ more/);
+});
+
+// --- the backstop, wired into each command -----------------------------------
+//
+// The traps above fail any call on a dry run whether or not the backstop is there, so on their own
+// they cannot tell a command that lost `dryRunDeps` from one that kept it. These make a stage FORGET
+// its own check and require the backstop to catch it. That is the property the lock exemption in
+// isWriteRun rests on.
+
+/**
+ * `dryRun` is true on its first read only. `dryRunDeps` is the first code in each command to read
+ * the flag, so the backstop sees a dry run and the stage's own check does not. The source scan above
+ * pins that first line independently, since this relies on read order.
+ */
+function forgetfulOpts(opts) {
+  let reads = 0;
+  return {
+    ...opts,
+    get dryRun() {
+      return reads++ === 0;
+    },
+  };
+}
+
+for (const key of Object.keys(CASES)) {
+  test(`backstop: ${key} with its own --dry-run check skipped aborts instead of writing`, async () => {
+    const run = await runCase(key, { dryRun: false, opts: forgetfulOpts });
+    assert.match(run.error?.message ?? '', /^DRY RUN: refused/, `${key} must be stopped by the backstop, got: ${run.error?.message}`);
+    assert.deepEqual(run.t.writes.map((w) => w.path), [], 'no file write reached the writer');
+    assert.equal(run.t.engine.length, 0, 'the apply engine was not reached');
+    assert.deepEqual(run.t.gqlCalls.map((c) => opName(c.query)), [], 'no document reached the Admin client');
+  });
+}
+
+test('the dry-run deps refuse a file write and the engine, and wrap the store client; a live run keeps its deps', async () => {
+  const calls = [];
+  const inner = {
+    gql: async (query) => {
+      calls.push(query);
+      return { ok: true };
+    },
+  };
+  const real = {
+    load: async () => ({ client: inner, groups: new Map() }),
+    writeJson: async () => assert.fail('the real writer must not be reached on a dry run'),
+    runBatches: async () => assert.fail('the real engine must not be reached on a dry run'),
+  };
+  const dry = cli.dryRunDeps({ dryRun: true }, real);
+  await assert.rejects(() => dry.writeJson('/work/receipt-seed-x.json', {}), /^Error: DRY RUN: refused to write \/work\/receipt-seed-x\.json/);
+  await assert.rejects(() => dry.runBatches({}), /^Error: DRY RUN: refused to run the apply engine/);
+  const store = await dry.load({ requireWrite: false });
+  await assert.rejects(() => store.client.gql(mutations.M_METAFIELDS_SET, {}), /DRY RUN: refused to send mutation BlankInventoryTag/);
+  assert.deepEqual(await store.client.gql('query Shop { shop { id } }', {}), { ok: true }, 'a read still goes through');
+  assert.deepEqual(calls, ['query Shop { shop { id } }'], 'and only the read reached the client');
+
+  assert.equal(cli.dryRunDeps({}, real), real, 'without --dry-run the deps are untouched');
+});
+
+// --- the branches the cases above do not reach -------------------------------
+
+test('backfill tag on a store that never goes quiet: a dry run reports it, a live run refuses', async () => {
+  // Every read moves one member's quantity, so the quiesce never settles.
+  const moving = (c, t) => {
+    let n = 0;
+    return async () => {
+      c.variants[0].quantity = 11 + (n++ % 2);
+      return storeOf(c.variants, t.client);
+    };
+  };
+  const dry = await runCase('backfill:tag', { dryRun: true, load: moving });
+  await assertCleanDryRun('backfill:tag (never quiet)', dry);
+  assert.match(dry.text, /A real run would refuse here\./);
+
+  const live = await runCase('backfill:tag', { dryRun: false, load: moving });
+  assert.ok(live.error instanceof Refused, `expected a refusal, got: ${live.error?.message}`);
+  assert.match(live.error.message, /Groups still moving after 20 reads/);
+  assert.deepEqual(live.t.events, [], 'and nothing was sent or written');
+});
+
+test('backfill seed --dry-run with nothing to seed still ends with the dry-run line', async () => {
+  resetSeq(900);
+  // Every member already agrees, so planSeed has no write to plan.
+  const members = groupSlice({ taggedQty: [11, 11, 11, 11, 11], untagged: 0 });
+  const plan = await writeInput('backfill-plan-dry-noseed.json', {
+    version: 1,
+    planId: 'plan-dry-noseed',
+    tags: members.slice(3).map((v) => tagOf(v, v.blankId)),
+  });
+  const t = traps({ live: false });
+  const out = await capture(() => cli.cmdBackfill({ command: 'backfill', stage: 'seed', plan, dryRun: true }, depsFor(members, t)));
+  assert.match(out.text, /nothing to seed/);
+  await assertCleanDryRun('backfill:seed (nothing to seed)', { ...out, t, exitCodeChanged: false });
+});
+
+test('backfill tag and seed refuse a missing --plan before they read the store', async () => {
+  for (const stage of ['tag', 'seed']) {
+    for (const dryRun of [false, true]) {
+      const t = traps({ live: !dryRun });
+      const deps = { ...depsFor([], t), load: async () => assert.fail('the store must not be read without a proposal') };
+      const opts = { command: 'backfill', stage, ...(dryRun ? { dryRun } : {}) };
+      const { error } = await capture(() => cli.cmdBackfill(opts, deps));
+      assert.ok(error instanceof Refused, `${stage}${dryRun ? ' --dry-run' : ''}: expected a refusal, got: ${error?.message}`);
+      assert.match(error.message, new RegExp(`--stage ${stage} needs --plan`));
+    }
+  }
 });

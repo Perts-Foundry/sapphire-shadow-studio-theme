@@ -277,7 +277,8 @@ So, concretely, at any STOP:
 The second STOP is not ceremony: `tag` moves no stock, but `seed` writes real quantities. Show the
 operator the seed target and quantity per group before running it. `propose` **writes a file** (the
 proposal artifact, containing every blank id) to the working directory unless run with `--dry-run`;
-it is Shopify-write-free but not read-only, so never describe it as such.
+it is Shopify-write-free but not read-only, so never describe it as such. The tag STOP starts with a
+required `--dry-run` pass, not with the live command: see "The tag STOP, in order" below.
 
 Backfill reuses an id that already exists on the store. To introduce a **new** blank id, use the
 bootstrap: `backfill --stage propose --blank <id> --product <handle>`. It is scoped to one product
@@ -290,9 +291,12 @@ with `plan`, not `--stage seed`. The `--blank` value must follow the approved na
 
 - at `propose`, and the `--blank` bootstrap, it prints the full proposal and writes no proposal file;
 - at `tag` it waits for the affected groups to go quiet by reading the live store (reads only), then
-  prints every variant in the proposal with its live tag state (`untagged`,
-  `already holds this id (no-op)`, or `holds a DIFFERENT id: a real run would overwrite it`), and
-  writes no metafield and no seeding receipt;
+  prints every variant in the proposal with its live tag state, and writes no metafield and no
+  seeding receipt. The states are `untagged`, `already holds this id (no-op)`,
+  `holds a DIFFERENT id: a real run would overwrite it`, and
+  `not on the store: a real run would fail on it` (the proposal names a variant id the store no
+  longer has). If the groups never go quiet, it says a real run would refuse there and still prints
+  the preview;
 - at `seed` it prints the seed writes and makes none.
 
 Every dry run ends with the exact line `DRY RUN: nothing written.`
@@ -300,26 +304,29 @@ Every dry run ends with the exact line `DRY RUN: nothing written.`
 **The tag STOP, in order.**
 
 1. Run `backfill --stage tag --plan <f> --dry-run`.
-2. **Check that its last line is exactly `DRY RUN: nothing written.`** If that line is missing, treat
-   the run as a live write, however it looked: a checkout that predates the fix for this ignores the
-   flag at this stage and tags every variant in the proposal. Stop, run `audit --group <blankId>`
-   (read-only) to see what changed, and report to the operator.
+2. **Read how the output ends.** Exactly one of these holds:
+   - **The last line is exactly `DRY RUN: nothing written.`** Continue to step 3.
+   - **It ends in a `DRY RUN: refused ...` error** (to send a mutation, to write a file, or to run
+     the apply engine). A stage reached a write path on a dry run and the backstop stopped it there:
+     a bug in the tool. Stop immediately. Do not re-run without `--dry-run` to get past it, and do
+     not retry the same dry run. Do not assume nothing was written either: check with
+     `audit --group <blankId>` and a listing of the working directory, then report it to the
+     operator as a bug.
+   - **Neither.** Treat the run as a live write, however it looked: a checkout that predates the fix
+     for this ignores the flag at this stage and tags every variant in the proposal. Stop, run
+     `audit --group <blankId>` (read-only) to see what changed, and report to the operator.
 3. Present the dry-run output verbatim, per "Every gate table shows the FULL variant identity". Call
-   out any `holds a DIFFERENT id` row by name: a real run re-tags that variant into another group
-   without asking.
+   out every `holds a DIFFERENT id` and `not on the store` row by name: a real run re-tags the first
+   into another group without asking, and fails on the second.
 4. Ask a separate, explicit question: does the operator approve tagging these variants? Then wait
    for the answer.
 5. **A dry run's output, however clean, is not operator approval.** The STOP is satisfied only by an
    explicit yes to a question asked after the dry run was shown. Never run the tag stage without
    `--dry-run` on the strength of the preview alone.
-6. **On any `DRY RUN: refused ...` error** (to send a mutation, to write a file, or to run the apply
-   engine):
-   - stop immediately;
-   - do not re-run without `--dry-run` to get past it, and do not retry the same dry run;
-   - do not assume nothing was written: check with `audit --group <blankId>` and a listing of the
-     working directory;
-   - report it to the operator as a bug in the tool. The error means a stage reached a write path on
-     a dry run, and the backstop stopped it there.
+6. **If the operator approves some rows and not others**, do not edit the proposal file and do not
+   run the tag stage on it. Re-run `propose` with narrower filters (`--body`, `--color`, `--size`,
+   `--product`) and repeat this STOP from step 1 on the new proposal, as gate 5 does for a narrowed
+   plan. If the filters cannot express the narrowing, stop and ask the operator how to proceed.
 
 ### Untag
 

@@ -595,6 +595,15 @@ pre-push sensitivity scan.
 - **The approval-gate renderer refuses an incomplete artifact.** `show --plan` errors on a missing
   or renamed key instead of rendering a blank cell, so a schema change cannot silently produce an
   emptier gate that still looks like a review.
+- **A dry run cannot write, even from a stage that forgets to check.** Every write-capable path
+  (`apply`, each `backfill` stage and the bootstrap, `untag`) returns before its write on
+  `--dry-run` and ends with `DRY RUN: nothing written.` Behind that, a dry run gets a store client
+  that refuses any mutation document, and a file writer and apply engine that refuse outright, so a
+  forgotten check aborts with `DRY RUN: refused ...` instead of writing. It exists because
+  `backfill --stage tag --dry-run` once performed the live write (see `release-notes.md`), and it is
+  what lets a dry run skip the lock, so a preview can run beside a live seed. Asserted three ways: at
+  runtime against deps that fail the test if called, by making each stage skip its own check and
+  requiring the backstop to catch it, and structurally against the source.
 
 ## Tests
 
@@ -628,6 +637,19 @@ approved target, a non-`applied` receipt row, and a receipt that does not resolv
 are each refused by name. `cmdRepair`'s promise of zero store writes is asserted twice: once at
 runtime against a client whose `gql` fails the test if called, and once structurally against its own
 source.
+
+`test/dry-run.test.mjs` holds the dry-run contract. It derives one case per command that registers
+`--dry-run` and one per backfill stage (plus the bootstrap), runs each against a synthetic store whose
+Admin client, file writer and apply engine fail the test if called, and pairs each with a live
+positive control proving the fixture really reaches its write. A second pass makes each stage skip
+its own check and requires the backstop to abort it. A structural check holds the whole CLI source to
+allowlists: only the read commands call `loadStore()`, no dry-run path calls `writeJsonAtomic()`, only
+`loadStore` builds an Admin client, and each write-capable command takes its deps through
+`dryRunDeps`. It also pins the full-row gate listings, every tag state, the tag dry run on a store
+that never goes quiet, and the refusals that come before any read. It is the only file that loads the
+CLI with a temporary working directory, so command-level dry-run tests belong there.
+`test/admin.test.mjs` runs every mutation constant in `lib/mutations.mjs` against the read-only
+client.
 
 `test/flow-runs.test.mjs` covers the Flow run-list console parser, which is the only testable half
 of the browser diagnostic:
