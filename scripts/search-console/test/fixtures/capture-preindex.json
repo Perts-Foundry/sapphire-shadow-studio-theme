@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "mode": "audit",
+  "property": "sc-domain:sapphireshadowstudio.com",
+  "property_added": "2026-09-13",
+  "captured_at": "2026-09-13T15:00:00-05:00",
+  "nonce": "dayone0001",
+  "reports": {
+    "settings": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "settings",
+      "status": "ok",
+      "property_type": "domain",
+      "verified": true,
+      "method": "Domain name provider",
+      "owners": 1,
+      "users": 1,
+      "unused_tokens": 0,
+      "ownership_events": 1,
+      "change_of_address_set": false,
+      "bulk_export_configured": false,
+      "ai_control": "include",
+      "email_notifications": true
+    },
+    "associations": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "associations",
+      "status": "ok",
+      "services": [],
+      "pending": 0
+    },
+    "crawl-stats": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "crawl-stats", "status": "not-ready" },
+    "removals": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "removals",
+      "status": "ok",
+      "temporary_active": 0,
+      "outdated_active": 0,
+      "safesearch_active": 0
+    },
+    "messages": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "messages",
+      "status": "ok",
+      "unread": 1,
+      "total": 1,
+      "subjects": ["Welcome to Search Console"]
+    },
+    "sitemaps": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "sitemaps",
+      "status": "ok",
+      "rows": [
+        {
+          "path": "https://sapphireshadowstudio.com/sitemap.xml",
+          "type": "Sitemap index",
+          "status": "Success",
+          "discovered_pages": 18,
+          "discovered_videos": 0,
+          "submitted": "2026-09-13",
+          "last_read": "2026-09-13"
+        }
+      ]
+    },
+    "indexing-pages": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "indexing-pages", "status": "not-ready" },
+    "inspections": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "inspections", "status": "not-ready" },
+    "cwv": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "cwv", "status": "not-ready" },
+    "https": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "https", "status": "not-present" },
+    "enhancements": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "enhancements", "status": "not-present" },
+    "security-manual": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "security-manual",
+      "status": "ok",
+      "manual_actions": "none",
+      "security_issues": "none",
+      "text": "No issues detected"
+    },
+    "links": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "links", "status": "not-ready" },
+    "performance": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "performance", "status": "not-ready" },
+    "discovery": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "discovery",
+      "status": "ok",
+      "nav": [
+        { "label": "Overview", "path": "" },
+        { "label": "Insights", "path": "performance/insights" },
+        { "label": "Performance", "path": "performance/search-analytics" },
+        { "label": "URL inspection", "path": null },
+        { "label": "Indexing", "path": null },
+        { "label": "Pages", "path": "index" },
+        { "label": "Sitemaps", "path": "sitemaps" },
+        { "label": "Removals", "path": "removals" },
+        { "label": "Experience", "path": null },
+        { "label": "Core Web Vitals", "path": "core-web-vitals" },
+        { "label": "Security & Manual Actions", "path": null },
+        { "label": "Manual actions", "path": "manual-actions" },
+        { "label": "Security issues", "path": "security-issues" },
+        { "label": "Links", "path": "links" },
+        { "label": "Achievements", "path": "achievements" },
+        { "label": "Settings", "path": "settings" }
+      ],
+      "settings_rows": [
+        "Ownership verification", "Users and permissions", "Associations", "Change of address", "Bulk data export",
+        "Search generative AI", "robots.txt", "Crawl stats", "Property added to account"
+      ],
+      "user_settings_rows": ["Email preferences", "Search Console in Search results"],
+      "performance_tabs": ["QUERIES", "PAGES", "COUNTRIES", "DEVICES", "SEARCH APPEARANCE", "DAYS"],
+      "performance_controls": [
+        "EXPORT", "24 hours", "7 days", "28 days", "3 months", "More time ranges", "Search type: Web", "Add filter",
+        "Customize your Performance report using AI"
+      ],
+      "removals_tabs": ["TEMPORARY REMOVALS", "OUTDATED CONTENT", "SAFESEARCH FILTERING"],
+      "inspection_sections": [],
+      "enhancement_types": [],
+      "reason_labels": [],
+      "unknown": []
+    }
+  }
+}

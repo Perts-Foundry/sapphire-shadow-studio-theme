@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "mode": "insights",
+  "property": "sc-domain:sapphireshadowstudio.com",
+  "property_added": "2026-09-13",
+  "captured_at": "2026-12-01T10:00:00-05:00",
+  "nonce": "insight001",
+  "reports": {
+    "performance": {
+      "captured_at": "2026-12-01T10:00:00-05:00",
+      "status": "ok",
+      "period": "28d",
+      "data_freshness": "Last update: 3 hours ago",
+      "search_type": "Search type: Web",
+      "totals": { "clicks": "3", "impressions": "120", "ctr": "2.5%", "position": "8.1" },
+      "queries": {
+        "rows": [
+          { "query": " sapphire shadow studio ", "clicks": 3, "impressions": 60, "ctr": "5%", "position": 1.5 },
+          { "query": "ems quarter zip", "clicks": 0, "impressions": 60, "ctr": "0%", "position": 9.2 }
+        ],
+        "truncated": false
+      },
+      "pages": {
+        "rows": [
+          { "url": "/", "clicks": "3", "impressions": "60", "ctr": "5%", "position": "1.5" },
+          { "url": "/products/lead-ii-crewneck?variant=1", "clicks": 0, "impressions": 60, "ctr": 0, "position": 9.2 }
+        ],
+        "truncated": false
+      },
+      "countries": {
+        "rows": [
+          { "country": "United States", "clicks": 3, "impressions": 110, "ctr": "2.7%", "position": 8 }
+        ],
+        "truncated": false
+      },
+      "devices": {
+        "desktop": { "clicks": 1, "impressions": 40, "ctr": "2.5%", "position": 7 },
+        "mobile": { "clicks": 2, "impressions": 80, "ctr": "2.5%", "position": 8.6 },
+        "tablet": { "clicks": 0, "impressions": 0, "ctr": 0, "position": 0 }
+      }
+    },
+    "enhancements": { "captured_at": "2026-12-01T10:00:00-05:00", "status": "not-present" },
+    "links": { "captured_at": "2026-12-01T10:00:00-05:00", "status": "not-ready" },
+    "discovery": {
+      "captured_at": "2026-12-01T10:00:00-05:00",
+      "status": "ok",
+      "nav": [],
+      "settings_rows": [],
+      "user_settings_rows": [],
+      "performance_tabs": ["QUERIES", "PAGES", "COUNTRIES", "DEVICES", "SEARCH APPEARANCE", "DAYS"],
+      "performance_controls": ["EXPORT", "28 days", "Search type: Web", "Add filter"],
+      "removals_tabs": [],
+      "inspection_sections": [],
+      "enhancement_types": [],
+      "reason_labels": [],
+      "unknown": []
+    }
+  }
+}

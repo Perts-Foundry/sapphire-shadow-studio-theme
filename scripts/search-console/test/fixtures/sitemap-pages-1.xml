@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://shop.example.test/</loc></url>
+  <url><loc>https://shop.example.test/pages/about</loc></url>
+  <url><loc>https://shop.example.test/pages/faq</loc></url>
+  <url><loc>https://shop.example.test/pages/contact</loc></url>
+  <url><loc>https://shop.example.test/collections/sample-collection</loc></url>
+  <url><loc>https://shop.example.test/blogs/sample-blog</loc></url>
+  <url><loc>https://shop.example.test/blogs/sample-blog/first-post</loc></url>
+</urlset>
