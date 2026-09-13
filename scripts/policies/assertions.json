@@ -47,12 +47,20 @@
       ]
     },
     "terms_of_service": {
-      "coreSha256": "d6d8b801ff4f7e1eec14906000a79ed9a0e940dab8ad81905e2da7c130802eb2",
+      "coreSha256": "f1e8b986e45dcb3fef757646ed5beb11e8a7847cfb073979810257db51cb1646",
       "must": [
         "(540) 300-5229",
         "href=\"/policies/refund-policy\"",
         "href=\"/policies/privacy-policy\"",
-        ">Shopify’s Privacy Policy</a>"
+        ">Shopify’s Privacy Policy</a>",
+        "<h2>Orders</h2>",
+        "<h2>Custom Orders</h2>",
+        "<h2>Prices and Billing</h2>",
+        "<h2>Termination</h2>",
+        "<h2>Contact Information</h2>",
+        "<h3>Photography and Promotion</h3>",
+        "Intellectual Property, Feedback, Custom Orders, Termination,",
+        "before you pay for the order, that you object"
       ],
       "mustNot": [
         "[INSERT TRADING NAME]",
@@ -61,7 +69,11 @@
         "[INSERT BUSINESS REGISTRATION NUMBER]",
         "[INSERT VAT NUMBER]",
         "[LINK]",
-        "[NOTE TO MERCHANT"
+        "[NOTE TO MERCHANT",
+        "<strong>SECTION ",
+        "<strong>OVERVIEW</strong>",
+        "<br>",
+        "Intellectual Property, Feedback, Termination,"
       ]
     }
   }

@@ -1,5 +1,64 @@
 # Release Notes
 
+## The terms of service becomes linkable sections and gains Custom Orders (unreleased, 2026-09-13)
+
+The terms body was Shopify's stock shape: one `<p>` of `<br>`-separated prose with
+`<strong>SECTION N - TITLE</strong>` pseudo-headings. It had no `h2`, so `assets/policy-nav.js`
+assigned it no anchors and rendered no jump nav, and there was no way to link a customer to one
+section. Custom work needed a standing set of terms that a quote email and a draft-order invoice can
+both point at, so the body is rebuilt and the new section is added in the rebuilt shape.
+
+**The body now uses the shipping and refund shape**: intro paragraphs, `<hr>`, then 25 `h2` sections
+of `p` paragraphs, with `h3` sub-headings inside Custom Orders. Every section has a shareable
+`#anchor`, the jump nav renders, and every `h2` carries a copy-link icon. The `h3`s get no id, by
+the anchor contract in `marketing/policies/README.md`, so `#custom-orders` is the one link into the
+new section.
+
+**The `SECTION N -` numbering is dropped, not converted.** A numbered heading slugifies to an id that
+shifts whenever a section is inserted above it, which is exactly what this change does. Headings are
+title case like the other policies, so every id is wording-derived and stable across future
+insertions. No clause cited a section by number; the survival list in Termination names sections by
+title, and it now includes Custom Orders.
+
+**The conversion was scripted, not hand-edited, and the method is the one to reuse** for any future
+restructure of a policy body: split on the pseudo-heading pattern against an explicit caps-to-title
+table that fails on any unmapped or duplicated title; then a heading audit that runs the pipeline's
+own `extractHeadings`, `duplicateHeadingIds` and `slugify` over the result and compares the exact
+`h2` and `h3` lists; then a prose comparison of the tag-stripped old and new bodies with only the
+removed tokens and the inserted section set aside. The original prose survived byte for byte.
+
+**Custom Orders sits directly after Orders** and covers quotes and approval, the customer's
+responsibility for the approved specification, mockup variation, final sale and cancellation,
+garments, material the customer provides, ownership of designs and digitized files, and photography.
+Decisions recorded:
+
+- **Customer-supplied garments are not accepted.** Custom work is produced only on goods the studio
+  sources.
+- **Designs and digitized files stay the studio's.** The customer buys the finished goods. The
+  studio's right to reuse a design excludes any design built from material the customer provided,
+  so it cannot collide with the narrower licence the customer grants over that material.
+- **The photography licence is the default, and the objection window closes at payment.** Payment is
+  the moment checkout presents these Terms and the customer is bound, so an objection has to arrive
+  before it; later requests to limit use are at the studio's discretion. This makes it a workflow
+  obligation outside the repo: every custom quote email states the photography licence and links
+  `/policies/terms-of-service#custom-orders`.
+- **Production times stay on the Custom Orders page, not in the Terms.** The Terms say every timeline
+  is an estimate; the page carries the current figures, so a queue change does not need a legal
+  wording change.
+
+**The Custom Orders page and the FAQ now deep-link to `#custom-orders`.** The FAQ change touches one
+answer body, never a question, so no FAQ anchor and no `FAQPage` shape changes.
+
+**The a11y nav-hidden coverage case moves to contact information.** The terms page was the audited
+example of `policy-nav.js`'s hidden branch; it now takes the nav branch, and contact information is
+the one remaining heading-free body. `scripts/a11y/paths.json` and the site-check `b-policy-jump-nav`
+check follow it.
+
+**Merging changes nothing live.** The theme deploy puts the two deep links on the storefront, but the
+body reaches customers only through a separately authorized `policies:push`, which its gate allows
+only once the change is merged. The push is run straight after the merge so the links do not point
+at a body without the section for longer than that gap.
+
 ## One backlog file: TODO-list.md (unreleased, 2026-09-13)
 
 The repo had two to-do files. `TODO.md` was the hand-curated backlog that `CLAUDE.md` called the

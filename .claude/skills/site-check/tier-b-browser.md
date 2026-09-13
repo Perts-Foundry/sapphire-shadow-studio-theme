@@ -138,7 +138,7 @@ redirects to `/cart`.
 ### Policies, FAQ, 404, password page
 
 - `b-policy-jump-nav`: on the refund policy the "On this page" nav is visible with one link per
-  `h2`; on terms of service it is hidden. Widget contract: jump nav entry.
+  `h2`; on contact information it is hidden. Widget contract: jump nav entry.
 - `b-faq-expand-deep-link`: expand-all opens every row; navigating to
   `/pages/faq#away-from-studio` lands with that row open and in view.
 - `b-404`: a garbage path renders the theme 404 template (its heading and the product card).
