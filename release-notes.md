@@ -116,6 +116,13 @@ dry run, confirmed create with `--expect-absent`, re-read of every written field
 hidden, the observation recorded, and `status -- --live`, `pull -- --check` and `verify -- --live`
 all reading in sync afterwards.
 
+**The same day's skill run** (a second throwaway hidden `test-` article, pushed by following
+`.claude/skills/articles/` rather than the command reference) checked the procedure, not the API:
+`status -- --live` routed the post to the push, the dry run printed its flags without writing, the
+ask in `push.md` stood on its own and a plain reply to it was the grant, the create re-read clean, a
+second dry run hit the no-op gate, and `verify -- --live` passed. The skill stopped with the article
+hidden and left visibility to the operator. It proved nothing new about Admin itself.
+
 Still unproven, and tracked in `TODO.md`: what an update does to an existing article, whether an
 update with a null image removes the featured image, anything beyond a flat table, and the live image
 upload path.
