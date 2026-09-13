@@ -32,7 +32,7 @@ const EXPECTED_HOST = new URL(BASE_URL).host;
 
 // Paths the sitemap never lists but the audit swept. Policy pages Shopify has
 // not published simply 404 and are skipped without a finding.
-const FIXED_PATHS = ['/', '/cart', '/search?q=test', '/collections', '/blogs/news'];
+const FIXED_PATHS = ['/', '/cart', '/search?q=test', '/collections', '/blogs/shift-notes'];
 const POLICY_PATHS = [
   '/policies/refund-policy', '/policies/privacy-policy', '/policies/terms-of-service',
   '/policies/shipping-policy', '/policies/contact-information', '/policies/subscription-policy',
