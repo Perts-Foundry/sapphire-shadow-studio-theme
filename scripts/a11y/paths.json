@@ -104,7 +104,7 @@
     { "path": "/pages/contact", "label": "page (contact)", "template": "templates/page.contact.json" },
     { "path": "/pages/custom-orders", "label": "page (custom orders)", "template": "templates/page.custom-orders.json" },
     { "path": "/pages/data-sharing-opt-out", "label": "page (generic template)", "template": "templates/page.json" },
-    { "path": "/blogs/news", "label": "blog listing", "template": "templates/blog.json" },
+    { "path": "/blogs/shift-notes", "label": "blog listing", "template": "templates/blog.json" },
     { "path": "/policies/refund-policy", "label": "shop policy (refund, jump nav)", "template": null },
     { "path": "/policies/terms-of-service", "label": "shop policy (terms, no jump nav)", "template": null },
     { "path": "/policies/privacy-policy", "label": "shop policy (privacy, Shopify auto-managed)", "template": null },
