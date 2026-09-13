@@ -416,12 +416,16 @@ default for an argv it does not recognise makes an absent gate indistinguishable
 one; two tests shipped that way and passed vacuously, because the fake matched a bare filename
 against production code that emits a full pathspec.
 
-So `makeGitFake` in `test/helpers.mjs` matches on **deep equality of the full argv array** and
+So `makeGitFake` matches on **deep equality of the full argv array** and
 throws `UnexpectedGitInvocation` on anything else, and `run.assertExhausted` closes the other half:
 an expectation nobody invoked is a gate that did not run. `test/test-hygiene.test.mjs` makes it the
 only fake in the directory, and `test/git-integration.test.mjs` runs the same gates against a real
 `git init`ed repository with nothing injected, because no fake can prove the pathspec production
 code emits is one real git accepts.
+
+The implementation lives in `scripts/lib/git-fake.mjs`, shared with `scripts/articles/test/`, and
+`test/helpers.mjs` re-exports it, so policies tests import it from the helpers as before. The hygiene
+rules are shared the same way, from `scripts/lib/test-hygiene.mjs`.
 
 ## Not in CI, deliberately
 

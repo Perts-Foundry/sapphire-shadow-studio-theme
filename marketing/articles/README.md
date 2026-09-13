@@ -105,6 +105,10 @@ article is visible. Uploading is therefore its own gate, not a step inside publi
 `articles:check` already refuses a manifest that disagrees with the tree, so `reindex --check` is
 deliberately not a second CI step.
 
+The network commands (`articles:status`, `articles:pull -- --check` and `-- --seed`,
+`articles:verify -- --live`, and the hidden-only live write) are documented in
+`scripts/articles/README.md`, with their gates, exit codes, machine-local state and recovery.
+
 ## What is not here
 
 Publishing. Making a post visible is a hand action the operator takes in Admin. No command in this

@@ -1,5 +1,24 @@
 # Release Notes
 
+## The article push refuses CI, and deliberately nothing about who is calling (unreleased, 2026-09-13)
+
+A backlog entry written while the article push was planned asked for a refusal of non-interactive
+callers, on the model of the shop policies push, which refuses without a terminal unless
+`--operator-approved` is passed. The push that landed does not have one, and the entry was deleted
+with it, so this records why.
+
+The runtime `CI` refusal is the runtime half of the guard that entry wanted. It refuses by presence,
+dry run included, from the injected environment, and it is what a command assembled at runtime cannot
+evade where the static no-invocation scan can be evaded. A TTY or non-interactive refusal was not
+carried over because the write is hidden and reversible: an article the push creates or updates is
+never visible on the storefront, and the plan dropped the terminal ceremony for exactly that reason,
+since legal-grade ceremony on a draft teaches that ceremony is noise. Who may run the confirmed push
+is a session rule instead (`CLAUDE.md`, Blog articles): the operator's own request, never an agent's
+reading of a dry run.
+
+Any publish path changes that reasoning completely. Adding one re-adds the full authorization gate
+the policies push carries, terminal attestation included, and `scripts/articles/README.md` says so.
+
 ## add-product's deploy check matched on a SHA no deploy run carries (unreleased)
 
 Phase 1 step 9 of the add-product skill found a PR's deploy run by matching the PR's `mergeCommit.oid`
