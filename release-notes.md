@@ -55,10 +55,11 @@ widened on purpose. Decisions recorded:
 - **What it does not cover**: identifying the customer, or using their image or a statement
   attributed to them, which need separate consent. Anything the customer sends (photos, reviews)
   falls under the stock Feedback section, which already grants a broad licence.
-- **The one request honoured is cropping or obscuring personal information, and it closes when the
-  order ships.** Checkout orders are paid instantly, so a before-payment window would be unusable;
-  pieces are photographed before they ship, so the window still arrives in time, and it works for
-  custom and standard orders alike. This makes it a
+- **The one request honoured is cropping or obscuring personal information, and it must arrive
+  before the order is placed.** A window that closed when the order shipped was drafted and set
+  aside by operator decision in favour of this one. A checkout customer who wants a name obscured
+  has to write first and then order. For a custom order, placement is approval plus
+  payment of the invoice, so the request fits inside the quote conversation. This makes it a
   workflow obligation outside the repo: every custom quote email states the licence and links
   `/policies/terms-of-service#custom-orders`.
 

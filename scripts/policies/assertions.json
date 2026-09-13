@@ -47,7 +47,7 @@
       ]
     },
     "terms_of_service": {
-      "coreSha256": "0adecb321349ccd84ac6ad5e15c217b565f559aba2e1ddff707d632ec5b334b4",
+      "coreSha256": "a021450607f356279e52bc5e5f865a0ed88c0fc37ac1e2d9e1cbd81fde2053e2",
       "must": [
         "(540) 300-5229",
         "href=\"/policies/refund-policy\"",
@@ -62,7 +62,7 @@
         "<h3>Marketing Use</h3>",
         "Intellectual Property, Feedback, Custom Orders, Use of Finished Work, Termination,",
         "royalty-free, transferable and sublicensable license",
-        "tell us in writing before your order ships",
+        "tell us in writing before you place your order",
         "does not limit our use of your finished piece under Use of Finished Work",
         "other than Use of Finished Work, this section governs the custom order",
         "irrevocable, worldwide, royalty-free, transferable and sublicensable license to reproduce it",
@@ -88,7 +88,8 @@
         "<h3>Photography and Promotion</h3>",
         "before you pay for the order, that you object",
         "conflicts with another section, this section governs",
-        "non-exclusive, perpetual, worldwide, royalty-free license"
+        "non-exclusive, perpetual, worldwide, royalty-free license",
+        "tell us in writing before your order ships"
       ]
     }
   }
