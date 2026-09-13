@@ -218,9 +218,25 @@ compares it with the local processed file. The checker says so in a note on ever
 
 ## What the tests do not prove
 
-The Admin API's real behaviour: whether `articleUpdate` removes a featured image when `image` is null
-(still unverified: on the spike, deleting the Files entry left the copied image serving, so removal is
-not the same as deleting the source), whether tag order is preserved, and how the normaliser treats
-anything beyond a flat table. The first end-to-end run against a throwaway hidden `test-` article,
-from `main` after merge, is what answers those. Image re-hosting is no longer on this list: the spike
-verified it, and the fake client's `rehostImages` option models it.
+The Admin API's real behaviour in the cases no live run has exercised yet: whether `articleUpdate`
+removes a featured image when `image` is null (on the spike, deleting the Files entry left the copied
+image serving, so removal is not the same as deleting the source), what an update does to an existing
+article (the first end-to-end run was a create), and how the normaliser treats anything beyond a flat
+table.
+
+**Verified by the first end-to-end run** (2026-09-13, a throwaway hidden `test-` article created from
+`main`, then left for deletion in Admin):
+
+- **Shopify sorts tags.** Sent in the order `zeta-test, alpha-test`, stored as `alpha-test, zeta-test`.
+  That is why tags are compared sorted; comparing in order would make every multi-tag article read as
+  permanently changed.
+- **The table normaliser works per cell.** Every `<tr>`, `<th>` and `<td>` of a flat table landed on
+  its own line, so the stored body is not byte-identical to the repo's. The structural comparison
+  treated it as equal: the re-read passed, a second run of the push was a no-op, and
+  `articles:status -- --live`, `articles:pull -- --check` and `articles:verify -- --live` all read in
+  sync.
+- **The create path end to end**: dry run, confirmed create with `--expect-absent`, re-read of every
+  written field with the article reported hidden, and the observation recorded.
+
+Image re-hosting is verified too (on the 2026-09-12 spike), and the fake client's `rehostImages`
+option models it.
