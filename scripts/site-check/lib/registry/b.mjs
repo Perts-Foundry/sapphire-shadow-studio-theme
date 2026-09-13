@@ -10,7 +10,7 @@ export const B_CHECKS = [
   { id: 'b-product-custom-text-counter', tier: 'B', surface: 'product-page', severity: 'ERROR', description: 'The custom-text counter tracks input length and the max.' },
   { id: 'b-product-return-policy-gate', tier: 'B', surface: 'product-page', severity: 'ERROR', description: 'Add to cart is gated on the return-policy checkbox and express buttons hide until it is ticked.' },
   { id: 'b-product-vacation-checkbox', tier: 'B', surface: 'vacation', severity: 'ERROR', description: 'With vacation mode on, the vacation checkbox gates add to cart and posts the dated property.' },
-  { id: 'b-product-request-combination', tier: 'B', surface: 'product-page', severity: 'ERROR', description: 'The request-combination modal opens on each of its three paths and targets /contact.' },
+  { id: 'b-product-request-combination', tier: 'B', surface: 'product-page', severity: 'ERROR', description: 'The request-combination modal opens on each of its three paths and targets /contact, and its status line is correct past the 250th variant.' },
   { id: 'b-product-sticky-atc', tier: 'B', surface: 'product-page', severity: 'ERROR', description: 'The sticky add-to-cart bar appears on scroll and mirrors the form state.' },
   { id: 'b-product-judgeme', tier: 'B', surface: 'product-page', severity: 'WARN', description: 'The Judge.me widget renders (third-party; WARN only).' },
   { id: 'b-header-collections-dropdown', tier: 'B', surface: 'header', severity: 'ERROR', description: 'The generated collections dropdown lists every collection.' },

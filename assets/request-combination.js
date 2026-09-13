@@ -21,11 +21,32 @@ const AVAILABILITY_TOKENS = {
 };
 
 /**
+ * Stub section that renders the availability verdict for one combination.
+ * See sections/section-rendering-request-combination.liquid for its contract.
+ */
+const STATUS_SECTION_ID = 'section-rendering-request-combination';
+
+/** Delay before a lookup, so a burst of select changes issues one request. */
+const STATUS_DEBOUNCE_MS = 200;
+
+/** A lookup slower than this is abandoned and the status stays unknown. */
+const STATUS_TIMEOUT_MS = 5000;
+
+/** Upper bound on cached verdicts per component instance. */
+const STATUS_CACHE_LIMIT = 200;
+
+/**
+ * @typedef {'available' | 'sold-out' | 'not-offered'} VerdictToken
+ */
+
+/** @type {ReadonlySet<string>} */
+const VERDICT_TOKENS = new Set(['available', 'sold-out', 'not-offered']);
+
+/**
  * @typedef {object} RequestCombinationRefs
  * @property {HTMLDialogElement} dialog - The request dialog.
  * @property {HTMLElement} statusLine - Visible availability status line.
  * @property {HTMLInputElement} availabilityField - Hidden contact[Availability] input.
- * @property {HTMLScriptElement} variantData - JSON script with the reduced variant map.
  * @property {HTMLSelectElement[]} optionSelects - One select per product option.
  * @property {HTMLInputElement[]} pathRadios - The request-type radios (2 or 3).
  * @property {HTMLElement} requestFields - Wrapper around the on-page request form.
@@ -72,17 +93,20 @@ const AVAILABILITY_TOKENS = {
  * and keeping PII out of client-side storage is a deliberate property of this
  * design.
  *
- * The variant map is parsed lazily (and re-parsed when the script content
- * changes) rather than in connectedCallback: a combined-listing product swap
- * morphs this element in place without re-running connectedCallback, which
- * would otherwise leave a stale map behind.
+ * The availability status is fetched per selection from a stub section via
+ * the Section Rendering API, keyed on the selects' option value ids, rather
+ * than matched against an embedded variant map: Liquid's product.variants
+ * returns at most 250 entries, so a map built from it silently misreports
+ * every combination past the cap. Lookups are debounced, abortable and
+ * cached per product URL and id tuple. The URL and ids are read from the DOM
+ * on every lookup, so a combined-listing product swap that morphs this
+ * element in place cannot leave a stale selection behind.
  */
 class RequestCombinationComponent extends DialogComponent {
   requiredRefs = [
     'dialog',
     'statusLine',
     'availabilityField',
-    'variantData',
     'optionSelects',
     'pathRadios',
     'requestFields',
@@ -93,14 +117,21 @@ class RequestCombinationComponent extends DialogComponent {
     'noteRequiredMark',
   ];
 
-  /** @type {{ options: string[], available: boolean }[] | null} */
-  #variantMap = null;
+  /** @type {Map<string, VerdictToken>} */
+  #statusCache = new Map();
 
-  /** @type {string | null} */
-  #variantMapSource = null;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  #statusTimer;
+
+  /** @type {AbortController | null} */
+  #statusController = null;
 
   connectedCallback() {
     super.connectedCallback();
+
+    // The native close event does not bubble, so listen in the capture phase
+    // to catch every way the dialog closes (close button, Escape, backdrop).
+    this.addEventListener('close', this.#handleDialogClose, true);
 
     const summary = this.refs.successSummary ?? this.refs.errorSummary;
     if (!summary) return;
@@ -128,6 +159,12 @@ class RequestCombinationComponent extends DialogComponent {
     this.#clearSnapshot();
 
     requestAnimationFrame(() => this.showDialog());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('close', this.#handleDialogClose, true);
+    this.#cancelStatusLookup();
   }
 
   /**
@@ -302,65 +339,160 @@ class RequestCombinationComponent extends DialogComponent {
     if (isStock) {
       this.#updateStatus();
     } else {
+      this.#cancelStatusLookup();
       availabilityField.value = AVAILABILITY_TOKENS['not-applicable'];
-      statusLine.hidden = true;
+      statusLine.textContent = '';
+      statusLine.removeAttribute('aria-busy');
     }
   }
 
   /**
-   * Parses the embedded variant map, cached against the script content so a
-   * morphed-in product swap invalidates the cache. Fails closed to null.
-   *
-   * @returns {{ options: string[], available: boolean }[] | null}
+   * Stops any pending or in-flight availability lookup. Nothing it would
+   * have applied is applied afterwards.
    */
-  #getVariantMap() {
-    const source = this.refs.variantData.textContent ?? '';
-    if (this.#variantMapSource === source) return this.#variantMap;
+  #cancelStatusLookup() {
+    clearTimeout(this.#statusTimer);
+    this.#statusTimer = undefined;
+    this.#statusController?.abort();
+    this.#statusController = null;
+  }
 
-    this.#variantMapSource = source;
-    try {
-      const parsed = JSON.parse(source);
-      this.#variantMap = Array.isArray(parsed) ? parsed : null;
-    } catch {
-      this.#variantMap = null;
-    }
-    return this.#variantMap;
+  #handleDialogClose = (/** @type {Event} */ event) => {
+    if (event.target === this.refs.dialog) this.#cancelStatusLookup();
+  };
+
+  /**
+   * @returns {string[] | null} The selected option value ids in
+   * option-position order, or null if any select lacks one.
+   */
+  #selectedOptionValueIds() {
+    const ids = this.refs.optionSelects.map((select) => select.selectedOptions[0]?.dataset.optionValueId ?? '');
+    return ids.every(Boolean) ? ids : null;
   }
 
   /**
-   * Matches the current selection against the variant map and updates the
-   * visible status line plus the hidden availability field. Unknown (map
-   * missing or unparsable) keeps the honest "Not verified" token and hides
-   * the status line rather than guessing.
+   * Refreshes the visible status line and the hidden availability field for
+   * the current selection. The field drops to "Not verified" at once, because
+   * the previous verdict no longer describes the selection; the verdict is
+   * then applied from the cache or from a debounced lookup. Any failure
+   * leaves "Not verified" and an empty status line rather than guessing.
    */
   #updateStatus() {
     const { statusLine, availabilityField } = this.refs;
-    const map = this.#getVariantMap();
+    this.#cancelStatusLookup();
 
-    /** @type {keyof typeof AVAILABILITY_TOKENS} */
-    let status = 'unknown';
+    availabilityField.value = AVAILABILITY_TOKENS.unknown;
+    statusLine.textContent = this.dataset.statusChecking ?? '';
+    statusLine.setAttribute('aria-busy', 'true');
 
-    if (map) {
-      const values = this.#selectedValues();
-      const match = map.find(
-        (variant) =>
-          Array.isArray(variant.options) &&
-          variant.options.length === values.length &&
-          variant.options.every((option, index) => option === values[index])
-      );
-      status = match ? (match.available ? 'available' : 'sold-out') : 'not-offered';
+    const productUrl = this.dataset.productUrl;
+    const ids = this.#selectedOptionValueIds();
+    if (!productUrl || !ids) {
+      this.#applyVerdict(null);
+      return;
     }
 
-    availabilityField.value = AVAILABILITY_TOKENS[status];
-    statusLine.hidden = status === 'unknown';
-    if (status !== 'unknown') {
-      const text = {
-        available: this.dataset.statusAvailable,
-        'sold-out': this.dataset.statusSoldOut,
-        'not-offered': this.dataset.statusNotOffered,
-      }[status];
-      statusLine.textContent = text ?? '';
+    const cacheKey = `${productUrl}|${ids.join(',')}`;
+    const cached = this.#statusCache.get(cacheKey);
+    if (cached) {
+      this.#applyVerdict(cached);
+      return;
     }
+
+    this.#statusTimer = setTimeout(() => {
+      this.#statusTimer = undefined;
+      this.#fetchVerdict(productUrl, ids, cacheKey);
+    }, STATUS_DEBOUNCE_MS);
+  }
+
+  /**
+   * Fetches the verdict for one combination and applies it if this lookup is
+   * still the current one.
+   *
+   * @param {string} productUrl
+   * @param {string[]} ids
+   * @param {string} cacheKey
+   */
+  async #fetchVerdict(productUrl, ids, cacheKey) {
+    const controller = new AbortController();
+    this.#statusController = controller;
+    const timeout = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
+
+    /** @type {VerdictToken | null} */
+    let verdict = null;
+    try {
+      const url = new URL(productUrl, window.location.origin);
+      url.searchParams.set('section_id', STATUS_SECTION_ID);
+      url.searchParams.set('option_values', ids.join(','));
+
+      const response = await fetch(url, { signal: controller.signal });
+      if (response.ok) {
+        const html = await response.text();
+        verdict = this.#parseVerdict(html, ids);
+      }
+    } catch {
+      // Network error, timeout or abort: the verdict stays unknown.
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // Superseded or cancelled lookups are dropped by identity, not by the
+    // signal: #cancelStatusLookup clears #statusController before aborting,
+    // while this lookup's own timeout aborts without clearing it, and a timed
+    // out lookup must still reset the status line to unknown.
+    if (this.#statusController !== controller || !this.isConnected) return;
+    this.#statusController = null;
+
+    if (verdict) {
+      if (this.#statusCache.size >= STATUS_CACHE_LIMIT) {
+        const oldest = this.#statusCache.keys().next().value;
+        if (oldest !== undefined) this.#statusCache.delete(oldest);
+      }
+      this.#statusCache.set(cacheKey, verdict);
+    }
+    this.#applyVerdict(verdict);
+  }
+
+  /**
+   * Reads the verdict out of the stub section's markup. Trusted only when the
+   * section resolved exactly the ids that were requested: Shopify falls back
+   * to other values for a partial or unresolvable list, and a verdict for a
+   * different combination is worse than none.
+   *
+   * @param {string} html
+   * @param {string[]} ids
+   * @returns {VerdictToken | null}
+   */
+  #parseVerdict(html, ids) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const marker = doc.querySelector('[data-request-combination-section]');
+    if (!(marker instanceof HTMLElement)) return null;
+
+    const { requestCombinationAvailability: token, resolvedOptionValueIds: resolved } = marker.dataset;
+    if (resolved !== ids.join(',')) return null;
+    if (!token || !VERDICT_TOKENS.has(token)) return null;
+    return /** @type {VerdictToken} */ (token);
+  }
+
+  /**
+   * Writes a verdict to the hidden field and the status line in one pass.
+   * Null means unknown: "Not verified" and no visible text.
+   *
+   * @param {VerdictToken | null} verdict
+   */
+  #applyVerdict(verdict) {
+    const { statusLine, availabilityField } = this.refs;
+    const text = verdict
+      ? {
+          available: this.dataset.statusAvailable,
+          'sold-out': this.dataset.statusSoldOut,
+          'not-offered': this.dataset.statusNotOffered,
+        }[verdict]
+      : '';
+
+    availabilityField.value = AVAILABILITY_TOKENS[verdict ?? 'unknown'];
+    statusLine.textContent = text ?? '';
+    statusLine.removeAttribute('aria-busy');
   }
 
   /**
