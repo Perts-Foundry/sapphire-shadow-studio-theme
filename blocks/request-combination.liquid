@@ -39,6 +39,14 @@
     `contact[Product URL]` values are client-asserted hints that a direct
     POST can forge; treat them as triage aids, not facts, and do not click
     the URL reflexively on a suspicious submission.
+  - The availability status is fetched per selection from
+    sections/section-rendering-request-combination.liquid through the
+    Section Rendering API (option_values = the selects' option value ids),
+    debounced and cached per component. It is never computed from
+    product.variants, which Liquid caps at 250 entries. Until a verdict
+    arrives, and whenever the lookup fails, times out or cannot be matched
+    to the requested ids, Availability posts "Not verified" and the status
+    line is empty.
   - There is no honeypot on purpose: Shopify processes /contact regardless
     of extra fields and nothing merchant-side can drop the email before the
     inbox, so the platform hCaptcha is the gate. The form carries
@@ -91,6 +99,8 @@
     data-status-available="{{ 'blocks.request_combination.status_available' | t }}"
     data-status-sold-out="{{ 'blocks.request_combination.status_sold_out' | t }}"
     data-status-not-offered="{{ 'blocks.request_combination.status_not_offered' | t }}"
+    data-status-checking="{{ 'blocks.request_combination.status_checking' | t }}"
+    data-product-url="{{ product.url }}"
     data-note-label="{{ 'blocks.request_combination.note_label' | t }}"
     data-description-label="{{ 'blocks.request_combination.description_label' | t }}"
     on:submit="/handleSubmit"
@@ -291,6 +301,7 @@
               {%- for product_option_value in product_option.values -%}
                 <option
                   value="{{ product_option_value | escape }}"
+                  data-option-value-id="{{ product_option_value.id }}"
                   {% if product_option_value.selected %}
                     selected
                   {% endif %}
@@ -303,14 +314,16 @@
         {%- endfor -%}
 
         {%- comment -%}
-          Populated by JS at dialog-open time. The dialog is unreachable
-          without JS, so no server-rendered status text is needed.
+          Populated by JS per selection. The dialog is unreachable without
+          JS, so no server-rendered status text is needed. Always rendered and
+          never hidden: empty text means nothing to announce, and a live
+          region that is removed or hidden between updates is not announced
+          reliably.
         {%- endcomment -%}
         <p
           ref="statusLine"
           class="request-combination__status"
           role="status"
-          hidden
         ></p>
         </div>
 
@@ -413,22 +426,6 @@
         {%- endif -%}
       {%- endform -%}
 
-      {%- comment -%}
-        Reduced availability map for the live status line. Fields are pinned
-        to exactly options + available: never add inventory_quantity,
-        inventory_policy, or SKU here (this JSON is public page content).
-      {%- endcomment -%}
-      <script
-        type="application/json"
-        ref="variantData"
-      >
-        [
-          {%- for variant in product.variants -%}
-            {"options": {{ variant.options | json }}, "available": {{ variant.available | json }}}
-            {%- unless forloop.last %},{% endunless -%}
-          {%- endfor -%}
-        ]
-      </script>
       </div>
     </dialog>
   </request-combination-component>

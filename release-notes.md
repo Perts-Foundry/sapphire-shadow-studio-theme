@@ -1,5 +1,58 @@
 # Release Notes
 
+## High-variant audit: the request dialog stops reading `product.variants` (unreleased, 2026-09-13)
+
+Admin began showing "Your theme may not be compatible with products with over 250 variants" on the
+Lead II products. Shopify staff have said on the developer forum that the banner is a blanket
+advisory (dismissible, the dismissal sticks, the storefront is unaffected), but the platform change
+under it is real: Liquid's `product.variants` now returns at most 250 entries. This entry records
+the audit so a later session does not repeat it.
+
+**The counts.** `lead-ii-crewneck` and `lead-ii-quarter-zip` carry 288 variants each (16 designs, 3
+colours, 6 sizes); every other product has 96 or fewer, and every product is a full matrix. Product
+handles, variant ids and option value ids are public storefront data, so they are named here on
+purpose; do not redact them.
+
+**What was verified live** (node fetch against the public storefront, 2026-09-13). The Horizon
+variant picker already works from `options_with_values`, `product_option_value.*` and a section
+render with `option_values`: a deep link to variant 288 and a section render for its option value ids
+both select it, fill the form's variant id and leave add to cart enabled, and all 25 option values
+render.
+
+**The one gap, now fixed.** `blocks/request-combination.liquid` embedded a JSON availability map
+built by looping `product.variants`. Live it held 250 entries and stopped at PCT / Classic Navy / L,
+so the 38 combinations after it showed "We don't currently offer this combination" and posted
+`Not offered` in the hidden Availability field. The email still sent; nothing blocked the customer.
+The map is gone. The dialog now fetches a verdict per selection from
+`sections/section-rendering-request-combination.liquid` through the Section Rendering API, keyed on
+the selects' option value ids, debounced, abortable and cached per component. A stub section rather
+than `section_id=main`, because `main` re-renders about 310 KB of product section per dropdown change
+and the stub returns a few hundred bytes; `sections/section-rendering-product-card.liquid` is the
+precedent.
+
+**The verdict is trusted only when the stub resolved exactly the ids that were sent.** A probe of
+the live page showed that an `option_values` list carrying a foreign option value id, or ids that
+exist nowhere (`1,2,3`), still resolves the product form to a real fallback variant. So the stub
+also emits the option value ids it actually selected, and the JS applies a verdict only when those
+match the request; anything else stays unknown. That is also what keeps `not-offered` honest: it is
+reported only when the full, matching id list resolved and `product.selected_variant` is still nil.
+
+**`Not verified` now covers a failed lookup too.** It was posted only when the map was missing or
+unparsable; it is now also the value while a lookup is pending and whenever one fails, times out,
+returns no stub marker, an unrecognised token or unmatched ids. The status line is then empty.
+
+**Known limits.** The `not-offered` branch is structurally unreachable on this store, because every
+product is a full matrix; it is implemented and fails closed, but cannot be exercised end to end until
+a non-full-matrix product exists. No variant was sold out at audit time, so the `sold-out` verdict
+was not exercised live either. Section-render responses may be edge-cached, so a stock flip can lag
+briefly in the dialog.
+
+**Audited and left alone.** `snippets/variant-swatches.liquid` loops variants only when an option
+value has no resolved variant, which never happens on a full-matrix product.
+`sections/quick-order-list.liquid` loops variants, but no template uses it. Product JSON-LD comes from
+Shopify's `structured_data` filter, and nothing dumps `product | json`. The durable rule is in
+`.claude/rules/theme-code.md`.
+
 ## Blog articles as code (unreleased, 2026-09-13)
 
 The store's blog had never carried a post. The goal is regular publishing that widens the SEO

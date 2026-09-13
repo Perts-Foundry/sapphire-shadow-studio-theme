@@ -92,7 +92,15 @@ max, extracted, never a whole body). Severity is the registry default unless sta
   the return-policy gate; the posted value contains `vacation_processing_date`.
 - `b-product-request-combination`: open the modal from each of its three paths (the sold-out
   variant path, the not-offered path, the explicit link); each opens a dialog whose form posts to
-  `/contact`. Do not submit (hCaptcha; Tier C). Widget contract: modal entry.
+  `/contact`. Do not submit (hCaptcha; Tier C). Widget contract: modal entry. Then, on a
+  288-variant product (`lead-ii-quarter-zip` or `lead-ii-crewneck`), pick a combination past
+  position 250 on the stock path (Design `RRT (Registered Respiratory Therapist)`, the last Design
+  value, with any colour and size; every RRT variant sits in positions 271 to 288, see the
+  high-variant audit in `release-notes.md`) and wait up to 5 s for the status line
+  to leave the checking text: it must read the available or sold-out string, and the hidden
+  `contact[Availability]` must be `Available` or `Sold out`, never `Not offered` or `Not verified`.
+  The line is fetched asynchronously, so a read taken straight after the select change shows the
+  intermediate checking state, not a failure.
 - `b-product-sticky-atc`: scroll past the buy buttons; the sticky bar appears and mirrors the
   selected variant and price. Scroll back; it hides.
 - `b-product-judgeme` (WARN only): the Judge.me widget mounts (its container is non-empty after

@@ -145,6 +145,7 @@
       "status_available": "Good news: this combination is available to order now.",
       "status_sold_out": "This combination is currently sold out.",
       "status_not_offered": "We don't currently offer this combination.",
+      "status_checking": "Checking availability...",
       "post_success": "Thanks! We received your request and will follow up by email.",
       "error_heading": "Please adjust the following:"
     },

@@ -27,6 +27,21 @@ class MyComponent extends Component {
 - Optimistic UI must revert on error; dispatch a custom event on success for cross-component sync.
 - **JSDoc**: `@typedef` the refs object and pass as `Component<Refs>` generic. Optional refs `[name]`; document custom events' `detail` shape.
 
+### High-variant products and fragment fetches
+
+`product.variants` returns at most 250 entries, so any loop over it that must be complete is a bug
+on this store (the rule is in `.claude/rules/theme-code.md`). When the client needs a per-combination
+answer (availability, price, the variant id), fetch it rather than embedding every variant: request
+the product URL with `section_id=<stub section>` and `option_values=<one option value id per option,
+in position order>`, and parse the returned fragment with `DOMParser`. The stub is a section with no
+presets that renders only what the client reads. Two exist:
+`sections/section-rendering-product-card.liquid` (product cards and quick add, targeted from
+`assets/variant-picker.js`) and `sections/section-rendering-request-combination.liquid` (the
+request-combination dialog's availability verdict). `assets/section-renderer.js` cannot carry
+`option_values`, so these call `fetch` directly, with an `AbortController` per request. A partial or
+unresolvable id list falls back to other values rather than failing, so a stub whose answer must be
+exact should echo the ids it resolved and the client should compare them with the ids it sent.
+
 ## Theme editor integration
 
 Sections / blocks update without full reload; JS doesn't auto-execute. Listen on `document`: `shopify:section:load|unload`, `shopify:section:select|deselect`, `shopify:block:select|deselect`, `shopify:inspector:activate|deactivate`. Detect editor mode via `Shopify.designMode` (JS) or `request.design_mode` (Liquid).

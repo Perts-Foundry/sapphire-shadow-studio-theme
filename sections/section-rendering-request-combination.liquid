@@ -1,0 +1,57 @@
+{% comment %}
+  Called only by the Section Rendering API, from assets/request-combination.js. Never placed in a
+  template and has no presets, so it does not appear in the theme editor.
+
+  Returns the availability verdict for one option combination, so the request-combination dialog
+  never has to embed a map built from product.variants (which Liquid caps at 250 entries).
+
+  Contract:
+  - Meaningful only when requested with the FULL option_values id list, one id per option in
+    option-position order. A partial or unresolvable list falls back to other values, so the JS
+    compares data-resolved-option-value-ids with the ids it sent and trusts the verdict only on an
+    exact match; anything else is treated as unknown.
+  - With a full, matching list, product.selected_variant is nil exactly when no variant carries that
+    combination, which is what makes 'not-offered' correct. selected_variant is used rather than
+    selected_or_first_available_variant because it has no fallback.
+  - data-fallback-variant-id is diagnostic only; nothing reads it.
+{% endcomment %}
+
+{%- if product != blank -%}
+  {%- liquid
+    assign selected = product.selected_variant
+    if selected
+      if selected.available
+        assign token = 'available'
+      else
+        assign token = 'sold-out'
+      endif
+    else
+      assign token = 'not-offered'
+    endif
+
+    assign resolved_ids = ''
+    for product_option in product.options_with_values
+      unless forloop.first
+        assign resolved_ids = resolved_ids | append: ','
+      endunless
+      assign resolved_ids = resolved_ids | append: product_option.selected_value.id
+    endfor
+  -%}
+  <div
+    data-request-combination-section
+    data-request-combination-availability="{{ token }}"
+    data-resolved-option-value-ids="{{ resolved_ids }}"
+    data-selected-variant-id="{{ selected.id }}"
+    data-fallback-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  ></div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "t:names.request_combination_rendering",
+  "disabled_on": {
+    "groups": ["header", "footer"]
+  },
+  "settings": []
+}
+{% endschema %}
