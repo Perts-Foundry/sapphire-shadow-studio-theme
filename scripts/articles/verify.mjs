@@ -32,7 +32,7 @@ import { ArticleError, createContext, parseFlags, requireClient, toExitCode } fr
 import { listBlogArticles, resolveBlog, resolveTarget } from './lib/live.mjs';
 import { fieldDifferences, liveProjection } from './lib/projection.mjs';
 import { ARTICLES_COLLECTION, ARTICLES_REDIRECTS, READ_SCOPES } from './lib/queries.mjs';
-import { observationByHandle, readState, resolveStateDir } from './lib/state.mjs';
+import { observationByHandle, observationFor, readState, recordedImageSource, resolveStateDir } from './lib/state.mjs';
 
 export const COMMAND = 'articles:verify';
 export const FLAG_SPEC = Object.freeze({ '--root': 'string', '--live': 'boolean' });
@@ -104,8 +104,14 @@ export async function run(argv, ctx) {
     } else {
       claimed.add(node.id);
       const live = liveProjection(node);
+      // A rename is ONE failure. The handle is left out of the field comparison when the renamed line
+      // has already said it, or the same fact would be counted and printed twice.
       if (renamed) fail(`Admin still holds this article at its previous handle "${node.handle}"`);
-      const diffs = fieldDifferences(repo.projection, live, { ignore: ['isPublished', 'templateSuffix'] });
+      const imageSource = recordedImageSource(state === null ? undefined : observationFor(state, node.id), live.imageUrl);
+      const diffs = fieldDifferences(repo.projection, live, {
+        ignore: ['isPublished', 'templateSuffix', ...(renamed ? ['handle'] : [])],
+        imageSource,
+      });
       if (diffs.length === 0) pass(`every written field matches Admin (${node.id})`);
       else fail(`Admin differs from the repo in: ${diffs.join(', ')}`);
       if (live.templateSuffix === repo.projection.templateSuffix) {

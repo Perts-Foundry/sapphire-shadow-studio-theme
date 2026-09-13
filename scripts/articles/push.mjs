@@ -60,21 +60,22 @@ import { fileURLToPath } from 'node:url';
 
 import { assertScopes, backoffDelayMs, createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import { IMAGE_ROOT_DIR, REPO_ROOT, plan } from './check.mjs';
-import { readRepoArticle, repoHandles } from './repo.mjs';
+import { claimedHandles, readRepoArticle } from './repo.mjs';
 import { ARTICLES_DIR, BLOG_HANDLE, sha256 } from './lib/articles.mjs';
 import { DIR_MODE, FILE_MODE, backupFileName, backupRecord, displayPath, resolveBackupDir } from './lib/backups.mjs';
 import { ArticleError, assertNotCI, createContext, parseFlags, requireClient, requireGit, toExitCode } from './lib/context.mjs';
-import { listBlogArticles, readArticle, resolveBlog, resolveTarget } from './lib/live.mjs';
+import { listBlogArticles, readArticle, resolveBlog, resolveTarget, unrecordedRenameOf } from './lib/live.mjs';
 import { ARTICLE_CREATE, ARTICLE_UPDATE, buildArticleInput } from './lib/mutations.mjs';
 import { fieldDifferences, liveProjection, projectionSha } from './lib/projection.mjs';
 import {
   CHECK_COMMAND,
   SEED_COMMAND,
   emptyState,
-  intentFor,
   makeObservation,
   observationFor,
+  pendingIntent,
   readState,
+  recordedImageSource,
   resolveStateDir,
   stateFilePath,
   withIntent,
@@ -124,6 +125,9 @@ export const GATES = Object.freeze([
 // Gate 3: the reviewed tree
 // ------------------------------------------------------------------------------------------
 
+/** The reviewed base, spelled as a full ref so no local tag or branch can stand in for it. */
+export const BASE_REF = 'refs/remotes/origin/main';
+
 /** The production git runner. `stdio` is piped so git's own messages land in the error, not the terminal. */
 export function realGit(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -164,11 +168,15 @@ export function assertReviewedTree(root, handles, { git = realGit } = {}) {
       `has uncommitted changes (or the manifest does); the push sends committed, reviewed bytes only:\n${dirty}`,
     );
   }
+  // FULL REF NAMES, peeled to commits. A bare `origin/main` is resolved through git's refname search
+  // order, where a local tag or a local branch named `origin/main` wins over the remote-tracking ref,
+  // so anyone could make an unmerged commit "the base" with one `git tag`. `--verify` also refuses
+  // anything that does not name exactly one object.
   let head;
   let base;
   try {
-    head = git(root, ['rev-parse', 'HEAD']);
-    base = git(root, ['rev-parse', 'origin/main']);
+    head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    base = git(root, ['rev-parse', '--verify', `${BASE_REF}^{commit}`]);
   } catch (err) {
     throw new ArticleError('git', `could not resolve HEAD and origin/main (${String(err && err.message ? err.message : err).trim().split('\n')[0]})`);
   }
@@ -354,26 +362,30 @@ export async function run(argv, ctx) {
   const liveNodes = await listBlogArticles(client, blog.id);
   const state = readState({ dir: ctx.stateDir, root });
 
-  // Gate 11, the reconcile half: an earlier run that never learned its outcome stops everything.
-  const pending = intentFor(state, handle);
+  // Gate 7: resolve by handle and previous handles; read the observation by GID.
+  const target = resolveTarget(liveNodes, repo.article);
+
+  // Gate 11, the reconcile half: an earlier run that never learned its outcome stops everything. Looked
+  // up by this handle, every previous handle, and the live article's GID (lib/state.mjs, pendingIntent).
+  const pending = pendingIntent(state, { handles: [handle, ...previousHandles], gid: target.node?.id ?? null });
   if (pending) {
+    const [recordedUnder, intent] = pending;
     throw new ArticleError(
       handle,
-      `an earlier push (${pending.op}, started ${pending.at}) sent a write and never learned whether it landed. ` +
-        `Until that is reconciled this article cannot be pushed: run ${CHECK_COMMAND} to see what Admin holds, ` +
-        `then ${SEED_COMMAND} to record it and clear the record, then run the dry run again.`,
+      `an earlier push (${intent.op}${recordedUnder === handle ? '' : ` under "${recordedUnder}"`}, started ${intent.at}) sent a write ` +
+        `and never learned whether it landed. Until that is reconciled this article cannot be pushed: run ${CHECK_COMMAND} ` +
+        `to see what Admin holds, then ${SEED_COMMAND} to record it and clear the record, then run the dry run again.`,
     );
   }
 
-  // Gate 7: resolve by handle and previous handles; read the observation by GID.
-  const target = resolveTarget(liveNodes, repo.article);
   const repoP = repo.projection;
   let liveP = null;
   let liveSha = null;
+  let observation;
   if (target.kind === 'update') {
     liveP = liveProjection(target.node);
     liveSha = projectionSha(liveP);
-    const observation = state === null ? undefined : observationFor(state, target.node.id);
+    observation = state === null ? undefined : observationFor(state, target.node.id);
     // Gate 6, second half. ABSENT STATE PLUS A LIVE ARTICLE IS A HARD REFUSAL: "no state file" is a
     // pass for a create only.
     if (!observation) {
@@ -396,29 +408,35 @@ export async function run(argv, ctx) {
       );
     }
   } else {
-    // A create. Refuse one that is really a rename nobody recorded: a live article this machine has
-    // observed, which no repo directory claims, is what a renamed directory without previousHandles
-    // leaves behind, and creating here would put a second copy of the post in the blog.
-    const handles = new Set(repoHandles(root));
-    for (const node of liveNodes) {
-      if (state !== null && observationFor(state, node.id) && !handles.has(node.handle)) {
-        throw new ArticleError(
-          handle,
-          `would be CREATED, but Admin holds "${node.handle}" (${node.id}), which this machine has observed and which ` +
-            `no repo directory claims. If this directory was renamed from "${node.handle}", add it to previousHandles ` +
-            'so the push updates that article instead of creating a second one.',
-        );
-      }
+    // A create. Refuse one that is really a rename nobody recorded, and nothing else. A directory
+    // renamed without previousHandles leaves the post live at its old handle, unclaimed by any repo
+    // directory, holding THIS article's title or body; creating here would put a second copy of it in
+    // the blog. An unclaimed live article that is some other post (one removed from the repo on
+    // purpose, a spike leftover) is not evidence of that, and neither is a live article another repo
+    // directory claims through ITS previousHandles (a rename of that article not yet pushed): the first
+    // version refused every create while either existed.
+    const suspect = unrecordedRenameOf(liveNodes, repoP, claimedHandles(root));
+    if (suspect) {
+      throw new ArticleError(
+        handle,
+        `would be CREATED, but Admin holds "${suspect.handle}" (${suspect.id}), which no repo directory claims and which has ` +
+          `this article's ${suspect.matched}. If this directory was renamed from "${suspect.handle}", add it to previousHandles ` +
+          'so the push updates that article instead of creating a second one. If it is a different post, change one of the two ' +
+          'so they are not identical.',
+      );
     }
   }
 
-  // Gate 8: every written field, not only the body.
-  if (target.kind === 'update' && fieldDifferences(repoP, liveP).length === 0) {
+  // Gate 8: every written field, not only the body. The featured image is compared through where
+  // Admin's re-hosted copy came from (lib/projection.mjs, imageDiffers).
+  const imageSource = target.kind === 'update' ? recordedImageSource(observation, liveP.imageUrl) : null;
+  if (target.kind === 'update' && fieldDifferences(repoP, liveP, { imageSource }).length === 0) {
     recordObservation(ctx, target.node.id, makeObservation({
       node: target.node,
       liveSha256: liveSha,
       bodySha256: sha256(liveP.body),
       matchedRepoSha256: repo.sha,
+      imageSourceUrl: repoP.imageUrl,
       now: ctx.now(),
     }));
     ctx.log(`${handle}: already matches Admin (${target.node.id}) in every written field; no changes made`);
@@ -445,7 +463,7 @@ export async function run(argv, ctx) {
     }
   }
 
-  const diffs = target.kind === 'update' ? fieldDifferences(repoP, liveP) : null;
+  const diffs = target.kind === 'update' ? fieldDifferences(repoP, liveP, { imageSource }) : null;
 
   // Gate 9.
   if (confirm === null) {
@@ -550,7 +568,9 @@ export async function run(argv, ctx) {
   const finalRecovery = backupFile ? recovery : createRecovery(handle, gid);
 
   // Gate 14. A thrown read retries: this is a read after a write that landed, so retrying is safe
-  // and giving up early is not.
+  // and giving up early is not. The image source is KNOWN here, it is the URL just sent, so a
+  // re-hosted copy compares by presence and alt text.
+  const sentImage = { imageSource: repoP.imageUrl };
   let stored = null;
   let lastReadError = null;
   for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
@@ -563,7 +583,7 @@ export async function run(argv, ctx) {
       lastReadError = err;
       continue;
     }
-    if (stored !== null && fieldDifferences(repoP, liveProjection(stored)).length === 0) break;
+    if (stored !== null && fieldDifferences(repoP, liveProjection(stored), sentImage).length === 0) break;
   }
 
   // Gate 15, on every path from here.
@@ -584,12 +604,14 @@ export async function run(argv, ctx) {
     );
   }
   const storedP = liveProjection(stored);
-  const storedDiffs = fieldDifferences(repoP, storedP);
+  const storedDiffs = fieldDifferences(repoP, storedP, sentImage);
   recordObservation(ctx, gid, makeObservation({
     node: stored,
     liveSha256: projectionSha(storedP),
     bodySha256: sha256(storedP.body),
     matchedRepoSha256: storedDiffs.length === 0 ? repo.sha : null,
+    // Admin's image, if it holds one, is the copy of what was just sent.
+    imageSourceUrl: storedDiffs.includes('imageUrl') ? null : repoP.imageUrl,
     now: ctx.now(),
   }), { clearIntentFor: handle });
   if (storedP.isPublished) {

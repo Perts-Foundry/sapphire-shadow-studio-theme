@@ -18,6 +18,19 @@ export function repoHandles(root) {
 }
 
 /**
+ * Every handle a repo directory claims: each current handle and each of its previousHandles. A live
+ * article at any of these belongs to a repo directory, pushed or not.
+ */
+export function claimedHandles(root) {
+  const out = new Set();
+  for (const handle of repoHandles(root)) {
+    out.add(handle);
+    for (const old of readRepoArticle(root, handle).article.previousHandles ?? []) out.add(old);
+  }
+  return out;
+}
+
+/**
  * One article's files, parsed, with its projection and projection hash.
  *
  * Refuses rather than guessing: a handle that is not a handle, one the manifest does not list, a

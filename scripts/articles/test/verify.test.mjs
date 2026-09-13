@@ -18,6 +18,7 @@ import {
   makeClient,
   makeCtx,
   nodeFromRepo,
+  rehostedUrl,
   renameArticleDir,
   seedObservation,
   tempDir,
@@ -163,6 +164,35 @@ test('--live: a redirect is reported for each previous handle, present or missin
   const absent = live({ root: makeRoot(), handle: 'welcome-renamed' });
   assert.equal(await toExitCode(run, ['--live'], absent.ctx, 'verify'), 2);
   assert.ok(absent.logs.includes(`  FAIL  no redirect from ${path}, which previousHandles says this article used to live at`));
+});
+
+test('--live: an article Admin still holds at its previous handle is ONE failure, not a second one for the handle field', async () => {
+  const path = `/blogs/shift-notes/${HANDLE}`;
+  const root = withCollectionLink(cleanRoot());
+  renameArticleDir(root, HANDLE, 'welcome-renamed');
+  const { ctx, logs } = live({
+    root,
+    handle: 'welcome-renamed',
+    nodeOverrides: { handle: HANDLE },
+    redirects: [{ id: 'gid://shopify/UrlRedirect/1', path, target: '/blogs/shift-notes/welcome-renamed' }],
+  });
+  const result = await run(['--live'], ctx);
+  assert.equal(result.code, 2);
+  assert.equal(result.failed, 1, logs.join('\n'));
+  assert.deepEqual(logs.filter((l) => l.startsWith('  FAIL  ')), [`  FAIL  Admin still holds this article at its previous handle "${HANDLE}"`]);
+  assert.ok(logs.includes(`  PASS  every written field matches Admin (${ARTICLE_GID})`), logs.join('\n'));
+});
+
+test('--live: a re-hosted featured image passes when the observation records its source, and fails when nothing does', async () => {
+  const rehosted = { image: { url: rehostedUrl(IMG), altText: 'A cutting bench with a folded crewneck and a tape measure' } };
+  const known = live({ nodeOverrides: rehosted });
+  seedObservation(known.stateDir, known.node, { imageSourceUrl: IMG });
+  assert.equal((await run(['--live'], known.ctx)).code, 0, known.logs.join('\n'));
+  assert.ok(known.logs.includes(`  PASS  every written field matches Admin (${ARTICLE_GID})`));
+
+  const unknown = live({ nodeOverrides: rehosted });
+  assert.equal(await toExitCode(run, ['--live'], unknown.ctx, 'verify'), 2);
+  assert.ok(unknown.logs.includes('  FAIL  Admin differs from the repo in: imageUrl'), unknown.logs.join('\n'));
 });
 
 test('--live: nothing live for a repo article fails, and --live without fetch cannot run', async () => {

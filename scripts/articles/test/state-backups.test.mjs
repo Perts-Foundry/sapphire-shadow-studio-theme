@@ -8,6 +8,8 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { BACKUP_DIR_BASENAME, BACKUP_ENV_VAR, backupFileName, backupRecord, defaultBackupDir, resolveBackupDir } from '../lib/backups.mjs';
+import { plan } from '../check.mjs';
+import { RULES } from '../lib/articles.mjs';
 import { ArticleError } from '../lib/context.mjs';
 import {
   CHECK_COMMAND,
@@ -18,15 +20,18 @@ import {
   defaultStateDir,
   emptyState,
   intentFor,
+  makeObservation,
   observationByHandle,
+  pendingIntent,
   readState,
+  recordedImageSource,
   resolveStateDir,
   withIntent,
   withObservation,
   withoutIntent,
   writeState,
 } from '../lib/state.mjs';
-import { HANDLE, REPO_ROOT, cleanRoot, cleanup } from './helpers.mjs';
+import { HANDLE, REPO_ROOT, cleanRoot, cleanup, readArticle, reindexInPlace, writeArticle } from './helpers.mjs';
 import { NOW, cleanupDirs, nodeFromRepo, tempDir } from './network-helpers.mjs';
 
 after(() => {
@@ -97,6 +102,16 @@ test('the state helpers are pure: the input state is never modified', () => {
   assert.equal(observationByHandle(c, 'nope'), null);
 });
 
+test('pendingIntent finds a record by the current handle, then by a previous handle, then by GID', () => {
+  const gid = 'gid://shopify/Article/1';
+  const state = withIntent(withIntent(emptyState(), 'old-handle', { op: 'create', gid: null }), 'elsewhere', { op: 'update', gid });
+  assert.deepEqual(pendingIntent(state, { handles: ['new-handle', 'old-handle'] }), ['old-handle', { op: 'create', gid: null }]);
+  assert.deepEqual(pendingIntent(state, { handles: ['new-handle'], gid }), ['elsewhere', { op: 'update', gid }]);
+  assert.equal(pendingIntent(state, { handles: ['new-handle'], gid: 'gid://shopify/Article/2' }), undefined);
+  assert.equal(pendingIntent(state, { handles: ['new-handle'], gid: null }), undefined, 'a null GID must not match a create intent\'s null gid');
+  assert.equal(pendingIntent(null, { handles: ['x'] }), undefined);
+});
+
 test('a backup file is named <handle>-<timestamp>.json with a filesystem-safe timestamp', () => {
   assert.equal(backupFileName(HANDLE, '2026-01-02T03:04:05.678Z'), `${HANDLE}-2026-01-02T03-04-05-678Z.json`);
 });
@@ -120,4 +135,37 @@ test('a backup record holds the live article and the repo shapes to copy back', 
   });
   assert.equal(record.restore.imageAlt, node.image.altText);
   mkdirSync(path.join(tmpdir()), { recursive: true });
+});
+
+test('an empty-string templateSuffix: kept verbatim under live, restored as null because articles:check refuses ""', () => {
+  // Reviewed as a possible `||`-for-`??` defect. It is deliberate: `restore` is copied into
+  // article.json, and a "" suffix there names templates/article..json, which the checker refuses.
+  const root = cleanRoot();
+  const node = nodeFromRepo(root, HANDLE, { templateSuffix: '' });
+  const record = backupRecord({ node, blogHandle: 'shift-notes', liveSha256: 'a'.repeat(64), fetchedAt: NOW });
+  assert.equal(record.live.templateSuffix, '', 'the live half must hold exactly what Admin returned');
+  assert.equal(record.restore['article.json'].templateSuffix, null);
+
+  const article = readArticle(root);
+  article.templateSuffix = '';
+  writeArticle(root, article);
+  reindexInPlace(root);
+  assert.ok(plan(root).findings.some((f) => f.rule === RULES.TEMPLATE_SUFFIX_UNKNOWN), 'the checker no longer refuses "", so restore could keep it');
+  article.templateSuffix = record.restore['article.json'].templateSuffix;
+  writeArticle(root, article);
+  reindexInPlace(root);
+  assert.deepEqual(plan(root).findings, [], 'the restored value must pass the checker');
+});
+
+test('an observation records the live image URL and the source it was copied from, and trusts the source only for that copy', () => {
+  const root = cleanRoot();
+  const node = nodeFromRepo(root);
+  const observation = makeObservation({ node, liveSha256: 'a'.repeat(64), bodySha256: 'b'.repeat(64), matchedRepoSha256: null, now: NOW, imageSourceUrl: 'https://cdn.shopify.com/src.jpg' });
+  assert.equal(observation.liveImageUrl, node.image.url);
+  assert.equal(recordedImageSource(observation, node.image.url), 'https://cdn.shopify.com/src.jpg');
+  assert.equal(recordedImageSource(observation, 'https://cdn.shopify.com/replaced-in-admin.jpg'), null);
+  assert.equal(recordedImageSource(observation, null), null);
+  assert.equal(recordedImageSource(undefined, node.image.url), null);
+  assert.equal(recordedImageSource({ ...observation, imageSourceUrl: undefined }, node.image.url), null, 'an observation from before these fields is unknown');
+  assert.equal(makeObservation({ node: { ...node, image: null }, liveSha256: 'a', bodySha256: 'b', now: NOW, imageSourceUrl: 'x' }).imageSourceUrl, null);
 });

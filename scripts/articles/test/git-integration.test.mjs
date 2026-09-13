@@ -15,7 +15,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -159,6 +159,61 @@ test('a detached HEAD at a merged commit passes, and at an unmerged one refuses'
   git(work, 'commit', '--quiet', '-m', 'detached');
   assert.throws(() => assertReviewedTree(work, [HANDLE]), /not an ancestor of origin\/main/);
 });
+
+test('a local BRANCH and a local TAG named origin/main at an unmerged commit cannot stand in for the base', () => {
+  // Bare `origin/main` resolves through git's refname search order, where refs/tags/ and refs/heads/
+  // come before refs/remotes/. So with a tag at HEAD, the old spelling compared HEAD with itself.
+  const { work } = makeRepos();
+  writeFileSync(join(work, 'NOTES.md'), 'unmerged\n', 'utf8');
+  git(work, 'add', '--all');
+  git(work, 'commit', '--quiet', '-m', 'unmerged');
+  git(work, 'branch', 'origin/main');
+  git(work, 'tag', 'origin/main');
+  assert.equal(
+    git(work, 'rev-parse', 'origin/main'),
+    git(work, 'rev-parse', 'HEAD'),
+    'the fixture is wrong: the ambiguous short name should resolve to the planted local ref',
+  );
+  assert.throws(() => assertReviewedTree(work, [HANDLE]), /not an ancestor of origin\/main/);
+});
+
+test('after a COMMITTED rename, an untracked file back in the previous handle\'s directory refuses', () => {
+  const { work } = makeRepos();
+  git(work, 'mv', join('marketing', 'articles', HANDLE), join('marketing', 'articles', RENAMED));
+  git(work, 'commit', '--quiet', '-m', 'rename');
+  git(work, 'push', '--quiet', 'origin', 'main');
+  assert.doesNotThrow(() => assertReviewedTree(work, [RENAMED, HANDLE]));
+  mkdirSync(join(work, 'marketing', 'articles', HANDLE), { recursive: true });
+  writeFileSync(articleFile(work, HANDLE, 'notes.txt'), 'left behind\n', 'utf8');
+  assert.throws(() => assertReviewedTree(work, [RENAMED, HANDLE]), /has uncommitted changes/);
+});
+
+test('a handle that is a PREFIX of another does not match it: a dirty foo-bar does not refuse foo', () => {
+  const { work } = makeRepos();
+  const LONGER = `${HANDLE}-part-two`;
+  addSecondArticle(work, LONGER);
+  reindexInPlace(work);
+  git(work, 'add', '--all');
+  git(work, 'commit', '--quiet', '-m', 'longer handle');
+  git(work, 'push', '--quiet', 'origin', 'main');
+  appendFileSync(articleFile(work, LONGER, 'body.html'), '<p>edit</p>\n', 'utf8');
+  writeFileSync(articleFile(work, LONGER, 'notes.txt'), 'draft\n', 'utf8');
+  assert.doesNotThrow(() => assertReviewedTree(work, [HANDLE]));
+  assert.throws(() => assertReviewedTree(work, [LONGER]), /has uncommitted changes/);
+});
+
+test(
+  'as root, the gate still sees an unreadable untracked file and still passes a clean tree',
+  { skip: process.getuid?.() === 0 ? false : 'runs only as root (uid 0), which is how CI runs this suite; permissions do not bind root, so this is the one place that proves the gate does not depend on them' },
+  () => {
+    const { work } = makeRepos();
+    assert.doesNotThrow(() => assertReviewedTree(work, [HANDLE]));
+    const file = articleFile(work, HANDLE, 'notes.txt');
+    writeFileSync(file, 'draft\n', 'utf8');
+    chmodSync(file, 0o000);
+    assert.throws(() => assertReviewedTree(work, [HANDLE]), /has uncommitted changes/);
+  },
+);
 
 test('a linked worktree under .claude/worktrees/ passes when clean and refuses when dirty', () => {
   const { work } = makeRepos();

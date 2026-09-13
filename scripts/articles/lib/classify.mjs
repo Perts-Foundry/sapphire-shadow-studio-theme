@@ -6,7 +6,7 @@
 // ONE DESTINATION PER STATE. A state that maps to "it depends" is a state nobody can act on.
 
 import { fieldDifferences, liveProjection, projectionSha } from './projection.mjs';
-import { CHECK_COMMAND, SEED_COMMAND, intentFor, observationByHandle, observationFor } from './state.mjs';
+import { CHECK_COMMAND, SEED_COMMAND, intentFor, observationByHandle, observationFor, recordedImageSource } from './state.mjs';
 
 export const STATES = Object.freeze({
   IN_SYNC: 'in sync',
@@ -62,7 +62,8 @@ export function classifyLive({ repo, node, state }) {
   if (!observation) return state === null ? STATES.STATE_ABSENT : STATES.NO_BASELINE;
   const live = liveProjection(node);
   if (projectionSha(live) !== observation.liveSha256) return STATES.ADMIN_MOVED;
-  return fieldDifferences(repo.projection, live, { ignore: ['isPublished'] }).length === 0 ? STATES.IN_SYNC : STATES.REPO_AHEAD;
+  const imageSource = recordedImageSource(observation, live.imageUrl);
+  return fieldDifferences(repo.projection, live, { ignore: ['isPublished'], imageSource }).length === 0 ? STATES.IN_SYNC : STATES.REPO_AHEAD;
 }
 
 /**

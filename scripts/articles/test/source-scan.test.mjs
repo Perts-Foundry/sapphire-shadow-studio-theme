@@ -94,6 +94,17 @@ test('nothing under scripts/articles/ names a way to make an article visible', (
   assert.equal(visibilityOffenders([{ path: 'x', text: ['isPublished', 'true'].join(':') }]).length, 1);
 });
 
+test('the hidden flag is the LITERAL false in the input builder, spelled exactly once, never computed', () => {
+  // The visibility scan above refuses `true`. It cannot see a computed spelling next to the flag
+  // (`isPublished: repo.isPublished`, `isPublished: Boolean(1)`), so the builder's own line is pinned.
+  const code = stripComments(readFileSync(join(LIB, 'mutations.mjs'), 'utf8'));
+  const sites = [...code.matchAll(/\bisPublished\s*:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
+  assert.deepEqual(sites, ['false']);
+  // Positive control: the same extraction sees a computed spelling.
+  const planted = [...'const x = { isPublished: Boolean(1), };'.matchAll(/\bisPublished\s*:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
+  assert.deepEqual(planted, ['Boolean(1)']);
+});
+
 test('mutation documents live in lib/mutations.mjs and nowhere else, and name only the two reviewed operations', () => {
   const modules = walk(ARTICLES)
     .filter((full) => full.endsWith('.mjs') && !rel(full).startsWith('scripts/articles/test/'))

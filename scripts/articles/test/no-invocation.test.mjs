@@ -49,11 +49,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, openSync, readFileSync, readSync, closeSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { exportFromsOf, importsOf } from '../../lib/import-closure.mjs';
+import { exportFromsOf, importClosure, importsOf } from '../../lib/import-closure.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
@@ -163,6 +164,101 @@ function resolvesToPush(path, spec) {
   return spec.startsWith('.') && posix.normalize(posix.join(posix.dirname(path), spec)) === MODULE_PATH;
 }
 
+const PUSH_FILE = MODULE_PATH.split('/').pop();
+const ARTICLES_SEGMENT = MODULE_PATH.split('/')[1];
+const ARTICLES_DIR_PATH = posix.dirname(MODULE_PATH);
+
+/**
+ * Every single-line string literal in module code, with its line, import and `export ... from`
+ * clauses removed first (the import rule owns those, and an exempt file's own import is allowed).
+ * Template literals count when they hold no substitution.
+ */
+function stringLiterals(code) {
+  const lines = code.split('\n');
+  const out = [];
+  let inImport = false;
+  for (const [i, line] of lines.entries()) {
+    // A multi-line import clause runs until the line naming its specifier.
+    if (/^\s*(?:import|export)\b/.test(line) && !/\bfrom\s*['"]/.test(line) && /[{,]\s*$/.test(line)) inImport = true;
+    if (inImport || /^\s*import\b/.test(line) || /^\s*export\b[^\n]*\bfrom\s*['"]/.test(line)) {
+      if (/\bfrom\s*['"][^'"]+['"]/.test(line) || /^\s*import\s*['"]/.test(line)) inImport = false;
+      continue;
+    }
+    for (const m of line.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`([^`$\\]*)`/g)) {
+      out.push({ value: m[1] ?? m[2] ?? m[3], line: i + 1, text: line });
+    }
+  }
+  return out;
+}
+
+/**
+ * Places a module under scripts/ BUILDS A PATH to the push rather than importing it: the shapes a
+ * spawn, an exec or a `new URL` would use, which contain neither the npm name nor the full module path.
+ *
+ *   a relative literal ending in the filename that resolves to the push   new URL('../push.mjs', import.meta.url)
+ *   a literal ending in `articles/push.mjs`                               'scripts/articles/push.mjs' in pieces
+ *   the bare filename beside an `articles` literal, in one call or line   join(ROOT, 'scripts', 'articles', 'push.mjs')
+ *   the bare filename beside a `..` literal, from under scripts/articles/  join(TEST_DIR, '..', 'push.mjs')
+ *   the bare filename in a module directly in scripts/articles/            join(HERE, 'push.mjs')
+ *
+ * Files elsewhere naming their OWN push.mjs (scripts/policies/) are not caught: the bare name is only
+ * an offence with evidence that it is this directory's.
+ *
+ * @param {{path: string, text: string}} file
+ */
+export function pathLiteralOffenders({ path, text }) {
+  if (!path.startsWith('scripts/') || !MODULE_EXTENSIONS.some((ext) => path.endsWith(ext))) return [];
+  const code = stripComments(text);
+  const literals = stringLiterals(code);
+  const out = [];
+  const inArticles = path.startsWith(`${ARTICLES_DIR_PATH}/`);
+  const directlyInArticles = posix.dirname(path) === ARTICLES_DIR_PATH;
+  const groups = [
+    ...[...literals.reduce((m, l) => m.set(l.line, [...(m.get(l.line) ?? []), l.value]), new Map()).entries()].map(([line, values]) => ({ where: `line ${line}`, values })),
+    ...['join', 'resolve', 'URL'].flatMap((name) => callArguments(code, name).map((args) => ({ where: `${name}(...)`, values: stringLiterals(args).map((l) => l.value) }))),
+  ];
+  for (const { value, line } of literals) {
+    if (!value.endsWith(PUSH_FILE)) continue;
+    if (value !== PUSH_FILE) {
+      if (resolvesToPush(path, value) || value.endsWith(`${ARTICLES_SEGMENT}/${PUSH_FILE}`)) {
+        out.push(`${path}:${line}: builds a path to the article push module from ${JSON.stringify(value)}`);
+      }
+    } else if (directlyInArticles) {
+      out.push(`${path}:${line}: names the article push module's file beside it`);
+    }
+  }
+  for (const { where, values } of groups) {
+    if (!values.includes(PUSH_FILE)) continue;
+    if (values.includes(ARTICLES_SEGMENT)) out.push(`${path}: ${where} joins "${ARTICLES_SEGMENT}" with "${PUSH_FILE}"`);
+    else if (inArticles && values.includes('..')) out.push(`${path}: ${where} reaches "${PUSH_FILE}" through ".." from ${ARTICLES_DIR_PATH}/`);
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * What an exempt importer's HELPERS must not do. The exempt file itself is held to
+ * `exemptFileViolations`; every other module its import closure loads, except the push module and
+ * the push's own closure (which is production and legitimately builds the real client in `main`),
+ * must not name `createAdminClient` or read `process.env`. Without this, an exempt test could keep
+ * its own text clean and reach the store through a helper it imports.
+ *
+ * @param {{entry: string, skip: string[]}} o  absolute paths
+ * @returns {Promise<string[]>}
+ */
+export async function closureViolations({ entry, skip }) {
+  const { files } = await importClosure(entry);
+  const skipped = new Set(skip);
+  const out = [];
+  for (const file of files) {
+    if (file === entry || skipped.has(file)) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const where = relative(REPO_ROOT, file).split(sep).join('/');
+    if (/\bcreateAdminClient\b/.test(code)) out.push(`${where}: names createAdminClient`);
+    if (/\bprocess\s*(?:\.\s*env\b|\[)/.test(code)) out.push(`${where}: reads process.env`);
+  }
+  return out;
+}
+
 /**
  * Every place a set of files invokes the push, as `path:line: text` strings.
  *
@@ -183,6 +279,8 @@ export function findOffenders(files) {
         offenders.push(`${path}:${i + 1}: ${line.trim().slice(0, 120)}`);
       }
     }
+    // A built path is not an import: exempt files are held to this rule like every other module.
+    offenders.push(...pathLiteralOffenders({ path, text }));
     if (MODULE_EXTENSIONS.some((ext) => path.endsWith(ext))) {
       // EXACT equality against the frozen list, and for the import rule only.
       if (EXEMPT_PATHS.includes(path)) continue;
@@ -352,6 +450,61 @@ test('the guard catches a planted invocation in each shape it is meant to stop',
   // The self-exemption is by exact path, not by content.
   assert.deepEqual(findOffenders([{ path: SELF, text: `npm run ${NPM_NAME}` }]), []);
   assert.equal(findOffenders([{ path: `${SELF}.copy`, text: `npm run ${NPM_NAME}` }]).length, 1);
+});
+
+test('a path BUILT to the push under scripts/ is caught, in each shape, and another subsystem\'s push.mjs is not', () => {
+  const up = '..';
+  const file = PUSH_FILE;
+  const planted = [
+    // The two shapes the review named, as planted positive controls.
+    { path: 'scripts/articles/test/x.test.mjs', text: `spawn('node', [join(TEST_DIR, '${up}', '${file}'), '--handle', 'x']);\n` },
+    { path: 'scripts/articles/test/x.test.mjs', text: `const url = new URL('${up}/${file}', import.meta.url);\n` },
+    { path: 'scripts/foo/x.mjs', text: `execFileSync('node', [join(ROOT, 'scripts', '${ARTICLES_SEGMENT}', '${file}')]);\n` },
+    { path: 'scripts/foo/x.mjs', text: `const target = path.join(\n  root,\n  '${ARTICLES_SEGMENT}',\n  '${file}',\n);\n` },
+    { path: 'scripts/foo/x.mjs', text: `const target = \`${ARTICLES_SEGMENT}/${file}\`;\n` },
+    { path: 'scripts/articles/x.mjs', text: `const target = join(HERE, '${file}');\n` },
+    { path: 'scripts/articles/lib/x.mjs', text: `const target = new URL('${up}/${file}', import.meta.url);\n` },
+    // An exempt importer is not exempt from this rule.
+    { path: EXEMPT_PATHS[0], text: `spawn(process.execPath, [join(TEST_DIR, '${up}', '${file}')]);\n` },
+  ];
+  for (const f of planted) assert.ok(findOffenders([f]).length > 0, `not caught: ${f.path}: ${f.text}`);
+
+  // Not offences: the policies push naming its own file, a bare name with no evidence, an exempt import.
+  const clean = [
+    { path: 'scripts/policies/test/push.test.mjs', text: `const code = await main(['node', '${file}', ...args]);\n` },
+    { path: 'scripts/policies/test/x.test.mjs', text: `const url = new URL('${up}/${file}', import.meta.url);\n` },
+    { path: 'scripts/policies/test/x.test.mjs', text: `join(TEST_DIR, '${up}', '${file}');\n` },
+    { path: EXEMPT_PATHS[0], text: `import {\n  GATES,\n  run,\n} from '${up}/${file}';\n` },
+    { path: 'scripts/articles/test/x.test.mjs', text: `// join(TEST_DIR, '${up}', '${file}') in a comment builds nothing\n` },
+  ];
+  for (const f of clean) assert.deepEqual(pathLiteralOffenders(f), [], `flagged: ${f.path}: ${f.text}`);
+});
+
+test('every exempt importer\'s helpers, outside the push\'s own closure, name no Admin client and read no environment', async () => {
+  const push = join(REPO_ROOT, ...MODULE_PATH.split('/'));
+  const skip = (await importClosure(push)).files;
+  for (const path of EXEMPT_PATHS) {
+    const entry = join(REPO_ROOT, ...path.split('/'));
+    const { files } = await importClosure(entry);
+    assert.ok(files.length > 3, `${path}: the closure walk reached almost nothing (${files.length}), so it proves nothing`);
+    assert.deepEqual(await closureViolations({ entry, skip }), [], path);
+  }
+
+  // Positive controls at depth one and two, through the same function.
+  const dir = mkdtempSync(join(tmpdir(), 'articles-exempt-closure-'));
+  try {
+    writeFileSync(join(dir, 'exempt.test.mjs'), "import { a } from './helper.mjs';\nexport const x = a;\n", 'utf8');
+    writeFileSync(join(dir, 'helper.mjs'), "import { b } from './deeper.mjs';\nexport const a = createAdminClient;\n", 'utf8');
+    writeFileSync(join(dir, 'deeper.mjs'), 'export const b = process.env.MYSHOPIFY_DOMAIN;\n', 'utf8');
+    const entry = join(dir, 'exempt.test.mjs');
+    const found = await closureViolations({ entry, skip: [] });
+    assert.ok(found.some((v) => v.endsWith('helper.mjs: names createAdminClient')), found.join('\n'));
+    assert.ok(found.some((v) => v.endsWith('deeper.mjs: reads process.env')), found.join('\n'));
+    // The skip list is what exempts the push's own closure, and it is by exact path.
+    assert.deepEqual(await closureViolations({ entry, skip: [join(dir, 'helper.mjs'), join(dir, 'deeper.mjs')] }), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('an exempt file that reaches for a real store is caught, in each shape', () => {

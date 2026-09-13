@@ -34,6 +34,7 @@ import {
   createObservationState,
 } from '../../lib/observation-state.mjs';
 import { ArticleError } from './context.mjs';
+import { liveProjection } from './projection.mjs';
 
 export const STATE_SCHEMA_VERSION = 1;
 export const STATE_DIR_BASENAME = 'sapphire-articles-state';
@@ -121,8 +122,15 @@ export function observationByHandle(state, handle) {
  * as Admin returned it. `matchedRepoSha256` is the repo projection hash this live article was last
  * confirmed equivalent to, or null when it was not; status reads it to say "clean" or "drifted"
  * without a network call.
+ *
+ * `liveImageUrl` and `imageSourceUrl` exist because Shopify re-hosts a featured image set by URL, so
+ * the live URL never equals the repo's (lib/projection.mjs, `imageDiffers`). `liveImageUrl` is the
+ * URL Admin held at this observation; `imageSourceUrl` is the repo URL that copy was made from, or
+ * null when nothing on this machine knows. A later repo image change is detected by comparing the
+ * repo URL with `imageSourceUrl`, which is only trusted while Admin still holds `liveImageUrl`.
  */
-export function makeObservation({ node, liveSha256, bodySha256, matchedRepoSha256, now, unverified = false }) {
+export function makeObservation({ node, liveSha256, bodySha256, matchedRepoSha256, now, imageSourceUrl = null, unverified = false }) {
+  const liveImageUrl = liveProjection(node).imageUrl;
   const out = {
     handle: node.handle,
     blogId: node.blog?.id ?? null,
@@ -130,10 +138,23 @@ export function makeObservation({ node, liveSha256, bodySha256, matchedRepoSha25
     bodySha256,
     isPublished: node.isPublished === true,
     matchedRepoSha256: matchedRepoSha256 ?? null,
+    liveImageUrl,
+    imageSourceUrl: liveImageUrl === null || typeof imageSourceUrl !== 'string' ? null : imageSourceUrl,
     observedAt: now,
   };
   if (unverified) out.unverified = true;
   return out;
+}
+
+/**
+ * The repo image URL Admin's current featured image was copied from, as far as one observation
+ * knows: its `imageSourceUrl` while Admin still holds the `liveImageUrl` it was recorded against,
+ * and null (unknown) otherwise, including for an observation written before these fields existed.
+ */
+export function recordedImageSource(observation, liveImageUrl) {
+  if (!observation || typeof observation.imageSourceUrl !== 'string') return null;
+  if (liveImageUrl === null || observation.liveImageUrl !== liveImageUrl) return null;
+  return observation.imageSourceUrl;
 }
 
 /** A new state with one observation set. Pure: the input is not modified. */
@@ -144,6 +165,31 @@ export function withObservation(state, gid, observation) {
 
 export function intentFor(state, handle) {
   return state?.intents?.[handle];
+}
+
+/**
+ * The first interrupted-push record that concerns one article, or undefined.
+ *
+ * NOT ONLY BY HANDLE. An intent is keyed by the handle the push ran under, and an article can reach
+ * the next push under another one: a directory renamed after a create died leaves the intent under
+ * what is now a previous handle, and an update's intent carries the GID of the live article. Looking
+ * up only the current handle would let that second push through an unreconciled write.
+ *
+ * @param {object|null} state
+ * @param {{handles: string[], gid?: string|null}} key  the current handle first, then previous handles
+ * @returns {[string, object]|undefined}  `[recorded handle, intent]`
+ */
+export function pendingIntent(state, { handles, gid = null }) {
+  const intents = state?.intents ?? {};
+  for (const h of handles) {
+    if (intents[h]) return [h, intents[h]];
+  }
+  if (typeof gid === 'string' && gid !== '') {
+    for (const [h, intent] of Object.entries(intents)) {
+      if (intent?.gid === gid) return [h, intent];
+    }
+  }
+  return undefined;
 }
 
 export function withIntent(state, handle, intent) {

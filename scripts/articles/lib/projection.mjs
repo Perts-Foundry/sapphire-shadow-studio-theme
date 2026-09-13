@@ -155,18 +155,51 @@ export function bodiesEquivalent(a, b) {
 }
 
 /**
+ * Whether the featured image differs, given what is known about where Admin's copy came from.
+ *
+ * SHOPIFY RE-HOSTS A FEATURED IMAGE SET BY URL (verified on the 2026-09-12 spike): it copies the file
+ * to its own `articles/` CDN path, so the live `image.url` never equals the URL the repo sent. An
+ * equality comparison would make the no-op gate never fire, the re-read after every push with an
+ * image fail, and `verify --live` always report a difference. So the comparison is:
+ *
+ *   one side has an image and the other does not        differs
+ *   neither has one                                      same
+ *   both, and Admin holds the very URL the repo names    same
+ *   both, and `imageSource` (the repo URL Admin's copy   same when it equals the repo URL now,
+ *   was last made from) is known                         differs otherwise: the repo's image changed
+ *   both, and nothing records where the copy came from   differs, so the push sends the image again
+ *
+ * FAIL CLOSED: an omitted `imageSource` is "unknown", never "same". A caller that knows the source
+ * (the re-read right after sending it) says so explicitly.
+ *
+ * @param {object} repo
+ * @param {object} live
+ * @param {string|null|undefined} imageSource
+ */
+export function imageDiffers(repo, live, imageSource) {
+  if ((repo.imageUrl === null) !== (live.imageUrl === null)) return true;
+  if (repo.imageUrl === null) return false;
+  if (repo.imageUrl === live.imageUrl) return false;
+  return typeof imageSource !== 'string' || imageSource !== repo.imageUrl;
+}
+
+/**
  * The written fields on which two projections differ, in WRITTEN_FIELDS order.
  *
  * @param {object} repo
  * @param {object} live
- * @param {{ignore?: string[]}} [options]  fields to leave out, e.g. `isPublished` for a report
+ * @param {{ignore?: string[], imageSource?: string|null}} [options]
+ *   `ignore`: fields to leave out, e.g. `isPublished` for a report. `imageSource`: the repo image URL
+ *   Admin's re-hosted copy was last made from, or null/absent when unknown (see `imageDiffers`).
  */
-export function fieldDifferences(repo, live, { ignore = [] } = {}) {
+export function fieldDifferences(repo, live, { ignore = [], imageSource = null } = {}) {
   const out = [];
   for (const field of WRITTEN_FIELDS) {
     if (ignore.includes(field)) continue;
     if (field === 'body') {
       if (!bodiesEquivalent(repo.body, live.body)) out.push(field);
+    } else if (field === 'imageUrl') {
+      if (imageDiffers(repo, live, imageSource)) out.push(field);
     } else if (field === 'tags') {
       if (JSON.stringify([...repo.tags].sort()) !== JSON.stringify([...live.tags].sort())) out.push(field);
     } else if (repo[field] !== live[field]) {

@@ -35,7 +35,16 @@ import { listBlogArticles, resolveBlog, resolveTarget } from './lib/live.mjs';
 import { fieldDifferences, liveProjection, projectionSha } from './lib/projection.mjs';
 import { READ_SCOPES } from './lib/queries.mjs';
 import { displayPath } from './lib/backups.mjs';
-import { emptyState, makeObservation, readState, resolveStateDir, stateFilePath, withObservation, writeState } from './lib/state.mjs';
+import {
+  emptyState,
+  makeObservation,
+  readState,
+  recordedImageSource,
+  resolveStateDir,
+  stateFilePath,
+  withObservation,
+  writeState,
+} from './lib/state.mjs';
 
 export const COMMAND = 'articles:pull';
 export const FLAG_SPEC = Object.freeze({ '--check': 'boolean', '--seed': 'boolean' });
@@ -82,12 +91,17 @@ export async function run(argv, ctx) {
     for (const node of nodes) {
       const repo = repoByNode.get(node.id) ?? null;
       const live = liveProjection(node);
-      const matched = repo !== null && fieldDifferences(repo.projection, live, { ignore: ['isPublished'] }).length === 0;
+      // A seed cannot learn where Admin's re-hosted image came from; it can only carry forward what
+      // an earlier observation knew, while Admin still holds that same copy. Unknown stays unknown,
+      // so the article reads as not matching and the next push sends the image again.
+      const imageSource = recordedImageSource(state?.articles?.[node.id], live.imageUrl);
+      const matched = repo !== null && fieldDifferences(repo.projection, live, { ignore: ['isPublished'], imageSource }).length === 0;
       next = withObservation(next, node.id, makeObservation({
         node,
         liveSha256: projectionSha(live),
         bodySha256: sha256(live.body),
         matchedRepoSha256: matched ? repo.sha : null,
+        imageSourceUrl: matched ? repo.projection.imageUrl : imageSource,
         now,
       }));
     }

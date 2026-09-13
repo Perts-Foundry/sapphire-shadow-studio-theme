@@ -60,6 +60,9 @@ export function backupRecord({ node, blogHandle, liveSha256, fetchedAt }) {
     author: node.author?.name ?? '',
     summary: node.summary ?? '',
     tags: Array.isArray(node.tags) ? [...node.tags] : [],
+    // `||`, NOT `??`, on purpose. `restore` is what gets copied into article.json, and articles:check
+    // refuses a "" suffix (it names templates/article..json, which cannot exist). Admin's own value,
+    // "" included, is kept verbatim under `live`. The suite pins both halves.
     templateSuffix: node.templateSuffix || null,
     seo: {
       title: node.titleTag?.value ?? '',

@@ -82,13 +82,23 @@ function operationOf(document) {
   return m === null ? null : { kind: m[1], name: m[2] };
 }
 
-function applyInput(node, input) {
+/**
+ * Where Shopify puts its copy of a featured image set by URL. Verified on the 2026-09-12 spike: the
+ * file is copied to the store's own `articles/` CDN path, so the live URL never equals the one sent.
+ */
+export function rehostedUrl(url) {
+  return `https://cdn.shopify.com/s/files/1/0000/0001/articles/${String(url).split('/').pop()}`;
+}
+
+function applyInput(node, input, { rehostImages = false } = {}) {
   const out = { ...node };
   for (const key of ['handle', 'title', 'body', 'summary', 'tags', 'templateSuffix', 'isPublished']) {
     if (Object.prototype.hasOwnProperty.call(input, key)) out[key] = structuredClone(input[key]);
   }
   if (Object.prototype.hasOwnProperty.call(input, 'author')) out.author = input.author ? { name: input.author.name } : null;
-  if (Object.prototype.hasOwnProperty.call(input, 'image')) out.image = input.image ? { url: input.image.url, altText: input.image.altText } : null;
+  if (Object.prototype.hasOwnProperty.call(input, 'image')) {
+    out.image = input.image ? { url: rehostImages ? rehostedUrl(input.image.url) : input.image.url, altText: input.image.altText } : null;
+  }
   for (const m of input.metafields ?? []) {
     if (m.namespace === 'global' && m.key === 'title_tag') out.titleTag = { value: m.value };
     if (m.namespace === 'global' && m.key === 'description_tag') out.descriptionTag = { value: m.value };
@@ -113,6 +123,7 @@ export function makeClient({
   scopes = PUSH_GRANTED,
   collections = {},
   redirects = [],
+  rehostImages = false,
 } = {}) {
   const store = new Map(articles.map((n) => [n.id, structuredClone(n)]));
   let nextId = 1000;
@@ -138,14 +149,14 @@ export function makeClient({
       }
       case 'ArticleCreate': {
         const id = `gid://shopify/Article/${nextId++}`;
-        const node = applyInput({ id, blog: { id: v.article.blogId } }, v.article);
+        const node = applyInput({ id, blog: { id: v.article.blogId } }, v.article, { rehostImages });
         store.set(id, node);
         return { articleCreate: { article: { id, handle: node.handle, isPublished: node.isPublished }, userErrors: [] } };
       }
       case 'ArticleUpdate': {
         const current = store.get(v.id);
         if (!current) return { articleUpdate: { article: null, userErrors: [{ code: 'NOT_FOUND', field: ['id'], message: 'Article not found' }] } };
-        const node = applyInput(structuredClone(current), v.article);
+        const node = applyInput(structuredClone(current), v.article, { rehostImages });
         store.set(v.id, node);
         return { articleUpdate: { article: { id: v.id, handle: node.handle, isPublished: node.isPublished }, userErrors: [] } };
       }
@@ -214,7 +225,7 @@ export function makeCtx({ root, client = null, git = null, env = {}, stateDir, b
 }
 
 /** Record the observation a pull or push would record for `node`, merged into what is there. */
-export function seedObservation(stateDir, node, { matchedRepoSha256 = null, gid = node.id } = {}) {
+export function seedObservation(stateDir, node, { matchedRepoSha256 = null, gid = node.id, imageSourceUrl = null } = {}) {
   const current = readState({ dir: stateDir }) ?? emptyState();
   const live = liveProjection(node);
   const observation = makeObservation({
@@ -222,6 +233,7 @@ export function seedObservation(stateDir, node, { matchedRepoSha256 = null, gid 
     liveSha256: projectionSha(live),
     bodySha256: sha256(live.body),
     matchedRepoSha256,
+    imageSourceUrl,
     now: NOW,
   });
   writeState({ dir: stateDir, state: withObservation(current, gid, observation) });

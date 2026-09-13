@@ -60,8 +60,10 @@ function sameArgv(a, b) {
  *        fake, or a gate the test asserts is never reached). Must carry `why`.
  * @param {string} [options.why]  required with `exhaustive: false`, so an opt-out is a sentence a
  *        reviewer reads rather than a flag someone added to make a failure go away.
+ * @param {Function} [options.onCall]  called with a copy of each argv before it is matched; its
+ *        return value is ignored.
  */
-export function makeGitFake(expectations, { exhaustive = true, why = null } = {}) {
+export function makeGitFake(expectations, { exhaustive = true, why = null, onCall = null } = {}) {
   if (!Array.isArray(expectations)) throw new TypeError('makeGitFake takes an array of expectations');
   if (!exhaustive && (typeof why !== 'string' || why.trim() === '')) {
     throw new TypeError('makeGitFake({ exhaustive: false }) needs a `why` saying which gate is deliberately not reached');
@@ -81,6 +83,9 @@ export function makeGitFake(expectations, { exhaustive = true, why = null } = {}
   const run = (root, args) => {
     const argv = [...args];
     calls.push({ root, args: argv });
+    // Observation only, never a response: a suite that orders git calls against other events (the
+    // article push's gate-order test) records them here. It cannot change what the fake answers.
+    if (typeof onCall === 'function') onCall([...argv]);
     const hit = table.find((e) => sameArgv(e.args, argv));
     if (!hit) throw new UnexpectedGitInvocation(argv, table.map((e) => e.args));
     hit.used++;

@@ -8,6 +8,7 @@ import {
   bodiesEquivalent,
   differsOnlyByTableWhitespace,
   fieldDifferences,
+  imageDiffers,
   liveProjection,
   projectionSha,
   repoProjection,
@@ -87,4 +88,25 @@ test('every written field moves the hash, and tag ORDER does not', () => {
   assert.equal(projectionSha(reordered), projectionSha(base));
   assert.deepEqual(fieldDifferences(base, reordered), []);
   assert.deepEqual(fieldDifferences(base, { ...base, isPublished: VISIBLE }, { ignore: ['isPublished'] }), []);
+});
+
+test('the featured image compares by presence and recorded source, because Shopify re-hosts it', () => {
+  const SRC = 'https://cdn.shopify.com/s/files/1/0000/0001/files/bench-overview.jpg';
+  const COPY = 'https://cdn.shopify.com/s/files/1/0000/0001/articles/bench-overview.jpg';
+  const repo = { imageUrl: SRC };
+  const cases = [
+    // [live imageUrl, imageSource, differs, why]
+    [COPY, SRC, false, 'a re-hosted copy of the recorded source is the same image'],
+    [COPY, 'https://cdn.shopify.com/s/files/1/0000/0001/files/older.jpg', true, 'the repo image changed since the copy was made'],
+    [COPY, null, true, 'an unknown source never reads as the same'],
+    [COPY, undefined, true, 'an omitted source is unknown too'],
+    [SRC, null, false, 'Admin holding the very URL needs no record'],
+    [null, SRC, true, 'the repo has an image and Admin has none'],
+  ];
+  for (const [liveUrl, imageSource, differs, why] of cases) {
+    assert.equal(imageDiffers(repo, { imageUrl: liveUrl }, imageSource), differs, why);
+    assert.deepEqual(fieldDifferences({ ...repo, tags: [] }, { imageUrl: liveUrl, tags: [] }, { ignore: WRITTEN_FIELDS.filter((f) => f !== 'imageUrl'), imageSource }), differs ? ['imageUrl'] : [], why);
+  }
+  assert.equal(imageDiffers({ imageUrl: null }, { imageUrl: COPY }, null), true, 'Admin has an image the repo does not');
+  assert.equal(imageDiffers({ imageUrl: null }, { imageUrl: null }, null), false);
 });

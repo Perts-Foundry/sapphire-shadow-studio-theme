@@ -21,6 +21,18 @@
 // itself (scripts/lib/git-fake.mjs) rather than by counting text, because a textual rule cannot
 // follow a file-level factory into the tests that call it.
 //
+// THE SECOND VERSION HAD THREE BLIND SPOTS, found in review, and each is now a planted control:
+//   - OBJECT SHORTHAND. `someGate({ root, git })` injects `git` with no colon, and the site regex
+//     only knew `git:`. A shorthand now resolves like any named value: through its declaration, one
+//     factory call at a time, to `makeGitFake`; or to a destructured parameter of the enclosing
+//     function, which passes on whatever the caller injected (and the caller's site is checked).
+//   - HELPER MODULES. Only `*.test.mjs` was read, so a fake built in a helper the tests import was
+//     never looked at. Every `.mjs` in the directory is read now; the exhaustion rule stays on test
+//     files, because a helper registers no after() hook of its own.
+//   - VACUITY. A directory with no test files, or a configured parameter name with no site anywhere,
+//     passed every rule by checking nothing. Both are failures now: a renamed parameter must be
+//     renamed here too, or this says so.
+//
 // WHY IT IS SHARED RATHER THAN COPIED. These rules first lived in
 // scripts/policies/test/test-hygiene.test.mjs. The article push injects a git runner too, under a
 // different parameter name (`git:` on its context). A copy would drift the first time either side
@@ -51,8 +63,88 @@ export function withoutComments(text) {
     .replace(/"(?:[^"\\\n]|\\.)*"/g, blank);
 }
 
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+const OPEN = '({[';
+const CLOSE = ')}]';
+
+/** The index of the bracket closing the one at `open`, or -1. Any bracket kind nests. */
+function matchingClose(source, open) {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (OPEN.includes(source[i])) depth++;
+    else if (CLOSE.includes(source[i]) && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** The index of the unmatched `(` enclosing `pos`, or -1. */
+function enclosingParen(source, pos) {
+  let depth = 0;
+  for (let i = pos - 1; i >= 0; i--) {
+    if (CLOSE.includes(source[i])) depth++;
+    else if (OPEN.includes(source[i])) {
+      if (depth === 0) return source[i] === '(' ? i : -1;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+/** The comma-separated entries at depth 0 between `open` and `close`, with their offsets. */
+function topLevelEntries(source, open, close) {
+  const out = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let i = open + 1; i <= close; i++) {
+    const c = source[i];
+    if (i === close || (c === ',' && depth === 0)) {
+      const raw = source.slice(start, i);
+      out.push({ text: raw.trim(), offset: start + (raw.length - raw.trimStart().length) });
+      start = i + 1;
+    } else if (OPEN.includes(c)) depth++;
+    else if (CLOSE.includes(c)) depth--;
+  }
+  return out;
+}
+
+const lineOf = (source, offset) => source.slice(0, offset).split('\n').length;
+
 /**
- * Every value handed to a git-runner parameter, with the line it is on.
+ * Every `{ ... }` group in the source, classified.
+ *
+ * `literal`: an object literal in expression position, whose bare identifiers are shorthand
+ * injection sites. `parameter`: a destructuring pattern in a function's parameter list, whose names
+ * are pass-throughs. Import and export clauses, `const { x } = ...` patterns and template
+ * substitutions are neither.
+ */
+function braceGroups(source) {
+  const out = [];
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] !== '{' || source[i - 1] === '$') continue;
+    const close = matchingClose(source, i);
+    if (close === -1) continue;
+    const before = source.slice(0, i).trimEnd();
+    const after = source.slice(close + 1).trimStart();
+    if (/\b(?:import|export)$/.test(before) || /^from\b/.test(after) || /^(?:of|in)\b/.test(after)) continue;
+    const paren = enclosingParen(source, i);
+    const inParams = paren !== -1 && /[(,]$/.test(before) && (() => {
+      const end = matchingClose(source, paren);
+      return end !== -1 && /^(?:=>|\{)/.test(source.slice(end + 1).trimStart());
+    })();
+    if (inParams) {
+      out.push({ kind: 'parameter', open: i, close });
+    } else if (/^=(?![=>])/.test(after)) {
+      continue;
+    } else {
+      out.push({ kind: 'literal', open: i, close });
+    }
+  }
+  return out;
+}
+
+/**
+ * Every value handed to a git-runner parameter, with the line it is on: `name: value` sites and
+ * `{ name }` shorthand sites (whose value is the identifier itself, flagged `shorthand`).
  *
  * @param {string} text
  * @param {string[]} names  the parameter names a git runner is injected under, e.g. `['gitRun', 'run']`
@@ -63,10 +155,29 @@ export function injectionSites(text, names) {
   const out = [];
   const re = new RegExp(`\\b(?:${names.join('|')})\\s*:\\s*([^,}\\n]+)`, 'g');
   for (const m of source.matchAll(re)) {
-    out.push({
-      value: m[1].trim(),
-      line: source.slice(0, m.index).split('\n').length,
-    });
+    out.push({ value: m[1].trim(), line: lineOf(source, m.index), shorthand: false });
+  }
+  for (const group of braceGroups(source)) {
+    if (group.kind !== 'literal') continue;
+    for (const entry of topLevelEntries(source, group.open, group.close)) {
+      if (IDENT.test(entry.text) && names.includes(entry.text)) {
+        out.push({ value: entry.text, line: lineOf(source, entry.offset), shorthand: true });
+      }
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
+/** Every name destructured in some function's parameter list in the file. */
+export function parameterNames(text) {
+  const source = withoutComments(text);
+  const out = new Set();
+  for (const group of braceGroups(source)) {
+    if (group.kind !== 'parameter') continue;
+    for (const entry of topLevelEntries(source, group.open, group.close)) {
+      const m = /^([A-Za-z_$][\w$]*)\s*(?:=[\s\S]*)?$/.exec(entry.text);
+      if (m) out.add(m[1]);
+    }
   }
   return out;
 }
@@ -94,7 +205,7 @@ export function leadingIdentifier(value) {
  * only question asked of it is whether `makeGitFake` appears in it.
  */
 export function bindingSource(text, name) {
-  const re = new RegExp(`(?:const|let|var|function)\\s+${name}\\b`);
+  const re = new RegExp(`(?:const|let|var|function)\\s+${name.replace(/\$/g, '\\$')}\\b`);
   const m = re.exec(text);
   if (m === null) return null;
   const rest = text.slice(m.index);
@@ -103,49 +214,105 @@ export function bindingSource(text, name) {
 }
 
 /**
+ * What a named injected value resolves to: `'fake'` (built by makeGitFake, directly or through a
+ * chain of factory calls such as `const git = cleanGit()` then `function cleanGit() { return
+ * makeGitFake(...) }`), `'parameter'` (a destructured parameter passing on the caller's value),
+ * `'undefined'` (declared nowhere in the file), or `'other'`.
+ */
+export function resolveInjected(text, id, seen = new Set()) {
+  if (id === 'makeGitFake') return 'fake';
+  if (seen.has(id) || seen.size > 5) return 'other';
+  seen.add(id);
+  const source = bindingSource(text, id);
+  if (source === null) return parameterNames(text).has(id) ? 'parameter' : 'undefined';
+  if (source.includes('makeGitFake(')) return 'fake';
+  const call = new RegExp(`(?:const|let|var)\\s+${id.replace(/\$/g, '\\$')}\\s*=\\s*(?:await\\s+)?([A-Za-z_$][\\w$]*)\\s*\\(`).exec(source);
+  if (call) return resolveInjected(text, call[1], seen);
+  return parameterNames(text).has(id) ? 'parameter' : 'other';
+}
+
+/**
+ * Every injection site in a set of files that is not the shared strict fake, as strings.
+ *
+ * @param {{files: Array<{name: string, text: string}>, names: string[]}} o
+ */
+export function injectionOffenders({ files, names }) {
+  const offenders = [];
+  for (const { name, text } of files) {
+    for (const { value, line } of injectionSites(text, names)) {
+      if (isFunctionLiteral(value)) {
+        offenders.push(`${name}:${line}: a function literal is injected directly: ${JSON.stringify(value.slice(0, 60))}`);
+        continue;
+      }
+      const id = leadingIdentifier(value);
+      if (id === null) {
+        offenders.push(`${name}:${line}: cannot tell what is injected: ${JSON.stringify(value.slice(0, 60))}`);
+        continue;
+      }
+      const resolved = resolveInjected(text, id);
+      if (resolved === 'fake' || resolved === 'parameter') continue;
+      offenders.push(
+        resolved === 'undefined'
+          ? `${name}:${line}: \`${id}\` is injected but not defined in this file`
+          : `${name}:${line}: \`${id}\` is injected but is not built by makeGitFake`,
+      );
+    }
+  }
+  return offenders;
+}
+
+/**
+ * Why a scan would prove nothing: no files read, or a configured name with no site anywhere.
+ *
+ * @param {{files: Array<{name: string, text: string}>, names: string[]}} o
+ */
+export function coverageProblems({ files, names }) {
+  const out = [];
+  if (!Array.isArray(files) || files.filter((f) => f.name.endsWith('.test.mjs')).length === 0) {
+    out.push('no test files were read, so every rule passed by checking nothing');
+  }
+  for (const n of names) {
+    if (!(files ?? []).some(({ text }) => injectionSites(text, [n]).length > 0)) {
+      out.push(`the parameter name \`${n}\` has no injection site in any file read; it is misconfigured, or production renamed it`);
+    }
+  }
+  return out;
+}
+
+/**
  * Register the hygiene tests for one test directory.
  *
  * @param {object} o
  * @param {Function} o.test          node:test's `test`
  * @param {object} o.assert          node:assert/strict
- * @param {string} o.testDir         absolute path of the directory whose *.test.mjs files are checked
+ * @param {string} o.testDir         absolute path of the directory whose .mjs files are checked
  * @param {string} o.self            the calling file's basename, which quotes the banned patterns
  * @param {string[]} o.names         the parameter names a git runner is injected under
  */
 export function registerHygieneTests({ test, assert, testDir, self, names }) {
-  function testFiles() {
+  function allFiles() {
     return readdirSync(testDir)
-      .filter((n) => n.endsWith('.test.mjs') && n !== self)
+      .filter((n) => n.endsWith('.mjs') && n !== self)
       .sort()
       .map((name) => ({ name, text: readFileSync(join(testDir, name), 'utf8') }));
   }
+  const testFiles = () => allFiles().filter((f) => f.name.endsWith('.test.mjs'));
+
+  test('the hygiene scan reads test files, and every configured parameter name has a site', () => {
+    assert.deepEqual(coverageProblems({ files: allFiles(), names }), []);
+  });
+
+  test('the coverage floor fires on an empty directory and on a name with no site', () => {
+    assert.ok(coverageProblems({ files: [], names }).some((p) => p.startsWith('no test files were read')));
+    assert.ok(coverageProblems({ files: [{ name: 'helpers.mjs', text: '' }], names }).some((p) => p.startsWith('no test files were read')), 'a helper alone is not a test file');
+    const quiet = coverageProblems({ files: [{ name: 'x.test.mjs', text: 'test(1);' }], names });
+    for (const n of names) assert.ok(quiet.some((p) => p.includes(`\`${n}\``)), `a missing site for ${n} was not reported`);
+  });
 
   test('nothing but the shared strict fake is ever injected into a git-runner parameter', () => {
     // It does not care what a fake is named; it cares what reaches the parameter. A function literal
     // is banned outright, and a named value must resolve to something built by `makeGitFake`.
-    const offenders = [];
-    for (const { name, text } of testFiles()) {
-      for (const { value, line } of injectionSites(text, names)) {
-        if (isFunctionLiteral(value)) {
-          offenders.push(`${name}:${line}: a function literal is injected directly: ${JSON.stringify(value.slice(0, 60))}`);
-          continue;
-        }
-        const id = leadingIdentifier(value);
-        if (id === null) {
-          offenders.push(`${name}:${line}: cannot tell what is injected: ${JSON.stringify(value.slice(0, 60))}`);
-          continue;
-        }
-        if (id === 'makeGitFake') continue;
-        const source = bindingSource(text, id);
-        if (source === null) {
-          offenders.push(`${name}:${line}: \`${id}\` is injected but not defined in this file`);
-          continue;
-        }
-        if (!source.includes('makeGitFake(')) {
-          offenders.push(`${name}:${line}: \`${id}\` is injected but is not built by makeGitFake`);
-        }
-      }
-    }
+    const offenders = injectionOffenders({ files: allFiles(), names });
     assert.deepEqual(
       offenders,
       [],
@@ -173,7 +340,28 @@ export function registerHygieneTests({ test, assert, testDir, self, names }) {
       const namedBypass = `const runner = (root, args) => '';\ntest('x', () => { someGate('/x', { ${param}: runner }); });`;
       const site = injectionSites(namedBypass, names).at(-1);
       assert.equal(site.value, 'runner');
-      assert.equal(bindingSource(namedBypass, 'runner').includes('makeGitFake('), false, 'the bypass would be accepted');
+      assert.equal(injectionOffenders({ files: [{ name: 'x.test.mjs', text: namedBypass }], names }).length, 1, 'the bypass would be accepted');
+
+      // OBJECT SHORTHAND: the same bypass with no colon, and through a factory that is not the fake.
+      const shorthand = `const ${param} = (root, args) => '';\ntest('x', () => { someGate('/x', { root, ${param} }); });`;
+      assert.deepEqual(injectionSites(shorthand, names).map((s) => [s.value, s.shorthand]), [[param, true]], `shorthand not seen: ${shorthand}`);
+      assert.equal(injectionOffenders({ files: [{ name: 'x.test.mjs', text: shorthand }], names }).length, 1, 'a shorthand bypass would be accepted');
+      const viaFactory = `function loose() { return () => ''; }\ntest('x', () => { const ${param} = loose();\n  someGate({ ${param} }); });`;
+      assert.equal(injectionOffenders({ files: [{ name: 'x.test.mjs', text: viaFactory }], names }).length, 1, 'a shorthand through a non-fake factory would be accepted');
+
+      // The sanctioned shorthand forms: a fake through a factory, and a parameter passed through.
+      const sanctioned = [
+        `function strict() { return makeGitFake([]); }\ntest('x', () => { const ${param} = strict();\n  someGate({ root, ${param} }); });`,
+        `function setup({ root, ${param}, other = {} } = {}) {\n  return build({ root, ${param} });\n}`,
+        `const setup = async ({ ${param} }) => build({ ${param} });`,
+      ];
+      for (const text of sanctioned) {
+        assert.deepEqual(injectionOffenders({ files: [{ name: 'x.test.mjs', text }], names }), [], `sanctioned form flagged: ${text}`);
+      }
+      // Clauses that only look like shorthand are not sites at all.
+      for (const text of [`import { ${param} } from '../x.mjs';`, `import {\n  a,\n  ${param},\n} from '../x.mjs';`, `const { ${param} } = thing;`, `export { ${param} };`, `const s = \`\${${param}}\`;`]) {
+        assert.deepEqual(injectionSites(text, names), [], `not a site: ${text}`);
+      }
     }
 
     // The sanctioned forms must NOT be flagged, or the rule is just noise.
@@ -182,16 +370,19 @@ export function registerHygieneTests({ test, assert, testDir, self, names }) {
     }
   });
 
-  test('every test file that injects a git runner imports the shared fake', () => {
+  test('every file that injects a git runner of its own imports the shared fake', () => {
+    // A file whose only sites pass a caller's value through (a context builder in a helper) builds
+    // no runner, so it need not import the fake; the caller's own site is what gets checked.
     const offenders = [];
-    for (const { name, text } of testFiles()) {
-      if (injectionSites(text, names).length === 0) continue;
+    for (const { name, text } of allFiles()) {
+      const own = injectionSites(text, names).filter((s) => resolveInjected(text, leadingIdentifier(s.value) ?? '') !== 'parameter');
+      if (own.length === 0) continue;
       if (!/\bmakeGitFake\b/.test(text)) offenders.push(name);
     }
     assert.deepEqual(offenders, [], `these files inject a git runner but never import makeGitFake:\n${offenders.join('\n')}`);
   });
 
-  test('every file that builds git fakes asserts, at runtime, that all of them were exhausted', () => {
+  test('every test file that builds git fakes asserts, at runtime, that all of them were exhausted', () => {
     // A strict fake catches an argv nobody expected; it cannot catch an expectation nobody used,
     // which is what a silently removed gate looks like.
     const offenders = [];

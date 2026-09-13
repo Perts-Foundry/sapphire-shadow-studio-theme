@@ -7,6 +7,7 @@
 
 import { BLOG_HANDLE } from './articles.mjs';
 import { ArticleError } from './context.mjs';
+import { bodiesEquivalent, liveProjection } from './projection.mjs';
 import { ARTICLES_BLOGS, ARTICLES_LIST, ARTICLE_READ } from './queries.mjs';
 
 /** 20 pages of 100 is 2000 articles. A blog past that is a surprise worth stopping on. */
@@ -107,4 +108,28 @@ export function resolveTarget(liveNodes, article) {
   if (current.length === 1) return { kind: 'update', node: current[0], renamed: false };
   if (previous.length === 1) return { kind: 'update', node: previous[0], renamed: true };
   return { kind: 'create', node: null, renamed: false };
+}
+
+/**
+ * The live article a create would duplicate, or null.
+ *
+ * A directory renamed without recording `previousHandles` resolves to a create, and the post it was
+ * renamed from is still live. What identifies that post is CONTENT, not the fact that it is unclaimed:
+ * a live article no repo directory claims, whose title equals this article's or whose body is
+ * equivalent to it. An unclaimed live article with a different title and body is some other post and
+ * is not this function's business.
+ *
+ * @param {object[]} liveNodes
+ * @param {object} repoProjection  the article about to be created
+ * @param {Set<string>} claimed    every handle a repo directory claims, previous handles included
+ * @returns {{handle: string, id: string, matched: 'title'|'body'}|null}
+ */
+export function unrecordedRenameOf(liveNodes, repoProjection, claimed) {
+  for (const node of liveNodes) {
+    if (claimed.has(node.handle)) continue;
+    const live = liveProjection(node);
+    if (live.title !== null && live.title === repoProjection.title) return { handle: node.handle, id: node.id, matched: 'title' };
+    if (repoProjection.body !== '' && bodiesEquivalent(live.body, repoProjection.body)) return { handle: node.handle, id: node.id, matched: 'body' };
+  }
+  return null;
 }
