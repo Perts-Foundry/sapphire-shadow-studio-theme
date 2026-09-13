@@ -12,12 +12,16 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 import { buildManifest, formatManifest } from '../reindex.mjs';
 import { META_FIELDS, metaSha256 } from '../lib/articles.mjs';
 import {
+  HANDLE,
+  TEST_DIR,
   cleanRoot,
   cleanup,
   madeRoots,
@@ -30,11 +34,21 @@ import {
 
 const TEMP_ROOT = statSync(tmpdir()).isDirectory() ? tmpdir() : null;
 
+/**
+ * Roots this file builds itself, outside the helper's registry.
+ *
+ * The CLI cases need a tree the helper cannot produce, namely a deliberately unreadable one, so they
+ * are created here. They are registered here too and go through the SAME temp-root guard below: a
+ * root that skipped it would be the one path in this suite able to write outside the temp directory.
+ */
+const brokenRoots = [];
+
 after(() => {
   assert.ok(TEMP_ROOT, 'no usable temp directory');
-  const roots = madeRoots();
+  const roots = [...madeRoots(), ...brokenRoots];
   assert.ok(roots.length > 0, 'the temp-root guard ran before anything was created, so it checked nothing');
   for (const root of roots) assert.ok(root.startsWith(TEMP_ROOT), `${root} is not under the temp root`);
+  for (const root of brokenRoots) rmSync(root, { recursive: true, force: true });
   cleanup();
 });
 
@@ -115,4 +129,67 @@ test('a stale manifest is drift, and rewriting it is not', () => {
   manifest.articles[handle].bodyLength = 1;
   writeManifestFile(root, manifest);
   assert.notEqual(formatManifest(buildManifest(root)), `${JSON.stringify(readManifestFile(root), null, 2)}\n`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The exit-code contract, exercised through the CLI
+// ---------------------------------------------------------------------------------------------
+
+/** Run the real command against a root, and return what a caller would see. */
+function runReindex(root, extra = []) {
+  const script = join(TEST_DIR, '..', 'reindex.mjs');
+  const run = spawnSync(process.execPath, [script, '--root', root, ...extra], { encoding: 'utf8' });
+  return { status: run.status, stdout: run.stdout ?? '', stderr: run.stderr ?? '' };
+}
+
+test('--check exits EXACTLY 2 on drift, and exactly 1 when it cannot run', () => {
+  // The header of reindex.mjs calls this contract load-bearing, and until now nothing exercised it:
+  // every other test in this file calls buildManifest and formatManifest directly, so the whole of
+  // main() and its three exit codes were unreached. Asserting "non-zero" would rebuild the same gap
+  // in a new shape, because collapsing 2 into 1 is the exact confusion the contract exists to stop:
+  // a caller that cannot tell a stale manifest from an unreadable checkout tells the operator to run
+  // a command that cannot help them.
+  const clean = cleanRoot();
+  const current = runReindex(clean, ['--check']);
+  assert.equal(current.status, 0, `a current manifest must exit 0:\n${current.stderr}`);
+  assert.match(current.stdout, /manifest\.json is current/);
+
+  const drifted = cleanRoot();
+  const manifest = readManifestFile(drifted);
+  manifest.articles[Object.keys(manifest.articles)[0]].bodyLength = 1;
+  writeManifestFile(drifted, manifest);
+  const stale = runReindex(drifted, ['--check']);
+  assert.equal(stale.status, 2, `drift must exit 2, not merely non-zero:\n${stale.stderr}`);
+  assert.match(stale.stderr, /manifest\.json is stale/);
+
+  // An unreadable tree is a different fact and gets a different code. `marketing/articles` is made
+  // a FILE rather than a directory, deliberately: a MISSING directory is not an error at all, since
+  // the builder returns an empty manifest for it, which then reads as drift and exits 2. The only
+  // way to reach the failure branch on purpose is a path that exists and cannot be read as a
+  // directory. Permissions are the other route and are worse, because they do not behave the same
+  // way when the suite runs as root, which it does in CI.
+  const broken = mkdtempSync(join(tmpdir(), 'articles-broken-'));
+  brokenRoots.push(broken);
+  mkdirSync(join(broken, 'marketing'), { recursive: true });
+  writeFileSync(join(broken, 'marketing', 'articles'), 'not a directory', 'utf8');
+  const unreadable = runReindex(broken, ['--check']);
+  assert.equal(unreadable.status, 1, `an unreadable tree must exit 1, not 2:\n${unreadable.stderr}`);
+});
+
+test('a write run rewrites a drifted manifest and then reports itself current', () => {
+  // The other half of the same surface: --check must never write, and the write path must leave the
+  // tree in the state --check calls current. Nothing reached either through the CLI before.
+  const root = cleanRoot();
+  const manifest = readManifestFile(root);
+  manifest.articles[Object.keys(manifest.articles)[0]].bodyLength = 1;
+  writeManifestFile(root, manifest);
+
+  const checked = runReindex(root, ['--check']);
+  assert.equal(checked.status, 2);
+  assert.equal(readManifestFile(root).articles[HANDLE].bodyLength, 1, '--check wrote to the manifest');
+
+  const written = runReindex(root);
+  assert.equal(written.status, 0, written.stderr);
+  assert.match(written.stdout, /manifest\.json rewritten/);
+  assert.equal(runReindex(root, ['--check']).status, 0, 'a rewritten manifest is not current');
 });
