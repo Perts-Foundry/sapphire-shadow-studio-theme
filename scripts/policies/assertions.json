@@ -47,7 +47,7 @@
       ]
     },
     "terms_of_service": {
-      "coreSha256": "f1e8b986e45dcb3fef757646ed5beb11e8a7847cfb073979810257db51cb1646",
+      "coreSha256": "0adecb321349ccd84ac6ad5e15c217b565f559aba2e1ddff707d632ec5b334b4",
       "must": [
         "(540) 300-5229",
         "href=\"/policies/refund-policy\"",
@@ -58,9 +58,19 @@
         "<h2>Prices and Billing</h2>",
         "<h2>Termination</h2>",
         "<h2>Contact Information</h2>",
-        "<h3>Photography and Promotion</h3>",
-        "Intellectual Property, Feedback, Custom Orders, Termination,",
-        "before you pay for the order, that you object"
+        "<h2>Use of Finished Work</h2>",
+        "<h3>Marketing Use</h3>",
+        "Intellectual Property, Feedback, Custom Orders, Use of Finished Work, Termination,",
+        "royalty-free, transferable and sublicensable license",
+        "tell us in writing before your order ships",
+        "does not limit our use of your finished piece under Use of Finished Work",
+        "other than Use of Finished Work, this section governs the custom order",
+        "irrevocable, worldwide, royalty-free, transferable and sublicensable license to reproduce it",
+        "may be distributed to its members",
+        "Some products can be personalized at checkout",
+        "not by this Feedback license",
+        "form part of that agreement and are not superseded by it",
+        "in effect when it was placed"
       ],
       "mustNot": [
         "[INSERT TRADING NAME]",
@@ -73,7 +83,12 @@
         "<strong>SECTION ",
         "<strong>OVERVIEW</strong>",
         "<br>",
-        "Intellectual Property, Feedback, Termination,"
+        "Intellectual Property, Feedback, Termination,",
+        "Intellectual Property, Feedback, Custom Orders, Termination,",
+        "<h3>Photography and Promotion</h3>",
+        "before you pay for the order, that you object",
+        "conflicts with another section, this section governs",
+        "non-exclusive, perpetual, worldwide, royalty-free license"
       ]
     }
   }

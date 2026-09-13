@@ -253,10 +253,10 @@
       "handle": "terms-of-service",
       "writable": true,
       "stamped": true,
-      "version": 4,
-      "coreSha256": "f1e8b986e45dcb3fef757646ed5beb11e8a7847cfb073979810257db51cb1646",
-      "sha256": "3da6686b974877629200ce67ff7919d3a6c5a6a1fa693892c8f9a467ba94c2cc",
-      "length": 26262,
+      "version": 6,
+      "coreSha256": "0adecb321349ccd84ac6ad5e15c217b565f559aba2e1ddff707d632ec5b334b4",
+      "sha256": "b166fc6ab41c8e1d10fd8a3f55335c1891eb7e62e044c7cd525f9b754b1dd3ff",
+      "length": 28604,
       "headings": [
         {
           "level": 2,
@@ -315,8 +315,13 @@
         },
         {
           "level": 3,
-          "text": "Photography and Promotion",
+          "text": "Marketing Use",
           "id": null
+        },
+        {
+          "level": 2,
+          "text": "Use of Finished Work",
+          "id": "use-of-finished-work"
         },
         {
           "level": 2,

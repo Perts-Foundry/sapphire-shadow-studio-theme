@@ -28,7 +28,7 @@
     "/policies/* pages itself inside layout/theme.liquid, which renders",
     "snippets/policy-page.liquid there, and assets/policy-nav.js branches on the",
     "Admin-authored bodies this repo does not control: it builds the jump nav",
-    "only at 3 or more h2s. Refund (9 h2s), terms of service (25) and privacy (13)",
+    "only at 3 or more h2s. Refund (9 h2s), terms of service (26) and privacy (13)",
     "take the nav branch; contact information has none and takes the hidden one.",
     "So refund covers the nav, contact information covers the nav-hidden branch",
     "(terms of service held that role until it gained sections), and privacy is",

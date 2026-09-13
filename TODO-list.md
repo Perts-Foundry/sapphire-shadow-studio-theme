@@ -67,6 +67,12 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
 - **Import the property into Bing Webmaster Tools from Search Console.** The import reuses the
   existing Search Console verification, so it needs no new DNS record.
 
+- **Give standard orders a visible notice of the Use of Finished Work licence.** Custom orders
+  see it in the quote email, but checkout orders only meet it inside the Terms of Service linked at
+  checkout. Add a one-line notice linking `/policies/terms-of-service#use-of-finished-work` on
+  personalized product pages and in the order confirmation notification (`marketing/notifications/`),
+  and decide whether a checkout acknowledgement is worth adding.
+
 - **Set up a Pinterest business account with the Pinterest for Shopify app, and claim the
   domain.** Add the Pinterest profile to the Organization `sameAs` once it exists; read
   `docs/structured-data.md` first.
