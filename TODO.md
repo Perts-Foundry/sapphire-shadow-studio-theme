@@ -35,18 +35,61 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   **Record the vocabulary only.** No counts, run ids or timestamps from the live store go into any
   file, including as an illustration.
 
+- [ ] **Move the `search-console` skill onto the Search Console API if a Cloud project is ever
+  approved.** Every run is attended today because the operator declined a Google Cloud project. The
+  upgrade is a project with a service account granted `webmasters.readonly` on the property, the
+  CrUX API for Core Web Vitals, and scheduled unattended runs. The audit checklist in
+  `.claude/skills/search-console/audit.md` and the capture schema in
+  `scripts/search-console/lib/schema.mjs` carry over; only the browser pass is replaced, by API reads
+  that fill the same capture.
+
+- [ ] **Raise or paginate the variant query cap in `scripts/seo-review/admin.mjs`.**
+  `admin-read-truncated` fired for both Lead II products on 2026-09-13, so the stored-field audit is
+  not reading every variant of the two largest products.
+
+- [ ] **Add a blog-discoverability check to `seo-review`.** Once articles are visible, flag a blog
+  that no main-menu or footer link reaches; a blog found only through the sitemap earns little crawl
+  attention and no visitor path.
+
 ## Product and storefront
 
 - [ ] **Fix the low stock alert flow to handle gift cards. Gift card should be excluded.**
 - [ ] **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
 - [ ] **Update the inventory.**
 - [ ] **Deploy the Checkly infrastructure PR so there are checks against the store.**
+- [ ] **Install the Google & YouTube sales channel and turn on Merchant Center free listings.**
+  Products then appear in Google's free shopping surfaces, and Search Console gains a Merchant Center
+  association to audit.
+- [ ] **Link GA4 through the Google & YouTube channel, then associate it in Search Console.** The
+  association lives at Settings > Associations; the `search-console` skill reports it missing until
+  then.
+- [ ] **Import the property into Bing Webmaster Tools from Search Console.** The import reuses the
+  existing Search Console verification, so it needs no new DNS record.
+- [ ] **Set up a Pinterest business account with the Pinterest for Shopify app, and claim the
+  domain.** Add the Pinterest profile to the Organization `sameAs` once it exists; read
+  `docs/structured-data.md` first.
+- [ ] **Turn on the Meta and TikTok channel pixels.** Install each through its Shopify sales channel
+  rather than a theme snippet, so the theme carries no third-party script of its own.
+- [ ] **Align the homepage title and meta description with the nurse, medic and EMS niche.** Admin
+  > Online Store > Preferences holds them; `snippets/meta-tags.liquid` holds the fallbacks.
+  `perf-brand-only` in a `search-console` run is the signal that this is overdue.
+- [ ] **Link the blog from the main menu or the footer.** Read `docs/theme-settings-contracts.md`
+  before editing a menu in Admin.
+- [ ] **Revisit the About page H1 alongside the homepage positioning.** It was listed as a content gap
+  during the Search Console setup walk on 2026-09-13; check what it says against the niche wording
+  before changing it.
+- [ ] **Write meta descriptions for the five policy pages and the blog listing.** Find where each
+  description is set before writing (an Admin SEO field, or the fallbacks in
+  `snippets/meta-tags.liquid`); the policy bodies themselves belong to the `shop-policies` skill.
 - [ ] **When the first Judge.me review is published and visible on a product page, decide which
   Product JSON-LD node owns the page.** Run `seo-review` and Google's Rich Results test on that
   page; the two candidate owners are the theme's `structured_data` output and the app's rich
   snippets. Present the evidence and let the operator choose. Do not edit or suppress the app block,
   and do not silence `jsonld-product-duplicate`; a theme-side change happens only if the operator
-  picks the theme as owner. Reasoning in the Judge.me readiness entry in `release-notes.md`.
+  picks the theme as owner. Reasoning in the Judge.me readiness entry in `release-notes.md`. The
+  duplicate Product node is live on `/products/lead-ii-vest-womens` as of 2026-09-13, and the
+  `search-console` skill's Enhancements capture (`enhancement-product-duplicate-evidence`) is the
+  evidence source for which node Google reads.
 - [ ] **When the first ratings exist, add a `review` block to the static product-card children in
   `templates/collection.json` and `templates/index.json`** (inside the `_product-card` block's
   children, beside the product-title and price blocks). It renders nothing until the app writes the

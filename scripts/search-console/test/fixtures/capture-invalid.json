@@ -1,0 +1,29 @@
+{
+  "schema": 2,
+  "mode": "audit",
+  "property": "sc-domain:sapphireshadowstudio.com",
+  "property_added": "2026-09-13",
+  "captured_at": "2026-12-01T09:00:00",
+  "nonce": "X",
+  "extra": true,
+  "reports": {
+    "settings": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "settings",
+      "status": "ok",
+      "property_type": "domain",
+      "verified": true,
+      "method": "Domain name provider",
+      "owners": -1,
+      "users": 1,
+      "unused_tokens": 0,
+      "ownership_events": 1,
+      "change_of_address_set": false,
+      "bulk_export_configured": false,
+      "ai_control": "include",
+      "email_notifications": true
+    },
+    "cwv": { "captured_at": "2026-12-01T09:00:00-05:00", "report": "cwv", "status": "not-ready", "mobile": "no-data" },
+    "bogus": { "captured_at": "2026-12-01T09:00:00-05:00", "report": "bogus", "status": "ok" }
+  }
+}

@@ -106,8 +106,9 @@ once, so none is optional:
 This skill does NOT: write to Admin, the store, or any Shopify resource (no SEO fields, no
 metafields, nothing); edit theme code or templates; commit, push, open a PR, or comment `deploy`
 (all git actions are the operator's); do keyword research, strategy, or copywriting (that is
-judgment work the operator iterates on); touch Google Search Console or Bing Webmaster Tools
-(operator accounts); or replace the pre-PR review gate for theme changes.
+judgment work the operator iterates on); read Google Search Console (the `search-console` skill
+does that, in an attended browser session) or touch Bing Webmaster Tools (an operator account); or
+replace the pre-PR review gate for theme changes.
 
 ## Repo rules that must hold
 

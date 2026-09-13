@@ -234,6 +234,15 @@ byte-identical:
 - **`CI` set is an absolute refusal**: never unset, empty, shadow or override it.
 <!-- articles-rules:end -->
 
+### Search Console
+
+The `search-console` skill audits Google Search Console and reads its reports read-only, through the
+operator's logged-in browser in an attended session, and writes nothing to Search Console, the store
+or the repo. Its browser consent STOP and its Google sign-in STOP are in
+`.claude/skills/search-console/SKILL.md`, so read that before opening Search Console. Commands, the
+capture schema, the check table and the state dir are in `scripts/search-console/README.md`.
+Captures and run files hold live property data and search query text, and never enter the repo.
+
 ## Shopify MCP tools and limits
 
 Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Admin API scopes change over time, so verify a scope before relying on a write capability rather than assuming a fixed set; the full gap list is `docs/shopify-mcp-notes.md`. Prefer `validate_theme_codeblocks` over guessing whether a schema, filter, or tag is valid.

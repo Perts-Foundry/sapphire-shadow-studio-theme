@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url><loc>https://shop.example.test/products/sample-crewneck</loc><image:image><image:loc>https://cdn.example.test/a.jpg</image:loc></image:image></url>
+  <url><loc>https://shop.example.test/products/sample-quarter-zip</loc></url>
+  <url><loc>https://shop.example.test/products/sample-vest</loc></url>
+  <url><loc>https://shop.example.test/products/sample-tote</loc></url>
+  <url><loc>https://shop.example.test/products/sample-hoodie</loc></url>
+  <url><loc>https://shop.example.test/products/sample-tee</loc></url>
+  <url><loc>https://shop.example.test/products/sample-cap</loc></url>
+  <url><loc>https://shop.example.test/products/sample-mug</loc></url>
+  <url><loc>https://shop.example.test/products/sample-gift-card</loc></url>
+  <url><loc>https://shop.example.test/products/sample-beanie</loc></url>
+  <url><loc>https://shop.example.test/products/sample-crewneck</loc></url>
+</urlset>

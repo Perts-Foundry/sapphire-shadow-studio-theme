@@ -1,5 +1,86 @@
 # Release Notes
 
+## Search Console skill: browser-first, read-only (unreleased, 2026-09-13)
+
+Google Search Console is verified for the storefront (a Domain property, verified through the domain
+name provider), and nothing in the repo read it. Two decisions were parked on its data: collection
+canonical clustering and the Judge.me Product JSON-LD owner. The `search-console` skill
+(`.claude/skills/search-console/`, `scripts/search-console/`) now reads it. This entry records the
+decisions so a later session does not reopen them.
+
+**No Cloud project, so no API, so every run is attended.** The operator declined a Google Cloud
+project: no service account, no OAuth, no Search Console or CrUX API. The skill reads the reports in
+the operator's logged-in MCP browser, and a Google sign-in or account-chooser page is a STOP, never
+something to work around; signing in and relaunching the profile without automation flags are the
+operator's hand steps (`docs/browser-testing.md`). The API upgrade is a `TODO.md` item, and the audit
+checklist and capture schema are shaped to carry over to it.
+
+**Transcription, not scraping, with the schema as the guard.** Claude reads accessibility snapshots
+and writes a capture JSON. Nothing evaluates script in the page and nothing depends on a selector:
+Search Console's DOM is unversioned, so anchors are visible text. The failure mode of transcription is
+a plausible wrong number, so the schema rejects unknown keys at every depth and checks the invariants a
+real report satisfies: clicks within impressions, ctr agreeing with clicks over impressions, reason
+counts summing to the not-indexed total, device and country impressions within the total. A
+normaliser converts page text ("3.2%", "1,234", "<0.1%", reason labels) before validation and refuses
+abbreviated counts ("1.2K"), which are ranges rather than numbers.
+
+**Save always, compare per report.** On day one every data report read "Processing data". A whole-run
+diff would call the day a report comes alive a wave of new findings, and a report dropping back to
+not-ready a mass resolution. So every valid run is saved, an all-not-ready one included; each report
+is diffed only against the newest run of the same mode in which it was ok; a report that is not ok is
+listed as not compared, never as resolved; and performance compares only across equal periods. Exit
+is 1 on any fresh ERROR, not only on new ones, because a Search Console error (a manual action, a
+noindexed product) should keep blocking until it is fixed or accepted.
+
+**What never enters a capture or the repo.** Page URLs lose query strings and fragments. Customer and
+token routes (`checkouts`, `account`, `orders`, `cart/c`, matched as whole segments anywhere in the
+path, because a checkout URL is often prefixed with the shop id) and token-shaped path segments are
+refused outright. The token rule counts letters, digits and underscores only, and only a run that
+carries a digit or a capital: a first draft counted hyphens too, which would have refused public
+product handles such as the gift card's, and the pre-PR review found that a bare length rule refused
+Shopify's own `sitemap_collections_1.xml`, so child sitemap names are exempt by shape. A partial
+live sitemap read still proves the URLs it listed; only a URL's absence and the count stay unknown. Users are
+counted by role, never named, and any email-shaped string fails the capture. Performance findings are
+keyed by page, never by query, and query text never goes into a repo file. The state dir is refused
+when it resolves inside the worktree or the primary checkout, through symlinks either way, because
+`.claude/worktrees/` sits inside the primary checkout and a path outside one can be inside the other.
+
+**Age-gated severities.** A young property legitimately has no robots.txt fetch, only brand queries,
+and sitemap pages with no impressions. Those checks stay informational until `ROBOTS_GRACE_DAYS`,
+`PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS` and `BRAND_ONLY_MIN_AGE_DAYS` pass, measured from the date the
+property was added, and page-level impression checks do not run at all while total impressions are
+zero.
+
+**A narrow browser.** The MCP tool allowlist has no script evaluation and no init script. Clicks are
+limited to navigation, tabs, radios, pagers, expanders and the Messages bell; typing is limited to the
+URL inspection box; a never-click list names every control that changes Search Console. Any host other
+than Search Console is closed unvisited. The login STOP and the data-not-instructions rule are
+byte-identical in `SKILL.md` and `browser.md`, held so by `scripts/search-console/test/contract.test.mjs`.
+
+**Self-discovery without self-editing.** Search Console grows reports and settings; Insights,
+Achievements and the Search generative AI control were all present on the first walk. Every run
+inventories the navigation, settings rows, tabs, controls and labels it sees and compares them with
+`KNOWN_SURFACES`; new and missing items are informational findings routed to a reviewed PR that also
+adds the `audit.md` entry and a fixture. The skill never edits its own files during a run: a
+vocabulary a run could extend would accept whatever a page claimed. A review is due 90 days after
+`KNOWN_SURFACES_REVIEWED_ON`, a date in code, so the review is dated by the PR that did it rather than
+by run-file metadata.
+
+**The first run's shape.** On 2026-09-13 the property was hours old: the sitemap index had been read
+once, no manual actions or security issues were listed, a welcome message was unread, and every data
+report was still processing. `capture-preindex.json` is that shape with synthetic numbers, and it
+raises nothing above INFO.
+
+**What the first attended run corrected.** Four things the design got wrong met the live property.
+Core Web Vitals' "Not enough usage data" is a per-device value inside an ok report, not a not-ready
+report; the capture procedure had called it not-ready, which made `cwv-no-data` unreachable. The
+robots.txt row stays readable while Crawl stats has no data, and a not-ready crawl-stats report had
+been throwing that state away; it is now an ok report with host status no-data and null counts.
+`enhancement-absent` fired while the Enhancements section did not yet exist, although the product
+inspection already listed Product snippets, Merchant listings and Review snippets, so it now judges
+only a present report. And a User settings sub-page (Search Console in Search results) was new to
+`KNOWN_SURFACES`, which is the discovery loop doing its job.
+
 ## High-variant audit: the request dialog stops reading `product.variants` (unreleased, 2026-09-13)
 
 Admin began showing "Your theme may not be compatible with products with over 250 variants" on the

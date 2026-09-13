@@ -63,6 +63,10 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
 - `seo-review/`: read-only SEO regression checks (storefront crawl, anonymous public-surface
   check, Admin stored-field audit) with baseline diffing. Driven by the `seo-review` Claude
   skill. See [`seo-review/README.md`](seo-review/README.md).
+- `search-console/`: read-only Google Search Console audit. Validates, checks and diffs a capture
+  that the `search-console` skill transcribes from the operator's logged-in browser; no API, no
+  credentials, never writes inside the checkout. See
+  [`search-console/README.md`](search-console/README.md).
 - `applique-grid/`: turn applique fabric photos into the Huddle Crewneck's numbered pattern
   chart gallery images and keep the pattern dropdown, the live media, and the committed registry
   (`applique-grid/patterns.json`) in agreement. Writes to the **live store** through gated
@@ -166,6 +170,10 @@ as the policies pair.
 `STORE_PW`, which wins when both are set. Delete it at public launch. Optional, site-check only:
 `SITE_CHECK_STATE_DIR` (baseline dir, default `~/.local/state/site-check`), `LIVE_THEME_ID` and
 `BASE_URL` (a preview run).
+
+`search-console/` needs no credentials and reads no `.env` key. Optional: `SEARCH_CONSOLE_STATE_DIR`
+(captures and run files, default `~/.local/state/search-console`, honouring `XDG_STATE_HOME`); a
+value that resolves inside the checkout is refused.
 
 `.env.example` records those names with no values. Rules that go with it:
 

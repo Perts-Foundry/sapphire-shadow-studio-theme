@@ -1,0 +1,674 @@
+{
+  "schema": 1,
+  "mode": "audit",
+  "property": "sc-domain:sapphireshadowstudio.com",
+  "property_added": "2026-09-13",
+  "captured_at": "2026-12-01T09:00:00-05:00",
+  "nonce": "problems01",
+  "reports": {
+    "settings": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "settings",
+      "status": "ok",
+      "property_type": "url-prefix",
+      "verified": false,
+      "method": "Domain name provider",
+      "owners": 2,
+      "users": 5,
+      "unused_tokens": 0,
+      "ownership_events": 2,
+      "change_of_address_set": true,
+      "bulk_export_configured": false,
+      "ai_control": "exclude",
+      "email_notifications": false
+    },
+    "associations": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "associations",
+      "status": "ok",
+      "services": [
+        "analytics",
+        "merchant-center"
+      ],
+      "pending": 0
+    },
+    "crawl-stats": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "crawl-stats",
+      "status": "ok",
+      "robots_state": "error",
+      "host_status": "issues",
+      "requests": 500,
+      "share_5xx": 0.03,
+      "share_4xx": 0.08
+    },
+    "removals": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "removals",
+      "status": "ok",
+      "temporary_active": 1,
+      "outdated_active": 0,
+      "safesearch_active": 0,
+      "temporary_urls": [
+        "https://sapphireshadowstudio.com/pages/about"
+      ]
+    },
+    "messages": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "messages",
+      "status": "ok",
+      "unread": 0,
+      "total": 1,
+      "subjects": [
+        "Welcome to Search Console"
+      ]
+    },
+    "sitemaps": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "sitemaps",
+      "status": "ok",
+      "rows": [
+        {
+          "path": "https://sapphireshadowstudio.com/sitemap.xml",
+          "type": "Sitemap index",
+          "status": "Success",
+          "discovered_pages": 30,
+          "discovered_videos": 0,
+          "submitted": "2026-09-13",
+          "last_read": "2026-11-25"
+        },
+        {
+          "path": "https://sapphireshadowstudio.com/sitemap_products_1.xml",
+          "type": "Sitemap",
+          "status": "Has errors",
+          "discovered_pages": 7,
+          "discovered_videos": 0,
+          "submitted": "2026-09-13",
+          "last_read": "2026-11-25"
+        }
+      ]
+    },
+    "indexing-pages": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "indexing-pages",
+      "status": "ok",
+      "indexed": 9,
+      "not_indexed": 11,
+      "reasons": [
+        {
+          "reason": "noindex",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/blogs/shift-notes"
+          ]
+        },
+        {
+          "reason": "noindex",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/pages/faq"
+          ]
+        },
+        {
+          "reason": "crawled-not-indexed",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/pages/contact"
+          ]
+        },
+        {
+          "reason": "duplicate-no-canonical",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/collections/featured"
+          ]
+        },
+        {
+          "reason": "duplicate-google-chose-different",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/collections/all-apparel"
+          ]
+        },
+        {
+          "reason": "not-found",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/pages/size-guide"
+          ]
+        },
+        {
+          "reason": "soft-404",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/products/huddle-crewneck"
+          ]
+        },
+        {
+          "reason": "blocked-robots",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/products/shift-fuel-tote"
+          ]
+        },
+        {
+          "reason": "server-error",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/collections/the-vitals-collection"
+          ]
+        },
+        {
+          "reason": "forbidden",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/products/lead-ii-quarter-zip"
+          ]
+        },
+        {
+          "reason": "other-4xx",
+          "source": "Website",
+          "count": 1,
+          "examples": [
+            "https://sapphireshadowstudio.com/blogs/shift-notes/first-post"
+          ]
+        }
+      ]
+    },
+    "inspections": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "inspections",
+      "status": "ok",
+      "items": [
+        {
+          "url": "https://sapphireshadowstudio.com/",
+          "verdict": "on-google",
+          "indexed": true,
+          "user_canonical": "https://sapphireshadowstudio.com/",
+          "google_canonical": "https://sapphireshadowstudio.com/",
+          "last_crawl": "2026-11-28T08:00:00Z",
+          "crawled_as": "Googlebot smartphone",
+          "crawl_allowed": true,
+          "page_fetch": "Failed: Server error (5xx)",
+          "indexing_allowed": true,
+          "discovery": [
+            "Sitemaps"
+          ],
+          "videos": 1,
+          "sections": [
+            "Page indexing",
+            "Discovery",
+            "Crawl",
+            "Indexing",
+            "Video indexing",
+            "Enhancements & Experience"
+          ],
+          "rich_results": []
+        },
+        {
+          "url": "https://sapphireshadowstudio.com/products/lead-ii-vest-womens",
+          "verdict": "not-on-google",
+          "indexed": false,
+          "user_canonical": "https://sapphireshadowstudio.com/products/lead-ii-vest-womens",
+          "google_canonical": "https://sapphireshadowstudio.com/products/lead-ii-crewneck",
+          "last_crawl": "2026-11-26T10:30:00Z",
+          "crawled_as": "Googlebot smartphone",
+          "crawl_allowed": true,
+          "page_fetch": "Successful",
+          "indexing_allowed": true,
+          "discovery": [
+            "Sitemaps"
+          ],
+          "videos": 0,
+          "sections": [
+            "Page indexing",
+            "Discovery",
+            "Crawl",
+            "Indexing",
+            "Enhancements & Experience"
+          ],
+          "rich_results": [
+            "Product snippets",
+            "Merchant listings",
+            "Breadcrumbs"
+          ]
+        },
+        {
+          "url": "https://sapphireshadowstudio.com/collections/healthcare-collection",
+          "verdict": "on-google",
+          "indexed": true,
+          "user_canonical": "https://sapphireshadowstudio.com/collections/healthcare-collection",
+          "google_canonical": "https://sapphireshadowstudio.com/collections/healthcare-collection",
+          "last_crawl": "2026-11-24T14:00:00Z",
+          "crawled_as": "Googlebot smartphone",
+          "crawl_allowed": true,
+          "page_fetch": "Successful",
+          "indexing_allowed": false,
+          "discovery": [
+            "Sitemaps"
+          ],
+          "videos": 0,
+          "sections": [
+            "Page indexing",
+            "Discovery",
+            "Crawl",
+            "Indexing",
+            "Enhancements & Experience"
+          ],
+          "rich_results": [
+            "Breadcrumbs"
+          ]
+        },
+        {
+          "url": "https://sapphireshadowstudio.com/blogs/shift-notes",
+          "verdict": "not-on-google",
+          "indexed": false,
+          "user_canonical": "https://sapphireshadowstudio.com/blogs/shift-notes",
+          "google_canonical": null,
+          "last_crawl": "2026-11-20T06:00:00Z",
+          "crawled_as": "Googlebot smartphone",
+          "crawl_allowed": true,
+          "page_fetch": "Successful",
+          "indexing_allowed": false,
+          "discovery": [
+            "Sitemaps"
+          ],
+          "videos": 0,
+          "sections": [
+            "Page indexing",
+            "Discovery",
+            "Crawl",
+            "Indexing"
+          ],
+          "rich_results": []
+        }
+      ]
+    },
+    "cwv": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "cwv",
+      "status": "ok",
+      "mobile": {
+        "good": 12,
+        "needs_improvement": 0,
+        "poor": 2
+      },
+      "desktop": {
+        "good": 12,
+        "needs_improvement": 0,
+        "poor": 0
+      }
+    },
+    "https": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "https",
+      "status": "ok",
+      "https_urls": 17,
+      "non_https_urls": 1
+    },
+    "enhancements": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "enhancements",
+      "status": "ok",
+      "items": [
+        {
+          "type": "Product snippets",
+          "valid": 6,
+          "invalid": 1,
+          "warning": 0
+        },
+        {
+          "type": "Breadcrumbs",
+          "valid": 12,
+          "invalid": 0,
+          "warning": 2
+        }
+      ]
+    },
+    "security-manual": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "security-manual",
+      "status": "ok",
+      "manual_actions": "present",
+      "security_issues": "present",
+      "text": "No issues detected"
+    },
+    "links": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "links",
+      "status": "ok",
+      "top_linking_sites": 3,
+      "top_linked_pages": [
+        {
+          "url": "https://sapphireshadowstudio.com/",
+          "links": 12
+        }
+      ],
+      "internal_top": [
+        {
+          "url": "https://sapphireshadowstudio.com/products/lead-ii-crewneck",
+          "links": 40
+        }
+      ]
+    },
+    "performance": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "performance",
+      "status": "ok",
+      "period": "28d",
+      "data_freshness": "Last update: 5 hours ago",
+      "search_type": "Web",
+      "totals": {
+        "clicks": 40,
+        "impressions": 2000,
+        "ctr": 0.02,
+        "position": 12.4
+      },
+      "queries": {
+        "rows": [
+          {
+            "query": "sapphire shadow studio",
+            "clicks": 30,
+            "impressions": 200,
+            "ctr": 0.15,
+            "position": 1.2
+          }
+        ],
+        "truncated": false
+      },
+      "pages": {
+        "rows": [
+          {
+            "url": "https://sapphireshadowstudio.com/products/lead-ii-vest-womens",
+            "clicks": 1,
+            "impressions": 150,
+            "ctr": 0.0067,
+            "position": 5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/products/lead-ii-crewneck",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/products/lead-ii-quarter-zip",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/products/huddle-crewneck",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/products/shift-fuel-tote",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/products/sapphire-shadow-studio-gift-card",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/collections/healthcare-collection",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/collections/the-vitals-collection",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/collections/featured",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/collections/all-apparel",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/pages/about",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/pages/faq",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/pages/contact",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/pages/size-guide",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          },
+          {
+            "url": "https://sapphireshadowstudio.com/blogs/shift-notes/first-post",
+            "clicks": 2,
+            "impressions": 100,
+            "ctr": 0.02,
+            "position": 2.5
+          }
+        ],
+        "truncated": false
+      },
+      "countries": {
+        "rows": [
+          {
+            "country": "United States",
+            "clicks": 38,
+            "impressions": 1900,
+            "ctr": 0.02,
+            "position": 12
+          },
+          {
+            "country": "Canada",
+            "clicks": 2,
+            "impressions": 50,
+            "ctr": 0.04,
+            "position": 20
+          }
+        ],
+        "truncated": false
+      },
+      "devices": {
+        "desktop": {
+          "clicks": 10,
+          "impressions": 800,
+          "ctr": 0.0125,
+          "position": 12
+        },
+        "mobile": {
+          "clicks": 30,
+          "impressions": 1150,
+          "ctr": 0.0261,
+          "position": 12.5
+        },
+        "tablet": {
+          "clicks": 0,
+          "impressions": 50,
+          "ctr": 0,
+          "position": 14
+        }
+      }
+    },
+    "discovery": {
+      "captured_at": "2026-12-01T09:00:00-05:00",
+      "report": "discovery",
+      "status": "ok",
+      "nav": [
+        {
+          "label": "Overview",
+          "path": ""
+        },
+        {
+          "label": "Insights",
+          "path": "performance/insights"
+        },
+        {
+          "label": "Performance",
+          "path": "performance/search-analytics"
+        },
+        {
+          "label": "URL inspection",
+          "path": null
+        },
+        {
+          "label": "Indexing",
+          "path": null
+        },
+        {
+          "label": "Pages",
+          "path": "index"
+        },
+        {
+          "label": "Sitemaps",
+          "path": "sitemaps"
+        },
+        {
+          "label": "Removals",
+          "path": "removals"
+        },
+        {
+          "label": "Experience",
+          "path": null
+        },
+        {
+          "label": "Core Web Vitals",
+          "path": "core-web-vitals"
+        },
+        {
+          "label": "HTTPS",
+          "path": null
+        },
+        {
+          "label": "Enhancements",
+          "path": null
+        },
+        {
+          "label": "Security & Manual Actions",
+          "path": null
+        },
+        {
+          "label": "Manual actions",
+          "path": "manual-actions"
+        },
+        {
+          "label": "Security issues",
+          "path": "security-issues"
+        },
+        {
+          "label": "Links",
+          "path": "links"
+        },
+        {
+          "label": "Achievements",
+          "path": "achievements"
+        },
+        {
+          "label": "Settings",
+          "path": "settings"
+        }
+      ],
+      "settings_rows": [
+        "Ownership verification",
+        "Users and permissions",
+        "Associations",
+        "Change of address",
+        "Bulk data export",
+        "Search generative AI",
+        "robots.txt",
+        "Crawl stats",
+        "Property added to account"
+      ],
+      "user_settings_rows": [
+        "Email preferences",
+        "Search Console in Search results"
+      ],
+      "performance_tabs": [
+        "QUERIES",
+        "PAGES",
+        "COUNTRIES",
+        "DEVICES",
+        "SEARCH APPEARANCE",
+        "DAYS"
+      ],
+      "performance_controls": [
+        "EXPORT",
+        "24 hours",
+        "7 days",
+        "28 days",
+        "3 months",
+        "More time ranges",
+        "Search type: Web",
+        "Add filter",
+        "Customize your Performance report using AI"
+      ],
+      "removals_tabs": [
+        "TEMPORARY REMOVALS",
+        "OUTDATED CONTENT",
+        "SAFESEARCH FILTERING"
+      ],
+      "inspection_sections": [
+        "Page indexing",
+        "Discovery",
+        "Crawl",
+        "Indexing",
+        "Video indexing",
+        "Enhancements & Experience"
+      ],
+      "enhancement_types": [
+        "Product snippets",
+        "Breadcrumbs"
+      ],
+      "reason_labels": [
+        "Excluded by 'noindex' tag"
+      ],
+      "unknown": []
+    }
+  }
+}

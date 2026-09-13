@@ -118,7 +118,8 @@ and the per-product values: `docs/breadcrumb-collection-metafield.md`.
 Surface mode is the generalized launch-day checklist (B7): it runs anonymously on purpose.
 Pre-launch, the password gate is reported as status and the page sweep is skipped with a reason.
 Post-launch it is the standing "nothing is accidentally blocked, nothing lists the wrong host"
-regression check. The GSC/Bing submission steps stay manual; they need operator accounts.
+regression check. Reading and auditing Google Search Console is the `search-console` skill
+(`scripts/search-console/`); Bing Webmaster Tools stays manual.
 
 ## Baselines and accepted risks
 
