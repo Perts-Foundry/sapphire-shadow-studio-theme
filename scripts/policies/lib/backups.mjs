@@ -19,6 +19,14 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import { displayPath } from '../../lib/display-path.mjs';
+
+// Re-exported as a BINDING, not with `export ... from`: the import-closure guard refuses the latter
+// because its walker cannot follow it. Every existing caller keeps importing `displayPath` from
+// here; the implementation moved to scripts/lib/ when the observation state started needing it too,
+// and one implementation is the point.
+export { displayPath };
+
 /** The conventional basename, wherever the directory ends up. */
 export const BACKUP_DIR_BASENAME = 'shop-policies';
 
@@ -58,17 +66,3 @@ export function backupFileName(type, now) {
   return `${type.toLowerCase()}.${String(now).replace(/[:.]/g, '-')}.json`;
 }
 
-/**
- * The display form of a path for anything the operator may paste into a README, an issue or a PR:
- * `$HOME` collapsed to `~`. A backup path contains the operator's username, which is a dev-machine
- * identifier this repo bars from the tree (CLAUDE.md, "Sensitive Content").
- * @param {string} absolute
- * @param {string} [home]
- */
-export function displayPath(absolute, home = os.homedir()) {
-  const abs = String(absolute);
-  if (home && (abs === home || abs.startsWith(`${home}${path.sep}`))) {
-    return `~${abs.slice(home.length)}`;
-  }
-  return abs;
-}
