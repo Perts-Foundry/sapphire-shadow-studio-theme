@@ -67,6 +67,16 @@ once, no manual actions or security issues were listed, a welcome message was un
 report was still processing. `capture-preindex.json` is that shape with synthetic numbers, and it
 raises nothing above INFO.
 
+**What the first attended run corrected.** Four things the design got wrong met the live property.
+Core Web Vitals' "Not enough usage data" is a per-device value inside an ok report, not a not-ready
+report; the capture procedure had called it not-ready, which made `cwv-no-data` unreachable. The
+robots.txt row stays readable while Crawl stats has no data, and a not-ready crawl-stats report had
+been throwing that state away; it is now an ok report with host status no-data and null counts.
+`enhancement-absent` fired while the Enhancements section did not yet exist, although the product
+inspection already listed Product snippets, Merchant listings and Review snippets, so it now judges
+only a present report. And a User settings sub-page (Search Console in Search results) was new to
+`KNOWN_SURFACES`, which is the discovery loop doing its job.
+
 ## High-variant audit: the request dialog stops reading `product.variants` (unreleased, 2026-09-13)
 
 Admin began showing "Your theme may not be compatible with products with over 250 variants" on the

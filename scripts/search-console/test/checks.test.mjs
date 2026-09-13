@@ -9,7 +9,7 @@ import {
   daysSince,
 } from '../lib/checks.mjs';
 import { findingKey } from '../../seo-review/lib/checks.mjs';
-import { KNOWN_REASONS, REPORTS } from '../lib/schema.mjs';
+import { KNOWN_REASONS, REPORTS, validateCapture } from '../lib/schema.mjs';
 import { KNOWN_SURFACES_REVIEWED_ON } from '../lib/known-surfaces.mjs';
 import {
   FIXTURE_FOR, baseCapture, healthyOpts, readFixture, notReady, NOW, PREINDEX_NOW, ORIGIN, SITEMAP_URLS,
@@ -137,7 +137,10 @@ test('the pre-index fixture raises nothing above INFO', () => {
   const findings = evaluateCapture(readFixture('capture-preindex.json'), { sitemapCount: 17, now: PREINDEX_NOW });
   assert.deepEqual(findings.filter((f) => f.severity !== INFO), []);
   const notReady = findings.filter((f) => f.check === 'gsc-not-ready').map((f) => f.url).sort();
-  assert.deepEqual(notReady, ['crawl-stats', 'cwv', 'indexing-pages', 'inspections', 'links', 'performance']);
+  assert.deepEqual(notReady, ['indexing-pages', 'inspections', 'links', 'performance']);
+  assert.ok(findings.some((f) => f.check === 'robots-not-seen' && f.severity === INFO), 'robots.txt state survives with no crawl data');
+  assert.equal(findings.filter((f) => f.check === 'cwv-no-data').length, 2);
+  assert.ok(!findings.some((f) => f.check === 'enhancement-absent'), 'an absent Enhancements section is not judged');
   assert.ok(findings.some((f) => f.check === 'https-no-data'));
   assert.ok(findings.some((f) => f.check === 'messages-unread'));
 });
@@ -316,9 +319,23 @@ test('inspect-crawl-blocked skips a URL absent from the live sitemap and NOINDEX
   assert.ok(!fires('inspect-not-indexed'), 'the noindexed blog listing in the healthy capture is exempt');
 });
 
-test('enhancement checks run on a not-present report and stay quiet when not ready', () => {
-  assert.ok(fires('enhancement-absent', (r) => { r.enhancements = notReady('enhancements', 'not-present'); }));
+test('enhancement checks judge only a present report: not-present and not-ready stay quiet', () => {
+  assert.ok(!fires('enhancement-absent', (r) => { r.enhancements = notReady('enhancements', 'not-present'); }));
   assert.ok(!fires('enhancement-absent', (r) => { r.enhancements = notReady('enhancements'); }));
+  assert.ok(fires('enhancement-absent', (r) => { r.enhancements.items = r.enhancements.items.slice(0, 1); }));
+});
+
+test('crawl-stats with no crawl data yet still carries the robots.txt state', () => {
+  const c = baseCapture();
+  c.reports['crawl-stats'] = {
+    captured_at: c.captured_at, report: 'crawl-stats', status: 'ok', robots_state: 'not-seen', host_status: 'no-data',
+    requests: null, share_5xx: null, share_4xx: null,
+  };
+  assert.deepEqual(validateCapture(c).errors, []);
+  const o = healthyOpts();
+  o.propertyAgeDays = 0;
+  const crawl = evaluateCapture(c, o).filter((f) => REPORT_OF[f.check] === 'crawl-stats');
+  assert.deepEqual(crawl.map((f) => [f.check, f.severity]), [['robots-not-seen', INFO]]);
 });
 
 test('surface-gone ignores conditional items and lists that were not inventoried', () => {

@@ -165,7 +165,7 @@ findings are keyed by page, never by query.
 | `https-no-data` | INFO | singleton | the HTTPS report has no data yet |
 | `enhancement-invalid` | ERROR | enhancement-type | invalid rich-result items |
 | `enhancement-warning` | WARN | enhancement-type | rich-result items with warnings |
-| `enhancement-absent` | INFO | enhancement-type | Product snippets or Breadcrumbs absent while a product is indexed |
+| `enhancement-absent` | INFO | enhancement-type | Product snippets or Breadcrumbs absent while a product is indexed; judged only once the Enhancements report exists |
 | `enhancement-product-duplicate-evidence` | INFO | singleton | evidence for the Judge.me Product JSON-LD owner decision |
 | `enhancement-type-unknown` | INFO | enhancement-type | an enhancement type not yet known |
 | `manual-action` | ERROR | singleton | a manual action is listed |

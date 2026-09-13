@@ -43,7 +43,7 @@ export const KNOWN_SURFACES = Object.freeze({
   subpages: Object.freeze([
     'ownership', 'users', 'users/permission-history', 'users/leftover-tokens', 'settings/associations',
     'settings/change-address', 'settings/bulk-data-export', 'settings/search-gen-ai', 'user-settings',
-    'user-settings/email-preferences',
+    'user-settings/email-preferences', 'user-settings/performance-on-search',
   ]),
 
   settings_rows: Object.freeze([

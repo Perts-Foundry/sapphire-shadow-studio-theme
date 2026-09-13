@@ -159,7 +159,8 @@ These are about the capture itself rather than a surface:
 - **Where**: the Crawling section of `settings`, row `Crawl stats`.
 - **Healthy**: host status with no issues; 5xx share at or under `CRAWL_5XX_SHARE` (0.01); the
   "Other client error (4xx)" bucket, where 429s land because Search Console does not break them
-  out, at or under `CRAWL_4XX_SHARE` (0.05). "No data available yet" is `not-ready`.
+  out, at or under `CRAWL_4XX_SHARE` (0.05). "No data available yet" is host status no-data inside an
+  ok report, so the robots.txt state from surface 9 is kept.
 - **Failure**: host issues; a 5xx or 4xx share over its threshold (a bot-management block shows up
   here as 4xx).
 - **Checks**: `crawl-host-issues` (`SEVERITY['crawl-host-issues']`), `crawl-5xx-share`
@@ -183,7 +184,8 @@ These are about the capture itself rather than a surface:
 ### 12. Email preferences
 
 - **Where**: `User settings` in the header, view `user-settings`, rows `Email preferences` and
-  `Search Console in Search results`; the sub-page `user-settings/email-preferences`.
+  `Search Console in Search results`; the sub-pages `user-settings/email-preferences` and
+  `user-settings/performance-on-search` (the second is not judged; it was first seen on 2026-09-13).
 - **Healthy**: "All emails are enabled"; the "Enable notification by email" checkbox is on.
 - **Failure**: notifications off, so a manual action or a coverage drop would arrive unseen.
 - **Checks**: `email-notifications-off` (`SEVERITY['email-notifications-off']`).
@@ -271,7 +273,8 @@ These are about the capture itself rather than a surface:
 
 - **Where**: `Experience` > `Core Web Vitals`, view `core-web-vitals`.
 - **Healthy**: per device (Mobile, Desktop), every URL good. "Not enough usage data in the last 90
-  days for this device type." is expected for months on a small site.
+  days for this device type." is expected for months on a small site; record it as that device's
+  no-data value inside an ok report, not as a not-ready report.
 - **Failure**: poor URLs (mobile first: most traffic is phones); URLs needing improvement.
 - **Checks**: `cwv-poor` (`SEVERITY['cwv-poor']`), `cwv-needs-improvement`
   (`SEVERITY['cwv-needs-improvement']`), `cwv-no-data` (`SEVERITY['cwv-no-data']`).
@@ -298,8 +301,10 @@ These are about the capture itself rather than a surface:
   invalid and zero warning items. This is the evidence source for the Judge.me Product JSON-LD
   owner decision in `TODO.md`: when both Product snippets and Merchant listings report items,
   record which Product node each reads.
-- **Failure**: invalid or warning items; Product snippets or Breadcrumbs absent while a product
-  URL inspects as indexed; a type never seen before.
+- **Failure**: invalid or warning items; once the section exists, Product snippets or Breadcrumbs
+  absent while a product URL inspects as indexed; a type never seen before. While the section is
+  absent the report is `not-present` and nothing is judged: an inspection lists rich results days
+  before the section appears.
 - **Checks**: `enhancement-invalid` (`SEVERITY['enhancement-invalid']`), `enhancement-warning`
   (`SEVERITY['enhancement-warning']`), `enhancement-absent` (`SEVERITY['enhancement-absent']`),
   `enhancement-product-duplicate-evidence` (`SEVERITY['enhancement-product-duplicate-evidence']`),

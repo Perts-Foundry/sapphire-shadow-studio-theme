@@ -29,7 +29,16 @@
       "services": [],
       "pending": 0
     },
-    "crawl-stats": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "crawl-stats", "status": "not-ready" },
+    "crawl-stats": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "crawl-stats",
+      "status": "ok",
+      "robots_state": "not-seen",
+      "host_status": "no-data",
+      "requests": null,
+      "share_5xx": null,
+      "share_4xx": null
+    },
     "removals": {
       "captured_at": "2026-09-13T15:00:00-05:00",
       "report": "removals",
@@ -64,7 +73,13 @@
     },
     "indexing-pages": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "indexing-pages", "status": "not-ready" },
     "inspections": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "inspections", "status": "not-ready" },
-    "cwv": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "cwv", "status": "not-ready" },
+    "cwv": {
+      "captured_at": "2026-09-13T15:00:00-05:00",
+      "report": "cwv",
+      "status": "ok",
+      "mobile": "no-data",
+      "desktop": "no-data"
+    },
     "https": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "https", "status": "not-present" },
     "enhancements": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "enhancements", "status": "not-present" },
     "security-manual": {

@@ -453,9 +453,12 @@ function experienceChecks({ okRep, reports, add }) {
 }
 
 function enhancementChecks({ reports, okRep, add }) {
+  // Only a report that exists is judged. On the first live run a product inspection already listed
+  // Product snippets, Merchant listings and Review snippets while the Enhancements section was still
+  // absent from the navigation, so an absent section is not absent markup.
   const en = reports.enhancements;
-  const items = en?.status === 'ok' ? en.items : en?.status === 'not-present' ? [] : null;
-  if (!items) return;
+  if (en?.status !== 'ok') return;
+  const items = en.items;
   for (const item of items) {
     if (!has(ENHANCEMENT_TYPES, item.type)) add('enhancement-type-unknown', item.type, 'an enhancement type this skill has not seen');
     if (item.invalid > 0) add('enhancement-invalid', item.type, `${item.invalid} invalid item(s)`);
