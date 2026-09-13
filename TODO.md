@@ -54,7 +54,57 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Thank-you card or packing-slip artwork carrying the Judge.me review QR.** The link and QR
   are generated in the app's admin (Settings > Request reviews > Links, QR codes > Manage); the
   artwork lives outside the repo.
-- [ ] **Figure out the blog skill for the store**
+- [ ] **Run the article metafield spike, which decides both deferred article templates.** Operator
+  hands, in Admin and the theme editor. Create an article metafield definition of type
+  `list.product_reference`; then, in the theme editor on the **sync theme** (never live), try binding
+  a `featured-product` section's product setting, and a `product-list` section, to it as a dynamic
+  source. Inspect the resulting template JSON and the reconcile PR it produces. The outcome decides
+  the shoppable article template **and** the deferred photo-story template: a JSON template's section
+  settings are shared by every article using that suffix, so hand-picked products or per-post photos
+  need a per-article source. If binding works, the template is settings-only and reads per-article
+  metafields (the articles skill would record the product handles in `article.json`). If it does not,
+  the options are a small custom section reading `article.metafields.custom.featured_products` (new
+  Liquid, a real piece of work), one template per post, or dropping per-post picking for a fixed
+  related-products row. Build neither template before this is settled. Reasoning in the photo-story
+  entry in `release-notes.md`.
+
+- [ ] **Once the first post is visible, finish the blog's audit and navigation wiring.** Add real
+  article paths to `scripts/a11y/paths.json`; re-check the empty-blog accepted-risk rows in
+  `scripts/seo-review/accepted-risks.json`, which exist only because the blog is empty; confirm
+  whether the default article template emits `Article` JSON-LD (nothing in the theme adds a
+  `BlogPosting` node, deliberately, so do not assume one exists); run a post-publish `seo-review`;
+  and consider adding the blog to the footer or main menu in Admin, reading
+  `docs/theme-settings-contracts.md` first.
+
+- [ ] **Delete the throwaway hidden test articles in Admin, if they are still there.** Verifying the
+  article tooling creates hidden articles in the Shift Notes blog: `test-push-end-to-end` exists, and
+  `test-skill-end-to-end` exists if the skill's end-to-end push was run. The tooling deliberately has
+  no delete path, so the operator deletes them by hand in Admin, then runs
+  `npm run articles:pull -- --seed` so this machine's observation state drops them. Until then
+  `articles:verify -- --live` lists each as a live article with no repo directory once its repo
+  directory is gone.
+
+- [ ] **Settle the article push's unexercised Admin behaviours on the first real post's edit
+  cycle.** The only live push so far was a create of a table-and-tags test article. Still unproven:
+  what `articleUpdate` does to an existing article at all, whether an update with a null image removes
+  the featured image (on the spike, deleting the Files entry left the copied image serving, so removal
+  is not the same as deleting the source), and how the body normaliser treats anything beyond a flat
+  table (`pre` and nested tables stay refused by the checker until proven). The first real post's
+  first edit answers the update question; record what it showed in `scripts/articles/README.md`
+  ("What the tests do not prove") and `release-notes.md`.
+
+- [ ] **Exercise the article image upload path live, on the first real post with a photo.** The
+  operator decided this plan's end-to-end checks upload nothing, so the uploader has only run against
+  a fake client and a fake staged-upload endpoint. Follow `.claude/skills/articles/images.md`'s gate
+  end to end, dry run first, on one photo, and read the result before trusting the rest. An uploaded
+  file is public at its CDN URL at once, so this is a live write in its own right.
+
+- [ ] **Decide whether the article push should stop re-sending an unchanged featured image.** Every
+  update input carries the image URL whenever the repo has one, and Shopify copies an image set by URL
+  to its own CDN path, so each push likely leaves a fresh CDN copy behind. Omitting an unchanged image
+  from the update would change the pinned mutation input shape (asserted by whole-object equality in
+  the push suite) and the image comparison through the observation, so it needs its own reviewed
+  change, and the null-image question above should be settled first.
 
 - [ ] **Re-record `customer_email_address_changed_confirmation`'s stock snapshot without the
   injected colour block.** Two steps, in order. First, in Admin, turn the colour customisation off
