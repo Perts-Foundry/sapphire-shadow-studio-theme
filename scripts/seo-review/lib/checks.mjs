@@ -1,10 +1,15 @@
 // checks.mjs -- pure rule evaluation for the SEO review. No I/O.
 //
+// The one import is a constants leaf (scripts/lib/seo-bounds.mjs), which imports nothing itself, so
+// "no I/O" still holds structurally.
+//
 // A finding is { check, severity, url, detail }. `check` is a stable id: the
 // baseline differ and accepted-risks matching key on it (plus the URL path),
 // so renaming a check id orphans its accepted-risk entries and its baseline
 // history. Add new ids freely; rename existing ones only with a matching edit
 // to accepted-risks.json.
+
+import { TITLE_MAX, DESC_MIN, DESC_MAX } from '../../lib/seo-bounds.mjs';
 
 export const ERROR = 'ERROR';
 export const WARN = 'WARN';
@@ -38,10 +43,14 @@ const DESCRIPTION_EXEMPT = new Set(['cart', 'search', '404', 'password']);
 // Page types where a robots noindex is expected rather than a defect.
 const NOINDEX_OK = new Set(['cart', 'search', '404', 'password', 'policy']);
 
-// Shared by the crawl checks below and admin.mjs's stored-field checks.
-export const TITLE_MAX = 60;
-export const DESC_MIN = 50;
-export const DESC_MAX = 160;
+// Shared by the crawl checks below and admin.mjs's stored-field checks, and now by the articles
+// checker, which asks the same question of the same field before a post is ever sent. The three
+// bounds therefore moved to scripts/lib/seo-bounds.mjs: two subsystems disagreeing about what is
+// too long would mean an article passing its own checker and then being reported by this review.
+//
+// Re-exported as BINDINGS, not with `export ... from`, which the import-closure guard refuses
+// because its walker cannot follow that form. Every existing caller keeps importing them here.
+export { TITLE_MAX, DESC_MIN, DESC_MAX };
 
 /**
  * Stable per-page key: the path (query stripped) for http(s) URLs, the string

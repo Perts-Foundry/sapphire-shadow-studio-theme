@@ -49,3 +49,9 @@ npm-debug.log
 # image folder, not the like-named `.claude/skills/product-images/` skill or theme assets/.
 # The script refuses to write outside a product-images/ path.
 /product-images/
+
+# Article photos: raw and processed binaries never enter the repo, for the same reason and with the
+# same anchoring as product-images/ above. marketing/articles/<handle>/images.json records the CDN
+# URL, the alt text and the local sha256; the bytes stay here and this directory stays ignored.
+# The CI tracked-media guard is the structural backstop, since a gitignore does not stop `git add -f`.
+/article-images/
