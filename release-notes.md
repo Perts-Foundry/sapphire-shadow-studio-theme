@@ -116,6 +116,13 @@ dry run, confirmed create with `--expect-absent`, re-read of every written field
 hidden, the observation recorded, and `status -- --live`, `pull -- --check` and `verify -- --live`
 all reading in sync afterwards.
 
+**The same day's skill run** (a second throwaway hidden `test-` article, pushed by following
+`.claude/skills/articles/` rather than the command reference) checked the procedure, not the API:
+`status -- --live` routed the post to the push, the dry run printed its flags without writing, the
+ask in `push.md` stood on its own and a plain reply to it was the grant, the create re-read clean, a
+second dry run hit the no-op gate, and `verify -- --live` passed. The skill stopped with the article
+hidden and left visibility to the operator. It proved nothing new about Admin itself.
+
 Still unproven, and tracked in `TODO.md`: what an update does to an existing article, whether an
 update with a null image removes the featured image, anything beyond a flat table, and the live image
 upload path.
@@ -151,10 +158,43 @@ photos, and editing them in the theme editor would fight the repo-as-source mode
 theme.
 
 That is the same defect that removed the planned shoppable template, where hand-picked products per
-post would have been one product list for every shoppable post. Both need a per-article source, so
-the photo-story question is folded into the article metafield spike that has to answer it for
-shoppable posts (`TODO.md`). Until then, per-post photos live in `body.html`, with their CDN URLs
-recorded in `images.json`.
+post would have been one product list for every shoppable post. Both need a per-article source, and
+the article metafield spike below answered which ones exist. Until a template is built, per-post
+photos live in `body.html`, with their CDN URLs recorded in `images.json`.
+
+## What the article metafield spike showed (unreleased, 2026-09-13)
+
+The spike asked whether a blog post template's section settings can read per-article metafields as
+dynamic sources, so that one template suffix can still show different products or photos per post.
+Four article metafield definitions were created in Admin (`custom.featured_products` as a list of
+products, `custom.featured_product` as one product, `custom.featured_collection`, and
+`custom.story_image` as one image file), and a throwaway `spike` blog post template was built on the
+sync theme, never live. Each setting's dynamic-source picker was opened; nothing was connected or
+saved.
+
+- **A product setting offers only a single-product metafield.** The Featured product section
+  (`featured-product-information`) offered `custom.featured_product`, and not the list.
+- **The product list section binds to a collection, not to products.** `product-list` appears in the
+  picker as the three "Featured collection" presets; its collection setting offered
+  `custom.featured_collection` only.
+- **An image picker offers an image-file metafield.** An Image block offered the post's own featured
+  image and `custom.story_image`.
+- **A list of products is offered nowhere.** No section or block in this theme has a product-list
+  setting, so `list.product_reference` has nothing to bind to.
+
+What that decides. **The photo-story template can be settings-only**: each image slot binds to its
+own image-file metafield on the post. **The shoppable template can be settings-only too**, but not
+with a hand-picked list: either one single-product metafield per Featured product section, or a
+per-post collection metafield driving the product list section. A true hand-picked list needs a small
+custom section reading the list metafield, which is new Liquid. Neither template is built yet.
+
+Three things the spike ran into, each worth knowing before the next theme-editor session. **The
+editor cannot open or create a blog post template while the blog has no articles**: the template
+entries are disabled, so a hidden placeholder post had to exist first. **Creating a template on the
+sync theme writes the file immediately**, before any Save, and the sync workflow opens a reconcile PR
+within seconds; the spike's PR was drafted before its Validate run finished, so auto-deploy never
+fired. **Admin's "View template" link on a blog post opens the live theme's editor**, not the sync
+theme's, so open the sync theme's editor directly instead.
 
 ## Article credentials stay explicit (unreleased, 2026-09-13)
 
