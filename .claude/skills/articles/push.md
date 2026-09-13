@@ -96,6 +96,13 @@ from any gate after the live read (freshness, `--expect-live-sha` or `--expect-a
 reviewed tree, anything reached after the network) needs a fresh dry run and a fresh ask. Correcting a
 mistyped flag on a command refused before any gate ran is the same push.
 
+**There is no terminal attestation and no `--operator-approved` step, on purpose.** The shop policies
+push carries both because it writes customer-facing legal text that no redeploy rolls back. This push
+writes a hidden article the operator can read, fix or delete in Admin before anyone sees it, and
+ceremony on a draft teaches that ceremony is noise, which weakens it where it matters. The ask above
+is the gate. Any path that makes a post visible is a different act, and adding one re-adds the full
+policies gate rather than reusing this one.
+
 ## The write
 
 In the same response that runs it, **quote the operator's words verbatim**, and your question with

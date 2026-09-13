@@ -8,10 +8,16 @@
 // Reading bytes runs nothing. The cost is that the parse is tied to how GATES is spelled, and a
 // respelling fails loudly here (no module found), never silently.
 //
+// THE PARSE FAILS CLOSED, BOTH SIDES. A narrow id pattern once meant a gate id with a digit in it
+// would have vanished from the source list and from the doc table together, and the two lists would
+// still have matched. So the source side captures ANY quoted string in the array (comments stripped
+// first, so a commented-out gate is not a gate), and the doc side requires EVERY table row between
+// the markers to parse: a row it cannot read is a failure, never a skipped line.
+//
 // ONE LEVEL DEEP means every sub-doc is linked straight from SKILL.md and no sub-doc links onward to
 // another. A sub-doc may still NAME a sibling in prose (the push doc owns the state schema, and the
-// others say so); what it may not do is carry a markdown link that turns the docs into a chain an
-// agent follows past SKILL.md.
+// others say so); what it may not do is carry a markdown link, in any of markdown's link forms, that
+// turns the docs into a chain an agent follows past SKILL.md.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,24 +54,60 @@ export function parseSkill(text) {
   return { name: field('name'), description: field('description'), keys: front.filter((l) => /^\S/.test(l)).map((l) => l.split(':')[0]), bodyLines: lines.length - end - 1 };
 }
 
-/** Markdown link targets ending in `.md`, without anchors. */
+/**
+ * Markdown link targets ending in `.md`, without anchors, in every link form: inline `[t](x.md)`,
+ * inline with a title `[t](x.md "title")`, angle-bracketed `[t](<x.md>)`, and reference-style
+ * definitions `[t]: x.md`.
+ */
 export function mdLinks(text) {
-  return [...text.matchAll(/\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g)].map((m) => m[1]);
+  const target = String.raw`(?:<([^>#\n]+?\.md)(?:#[^>\n]*)?>|([^)\s#<>]+\.md)(?:#[^)\s]*)?)`;
+  const inline = new RegExp(String.raw`\]\(\s*${target}(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)`, 'g');
+  const reference = new RegExp(String.raw`^ {0,3}\[[^\]\n]+\]:\s*${target}`, 'gm');
+  return [...text.matchAll(inline), ...text.matchAll(reference)].map((m) => m[1] ?? m[2]);
 }
 
-/** The gate ids in the push module's source, in order. */
+/** Comments stripped, strings kept, for the GATES parse. */
+function stripJsComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+}
+
+/** The gate ids in the push module's source, in order: every quoted string in the array. */
 export function gateIdsFromSource(source) {
-  const m = /export const GATES = Object\.freeze\(\[([\s\S]*?)\]\);/.exec(source);
+  const m = /export const GATES = Object\.freeze\(\[([\s\S]*?)\]\);/.exec(stripJsComments(source));
   if (!m) return null;
-  return [...m[1].matchAll(/'([a-z][a-z-]*)'/g)].map((x) => x[1]);
+  return [...m[1].matchAll(/'([^'\\\n]*)'|"([^"\\\n]*)"/g)].map((x) => x[1] ?? x[2]);
 }
 
-/** The `| n | \`id\` |` rows between the gate markers of a doc, as `[n, id]`. */
+/**
+ * The gate table between the markers of a doc: `rows` as `[n, id]`, and `unmatched`, every table row
+ * that is neither the header, the separator, nor a readable `| n | \`id\` |` row. Null without markers.
+ */
 export function gateRowsFromDoc(text) {
   const start = text.indexOf(GATES_BEGIN);
   const end = text.indexOf(GATES_END);
   if (start === -1 || end === -1 || end < start) return null;
-  return [...text.slice(start, end).matchAll(/^\|\s*(\d+)\s*\|\s*`([a-z][a-z-]*)`\s*\|/gm)].map((x) => [Number(x[1]), x[2]]);
+  const tableLines = text.slice(start + GATES_BEGIN.length, end).split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
+  const rows = [];
+  const unmatched = [];
+  for (const [i, line] of tableLines.entries()) {
+    if (i === 0 || /^\|(?:\s*:?-+:?\s*\|)+$/.test(line)) continue;
+    const row = /^\|\s*(\d+)\s*\|\s*`([^`]+)`\s*\|/.exec(line);
+    if (row) rows.push([Number(row[1]), row[2]]);
+    else unmatched.push(line);
+  }
+  return { rows, unmatched };
+}
+
+/** Everything wrong with a doc's gate table against the source's ids. Empty means in parity. */
+export function gateTableProblems(docText, ids) {
+  const parsed = gateRowsFromDoc(docText);
+  if (parsed === null) return ['the doc has no gate markers'];
+  const problems = parsed.unmatched.map((line) => `a table row does not parse: ${line}`);
+  const docIds = parsed.rows.map(([, id]) => id);
+  if (JSON.stringify(docIds) !== JSON.stringify(ids)) problems.push(`ids differ: doc ${JSON.stringify(docIds)}, source ${JSON.stringify(ids)}`);
+  const numbers = parsed.rows.map(([n]) => n);
+  if (JSON.stringify(numbers) !== JSON.stringify(numbers.map((_, i) => i))) problems.push(`rows are not numbered 0 to ${numbers.length - 1}: ${JSON.stringify(numbers)}`);
+  return problems;
 }
 
 function pushModuleGates() {
@@ -77,12 +119,13 @@ function pushModuleGates() {
   return found[0];
 }
 
-test('SKILL.md frontmatter: name, a description under 1,024 characters, no invocation lock, a body under 500 lines', () => {
+test('SKILL.md frontmatter: name, a description under 1,024 characters with no XML tags, no invocation lock, a body under 500 lines', () => {
   const skill = parseSkill(read('SKILL.md'));
   assert.equal(skill.name, 'articles');
   assert.ok(skill.description && skill.description.length > 100, 'the description is missing or too thin to route on');
   assert.ok(skill.description.length < 1024, `description is ${skill.description.length} characters`);
   assert.equal(/^(I|You|We)\b/.test(skill.description), false, 'the description is written in the third person');
+  assert.equal(/<\/?[A-Za-z][^>]*>/.test(skill.description), false, 'the description contains an XML tag');
   // The operator asks in natural language, so the skill must load; the write is gated by push.md's ask.
   assert.equal(skill.keys.includes('disable-model-invocation'), false);
   assert.ok(skill.bodyLines < 500, `SKILL.md body is ${skill.bodyLines} lines`);
@@ -95,13 +138,20 @@ test('the skill directory holds exactly SKILL.md and its four sub-docs, each lin
   for (const link of links) assert.ok(existsSync(join(SKILL_DIR, link)), `SKILL.md links ${link}, which does not exist`);
 });
 
-test('one level deep: no sub-doc links onward to another doc in the skill', () => {
+test('one level deep: no sub-doc links onward to another doc in the skill, in any link form', () => {
   for (const doc of SUB_DOCS) {
     const onward = mdLinks(read(doc));
     assert.deepEqual(onward, [], `${doc} links ${onward.join(', ')}; route through SKILL.md instead`);
   }
-  // Positive control through the same function.
+  // Positive controls through the same function, one per link form.
   assert.deepEqual(mdLinks('see [push.md](push.md) and [x](./verify.md#reading)'), ['push.md', './verify.md']);
+  assert.deepEqual(mdLinks('see [the push](push.md "The push doc")'), ['push.md']);
+  assert.deepEqual(mdLinks("see [the push](push.md 'The push doc') and [v](verify.md (title))"), ['push.md', 'verify.md']);
+  assert.deepEqual(mdLinks('see [the push](<push.md>) and [v](<./verify.md#reading>)'), ['push.md', './verify.md']);
+  assert.deepEqual(mdLinks('see [the push][p]\n\n[p]: push.md\n'), ['push.md']);
+  assert.deepEqual(mdLinks('[p]: <./push.md> "title"\n   [v]: verify.md#reading\n'), ['./push.md', 'verify.md']);
+  // Not links: prose naming a doc, code, and a non-markdown target.
+  assert.deepEqual(mdLinks('the push doc, `push.md`, owns the schema; see [site](https://example.invalid/x)'), []);
 });
 
 test('a sub-doc over 100 lines opens with a contents list', () => {
@@ -126,24 +176,45 @@ test('SKILL.md states the trust boundary and the credential requirement once, an
   assert.match(read('push.md'), /The publish boundary/);
 });
 
-test('push.md lists the gates exactly as the push module declares them: same ids, same order, numbered from 0', () => {
+test('push.md lists the gates exactly as the push module declares them: same ids, same order, numbered from 0, every row readable', () => {
   const ids = pushModuleGates();
   assert.ok(ids.length >= 10, `the source parse found only ${ids.length} gate ids, so it proves nothing`);
-  const rows = gateRowsFromDoc(read('push.md'));
-  assert.ok(rows !== null, 'push.md has no gate markers');
-  assert.deepEqual(rows.map(([, id]) => id), ids);
-  assert.deepEqual(rows.map(([n]) => n), ids.map((_, i) => i));
+  const problems = gateTableProblems(read('push.md'), ids);
+  assert.deepEqual(problems, [], problems.join('\n'));
 });
 
-test('the parity parse fails on a reordered, dropped or renamed gate row', () => {
+test('the parity parse fails on a reordered, dropped, renamed, misnumbered or unreadable row, and reads any quoted id', () => {
   const ids = pushModuleGates();
-  const table = (list) => `${GATES_BEGIN}\n| # | Id | What |\n|---|---|---|\n${list.map((id, i) => `| ${i} | \`${id}\` | x |`).join('\n')}\n${GATES_END}`;
-  assert.deepEqual(gateRowsFromDoc(table(ids)).map(([, id]) => id), ids);
+  const table = (list, numbers = list.map((_, i) => i)) =>
+    `${GATES_BEGIN}\n| # | Id | What |\n|---|---|---|\n${list.map((id, i) => `| ${numbers[i]} | \`${id}\` | x |`).join('\n')}\n${GATES_END}`;
+  assert.deepEqual(gateTableProblems(table(ids), ids), []);
+
   const swapped = [...ids];
   [swapped[3], swapped[4]] = [swapped[4], swapped[3]];
-  assert.notDeepEqual(gateRowsFromDoc(table(swapped)).map(([, id]) => id), ids);
-  assert.notDeepEqual(gateRowsFromDoc(table(ids.slice(1))).map(([, id]) => id), ids);
-  assert.notDeepEqual(gateRowsFromDoc(table([...ids.slice(0, -1), 'record-observations'])).map(([, id]) => id), ids);
-  assert.equal(gateRowsFromDoc('no markers'), null);
+  assert.notDeepEqual(gateTableProblems(table(swapped), ids), []);
+  assert.notDeepEqual(gateTableProblems(table(ids.slice(1)), ids), []);
+  assert.notDeepEqual(gateTableProblems(table([...ids.slice(0, -1), 'record-observations']), ids), []);
+  // In order, but numbered 0, 1, 3.
+  const three = ids.slice(0, 3);
+  assert.notDeepEqual(gateTableProblems(table(three, [0, 1, 3]), three), []);
+  // A row whose id is not in backticks is unreadable, and unreadable is a failure, not a skipped line.
+  const unreadable = table(three).replace(`| 1 | \`${three[1]}\` |`, `| 1 | ${three[1]} |`);
+  assert.notDeepEqual(gateTableProblems(unreadable, three), []);
+  assert.deepEqual(gateTableProblems('no markers', ids), ['the doc has no gate markers']);
   assert.equal(gateIdsFromSource('export const GATES = [];'), null);
+
+  // Any quoted id is read, a digit or an underscore included, and a commented-out gate is not.
+  const source = [
+    'export const GATES = Object.freeze([',
+    "  'ci-refusal',",
+    "  'step-2',",
+    '  "third_gate",',
+    "  // 'retired-gate',",
+    "  /* 'another-retired' */",
+    ']);',
+  ].join('\n');
+  const parsed = gateIdsFromSource(source);
+  assert.deepEqual(parsed, ['ci-refusal', 'step-2', 'third_gate']);
+  assert.deepEqual(gateTableProblems(table(parsed), parsed), []);
+  assert.notDeepEqual(gateTableProblems(table(['ci-refusal', 'third_gate']), parsed), []);
 });

@@ -2,15 +2,18 @@
 // Prepare and upload one article's photos to Shopify Files. The only supported way an article image
 // reaches the store.
 //
-//   node scripts/articles/upload-images.mjs --handle <handle> --prepare
+//   --handle <handle> --prepare
 //        offline: process article-images/<handle>/originals/* into upload-ready JPEGs beside them
-//   node --env-file=.env scripts/articles/upload-images.mjs --handle <handle>
+//   --handle <handle>
 //        dry run: list exactly what would upload and what is already in Files; upload nothing
-//   node --env-file=.env scripts/articles/upload-images.mjs --handle <handle> --confirm=<handle> --expect-plan=<sha>
+//   --handle <handle> --confirm=<handle> --expect-plan=<sha>
 //        upload exactly the plan that dry run printed
 //
 // No package.json key: it is run by module path, with credentials passed explicitly the way every
 // other Admin tool here is (scripts/README.md, Credentials). Nothing here loads `.env` by itself.
+// The full command lines are in .claude/skills/articles/images.md and nowhere else under the trees
+// the no-invocation guard scans, including this header: the guard refuses this module's path
+// everywhere but that doc, because an upload is a live write that makes files public at once.
 //
 // AN UPLOADED FILE IS PUBLIC AT ONCE. Its CDN URL serves the moment `fileCreate` succeeds, whatever
 // the article's state: a hidden article does not hide its images (verified on the 2026-09-12 spike).
@@ -28,8 +31,14 @@
 //     so a second create would make a second public copy under a suffixed name. The lookup has an
 //     indexing lag of a few seconds: a dry run straight after an upload can miss what it just made.
 //   - METADATA IS ASSERTED ABSENT IMMEDIATELY BEFORE `stagedUploadsCreate`, on the exact buffer that
-//     is then sent: EXIF, XMP and IPTC. Not only after processing, because the bytes on disk can
-//     change between the two, and camera EXIF carries GPS.
+//     is then sent: EXIF, XMP, IPTC, any text chunk sharp reports, and JPEG COM segments (which sharp
+//     does not report, so they are found by walking the segment headers here). Not only after
+//     processing, because the bytes on disk can change between the two, and camera EXIF carries GPS.
+//   - ONLY JPEG BYTES UPLOAD. A file dropped into the directory by hand with a `.jpg` name is refused
+//     unless its bytes are a JPEG, so a PNG or a document cannot ride along under an allowed name.
+//   - A FILE IS REPORTED AS UPLOADED ONLY ONCE ITS OUTCOME IS KNOWN: created with an id, no
+//     userErrors, and not reported FAILED by the processing poll. A refusal names every file that
+//     reached that point, and never the file it is refusing.
 //   - CREATES ONLY. It never updates or deletes a file, and touches nothing else in the store.
 //   - Every name starts with `<handle>-`, so one article's uploads are findable by that prefix in
 //     Admin (Content, then Files) when a draft is abandoned and they need removing by hand.
@@ -47,6 +56,7 @@ import sharp from 'sharp';
 import { assertScopes, backoffDelayMs, createAdminClient } from '../blank-inventory/lib/admin.mjs';
 import { createReadOnlyClient } from '../site-check/lib/admin-readonly.mjs';
 import { IMAGE_ROOT_DIR, REPO_ROOT } from './check.mjs';
+import { matchesFilename } from '../lib/shopify-files.mjs';
 import { isHandle, sha256 as sha256Text, stripVersionQuery } from './lib/articles.mjs';
 import { ArticleError, assertNotCI, createContext, parseFlags, requireClient, toExitCode } from './lib/context.mjs';
 import { FILE_CREATE, FILE_STAGED_UPLOADS } from './lib/mutations.mjs';
@@ -95,35 +105,80 @@ export function uploadNameFor(handle, sourceName) {
   return stem.startsWith(`${handle}-`) ? `${stem}.jpg` : `${handle}-${stem}.jpg`;
 }
 
+/** True when the bytes open with a JPEG start-of-image marker. Decided on the bytes, never the name. */
+export function isJpegBytes(buffer) {
+  return Buffer.isBuffer(buffer) && buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+}
+
 /**
- * Which identifying metadata blocks a sharp `metadata()` result carries. Empty means clean.
+ * How many COM (comment) segments a JPEG's header carries, or null when the segment structure cannot
+ * be walked. sharp's `metadata()` does not report COM, and a COM segment is free text that can carry
+ * anything a camera, an editor or a person put there, so the headers are walked here up to the
+ * start of scan.
  *
- * @param {{exif?: unknown, xmp?: unknown, iptc?: unknown}} meta
+ * @param {Buffer} buffer
+ * @returns {number|null}
+ */
+export function jpegCommentCount(buffer) {
+  if (!isJpegBytes(buffer)) return null;
+  let count = 0;
+  let i = 2;
+  while (i < buffer.length) {
+    if (buffer[i] !== 0xff) return null;
+    while (i < buffer.length && buffer[i] === 0xff) i++;
+    if (i >= buffer.length) return null;
+    const marker = buffer[i++];
+    if (marker === 0xd9 || marker === 0xda) return count;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (i + 2 > buffer.length) return null;
+    const length = buffer.readUInt16BE(i);
+    if (length < 2) return null;
+    if (marker === 0xfe) count++;
+    i += length;
+  }
+  return null;
+}
+
+/**
+ * Which identifying metadata a file carries, from a sharp `metadata()` result and, when given, the
+ * bytes themselves (for the COM segments sharp does not report). Empty means clean.
+ *
+ * @param {{exif?: unknown, xmp?: unknown, iptc?: unknown, comments?: unknown[]}} meta
+ * @param {Buffer|null} [buffer]
  * @returns {string[]}
  */
-export function metadataRefusals(meta) {
+export function metadataRefusals(meta, buffer = null) {
   const out = [];
   if (meta?.exif) out.push('EXIF');
   if (meta?.xmp) out.push('XMP');
   if (meta?.iptc) out.push('IPTC');
+  if (Array.isArray(meta?.comments) && meta.comments.length) out.push('text chunk');
+  if (isJpegBytes(buffer)) {
+    const com = jpegCommentCount(buffer);
+    if (com === null) out.push('unreadable JPEG segment');
+    else if (com > 0) out.push('JPEG COM');
+  }
   return out;
 }
 
 /**
- * Whether a CDN URL is the file named `filename`. Shopify keeps the filename in the URL path, adds a
- * `?v=` cache buster, and appends `_1`, `_2` on a name collision, so the comparison is on the stem
- * and tolerates that suffix (the same rule as scripts/email-icons/upload-email-icons.mjs).
+ * Every reason a file may not upload, as sentence fragments: not a JPEG, or carrying metadata.
+ * Empty means it may.
  */
-export function matchesFilename(url, filename) {
-  if (typeof url !== 'string' || url === '') return false;
-  let stem;
-  try {
-    stem = path.parse(path.basename(new URL(url).pathname)).name;
-  } catch {
-    return false;
-  }
-  const wanted = path.parse(filename).name;
-  return stem === wanted || (stem.startsWith(`${wanted}_`) && /^\d+$/.test(stem.slice(wanted.length + 1)));
+export function imageProblems(meta, buffer) {
+  const out = [];
+  if (!isJpegBytes(buffer) || (meta?.format !== undefined && meta.format !== 'jpeg')) out.push('is not a JPEG');
+  const refusals = metadataRefusals(meta, buffer);
+  if (refusals.length) out.push(`carries ${refusals.join(', ')} metadata`);
+  return out;
+}
+
+/**
+ * The client a run sends through: the read-only wrapper for a dry run, which throws on any mutation
+ * document before the network, and the real client only for a confirmed run.
+ */
+export function uploadClient(real, confirmed) {
+  return confirmed ? real : createReadOnlyClient(real);
 }
 
 /** The plan hash: every file that would upload, by name and byte hash, order-independent. */
@@ -178,7 +233,9 @@ async function prepare(handle, ctx, deps) {
     if (names.has(name)) throw new ArticleError(source, `and ${names.get(name)} would both become ${name}; rename one`);
     names.set(name, source);
   }
-  mkdirSync(dir, { recursive: true });
+  // Every output is processed and checked before any is written, so a refusal on the last source
+  // really does mean nothing was written, not "nothing after the files already written".
+  const ready = [];
   for (const [name, source] of names) {
     const out = path.join(dir, name);
     if (existsSync(out)) {
@@ -186,8 +243,12 @@ async function prepare(handle, ctx, deps) {
       continue;
     }
     const { data, width, height } = await deps.process(readFileSync(path.join(originals, source)));
-    const refusals = metadataRefusals(await deps.metadata(data));
-    if (refusals.length) throw new ArticleError(name, `processing left ${refusals.join(', ')} metadata in the output; nothing was written`);
+    const problems = imageProblems(await deps.metadata(data), data);
+    if (problems.length) throw new ArticleError(name, `the processed output ${problems.join('; ')}; nothing was written`);
+    ready.push({ name, source, out, data, width, height });
+  }
+  mkdirSync(dir, { recursive: true });
+  for (const { name, source, out, data, width, height } of ready) {
     writeFileSync(out, data);
     ctx.log(`${name}: ${width}x${height}, ${data.length} bytes, from ${source}`);
   }
@@ -213,12 +274,12 @@ async function localImages(handle, ctx, deps) {
   for (const name of files) {
     const buffer = readFileSync(path.join(dir, name));
     const meta = await deps.metadata(buffer);
-    const refusals = metadataRefusals(meta);
-    if (refusals.length) problems.push(`${name}: carries ${refusals.join(', ')} metadata`);
+    const found = imageProblems(meta, buffer);
+    if (found.length) problems.push(`${name}: ${found.join('; ')}`);
     out.push({ name, bytes: buffer.length, sha256: sha256Bytes(buffer), width: meta?.width ?? null, height: meta?.height ?? null });
   }
   if (problems.length) {
-    throw new ArticleError(dir, `refusing: identifying metadata must be absent before anything uploads.\n  ${problems.join('\n  ')}\nRun --prepare on the originals instead.`);
+    throw new ArticleError(dir, `refusing: every file must be a JPEG with no identifying metadata before anything uploads.\n  ${problems.join('\n  ')}\nRun --prepare on the originals instead.`);
   }
   return out;
 }
@@ -269,7 +330,7 @@ export async function run(argv, ctx, deps = {}) {
 
   const images = await localImages(handle, ctx, d);
   const real = requireClient(ctx, COMMAND);
-  const client = confirm === null ? createReadOnlyClient(real) : real;
+  const client = uploadClient(real, confirm !== null);
   try {
     await assertScopes(client, [...UPLOAD_SCOPES]);
   } catch (err) {
@@ -332,9 +393,9 @@ export async function run(argv, ctx, deps = {}) {
     if (sha256Bytes(buffer) !== image.sha256) {
       throw new ArticleError(image.name, `changed on disk since it was listed; nothing more is uploaded.${uploadedSoFar()}`);
     }
-    const refusals = metadataRefusals(await d.metadata(buffer));
-    if (refusals.length) {
-      throw new ArticleError(image.name, `carries ${refusals.join(', ')} metadata; refusing before stagedUploadsCreate.${uploadedSoFar()}`);
+    const problems = imageProblems(await d.metadata(buffer), buffer);
+    if (problems.length) {
+      throw new ArticleError(image.name, `${problems.join('; ')}; refusing before stagedUploadsCreate.${uploadedSoFar()}`);
     }
     const staged = await client.gql(FILE_STAGED_UPLOADS, {
       input: [{ filename: image.name, mimeType: MIME, resource: 'FILE', httpMethod: 'POST', fileSize: String(buffer.length) }],
@@ -362,17 +423,24 @@ export async function run(argv, ctx, deps = {}) {
     if (!file?.id) {
       throw new ArticleError('fileCreate', `returned no file and no userErrors for ${image.name}, so whether it exists is unknown. Run the dry run again, which looks it up.${uploadedSoFar()}`);
     }
-    uploaded.push({ name: image.name, id: file.id });
 
+    // Not recorded as uploaded yet: until the poll ends without FAILED this file's outcome is not
+    // known, and a refusal from here must never list the file it is refusing as public.
     let url = file.image?.url ?? null;
     for (let attempt = 0; url === null && attempt < POLL_ATTEMPTS; attempt++) {
       await ctx.sleep(backoffDelayMs(Math.min(attempt, 3)));
-      const node = (await client.gql(ARTICLE_IMAGE_FILE_READ, { id: file.id }))?.node;
+      let node;
+      try {
+        node = (await client.gql(ARTICLE_IMAGE_FILE_READ, { id: file.id }))?.node;
+      } catch (err) {
+        throw new ArticleError(image.name, `was created as ${file.id}, but reading its processing state failed (${redact(err && err.message ? err.message : String(err))}), so it may be public. Run the dry run again, which looks it up.${uploadedSoFar()}`);
+      }
       if (node?.fileStatus === 'FAILED') {
         throw new ArticleError(image.name, `Shopify reports processing FAILED for ${file.id}; delete it in Admin (Content, then Files) before retrying.${uploadedSoFar()}`);
       }
       if (node?.fileStatus === 'READY' && node.image?.url) url = node.image.url;
     }
+    uploaded.push({ name: image.name, id: file.id });
     if (url === null) {
       ctx.log(`${image.name}: created (${file.id}) and still processing; run the dry run again in a moment for its URL`);
     } else {

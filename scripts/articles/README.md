@@ -28,9 +28,9 @@ fails loud if Admin reports it visible, and refuses to write over an article tha
 | `npm run articles:verify` | no | `articles:check`, then each article against its last observation. `--root <dir>` picks the tree. |
 | `npm run articles:verify -- --live` | read | the live checks below. |
 | the article push | **write** | create or update ONE article, hidden. See "The article push". |
-| `node scripts/articles/upload-images.mjs --handle <h> --prepare` | no | process `article-images/<h>/originals/` into upload-ready JPEGs with no EXIF, XMP or IPTC. |
-| `node scripts/articles/upload-images.mjs --handle <h>` | read | the upload's dry run: what would upload, what Files already holds, and the plan sha. |
-| `node scripts/articles/upload-images.mjs --handle <h> --confirm=<h> --expect-plan=<sha>` | **write** | create those files in Shopify Files. See "Article images". |
+| the article image uploader, `--prepare` | no | process `article-images/<h>/originals/` into upload-ready JPEGs with no EXIF, XMP, IPTC, text chunk or COM segment. |
+| the article image uploader, bare | read | the upload's dry run: what would upload, what Files already holds, and the plan sha. |
+| the article image uploader, `--confirm` | **write** | create those files in Shopify Files. See "Article images". |
 | `npm run articles:test` | no | the suite. |
 
 `articles:pull` has **no mode that writes repo files**: exactly one of `--check` or `--seed` is
@@ -126,18 +126,19 @@ sends it again; unknown never reads as the same.
 
 ## Article images
 
-`upload-images.mjs` is the only supported way an article photo reaches the store. **An uploaded file
-is public at its CDN URL at once, whatever the article's state**, so it is its own gate rather than a
-step of the push: a dry run listing exactly what would upload, `--confirm=<handle>` coupled to the
-`--expect-plan` sha that dry run printed (a hash over every file name and its bytes), a Files filename
-lookup that turns an existing upload into a no-op (with a few seconds of indexing lag), and EXIF, XMP
-and IPTC asserted absent on the exact bytes immediately before `stagedUploadsCreate`. It only ever
-creates files, and every name starts with `<handle>-` so an abandoned draft's uploads can be found and
-removed by hand in Admin. It writes no repo file and keeps no state: it prints the `images.json`
-entries. It has no npm script and is run by module path, with the credentials passed explicitly like
-every other Admin tool (`scripts/README.md`, Credentials). The procedure, including its own operator
-ask, is `.claude/skills/articles/images.md`. **The live upload path is unexercised**: its suite runs
-against a fake client and a fake staged-upload endpoint only.
+The article image uploader is the only supported way an article photo reaches the store. **An
+uploaded file is public at its CDN URL at once, whatever the article's state**, so it is its own gate
+rather than a step of the push: a dry run listing exactly what would upload, `--confirm=<handle>`
+coupled to the `--expect-plan` sha that dry run printed (a hash over every file name and its bytes), a
+Files filename lookup that turns an existing upload into a no-op (with a few seconds of indexing lag),
+JPEG bytes only, and EXIF, XMP, IPTC, text chunks and JPEG COM segments asserted absent on the exact
+bytes immediately before `stagedUploadsCreate`. It only ever creates files, and every name starts with
+`<handle>-` so an abandoned draft's uploads can be found and removed by hand in Admin. It writes no
+repo file and keeps no state: it prints the `images.json` entries. It has no npm script and is run by
+module path, with the credentials passed explicitly like every other Admin tool (`scripts/README.md`,
+Credentials). Its command lines, and its own operator ask, are in `.claude/skills/articles/images.md`,
+the one scanned file allowed to spell its path (see "Tests"). **The live upload path is unexercised**:
+its suite runs against a fake client and a fake staged-upload endpoint only.
 
 Its two mutation documents live in `lib/mutations.mjs` with the article writes, in a separate
 `UPLOAD_MUTATION_ROOT_FIELDS` map, so the push's allowlist does not grow with them.
@@ -232,13 +233,21 @@ compares it with the local processed file. The checker says so in a note on ever
   `scripts/lib/test-hygiene.mjs` and `scripts/lib/git-fake.mjs`.
 - **The no-invocation guard** walks `.github/workflows/`, `.github/actions/`, `scripts/`, the
   `.claude/` skills, hooks, commands, rules and agents trees, the `.claude/` settings files and
-  `package.json`, and refuses any automated invocation of the live write: by its npm name, by its
-  module path, or by a relative import that resolves to the module. The only permitted text occurrences
-  are its declaration in `package.json`, whose value is pinned, and the npm name (never the module
-  path) in `.claude/skills/articles/push.md`, exempt by exact path. The only permitted imports are the two
-  test files above, by exact path, held to stricter rules (no `main`, no real client, no environment
-  read). **It is a merge gate, not leak prevention**: on a public repository a change is exposed the
-  moment it is pushed to any branch, and the pre-push checklist is the first line.
+  `package.json`, fails if any of those trees holds a symlinked directory (the walk would skip it), and
+  refuses any automated invocation of either live write, the push or the image uploader: by the push's
+  npm name, by either module's path, by a relative import that resolves to either module, or by a path
+  built to either one. The only permitted text occurrences are the push's declaration in
+  `package.json`, whose value is pinned; the push's npm name (never its module path, in any letter
+  case) in `.claude/skills/articles/push.md`; and the uploader's module path in
+  `.claude/skills/articles/images.md`; each exempt by exact path. The only permitted imports are each
+  module's own tests (the two push test files above, and `upload-images.test.mjs`), by exact path and
+  for their own module only, held to stricter rules: no `main`, no real client, no environment read and
+  no built path, which is why the uploader has no spawned-CLI test. **It is a merge gate, not leak
+  prevention**: on a public repository a change is exposed the moment it is pushed to any branch, and
+  the pre-push checklist is the first line.
+- `rules-parity.test.mjs` holds the Blog articles rules byte-identical between the repo `CLAUDE.md`
+  (canonical) and `.claude/skills/articles/SKILL.md`, the same arrangement as the shop policies
+  absolutes.
 
 ## What the tests do not prove
 

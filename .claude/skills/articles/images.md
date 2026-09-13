@@ -59,8 +59,8 @@ node scripts/articles/upload-images.mjs --handle <handle> --prepare
 ```
 
 Rotates upright, converts to sRGB, fits the long edge within 2048 px, writes a JPEG, and drops every
-metadata block (EXIF, which carries camera GPS, plus XMP and IPTC), then re-reads each output to
-confirm. It never overwrites an existing upload-ready file: delete one to process its source again.
+metadata block (EXIF, which carries camera GPS, plus XMP, IPTC, text chunks and JPEG COM segments).
+It checks every output before writing any, so a refusal writes nothing. It never overwrites an existing upload-ready file: delete one to process its source again.
 No credentials, no network.
 
 ## 3. The dry run
@@ -69,8 +69,9 @@ No credentials, no network.
 node scripts/articles/upload-images.mjs --handle <handle>
 ```
 
-Reads every upload-ready file, refuses the whole set if any name is not `<handle>-<words>.jpg` or any
-file carries EXIF, XMP or IPTC, then looks each name up in Files through the read-only client. It
+Reads every upload-ready file, refuses the whole set if any name is not `<handle>-<words>.jpg`, any
+file's bytes are not a JPEG (whatever its name), or any file carries EXIF, XMP, IPTC, a text chunk or
+a JPEG COM segment, then looks each name up in Files through the read-only client. It
 prints, per file, either `already in Files` (a no-op, with its URL) or `would upload` with dimensions,
 size and sha256, then a **plan sha** and the flags that would apply exactly that plan.
 
@@ -104,11 +105,12 @@ node scripts/articles/upload-images.mjs --handle <handle> --confirm=<handle> --e
 
 The plan sha must come from a dry run you ran in this session, after the last change to the files.
 The command re-reads the list and refuses if the plan moved. Then, per file, it re-reads the bytes,
-checks their hash against the plan, **asserts EXIF, XMP and IPTC absent on those exact bytes
-immediately before `stagedUploadsCreate`**, uploads, creates the Files entry, and polls until Shopify
+checks their hash against the plan, **asserts those bytes are a JPEG with no EXIF, XMP, IPTC, text chunk
+or COM segment, immediately before `stagedUploadsCreate`**, uploads, creates the Files entry, and polls until Shopify
 has processed it. It only ever creates files; it never updates or deletes one.
 
-A refusal after the first file landed names every file already uploaded and public in that run. Do
+A refusal after the first file landed names every file already uploaded and public in that run, and
+never the file it refused on. Do
 not re-run to find out what happened; run the dry run, which reports those as `already in Files`.
 
 ## 6. Record
