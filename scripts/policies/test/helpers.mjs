@@ -32,7 +32,7 @@ export const BODIES = Object.freeze({
     '<h2>Questions?</h2>',
     '<p>Ask us.</p>',
   ].join('\n'),
-  TERMS_OF_SERVICE: '<p>Terms, with no headings, like the real one.</p>',
+  TERMS_OF_SERVICE: '<p>Terms, with no headings.</p>',
 });
 
 /**

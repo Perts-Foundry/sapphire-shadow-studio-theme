@@ -253,11 +253,182 @@
       "handle": "terms-of-service",
       "writable": true,
       "stamped": true,
-      "version": 3,
-      "coreSha256": "d6d8b801ff4f7e1eec14906000a79ed9a0e940dab8ad81905e2da7c130802eb2",
-      "sha256": "c376c3982dc004b626c73e2c504f4dd5f0424287a70576cb044b4392e476ab2a",
-      "length": 22921,
-      "headings": []
+      "version": 7,
+      "coreSha256": "a021450607f356279e52bc5e5f865a0ed88c0fc37ac1e2d9e1cbd81fde2053e2",
+      "sha256": "833c0cdf448452b0a754bbbefd748d503e6c6a1079b888cc096ace433a19a450",
+      "length": 28608,
+      "headings": [
+        {
+          "level": 2,
+          "text": "Access and Account",
+          "id": "access-and-account"
+        },
+        {
+          "level": 2,
+          "text": "Our Products",
+          "id": "our-products"
+        },
+        {
+          "level": 2,
+          "text": "Orders",
+          "id": "orders"
+        },
+        {
+          "level": 2,
+          "text": "Custom Orders",
+          "id": "custom-orders"
+        },
+        {
+          "level": 3,
+          "text": "Quotes and Approval",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Your Responsibility for the Specification",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Mockups and Variation",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Final Sale and Cancellation",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Garments",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Material You Provide",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Designs and Files",
+          "id": null
+        },
+        {
+          "level": 3,
+          "text": "Marketing Use",
+          "id": null
+        },
+        {
+          "level": 2,
+          "text": "Use of Finished Work",
+          "id": "use-of-finished-work"
+        },
+        {
+          "level": 2,
+          "text": "Prices and Billing",
+          "id": "prices-and-billing"
+        },
+        {
+          "level": 2,
+          "text": "Shipping and Delivery",
+          "id": "shipping-and-delivery"
+        },
+        {
+          "level": 2,
+          "text": "Intellectual Property",
+          "id": "intellectual-property"
+        },
+        {
+          "level": 2,
+          "text": "Optional Tools",
+          "id": "optional-tools"
+        },
+        {
+          "level": 2,
+          "text": "Third-Party Links",
+          "id": "third-party-links"
+        },
+        {
+          "level": 2,
+          "text": "Relationship with Shopify",
+          "id": "relationship-with-shopify"
+        },
+        {
+          "level": 2,
+          "text": "Privacy Policy",
+          "id": "privacy-policy"
+        },
+        {
+          "level": 2,
+          "text": "Feedback",
+          "id": "feedback"
+        },
+        {
+          "level": 2,
+          "text": "Errors, Inaccuracies and Omissions",
+          "id": "errors-inaccuracies-and-omissions"
+        },
+        {
+          "level": 2,
+          "text": "Prohibited Uses",
+          "id": "prohibited-uses"
+        },
+        {
+          "level": 2,
+          "text": "Termination",
+          "id": "termination"
+        },
+        {
+          "level": 2,
+          "text": "Disclaimer of Warranties",
+          "id": "disclaimer-of-warranties"
+        },
+        {
+          "level": 2,
+          "text": "Limitation of Liability",
+          "id": "limitation-of-liability"
+        },
+        {
+          "level": 2,
+          "text": "Indemnification",
+          "id": "indemnification"
+        },
+        {
+          "level": 2,
+          "text": "Severability",
+          "id": "severability"
+        },
+        {
+          "level": 2,
+          "text": "Waiver; Entire Agreement",
+          "id": "waiver-entire-agreement"
+        },
+        {
+          "level": 2,
+          "text": "Assignment",
+          "id": "assignment"
+        },
+        {
+          "level": 2,
+          "text": "Governing Law",
+          "id": "governing-law"
+        },
+        {
+          "level": 2,
+          "text": "Headings",
+          "id": "headings"
+        },
+        {
+          "level": 2,
+          "text": "Changes to Terms of Service",
+          "id": "changes-to-terms-of-service"
+        },
+        {
+          "level": 2,
+          "text": "Contact Information",
+          "id": "contact-information"
+        }
+      ]
     }
   }
 }

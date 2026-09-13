@@ -145,7 +145,7 @@ test('extractHeadings trims and skips whitespace-only headings', () => {
 });
 
 test('extractHeadings returns an empty array for a heading-free body', () => {
-  // Two of the five tracked policies (terms of service, contact information) genuinely have none.
+  // One of the five tracked policies (contact information) genuinely has none.
   assert.deepEqual(extractHeadings('<p>no headings at all</p>'), []);
   assert.deepEqual(extractHeadings(''), []);
 });

@@ -47,12 +47,30 @@
       ]
     },
     "terms_of_service": {
-      "coreSha256": "d6d8b801ff4f7e1eec14906000a79ed9a0e940dab8ad81905e2da7c130802eb2",
+      "coreSha256": "a021450607f356279e52bc5e5f865a0ed88c0fc37ac1e2d9e1cbd81fde2053e2",
       "must": [
         "(540) 300-5229",
         "href=\"/policies/refund-policy\"",
         "href=\"/policies/privacy-policy\"",
-        ">Shopify’s Privacy Policy</a>"
+        ">Shopify’s Privacy Policy</a>",
+        "<h2>Orders</h2>",
+        "<h2>Custom Orders</h2>",
+        "<h2>Prices and Billing</h2>",
+        "<h2>Termination</h2>",
+        "<h2>Contact Information</h2>",
+        "<h2>Use of Finished Work</h2>",
+        "<h3>Marketing Use</h3>",
+        "Intellectual Property, Feedback, Custom Orders, Use of Finished Work, Termination,",
+        "royalty-free, transferable and sublicensable license",
+        "tell us in writing before you place your order",
+        "does not limit our use of your finished piece under Use of Finished Work",
+        "other than Use of Finished Work, this section governs the custom order",
+        "irrevocable, worldwide, royalty-free, transferable and sublicensable license to reproduce it",
+        "may be distributed to its members",
+        "Some products can be personalized at checkout",
+        "not by this Feedback license",
+        "form part of that agreement and are not superseded by it",
+        "in effect when it was placed"
       ],
       "mustNot": [
         "[INSERT TRADING NAME]",
@@ -61,7 +79,17 @@
         "[INSERT BUSINESS REGISTRATION NUMBER]",
         "[INSERT VAT NUMBER]",
         "[LINK]",
-        "[NOTE TO MERCHANT"
+        "[NOTE TO MERCHANT",
+        "<strong>SECTION ",
+        "<strong>OVERVIEW</strong>",
+        "<br>",
+        "Intellectual Property, Feedback, Termination,",
+        "Intellectual Property, Feedback, Custom Orders, Termination,",
+        "<h3>Photography and Promotion</h3>",
+        "before you pay for the order, that you object",
+        "conflicts with another section, this section governs",
+        "non-exclusive, perpetual, worldwide, royalty-free license",
+        "tell us in writing before your order ships"
       ]
     }
   }
