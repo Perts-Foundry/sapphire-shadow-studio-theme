@@ -152,12 +152,12 @@ export function evaluatePage(page, expectedHost) {
   // the time of writing) emits its own Product node beside the theme's once a
   // review is published. exitCodeFor blocks only on errors new since the
   // baseline, so the first red run is the one-time signal and later runs report
-  // it as unchanged. The response is the TODO.md decision item, never a
+  // it as unchanged. The response is the TODO-list.md decision item, never a
   // suppression here or in the theme (.claude/rules/structured-data.md).
   if (pageType === 'product') {
     const n = types.filter((t) => t === 'Product' || t === 'ProductGroup').length;
     if (n > 1) {
-      add('jsonld-product-duplicate', ERROR, `${n} Product/ProductGroup nodes: expected overlap between the theme's structured_data filter and an installed app's rich snippets; do not suppress either, see the TODO.md decision item`);
+      add('jsonld-product-duplicate', ERROR, `${n} Product/ProductGroup nodes: expected overlap between the theme's structured_data filter and an installed app's rich snippets; do not suppress either, see the TODO-list.md decision item`);
     }
   }
   if (BREADCRUMB_PAGE_TYPES.has(pageType) && !types.includes('BreadcrumbList')) {

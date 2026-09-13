@@ -106,7 +106,7 @@ These are about the capture itself rather than a surface:
 
 - **Where**: `Settings` > `Associations`, view `settings/associations`.
 - **Healthy**: "Associated services" lists Google Analytics and Merchant Center; "Pending requests"
-  is empty. Absent services are informational: the GA4 and Merchant Center items in `TODO.md`
+  is empty. Absent services are informational: the GA4 and Merchant Center items in `TODO-list.md`
   own that work.
 - **Failure**: a pending request nobody started.
 - **Checks**: `association-missing` (`SEVERITY['association-missing']`), `association-pending`
@@ -299,7 +299,7 @@ These are about the capture itself rather than a surface:
   type is detected (absent on 2026-09-13).
 - **Healthy**: per type (Product snippets, Merchant listings, Breadcrumbs, and any other), zero
   invalid and zero warning items. This is the evidence source for the Judge.me Product JSON-LD
-  owner decision in `TODO.md`: when both Product snippets and Merchant listings report items,
+  owner decision in `TODO-list.md`: when both Product snippets and Merchant listings report items,
   record which Product node each reads.
 - **Failure**: invalid or warning items; once the section exists, Product snippets or Breadcrumbs
   absent while a product URL inspects as indexed; a type never seen before. While the section is

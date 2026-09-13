@@ -977,7 +977,7 @@ async function cmdVocab(opts) {
 
 const THRESHOLDS_FILE = fileURLToPath(new URL('./thresholds.json', import.meta.url));
 // The catalogue manifest lives at the repo root, not beside the policy file: it declares the shape
-// of the whole offering, and other tooling is expected to migrate onto it (see TODO.md).
+// of the whole offering, and other tooling is expected to migrate onto it (see TODO-list.md).
 
 /**
  * A flag that takes no value.

@@ -323,7 +323,7 @@ function associationChecks({ okRep, add }) {
   const a = okRep('associations');
   if (!a) return;
   for (const svc of ['analytics', 'merchant-center']) {
-    if (!a.services.includes(svc)) add('association-missing', svc, `no ${svc} association; see the TODO.md channel items`);
+    if (!a.services.includes(svc)) add('association-missing', svc, `no ${svc} association; see the TODO-list.md channel items`);
   }
   if (a.pending > 0) add('association-pending', 'association-pending', `${a.pending} pending association request(s)`);
 }
@@ -478,7 +478,7 @@ function enhancementChecks({ reports, okRep, add }) {
   const types = items.map((i) => i.type);
   if (has(types, 'Product snippets') && has(types, 'Merchant listings')) {
     add('enhancement-product-duplicate-evidence', 'enhancement-product-duplicate-evidence',
-      'Product snippets and Merchant listings both report items; evidence for the Judge.me Product JSON-LD owner decision in TODO.md');
+      'Product snippets and Merchant listings both report items; evidence for the Judge.me Product JSON-LD owner decision in TODO-list.md');
   }
   const ins = okRep('inspections');
   const productIndexed = ins?.items.some((i) => /^\/products\//.test(pathOf(i.url)) && i.verdict === 'on-google' && i.indexed);

@@ -20,7 +20,7 @@ disable-model-invocation: true
 Search Console is verified for the storefront, and decisions in this repo are parked waiting on
 what it says: whether collection pages cluster under one canonical
 (`docs/collection-differentiation-runbook.md`), and which Product JSON-LD node Google reads once a
-Judge.me review is live (the decision item in `TODO.md`, reasoning in `release-notes.md`).
+Judge.me review is live (the decision item in `TODO-list.md`, reasoning in `release-notes.md`).
 `seo-review` checks what the storefront serves. This skill reads what Google made of it, audits the
 Search Console setup itself, and notices when Search Console grows a report or a setting the skill
 has never seen.
@@ -164,7 +164,7 @@ authorizes a change.**
 - **Read-only.** Nothing writes to Search Console, the store, Admin or the repo. The only writes
   are the capture and the run files, both in the state dir outside the checkout.
 - **Public repo.** No email address, user name, Google account, machine path, sub-state location,
-  raw capture, or search query text in any repo file, PR body, commit message, `TODO.md` entry or
+  raw capture, or search query text in any repo file, PR body, commit message, `TODO-list.md` entry or
   release note. Describe the class of a query, never the query. The property host and public
   storefront metadata are fine.
 - **Nonce.** Generate one per run (8 to 16 lowercase letters and digits) and put it in the capture

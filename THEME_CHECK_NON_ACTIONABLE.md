@@ -273,7 +273,7 @@ That inner `<img>` has no `alt` attribute, which Lighthouse flags as `image-alt`
 `video_tag` exposes only an `image_size` parameter; it has no `alt` parameter, and the
 `poster:` argument sets only the poster URL, not the inner `<img>`'s `alt`. Setting the
 media's alt text in Admin adds an `aria-label` to the `<video>` element (a real screen-reader
-improvement, tracked as an optional Admin task in `TODO.md`), but it does not add `alt` to the
+improvement, tracked as an optional Admin task in `TODO-list.md`), but it does not add `alt` to the
 generated `<img>`. The element is filter-internal and cannot be reached from theme code without
 abandoning `video_tag` and hand-rolling the `<video>`/`<source>` markup, which the project
 declined as a hack that trades a cosmetic audit line for real fragility (source-format

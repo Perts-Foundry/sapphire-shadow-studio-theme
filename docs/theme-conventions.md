@@ -119,7 +119,7 @@ and `border_radius: 0`, title `type_preset: "rte"` in the body font at `line_hei
 `color: "var(--color-foreground)"`, price `type_preset: "h6"` at `font_size: "1rem"`. Only the card
 gap already matches at 8, which is why a grep for the gap-4 marker missed them. Their
 `show_shipping_info: true` is deliberate and stays either way. Whether the rest joins the standard is
-an open judgement rather than queued work, so it is recorded here and not in `TODO.md`: decide it
+an open judgement rather than queued work, so it is recorded here and not in `TODO-list.md`: decide it
 when you next touch those templates, and until then do not treat them as a model either way.
 Section-level settings (which collection, column count, gaps, headers) are per-template
 and deliberately not part of the standard.

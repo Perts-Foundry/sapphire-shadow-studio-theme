@@ -49,7 +49,7 @@ Crawl-mode checks and why each exists:
   their own Product node beside the one from Shopify's `structured_data` filter, and this check is
   the signal that the overlap is now live. ERROR rather than WARN because the exit code blocks only
   on errors new since the baseline, so the first red run is the one-time signal and later runs
-  report it as unchanged. The one sanctioned response is the `TODO.md` decision item (run the crawl
+  report it as unchanged. The one sanctioned response is the `TODO-list.md` decision item (run the crawl
   and the Rich Results test, let the operator pick the owner); never suppress the app block, the
   theme's node, or this check. Directive in `.claude/rules/structured-data.md`, rationale in
   `docs/structured-data.md`.
@@ -129,7 +129,7 @@ reports NEW / RESOLVED / UNCHANGED; the exit code blocks only on new ERRORs, so 
 issue never re-reds a run.
 
 `accepted-risks.json` (committed, deliberately public: it records decisions already documented in
-TODO.md) suppresses findings the operator has explicitly accepted. Entries match on `check` id
+TODO-list.md) suppresses findings the operator has explicitly accepted. Entries match on `check` id
 plus an optional `path`. When a decision is revisited (say the blog gets its first post), delete
 the entry so the check goes live again. Finding `check` ids are the matching key for both this
 file and the baseline history, so renaming one orphans its entries; rename only with a matching
