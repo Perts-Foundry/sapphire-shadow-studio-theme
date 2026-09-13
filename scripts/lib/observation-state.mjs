@@ -110,6 +110,14 @@ export function createObservationState(config) {
   if (!Number.isInteger(schemaVersion) || schemaVersion < 1) {
     throw new TypeError(`createObservationState: schemaVersion must be an integer >= 1, got ${JSON.stringify(schemaVersion)}`);
   }
+  // CHECKED AT BUILD TIME, not at first use. `refuse` is called only when something has already
+  // gone wrong: a corrupt state file, or a state directory inside the checkout. A non-constructor
+  // here would turn the operator-facing refusal into a `TypeError` stack on the one path where the
+  // message is the entire product, and it would do so on the machine of whoever hit the problem
+  // rather than the machine of whoever wrote the configuration.
+  if (typeof ErrorClass !== 'function') {
+    throw new TypeError(`createObservationState: ErrorClass must be a constructor, got ${JSON.stringify(config?.ErrorClass)}`);
+  }
 
   const refuse = (subject, detail) => new ErrorClass(subject, detail);
 
