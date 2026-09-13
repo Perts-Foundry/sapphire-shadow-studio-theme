@@ -54,19 +54,9 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
 - [ ] **Thank-you card or packing-slip artwork carrying the Judge.me review QR.** The link and QR
   are generated in the app's admin (Settings > Request reviews > Links, QR codes > Manage); the
   artwork lives outside the repo.
-- [ ] **Run the article metafield spike, which decides both deferred article templates.** Operator
-  hands, in Admin and the theme editor. Create an article metafield definition of type
-  `list.product_reference`; then, in the theme editor on the **sync theme** (never live), try binding
-  a `featured-product` section's product setting, and a `product-list` section, to it as a dynamic
-  source. Inspect the resulting template JSON and the reconcile PR it produces. The outcome decides
-  the shoppable article template **and** the deferred photo-story template: a JSON template's section
-  settings are shared by every article using that suffix, so hand-picked products or per-post photos
-  need a per-article source. If binding works, the template is settings-only and reads per-article
-  metafields (the articles skill would record the product handles in `article.json`). If it does not,
-  the options are a small custom section reading `article.metafields.custom.featured_products` (new
-  Liquid, a real piece of work), one template per post, or dropping per-post picking for a fixed
-  related-products row. Build neither template before this is settled. Reasoning in the photo-story
-  entry in `release-notes.md`.
+- [ ] **Correct the sync theme's name in `README.md` and `CLAUDE.md`.** Both call it
+  `EDIT HERE - Admin Sync`; Admin's theme library lists it as `EDIT HERE - shopify-sync`. The theme ID
+  in README's "Branches and themes" table is the stable identifier; check it matches before editing.
 
 - [ ] **Once the first post is visible, finish the blog's audit and navigation wiring.** Add real
   article paths to `scripts/a11y/paths.json`; re-check the empty-blog accepted-risk rows in
