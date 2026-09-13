@@ -77,8 +77,9 @@ export function liveProjection(node) {
 /**
  * The hash of a projection, over every written field in WRITTEN_FIELDS order.
  *
- * TAGS ARE SORTED for the hash and for comparison: whether Shopify preserves tag order is unproven,
- * and a store that sorted them would otherwise make every article with two tags permanently stale.
+ * TAGS ARE SORTED for the hash and for comparison, because Shopify sorts them: the first end-to-end
+ * push sent `zeta-test, alpha-test` and Admin stored `alpha-test, zeta-test`. Comparing in order would
+ * make every article with two tags permanently stale.
  * The body is hashed as bytes; use `bodiesEquivalent` where a repo body meets a live one.
  */
 export function projectionSha(projection) {
