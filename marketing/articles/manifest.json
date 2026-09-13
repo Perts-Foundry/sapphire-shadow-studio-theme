@@ -1,3 +1,10 @@
 {
-  "articles": {}
+  "articles": {
+    "test-skill-end-to-end": {
+      "bodySha256": "7df4a1836a0dc5bd4ab73d9016caf2b1b4c4c251e871664e8f40673aa2873fb3",
+      "bodyLength": 423,
+      "metaSha256": "ede956120f0e12e464f3eecffa282551dd3e18860aee31506d4f42f2868e5d70",
+      "images": []
+    }
+  }
 }
