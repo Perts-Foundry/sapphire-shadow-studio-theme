@@ -43,6 +43,16 @@
 // That is deliberate. A README line is copy-pasteable, and this guard cannot tell a person reading
 // docs from a script reading the same bytes.
 //
+// WITH ONE DOCUMENTED EXCEPTION, the TEXT exemption: `.claude/skills/articles/push.md`, the skill doc
+// that owns the push procedure, listed in EXEMPT_DOCS. A push.md that cannot state the command it
+// documents is useless, and an agent reading it guesses a spelling; a "prose, not an invocation"
+// heuristic is exactly what a new spelling slips past. So the exemption is an exact path, frozen and
+// pinned like EXEMPT_IMPORTERS, and it covers the NPM NAME ONLY: that doc must not contain the module
+// path in any form (full, relative, or the bare filename), so the one documented route is the one
+// package.json declares and the push's own CI refusal covers. Every other file, including the other
+// docs in the same skill, stays refused and links through SKILL.md instead. The runtime CI refusal
+// inside the push remains the first line.
+//
 // AND IT IS A MERGE GATE, NOT LEAK PREVENTION. On a public repository anything pushed to any branch
 // is already exposed. This stops such a change reaching main; the pre-push checklist is the first
 // line, and this is the second.
@@ -97,6 +107,25 @@ export const EXEMPT_IMPORTERS = Object.freeze([
 ]);
 
 const EXEMPT_PATHS = Object.freeze(EXEMPT_IMPORTERS.map((e) => e.path));
+
+/**
+ * The only file that may carry the npm name in its text, by EXACT path. Frozen, and pinned by a test.
+ * It is a separate list from EXEMPT_IMPORTERS on purpose: an importer is exempt from the import rule
+ * and never from the text rule, and this doc is exempt from the npm-name half of the text rule only.
+ */
+export const EXEMPT_DOCS = Object.freeze([
+  Object.freeze({
+    path: '.claude/skills/articles/push.md',
+    why: 'the skill doc that owns the push procedure must state the command, by the npm name package.json declares, so no agent guesses a spelling',
+  }),
+]);
+
+const EXEMPT_DOC_PATHS = Object.freeze(EXEMPT_DOCS.map((e) => e.path));
+
+/** Any spelling of the push module's file: the full path, a relative path, a backslash path, the bare filename. */
+function spellsModule(line) {
+  return line.includes(MODULE_PATH) || line.includes(PUSH_FILE) || /articles[\\/]+push\b/.test(line);
+}
 
 /** Files whose imports are resolved as well as text-scanned. */
 const MODULE_EXTENSIONS = ['.mjs', '.cjs', '.js'];
@@ -272,11 +301,16 @@ export function findOffenders(files) {
   const offenders = [];
   for (const { path, text } of files) {
     if (path === SELF) continue;
-    if (text.includes(NPM_NAME) || text.includes(MODULE_PATH)) {
+    // EXACT equality against the frozen list. The exempt doc may name the push by its npm name, and
+    // may not spell the module in any form, which is stricter than the rule for every other file.
+    const exemptDoc = EXEMPT_DOC_PATHS.includes(path);
+    if (exemptDoc || text.includes(NPM_NAME) || text.includes(MODULE_PATH)) {
       for (const [i, line] of text.split('\n').entries()) {
-        if (!line.includes(NPM_NAME) && !line.includes(MODULE_PATH)) continue;
+        const spelled = line.includes(MODULE_PATH) || (exemptDoc && spellsModule(line));
+        if (!line.includes(NPM_NAME) && !spelled) continue;
         if (isDeclarationLine(path, line)) continue;
-        offenders.push(`${path}:${i + 1}: ${line.trim().slice(0, 120)}`);
+        if (exemptDoc && !spelled) continue;
+        offenders.push(`${path}:${i + 1}: ${exemptDoc ? '(the exempt doc may use the npm name only) ' : ''}${line.trim().slice(0, 120)}`);
       }
     }
     // A built path is not an import: exempt files are held to this rule like every other module.
@@ -401,6 +435,57 @@ test('the import exemption is exactly two pinned paths, each with a reason', () 
     assert.ok(Object.isFrozen(entry));
     assert.ok(typeof entry.why === 'string' && entry.why.length > 20, `${entry.path} carries no reason`);
     assert.ok(existsSync(join(REPO_ROOT, entry.path)), `${entry.path} is exempt but does not exist`);
+  }
+});
+
+test('the text exemption is exactly one pinned doc path, with a reason, and that doc really uses it', () => {
+  assert.deepEqual(EXEMPT_DOC_PATHS, ['.claude/skills/articles/push.md']);
+  assert.equal(EXEMPT_DOCS.length, 1);
+  assert.ok(Object.isFrozen(EXEMPT_DOCS));
+  const byPath = new Map(scannedFiles().map((f) => [f.path, f]));
+  for (const entry of EXEMPT_DOCS) {
+    assert.ok(Object.isFrozen(entry));
+    assert.ok(typeof entry.why === 'string' && entry.why.length > 20, `${entry.path} carries no reason`);
+    assert.ok(byPath.has(entry.path), `${entry.path} is exempt but was not walked (or does not exist)`);
+    // An exemption nobody uses is a hole waiting for a file.
+    assert.ok(byPath.get(entry.path).text.includes(NPM_NAME), `${entry.path} is exempt but never names the push`);
+  }
+});
+
+test('the text exemption is by exact path, covers the npm name only, and does not generalise', () => {
+  const doc = EXEMPT_DOC_PATHS[0];
+  const allowed = `The dry run:\n\n\`\`\`bash\nnpm run ${NPM_NAME} -- --handle <handle>\n\`\`\`\n\nRun \`${NPM_NAME}\` only after the ask.\n`;
+  assert.deepEqual(findOffenders([{ path: doc, text: allowed }]), []);
+
+  // The exempt doc spelling the module, in any form, is an offender, with or without the npm name.
+  for (const line of [
+    `node ${MODULE_PATH} --handle x`,
+    `see ${MODULE_PATH}`,
+    `node ./${ARTICLES_DIR_PATH}/${PUSH_FILE}`,
+    `the ${PUSH_FILE} module exports GATES`,
+    `npm run ${NPM_NAME} (that is node ${MODULE_PATH})`,
+    'scripts\\articles\\push --handle x',
+  ]) {
+    assert.equal(findOffenders([{ path: doc, text: `${allowed}${line}\n` }]).length, 1, `not caught in the exempt doc: ${line}`);
+  }
+
+  // Siblings in the same skill, and every near-miss path, are not exempt.
+  for (const path of [
+    '.claude/skills/articles/SKILL.md',
+    '.claude/skills/articles/write.md',
+    '.claude/skills/articles/images.md',
+    '.claude/skills/articles/verify.md',
+    '.claude/skills/articles/push.md.bak',
+    '.claude/skills/articles/Push.md',
+    '.claude/skills/articles/sub/push.md',
+    '.claude/skills/articles-old/push.md',
+    '.claude/skills/Articles/push.md',
+    '.claude/skills/shop-policies/push.md',
+    './.claude/skills/articles/push.md',
+    'scripts/articles/push.md',
+    '.claude/commands/articles/push.md',
+  ]) {
+    assert.ok(findOffenders([{ path, text: allowed }]).length > 0, `a near-miss path is exempt: ${path}`);
   }
 });
 

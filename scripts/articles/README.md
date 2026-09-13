@@ -28,6 +28,9 @@ fails loud if Admin reports it visible, and refuses to write over an article tha
 | `npm run articles:verify` | no | `articles:check`, then each article against its last observation. `--root <dir>` picks the tree. |
 | `npm run articles:verify -- --live` | read | the live checks below. |
 | the article push | **write** | create or update ONE article, hidden. See "The article push". |
+| `node scripts/articles/upload-images.mjs --handle <h> --prepare` | no | process `article-images/<h>/originals/` into upload-ready JPEGs with no EXIF, XMP or IPTC. |
+| `node scripts/articles/upload-images.mjs --handle <h>` | read | the upload's dry run: what would upload, what Files already holds, and the plan sha. |
+| `node scripts/articles/upload-images.mjs --handle <h> --confirm=<h> --expect-plan=<sha>` | **write** | create those files in Shopify Files. See "Article images". |
 | `npm run articles:test` | no | the suite. |
 
 `articles:pull` has **no mode that writes repo files**: exactly one of `--check` or `--seed` is
@@ -59,8 +62,10 @@ row per command, through the same `toExitCode` mapping every command's CLI uses.
 
 The push is declared in `package.json` as the `articles:*` key for the live write. This file does not
 spell that key or the module's path: every file under `scripts/` is scanned by the no-invocation
-guard, and a documented command line is exactly what gets pasted into a script. The authoring skill,
-which arrives later, will carry the operator-facing spelling.
+guard, and a documented command line is exactly what gets pasted into a script. The operator-facing
+spelling lives in exactly one file, `.claude/skills/articles/push.md`, the authoring skill's push
+doc, which the guard exempts by exact path and for the npm name only (never the module path). That
+doc also owns the ask, the publish boundary, the state schema and the status vocabulary.
 
 - `--handle <handle>` alone is the **dry run**: every gate up to the write runs, and it prints what
   would change and the flag to pass next. Nothing is written anywhere.
@@ -118,6 +123,24 @@ observation: each one records the live URL (`liveImageUrl`) and the repo URL tha
 (`imageSourceUrl`), trusted only while Admin still holds that copy. Where nothing records the source
 (a first `--seed`, or Admin replaced the image), the image reads as a difference and the next push
 sends it again; unknown never reads as the same.
+
+## Article images
+
+`upload-images.mjs` is the only supported way an article photo reaches the store. **An uploaded file
+is public at its CDN URL at once, whatever the article's state**, so it is its own gate rather than a
+step of the push: a dry run listing exactly what would upload, `--confirm=<handle>` coupled to the
+`--expect-plan` sha that dry run printed (a hash over every file name and its bytes), a Files filename
+lookup that turns an existing upload into a no-op (with a few seconds of indexing lag), and EXIF, XMP
+and IPTC asserted absent on the exact bytes immediately before `stagedUploadsCreate`. It only ever
+creates files, and every name starts with `<handle>-` so an abandoned draft's uploads can be found and
+removed by hand in Admin. It writes no repo file and keeps no state: it prints the `images.json`
+entries. It has no npm script and is run by module path, with the credentials passed explicitly like
+every other Admin tool (`scripts/README.md`, Credentials). The procedure, including its own operator
+ask, is `.claude/skills/articles/images.md`. **The live upload path is unexercised**: its suite runs
+against a fake client and a fake staged-upload endpoint only.
+
+Its two mutation documents live in `lib/mutations.mjs` with the article writes, in a separate
+`UPLOAD_MUTATION_ROOT_FIELDS` map, so the push's allowlist does not grow with them.
 
 ## Machine-local state and backups
 
@@ -210,8 +233,9 @@ compares it with the local processed file. The checker says so in a note on ever
 - **The no-invocation guard** walks `.github/workflows/`, `.github/actions/`, `scripts/`, the
   `.claude/` skills, hooks, commands, rules and agents trees, the `.claude/` settings files and
   `package.json`, and refuses any automated invocation of the live write: by its npm name, by its
-  module path, or by a relative import that resolves to the module. The only permitted text occurrence
-  is its declaration in `package.json`, whose value is pinned. The only permitted imports are the two
+  module path, or by a relative import that resolves to the module. The only permitted text occurrences
+  are its declaration in `package.json`, whose value is pinned, and the npm name (never the module
+  path) in `.claude/skills/articles/push.md`, exempt by exact path. The only permitted imports are the two
   test files above, by exact path, held to stricter rules (no `main`, no real client, no environment
   read). **It is a merge gate, not leak prevention**: on a public repository a change is exposed the
   moment it is pushed to any branch, and the pre-push checklist is the first line.
