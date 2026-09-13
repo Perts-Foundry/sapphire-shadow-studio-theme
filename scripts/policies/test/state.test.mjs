@@ -18,10 +18,12 @@ import { homedir, tmpdir } from 'node:os';
 
 import { PolicyError, coreSha256, sha256 } from '../lib/policies.mjs';
 import { defaultBackupDir } from '../lib/backups.mjs';
+import { STATE_FILE_BASENAME as SHARED_STATE_FILE_BASENAME } from '../../lib/observation-state.mjs';
 import {
   DIR_MODE,
   FILE_MODE,
   SEED_COMMAND,
+  STATE_DIR_BASENAME,
   STATE_FILE_BASENAME,
   STATE_SCHEMA_VERSION,
   assertStateDirOutsideRepo,
@@ -105,7 +107,19 @@ test('a state directory INSIDE the checkout is a refusal', () => {
   // The whole point of the move. An override pointing back into the repo would reintroduce the
   // committed observation one `git add -A` later, in a public repo.
   const root = scratch();
-  assert.throws(() => assertStateDirOutsideRepo(join(root, 'marketing', 'policies'), root), /inside the checkout/);
+  // The TYPE and the SUBJECT, not only the message. `restamp.mjs` branches on `instanceof
+  // PolicyError` to choose between a clean operator line and a raw stack, and the subject is what
+  // names the variable to fix. Both were literals here until the mechanism was extracted and both
+  // are configuration now, so either can be wrong with every message-matching test still green.
+  assert.throws(
+    () => assertStateDirOutsideRepo(join(root, 'marketing', 'policies'), root),
+    (err) => {
+      assert.ok(err instanceof PolicyError, `not a PolicyError: ${err.name}`);
+      assert.equal(err.subject, 'POLICIES_STATE_DIR', 'the refusal must name the variable the operator sets');
+      assert.match(err.message, /inside the checkout/);
+      return true;
+    },
+  );
   assert.throws(() => assertStateDirOutsideRepo(root, root), /inside the checkout/);
   assert.doesNotThrow(() => assertStateDirOutsideRepo(scratch(), root));
   // A sibling directory whose name merely starts with the root's is NOT inside it.
@@ -371,4 +385,28 @@ test('readState and writeState skip the guard when given no root, which is why t
   assert.doesNotThrow(() => writeState({ dir: inside, state: emptyState() }));
   assert.doesNotThrow(() => readState({ dir: inside }));
   assert.throws(() => readState({ dir: inside, root }), /inside the checkout/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The shared mechanism, and the configuration that makes it the policies one
+// ---------------------------------------------------------------------------------------------
+
+test('the policies CONFIGURATION is the one every existing machine already has on disk', () => {
+  // The mechanism moved to scripts/lib/observation-state.mjs, and its parameterisation is tested
+  // there, against a configuration deliberately unlike this one. Comparing the wrapper against a
+  // factory built with the SAME configuration, which is what this test did first, asserts nothing
+  // at all: both sides sit at the single point where a parameterised module and one with the
+  // policies values inlined agree, so both survive deleting the parameterisation entirely.
+  //
+  // What belongs here is the configuration itself, compared against literals. A drifted basename
+  // relocates the state file every existing machine already holds, and they would all silently read
+  // as "never pulled"; a drifted seed command names something that does not exist, in exactly the
+  // refusal a stuck operator is reading.
+  assert.equal(STATE_DIR_BASENAME, 'shop-policies-state');
+  assert.equal(SEED_COMMAND, 'npm run policies:pull');
+  assert.equal(STATE_FILE_BASENAME, SHARED_STATE_FILE_BASENAME);
+  assert.equal(defaultStateDir({ XDG_STATE_HOME: '/var/state' }), join('/var/state', 'shop-policies-state'));
+  assert.equal(resolveStateDir({ POLICIES_STATE_DIR: '/abs' }), join(sep, 'abs'));
+  assert.equal(emptyState().schemaVersion, STATE_SCHEMA_VERSION);
+  assert.deepEqual(Object.keys(emptyState()), ['schemaVersion', 'policies'], 'the entries key is what push and status read');
 });
