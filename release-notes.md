@@ -1,5 +1,16 @@
 # Release Notes
 
+## One backlog file: TODO-list.md (unreleased, 2026-09-13)
+
+The repo had two to-do files. `TODO.md` was the hand-curated backlog that `CLAUDE.md` called the
+single backlog; `TODO-list.md` was created on 2026-09-08 by `/pre-pr` Step 6, which writes deferred
+review findings to that exact name at the repo root. Sessions then wrote to both, so "the single
+backlog" was no longer true. The global `/pre-pr` rule fixes the file name, so the hand-written items
+moved to `TODO-list.md` word for word (check-off boxes dropped) and `TODO.md` was deleted. The work
+sections sit above `## Deferred review findings`, which stays the last section because Step 6 appends
+to the end of the file. The backlog rules are unchanged: delete landed items, never tick them, and
+record durable reasoning here. Mentions of `TODO.md` in older entries below are left as they were.
+
 ## Search Console skill: browser-first, read-only (unreleased, 2026-09-13)
 
 Google Search Console is verified for the storefront (a Domain property, verified through the domain

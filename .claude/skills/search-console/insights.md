@@ -49,7 +49,7 @@ visitors.
 snippets and Merchant listings both report items. Record which Product node Google reads for a
 reviewed product (the item details in each Enhancements report, and the inspection's rich-result
 rows) and whether the theme's node and the app's node disagree on price, availability or rating.
-That is the evidence the `TODO.md` decision item waits on; the decision itself is the operator's.
+That is the evidence the `TODO-list.md` decision item waits on; the decision itself is the operator's.
 
 **Links.** Once `links-none` stops firing, propose outreach and blog distribution around the pages
 that already earn links. The second brand domain appearing as a referrer is the redirect working,
@@ -68,6 +68,6 @@ not a link to chase (`secondary-domain-redirect`).
 - When a tab was truncated, conclusions are "top N as captured", never absolute.
 - Compare periods only when `review.mjs` compared them; `period-mismatch` means the pair is not
   comparable.
-- Never quote a search query into a repo file, PR body, commit message, `TODO.md` entry or release
+- Never quote a search query into a repo file, PR body, commit message, `TODO-list.md` entry or release
   note. Queries are visitor-typed text. Describe the class ("a sizing question about the vest").
 - Every insight ends with where the fix lives and who applies it. Nothing here authorizes a change.

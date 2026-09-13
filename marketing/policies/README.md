@@ -387,7 +387,7 @@ and `policies:status -- --live`, and there are no others.
 The push-time freshness gate (step 4) is the real control: it turns undetected drift into a refusal
 at the only moment it can do damage. A scheduled `policies:pull --check` opening a sticky issue is
 the fuller answer, but it would put `write_legal_policies` credentials into CI and widen the blast
-radius of this whole subsystem to anyone who can trigger a workflow. It is recorded in `TODO.md`
+radius of this whole subsystem to anyone who can trigger a workflow. It is recorded in `TODO-list.md`
 instead.
 
 **Cadence in the meantime:** run `npm run policies:pull -- --check` after any session in Shopify

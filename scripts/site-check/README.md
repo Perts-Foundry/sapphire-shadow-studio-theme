@@ -189,7 +189,7 @@ because its check (or whole tier) was SKIPPED this run is reported as SKIPPED, n
 `lib/state.mjs` holds the rule.
 
 `accepted-risks.json` (committed, deliberately public: it records decisions already documented
-in TODO.md) suppresses findings the operator has explicitly accepted. Entries match on `check`
+in TODO-list.md) suppresses findings the operator has explicitly accepted. Entries match on `check`
 id plus an optional `subject`, and carry a `note` and `accepted_on`. **Never an order number, an
 email, an address or any other identifier**; the contract test greps for them. When a decision
 is revisited (the weights get fixed), delete the entry so the check goes live again. Finding

@@ -76,7 +76,7 @@ like a granted exception while suppressing nothing.
 pre-existing failures recorded rather than fixed, so the gate could land without restyling the live
 storefront. That was a deliberate decision; the consequence is that the gate catches regressions
 from day one but asserts nothing about the current palette's absolute quality. Triage is tracked in
-`TODO.md`.
+`TODO-list.md`.
 
 ## Layout
 
