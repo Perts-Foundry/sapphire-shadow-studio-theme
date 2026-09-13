@@ -176,3 +176,83 @@ test('spawn smoke: the CLI runs as a process with no shell', () => {
   });
   assert.equal(bad.status, 2);
 });
+
+const HOST = 'https://sapphireshadowstudio.com';
+const urlset = (urls) => `<urlset>${urls.map((u) => `<url><loc>${u}</loc></url>`).join('')}</urlset>`;
+
+/** A fetch stub: 200 for a body in `bodies`, a handler from `handlers`, else 404. */
+function liveFetch(bodies, handlers = {}) {
+  const calls = [];
+  const impl = async (url) => {
+    calls.push(url);
+    if (handlers[url]) return handlers[url](url);
+    return { status: bodies[url] ? 200 : 404, url, headers: new Headers(), text: async () => bodies[url] ?? '' };
+  };
+  impl.calls = calls;
+  return impl;
+}
+const healthySitemap = () => ({
+  [`${HOST}/sitemap.xml`]: `<sitemapindex><sitemap><loc>${HOST}/sitemap_pages_1.xml</loc></sitemap></sitemapindex>`,
+  [`${HOST}/sitemap_pages_1.xml`]: urlset(SITEMAP_URLS),
+});
+const writeCapture = (w, name, mutate) => {
+  const capture = JSON.parse(fs.readFileSync(fixture('capture-healthy.json'), 'utf8'));
+  mutate(capture);
+  const file = path.join(w.home, name);
+  fs.writeFileSync(file, JSON.stringify(capture));
+  return file;
+};
+
+test('a second run over a different period does not compare performance', async () => {
+  const w = world();
+  const first = await cli([fixture('capture-healthy.json'), '--offline', '--now', '2026-12-01T15:00:00Z'], w);
+  assert.equal(first.code, 0, first.out + first.err);
+  const file = writeCapture(w, 'capture-3mo.json', (c) => { c.reports.performance.period = '3mo'; });
+  const second = await cli([file, '--offline', '--json', '--now', '2026-12-01T16:00:00Z'], w);
+  const out = JSON.parse(second.out);
+  assert.ok(out.notCompared.some((x) => x.report === 'performance' && x.reason === 'period-mismatch'), second.out);
+});
+
+test('a failed child sitemap is reported as partial', async () => {
+  const w = world();
+  const bodies = healthySitemap();
+  bodies[`${HOST}/sitemap.xml`] = `<sitemapindex><sitemap><loc>${HOST}/sitemap_pages_1.xml</loc></sitemap><sitemap><loc>${HOST}/sitemap_products_1.xml</loc></sitemap></sitemapindex>`;
+  const fetchImpl = liveFetch(bodies);
+  const r = await cli([fixture('capture-healthy.json'), '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
+  assert.equal(r.code, 0, r.out + r.err);
+  const fresh = JSON.parse(r.out).fresh;
+  assert.ok(fresh.some((f) => f.check === 'sitemap-live-unreachable' && /child sitemap failed/.test(f.detail)), r.out);
+  assert.ok(!fresh.some((f) => f.check === 'sitemap-discovered-mismatch'), 'no count comparison from a partial read');
+});
+
+test('an index that answers 500 is reported as unreachable', async () => {
+  const w = world();
+  const fetchImpl = async (url) => ({ status: 500, url, headers: new Headers(), text: async () => '' });
+  const r = await cli([fixture('capture-healthy.json'), '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.ok(JSON.parse(r.out).fresh.some((f) => f.check === 'sitemap-live-unreachable' && /index could not be fetched/.test(f.detail)), r.out);
+});
+
+test('a secondary domain is probed unfollowed, and a permanent redirect to the property is INFO', async () => {
+  const w = world();
+  const file = writeCapture(w, 'capture-alias.json', (c) => { c.reports.settings.secondary_domains = ['brand-alias.example']; });
+  const fetchImpl = liveFetch(healthySitemap(), {
+    'https://brand-alias.example/': (url) => ({ status: 301, url, headers: new Headers({ location: `${HOST}/` }), text: async () => '' }),
+  });
+  const r = await cli([file, '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.ok(fetchImpl.calls.includes('https://brand-alias.example/'));
+  const probe = JSON.parse(r.out).fresh.filter((f) => f.check === 'secondary-domain-redirect');
+  assert.deepEqual(probe.map((f) => [f.url, f.severity]), [['brand-alias.example', 'INFO']]);
+});
+
+test('a malformed or unparseable accepted-risks file exits 2', async () => {
+  const w = world();
+  const bad = path.join(w.home, 'accepted-risks.json');
+  fs.writeFileSync(bad, JSON.stringify([{ check: 'no-such-check', path: null, note: 'x', accepted_on: '2026-12-01' }]));
+  const malformed = await cli([fixture('capture-healthy.json'), '--offline'], w, { acceptedRisks: null, acceptedRisksFile: bad });
+  assert.equal(malformed.code, 2);
+  assert.match(malformed.err, /accepted-risks\.json is malformed/);
+  fs.writeFileSync(bad, 'not json');
+  assert.equal((await cli([fixture('capture-healthy.json'), '--offline'], w, { acceptedRisks: null, acceptedRisksFile: bad })).code, 2);
+});

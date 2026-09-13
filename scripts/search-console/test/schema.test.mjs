@@ -168,3 +168,43 @@ test('every reason label maps to a known slug', () => {
   const slugs = new Set(Object.values(REASON_LABELS));
   assert.deepEqual([...slugs].sort(), KNOWN_REASONS.filter((r) => r !== 'unknown').sort());
 });
+
+test('isSensitivePath: public storefront paths pass; token-shaped and customer routes do not', () => {
+  const pass = [
+    '/sitemap_products_1.xml', '/sitemap_collections_1.xml', '/sitemap_pages_1.xml', '/sitemap_blogs_1.xml',
+    '/blogs/shift-notes/internationalization', '/pages/abcdefghij123456789', '/accounts-receivable-tote',
+    '/products/sapphire-shadow-studio-gift-card', '/',
+  ];
+  const refuse = [
+    '/pages/abcdefghij1234567890', '/cart/c/hWN4-ab', '/12345678/checkouts/cn/hWN4abcd-EFgh-ijkl', '/Checkouts/abc',
+    '/account', '/account/login', '/12345678/orders/abc', '/pages/123e4567-e89b-12d3-a456-426614174000',
+  ];
+  for (const p of pass) assert.equal(isSensitivePath(p), false, p);
+  for (const p of refuse) assert.equal(isSensitivePath(p), true, p);
+});
+
+test('a discovery view path with a token-shaped segment is rejected', () => {
+  const token = 'abcdef0123456789abcdef01';
+  expectError((c, r) => { r.discovery.unknown.push({ kind: 'nav', label: 'X', path: `resource/${token}`, note: 'n' }); }, /\/unknown\/0\/path$/, /token-shaped/);
+  expectError((c, r) => { r.discovery.nav.push({ label: 'X', path: `r/${token}` }); }, /\/nav\/\d+\/path$/, /token-shaped/);
+  const c = baseCapture();
+  c.reports.discovery.unknown.push({ kind: 'nav', label: 'Shopping', path: 'shopping-tab', note: 'a new report' });
+  assert.deepEqual(errorsOf(c), []);
+});
+
+test('unread above total, more examples than the count, and an email-shaped key are rejected', () => {
+  expectError((c, r) => { r.messages.unread = r.messages.total + 1; }, /^\/reports\/messages\/unread$/, /exceeds total/);
+  expectError((c, r) => {
+    r['indexing-pages'].reasons.push({ reason: 'soft-404', source: null, count: 1, examples: [`${ORIGIN}/pages/faq`, `${ORIGIN}/pages/about`] });
+    r['indexing-pages'].not_indexed += 1;
+  }, /reasons\/\d+\/examples$/, /more examples than the reason count/);
+  const address = ['someone', 'example.test'].join('@');
+  expectError((c, r) => { r.messages[address] = 1; }, /^\/reports\/messages\//, /email-shaped key/);
+});
+
+test('a capture that is not an object, a bad property and a non-object reports are rejected', () => {
+  assert.deepEqual(validateCapture([]).errors.map((e) => e.path), ['']);
+  assert.deepEqual(validateCapture(null).errors.map((e) => e.path), ['']);
+  expectError((c) => { c.property = 'not a property'; }, /^\/property$/);
+  expectError((c) => { c.reports = []; }, /^\/reports$/, /expected an object/);
+});

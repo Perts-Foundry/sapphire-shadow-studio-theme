@@ -33,9 +33,13 @@ is 1 on any fresh ERROR, not only on new ones, because a Search Console error (a
 noindexed product) should keep blocking until it is fixed or accepted.
 
 **What never enters a capture or the repo.** Page URLs lose query strings and fragments. Customer and
-token routes (`/checkouts/`, `/account`, `/orders/`, `/cart/c/`) and token-shaped path segments are
-refused outright. The token rule counts letters, digits and underscores only: a first draft counted
-hyphens too, which would have refused public product handles such as the gift card's. Users are
+token routes (`checkouts`, `account`, `orders`, `cart/c`, matched as whole segments anywhere in the
+path, because a checkout URL is often prefixed with the shop id) and token-shaped path segments are
+refused outright. The token rule counts letters, digits and underscores only, and only a run that
+carries a digit or a capital: a first draft counted hyphens too, which would have refused public
+product handles such as the gift card's, and the pre-PR review found that a bare length rule refused
+Shopify's own `sitemap_collections_1.xml`, so child sitemap names are exempt by shape. A partial
+live sitemap read still proves the URLs it listed; only a URL's absence and the count stay unknown. Users are
 counted by role, never named, and any email-shaped string fails the capture. Performance findings are
 keyed by page, never by query, and query text never goes into a repo file. The state dir is refused
 when it resolves inside the worktree or the primary checkout, through symlinks either way, because

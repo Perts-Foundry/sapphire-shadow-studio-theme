@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ERROR, WARN, INFO, partitionAccepted, diffFindings, exitCodeFor } from '../../seo-review/lib/checks.mjs';
-import { REPORTS } from './schema.mjs';
+import { REPORTS, KNOWN_REASONS, SERVICES } from './schema.mjs';
 import { CHECK_IDS, REPORT_OF, SUBJECT_KIND, daysSince } from './checks.mjs';
 import { saveRun, loadLatestComparable } from './baseline.mjs';
 import { displayPath } from '../../lib/display-path.mjs';
@@ -59,6 +59,12 @@ export function acceptedRiskProblems(entries) {
       if (kind === 'singleton' && p !== e.check) problems.push(`${where}: a singleton subject is the check id itself, or null`);
       if (kind === 'report' && !REPORTS.includes(p)) problems.push(`${where}: a report subject is a report id`);
       if (kind === 'device' && !['mobile', 'desktop'].includes(p)) problems.push(`${where}: a device subject is mobile or desktop`);
+      if (kind === 'page-or-reason' && !p.startsWith('/') && !KNOWN_REASONS.includes(p)) problems.push(`${where}: this subject is a URL path starting with /, or a reason slug`);
+      if (kind === 'page-or-singleton' && !p.startsWith('/') && p !== e.check) problems.push(`${where}: this subject is a URL path starting with /, or the check id itself`);
+      if (kind === 'service' && !SERVICES.includes(p)) problems.push(`${where}: a service subject is one of ${SERVICES.join(', ')}`);
+      if (kind === 'host' && !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(p)) problems.push(`${where}: a host subject is a bare lowercase host`);
+      if (kind === 'pointer' && !p.startsWith('/')) problems.push(`${where}: a pointer subject is a JSON pointer starting with /`);
+      if ((kind === 'label' || kind === 'enhancement-type') && p.startsWith('/')) problems.push(`${where}: a label subject is the label text, not a path`);
     }
   });
   return problems;

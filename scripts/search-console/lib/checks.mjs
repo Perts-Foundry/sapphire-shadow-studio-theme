@@ -209,15 +209,22 @@ export function isBrandQuery(query) {
 }
 
 function liveSitemap(opts) {
-  if (opts.sitemapState === 'partial' || opts.sitemapState === 'unreachable') {
-    return { state: opts.sitemapState, paths: null, urls: null, count: null };
-  }
+  if (opts.sitemapState === 'unreachable') return { state: 'unreachable', paths: null, urls: null, count: null, complete: false };
   if (Array.isArray(opts.sitemapUrls)) {
+    // A partial sitemap still proves the URLs it did list; only a URL's absence and the count are unknown.
     const paths = new Set(opts.sitemapUrls.map(pathOf));
-    return { state: 'ok', paths, urls: opts.sitemapUrls, count: paths.size };
+    const complete = opts.sitemapState !== 'partial';
+    return { state: complete ? 'ok' : 'partial', paths, urls: opts.sitemapUrls, count: complete ? paths.size : null, complete };
   }
-  if (Number.isInteger(opts.sitemapCount)) return { state: 'ok', paths: null, urls: null, count: opts.sitemapCount };
-  return { state: 'skipped', paths: null, urls: null, count: null };
+  if (opts.sitemapState === 'partial') return { state: 'partial', paths: null, urls: null, count: null, complete: false };
+  if (Number.isInteger(opts.sitemapCount)) return { state: 'ok', paths: null, urls: null, count: opts.sitemapCount, complete: false };
+  return { state: 'skipped', paths: null, urls: null, count: null, complete: false };
+}
+
+/** Is a path in the live sitemap? `unknown` when the sitemap read cannot prove the path absent. */
+function inLiveSitemap(live, p, unknown) {
+  if (live.paths?.has(p)) return true;
+  return live.complete ? false : unknown;
 }
 
 function canonicalForm(url) {
@@ -330,7 +337,7 @@ function removalChecks({ okRep, add, live }) {
       add('removal-active', 'removal-active', `${r.temporary_active} temporary removal(s) active; URLs not captured`, WARN);
     }
     for (const u of urls) {
-      const inSitemap = live.paths?.has(pathOf(u)) ?? false;
+      const inSitemap = inLiveSitemap(live, pathOf(u), false);
       add('removal-active', u, inSitemap ? 'temporarily removed from Google while still in the live sitemap' : 'temporarily removed from Google', inSitemap ? ERROR : WARN);
     }
   }
@@ -374,7 +381,11 @@ function indexingChecks({ okRep, add, live }) {
     if (ix.indexed < expected) {
       const perf = okRep('performance');
       const early = !perf || perf.totals.impressions === 0;
-      add('index-count-below-sitemap', 'index-count-below-sitemap', `${ix.indexed} indexed vs ${expected} indexable sitemap URL(s)`, early ? INFO : WARN);
+      // A bare --sitemap-count carries no paths, so the NOINDEX_OK pages cannot be subtracted and the
+      // gap may be exactly those pages.
+      const countOnly = !live.paths;
+      const what = countOnly ? 'sitemap URL(s), NOINDEX_OK not subtracted' : 'indexable sitemap URL(s)';
+      add('index-count-below-sitemap', 'index-count-below-sitemap', `${ix.indexed} indexed vs ${expected} ${what}`, early || countOnly ? INFO : WARN);
     }
   }
   for (const r of ix.reasons) {
@@ -398,7 +409,7 @@ function indexingChecks({ okRep, add, live }) {
       continue;
     }
     for (const u of r.examples) {
-      const sev = r.reason === 'not-found' ? (live.paths?.has(pathOf(u)) ? WARN : INFO) : REASON_SEVERITY[r.reason];
+      const sev = r.reason === 'not-found' ? (inLiveSitemap(live, pathOf(u), false) ? WARN : INFO) : REASON_SEVERITY[r.reason];
       add(id, u, `${r.count} page(s)${source}`, sev);
     }
   }
@@ -416,7 +427,7 @@ function inspectionChecks({ okRep, add, live, now }) {
     }
     const d = daysSince(item.last_crawl, now);
     if (d !== null && d > STALE_CRAWL_DAYS) add('inspect-stale-crawl', item.url, `last crawled ${d} day(s) ago (STALE_CRAWL_DAYS ${STALE_CRAWL_DAYS})`);
-    const inSitemap = live.paths ? live.paths.has(p) : true;
+    const inSitemap = inLiveSitemap(live, p, true);
     if (!exempt && inSitemap && (item.crawl_allowed === false || item.indexing_allowed === false)) {
       add('inspect-crawl-blocked', item.url, item.crawl_allowed === false ? 'crawl not allowed on a sitemap URL' : 'indexing not allowed on a sitemap URL');
     }
@@ -555,7 +566,7 @@ function discoveryChecks({ okRep, add, now }) {
     const known = KNOWN_SURFACES.nav;
     for (const n of disc.nav) {
       const match = known.find((k) => labelKey(k.label) === labelKey(n.label));
-      if (!match || (n.path !== null && match.path !== null && match.path !== n.path) || (match.path === null && n.path)) {
+      if (!match || (match.path ?? null) !== (n.path ?? null)) {
         add('surface-new', `nav:${n.label}`, `a navigation item this skill has not seen${n.path ? ` (view ${n.path})` : ''}`);
       }
     }

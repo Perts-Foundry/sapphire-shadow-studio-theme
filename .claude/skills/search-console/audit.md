@@ -228,7 +228,7 @@ These are about the capture itself rather than a surface:
 - **Failure**: indexed well below the sitemap; any noindex outside `NOINDEX_OK`; server errors;
   a Google-chosen canonical that overrides the declared one; a reason label never seen before.
 - **Checks**: `index-count-below-sitemap` (`SEVERITY['index-count-below-sitemap']`; lower while
-  performance has no impressions), `index-reason-crawled-not-indexed`
+  performance has no impressions or the live count came from `--sitemap-count`), `index-reason-crawled-not-indexed`
   (`REASON_SEVERITY['crawled-not-indexed']`), `index-reason-discovered-not-indexed`
   (`REASON_SEVERITY['discovered-not-indexed']`), `index-reason-alternate-canonical`
   (`REASON_SEVERITY['alternate-canonical']`), `index-reason-duplicate-no-canonical`
@@ -250,7 +250,7 @@ These are about the capture itself rather than a surface:
 
 - **Where**: the header combobox "Inspect any URL in ..." (`URL inspection` in the left navigation
   only focuses it). There is no stable direct URL for a result.
-- **Healthy**: the homepage, `/products/lead-ii-vest-womens`, one collection and `/blogs/shift-notes`,
+- **Healthy**: the homepage, `/products/lead-ii-vest-womens`, `/collections/healthcare-collection` and `/blogs/shift-notes`,
   at most eight URLs per run. "URL is on Google"; user-declared and Google-selected canonicals
   match; last crawl within `STALE_CRAWL_DAYS` (30) days; crawl and indexing allowed; page fetch
   successful; discovered via Sitemaps; the "Enhancements & Experience" rows list the rich results

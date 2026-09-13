@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { finishRun } from '../lib/report.mjs';
+import { finishRun, acceptedRiskProblems } from '../lib/report.mjs';
 import { evaluateCapture } from '../lib/checks.mjs';
 import { loadLatest } from '../lib/baseline.mjs';
 import { baseCapture, healthyOpts, readFixture, notReady, NOW, PREINDEX_NOW, ORIGIN } from './harness.mjs';
@@ -194,4 +194,46 @@ test('the text report names the summary, sections and exit line', () => {
   assert.match(r.text, /^METRICS:/m);
   assert.match(r.text, /^exit 1 /m);
   assert.match(r.text, /^capture: ~\/state\/capture.json$/m);
+});
+
+test('accepted-risk subjects are checked for every subject kind', () => {
+  const entry = (check, p) => [{ check, path: p, note: 'synthetic', accepted_on: '2026-12-01' }];
+  const ok = [
+    ['index-reason-soft-404', 'soft-404'], ['index-reason-soft-404', '/pages/faq'], ['removal-active', 'removal-active'],
+    ['removal-active', '/pages/about'], ['association-missing', 'merchant-center'], ['secondary-domain-redirect', 'brand-alias.example'],
+    ['capture-invalid', '/nonce'], ['surface-new', 'nav:Shopping'], ['enhancement-invalid', 'Breadcrumbs'],
+  ];
+  const bad = [
+    ['index-reason-soft-404', 'soft404'], ['removal-active', 'pages/about'], ['association-missing', 'search-ads'],
+    ['secondary-domain-redirect', 'https://brand-alias.example/'], ['capture-invalid', 'nonce'], ['surface-new', '/pages/x'],
+    ['enhancement-invalid', '/products/x'],
+  ];
+  for (const [check, p] of ok) assert.deepEqual(acceptedRiskProblems(entry(check, p)), [], `${check} ${p}`);
+  for (const [check, p] of bad) assert.equal(acceptedRiskProblems(entry(check, p)).length, 1, `${check} ${p}`);
+});
+
+test('accepted risks are summarised in one line without --full', () => {
+  const err = baseCapture();
+  err.reports['security-manual'].manual_actions = 'present';
+  const accepted = [{ check: 'manual-action', path: null, note: 'synthetic', accepted_on: '2026-12-01' }];
+  const r = finish(evaluateCapture(err, healthyOpts()), err, { dir: freshDir(), acceptedRisks: accepted });
+  assert.match(r.text, /\(1 accepted risk\(s\) suppressed; run with --full to see them\)/);
+  assert.doesNotMatch(r.text, /ACCEPTED RISKS/);
+});
+
+test('a risk with a subject suppresses only that subject, end to end', () => {
+  const risk = (check, p) => [{ check, path: p, note: 'synthetic', accepted_on: '2026-12-01' }];
+  const cwv = baseCapture();
+  cwv.reports.cwv.mobile.poor = 2;
+  cwv.reports.cwv.desktop.poor = 1;
+  const cwvOut = jsonOf(finish(evaluateCapture(cwv, healthyOpts()), cwv, { dir: freshDir(), json: true, acceptedRisks: risk('cwv-poor', 'mobile') }));
+  assert.deepEqual(cwvOut.accepted.filter((f) => f.check === 'cwv-poor').map((f) => f.url), ['mobile']);
+  assert.deepEqual(cwvOut.fresh.filter((f) => f.check === 'cwv-poor').map((f) => f.url), ['desktop']);
+
+  const page = baseCapture();
+  page.reports.removals.temporary_active = 2;
+  page.reports.removals.temporary_urls = [`${ORIGIN}/pages/about`, `${ORIGIN}/pages/faq`];
+  const pageOut = jsonOf(finish(evaluateCapture(page, healthyOpts()), page, { dir: freshDir(), json: true, acceptedRisks: risk('removal-active', '/pages/about') }));
+  assert.deepEqual(pageOut.accepted.map((f) => new URL(f.url).pathname), ['/pages/about']);
+  assert.ok(pageOut.fresh.some((f) => f.check === 'removal-active' && f.url.endsWith('/pages/faq')));
 });

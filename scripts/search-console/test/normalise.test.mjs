@@ -39,8 +39,8 @@ test('comma thousands and numeric strings become numbers', () => {
   assert.equal(capture.reports['crawl-stats'].requests, 500);
 });
 
-test('K and M abbreviations are refused with a clear error', () => {
-  for (const value of ['1.2K', '1.5M', '3 k']) {
+test('K, M and B abbreviations are refused with a clear error', () => {
+  for (const value of ['1.2K', '1.5M', '3 k', '1.2B']) {
     const { errors } = norm((r) => { r.performance.totals.impressions = value; });
     assert.equal(errors.length, 1, value);
     assert.equal(errors[0].path, '/reports/performance/totals/impressions');

@@ -101,13 +101,14 @@ the table for the exact number. Never estimate.
 4. For QUERIES, PAGES, COUNTRIES and DEVICES, in turn: click the tab, set rows per page to 50,
    sort by impressions, transcribe at most 50 rows. Set `truncated: true` when the pager shows
    more rows than were transcribed. SEARCH APPEARANCE and DAYS are optional.
-5. Page URLs lose their query strings and fragments. A URL under `/checkouts/`, `/account`,
-   `/orders/` or `/cart/c/`, or with a token-shaped segment, is left out of the capture entirely.
+5. Page URLs lose their query strings and fragments. A URL on a `checkouts`, `account`, `orders`
+   or `cart/c` route (anywhere in the path), or with a token-shaped segment, is left out of the
+   capture entirely.
 
 ## URL inspection
 
-For each URL (the homepage, `/products/lead-ii-vest-womens`, one collection, `/blogs/shift-notes`;
-never more than eight in a run):
+For each URL (the homepage, `/products/lead-ii-vest-womens`, `/collections/healthcare-collection`,
+`/blogs/shift-notes`; never more than eight in a run, and never a URL picked from a captured report):
 
 1. `fill` the header combobox with the full URL, `press_key` Enter.
 2. `wait_for` "URL is on Google" or "URL is not on Google".

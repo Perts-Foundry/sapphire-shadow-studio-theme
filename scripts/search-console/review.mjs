@@ -87,7 +87,7 @@ export function parseArgs(argv) {
  */
 export async function run(argv, {
   fetchImpl = globalThis.fetch, now = () => new Date(), env = process.env, stdout = process.stdout,
-  stderr = process.stderr, roots = null, acceptedRisks = null,
+  stderr = process.stderr, roots = null, acceptedRisks = null, acceptedRisksFile,
 } = {}) {
   const out = (line) => stdout.write(`${line}\n`);
   const err = (line) => stderr.write(`${line}\n`);
@@ -149,7 +149,7 @@ export async function run(argv, {
   let risks = acceptedRisks;
   if (risks === null) {
     try {
-      risks = loadAcceptedRisks();
+      risks = loadAcceptedRisks(acceptedRisksFile);
     } catch (e) {
       err(`search-console: ${e.message}`);
       return 2;
@@ -164,7 +164,7 @@ export async function run(argv, {
   } else {
     const live = await liveSitemapUrls(`https://${PROPERTY_HOST}`, { fetchImpl });
     if (live === null) sitemapOpts = { sitemapState: 'unreachable' };
-    else if (live.partial) sitemapOpts = { sitemapState: 'partial' };
+    else if (live.partial) sitemapOpts = { sitemapUrls: live.urls, sitemapState: 'partial' };
     else sitemapOpts = { sitemapUrls: live.urls, sitemapState: 'ok' };
   }
 

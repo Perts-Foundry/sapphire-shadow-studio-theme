@@ -8,7 +8,7 @@ import {
   PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS, DISCOVERY_REVIEW_DAYS, PROPERTY, PROPERTY_HOST, isNoindexOk, isBrandQuery,
   daysSince,
 } from '../lib/checks.mjs';
-import { findingKey } from '../../seo-review/lib/checks.mjs';
+import { findingKey, exitCodeFor } from '../../seo-review/lib/checks.mjs';
 import { KNOWN_REASONS, REPORTS, validateCapture } from '../lib/schema.mjs';
 import { KNOWN_SURFACES_REVIEWED_ON } from '../lib/known-surfaces.mjs';
 import {
@@ -359,4 +359,50 @@ test('property constants and date helper', () => {
   assert.equal(daysSince('2026-11-30', NOW), 1);
   assert.equal(daysSince('not a date', NOW), null);
   assert.equal(daysSince(null, NOW), null);
+});
+
+test('every ERROR check fires at ERROR from its fixture, and that blocks the run', () => {
+  for (const id of CHECK_IDS.filter((c) => SEVERITY[c] === ERROR)) {
+    const out = FIXTURE_FOR[id]();
+    const findings = out.findings ?? evaluateCapture(out.capture, out.opts);
+    const mine = findings.filter((f) => f.check === id);
+    assert.ok(mine.some((f) => f.severity === ERROR), `${id} fired as ${mine.map((f) => f.severity).join(', ')}`);
+    assert.equal(exitCodeFor(findings), 1, id);
+  }
+});
+
+test('every fixture fires its check at the registered default severity', () => {
+  for (const id of CHECK_IDS) {
+    const out = FIXTURE_FOR[id]();
+    const findings = out.findings ?? evaluateCapture(out.capture, out.opts);
+    const mine = findings.filter((f) => f.check === id);
+    assert.ok(mine.some((f) => f.severity === SEVERITY[id]), `${id} expected ${SEVERITY[id]}, fired as ${mine.map((f) => f.severity).join(', ')}`);
+  }
+});
+
+test('a partial live sitemap still proves the URLs it listed; absence and the count stay unknown', () => {
+  const partial = (o) => {
+    o.sitemapUrls = SITEMAP_URLS.filter((u) => !u.includes('/collections/'));
+    o.sitemapState = 'partial';
+  };
+  const removal = (r) => { r.removals.temporary_active = 1; r.removals.temporary_urls = [`${ORIGIN}/pages/about`]; };
+  assert.equal(run('removal-active', removal, partial)[0].severity, ERROR, 'a listed URL is proven present');
+  const notFound = (r) => { r['indexing-pages'].reasons.push({ reason: 'not-found', source: 'Website', count: 1, examples: [`${ORIGIN}/pages/faq`] }); };
+  assert.equal(run('index-reason-not-found', notFound, partial)[0].severity, WARN);
+  assert.ok(fires('inspect-crawl-blocked', (r) => { r.inspections.items[2].indexing_allowed = false; }, partial), 'a collection the partial read missed is not proven absent');
+  assert.ok(fires('sitemap-live-unreachable', () => {}, partial));
+  assert.ok(!fires('index-count-below-sitemap', (r) => { r['indexing-pages'].indexed = 5; }, partial), 'no count from a partial read');
+  assert.ok(!fires('sitemap-discovered-mismatch', (r) => { r.sitemaps.rows[0].discovered_pages = 30; }, partial));
+});
+
+test('with only --sitemap-count, index-count-below-sitemap is INFO and says NOINDEX_OK was not subtracted', () => {
+  const f = run('index-count-below-sitemap', (r) => { r['indexing-pages'].indexed = 5; }, (o) => { delete o.sitemapUrls; o.sitemapCount = SITEMAP_URLS.length; });
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, INFO);
+  assert.match(f[0].detail, /NOINDEX_OK not subtracted/);
+});
+
+test('a known navigation link whose view path becomes null is surface-new', () => {
+  assert.ok(fires('surface-new', (r) => { r.discovery.nav.find((n) => n.label === 'Links').path = null; }));
+  assert.ok(fires('surface-new', (r) => { r.discovery.nav.find((n) => n.label === 'Indexing').path = 'index'; }));
 });

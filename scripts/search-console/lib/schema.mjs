@@ -97,12 +97,19 @@ export const INSPECTION_SECTIONS = Object.freeze([
 export const SITEMAP_STATUSES = Object.freeze(['Success', "Couldn't fetch", 'Has errors', 'Pending']);
 export const SERVICES = Object.freeze(['analytics', 'merchant-center', 'youtube', 'ads']);
 
-// Storefront paths whose URLs carry a customer or session token; never allowed in a capture.
-export const FORBIDDEN_URL_PREFIXES = Object.freeze(['/checkouts/', '/account', '/orders/', '/cart/c/']);
+// Storefront routes whose URLs carry a customer or session token; never allowed in a capture. Each
+// is matched as whole path segments anywhere in the path, case-insensitively: a checkout URL is
+// often prefixed with the shop id, and `/accounts-receivable-tote` is a handle, not the account route.
+export const FORBIDDEN_ROUTES = Object.freeze(['checkouts', 'account', 'orders', 'cart/c']);
+const FORBIDDEN_ROUTE_RES = FORBIDDEN_ROUTES.map((r) => new RegExp(`(?:^|/)${r}(?:/|$)`, 'i'));
 
-// Hyphens are deliberately outside the run: a product handle is a long hyphenated string and is
-// public, while cart, checkout and session tokens are unbroken.
-const TOKEN_SEGMENT_RE = /[A-Za-z0-9_]{20,}/;
+// A token is a run of 20 or more letters, digits or underscores that carries a digit or a capital.
+// Hyphens break the run, so a product handle passes, and so does a long all-lowercase word. Shopify's
+// child sitemap names (`sitemap_collections_1.xml`) are public and exempt by shape. A UUID is
+// hyphenated, so it has its own pattern.
+const TOKEN_RUN_RE = /[A-Za-z0-9_]{20,}/g;
+const SITEMAP_CHILD_SEGMENT_RE = /^sitemap_[a-z]+_\d+\.xml$/;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 export const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_OFFSET_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -137,10 +144,17 @@ export function onPropertyHost(host, property) {
   return property.startsWith('sc-domain:') && h.endsWith(`.${ph}`);
 }
 
-/** Does a URL path sit under a forbidden prefix or carry a token-shaped segment? */
+/** Is one path segment token-shaped? */
+export function isTokenSegment(segment) {
+  if (SITEMAP_CHILD_SEGMENT_RE.test(segment)) return false;
+  if (UUID_RE.test(segment)) return true;
+  return (segment.match(TOKEN_RUN_RE) ?? []).some((run) => /[0-9A-Z]/.test(run));
+}
+
+/** Does a URL path sit on a forbidden route or carry a token-shaped segment? */
 export function isSensitivePath(pathname) {
-  if (FORBIDDEN_URL_PREFIXES.some((p) => pathname === p.replace(/\/$/, '') || pathname.startsWith(p))) return true;
-  return pathname.split('/').some((seg) => TOKEN_SEGMENT_RE.test(seg));
+  if (FORBIDDEN_ROUTE_RES.some((re) => re.test(pathname))) return true;
+  return pathname.split('/').some(isTokenSegment);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -191,6 +205,7 @@ const host = (v, p, ctx) => {
 };
 const viewPath = (v, p, ctx) => {
   if (typeof v !== 'string' || !VIEW_PATH_RE.test(v)) fail(ctx, p, 'expected a Search Console view path');
+  else if (v.split('/').some(isTokenSegment)) fail(ctx, p, 'view path carries a token-shaped segment');
 };
 const service = (v, p, ctx) => {
   if (SERVICES.includes(v)) return;
@@ -343,7 +358,7 @@ export const REPORT_FIELDS = Object.freeze({
       performance_tabs: arrayOf(str(80), { max: 50 }), performance_controls: arrayOf(str(80), { max: 50 }),
       removals_tabs: arrayOf(str(80), { max: 20 }), inspection_sections: arrayOf(str(80), { max: 50 }),
       enhancement_types: arrayOf(str(80), { max: 50 }), reason_labels: arrayOf(str(200), { max: 50 }),
-      unknown: arrayOf(obj({ kind: str(40), label: str(80), path: nullable(str(120)), note: str(200) }), { max: 50 }),
+      unknown: arrayOf(obj({ kind: str(40), label: str(80), path: nullable(viewPath), note: str(200) }), { max: 50 }),
     },
   },
 });

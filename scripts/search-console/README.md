@@ -53,7 +53,7 @@ Order: read, parse, `normaliseCapture` (converts "3.2%", "1,234", "<0.1%", reaso
 Reused from elsewhere: `scripts/seo-review/lib/checks.mjs` (severities, `partitionAccepted`,
 `diffFindings`, `findingKey`, `exitCodeFor`), `scripts/seo-review/lib/http.mjs` (node fetch, never
 curl: Cloudflare blocks curl's fingerprint), `scripts/seo-review/lib/extract.mjs` (sitemap parsers),
-`scripts/lib/display-path.mjs`. The contract test holds the import closure to that list and keeps
+`scripts/lib/display-path.mjs`, and `scripts/lib/seo-bounds.mjs` (through the seo-review modules). The contract test holds the import closure to that list and keeps
 `node:child_process` out of it.
 
 ## Capture schema
@@ -88,9 +88,12 @@ Rules: unknown keys are rejected at every depth; integers are non-negative; rate
 positions are 1 to 100, or 0 only with zero impressions; clicks never exceed impressions; a ctr
 agrees with clicks over impressions within 0.005; reason counts sum to `not_indexed`; device and
 country impressions never exceed the total; `owners` never exceeds `users`. Every page URL is on the
-property host with no query string or fragment, never under `/checkouts/`, `/account`, `/orders/` or
-`/cart/c/`, and never with a token-shaped segment (20 or more unbroken letters, digits or
-underscores; hyphens break the run, so product handles pass). No email-shaped string anywhere.
+property host with no query string or fragment, never on a `checkouts`, `account`, `orders` or
+`cart/c` route (whole segments, anywhere in the path, any case), and never with a token-shaped
+segment: 20 or more unbroken letters, digits or underscores including a digit or a capital, or a
+UUID. Hyphens break the run, so product handles pass; so do long all-lowercase words and Shopify's
+`sitemap_<type>_<n>.xml` child names. A `discovery` view path obeys the same token rule. No
+email-shaped string anywhere.
 Errors name a JSON pointer and never echo the value.
 
 ## Checks
@@ -135,8 +138,8 @@ findings are keyed by page, never by query.
 | `sitemap-child-submitted` | WARN | page | a child sitemap submitted on its own |
 | `sitemap-discovered-mismatch` | WARN | page | discovered pages differ from live by more than `SITEMAP_TOLERANCE` (1) |
 | `sitemap-stale-read` | INFO | page | last read more than `SITEMAP_STALE_READ_DAYS` (14) days ago |
-| `sitemap-live-unreachable` | INFO | singleton | the live sitemap failed; live counts skipped |
-| `index-count-below-sitemap` | WARN, INFO while there are no impressions | singleton | fewer indexed than indexable sitemap URLs |
+| `sitemap-live-unreachable` | INFO | singleton | the live sitemap failed; live counts skipped (a partial read still proves the URLs it listed) |
+| `index-count-below-sitemap` | WARN, INFO while there are no impressions or with only `--sitemap-count` | singleton | fewer indexed than indexable sitemap URLs |
 | `index-reason-crawled-not-indexed` | WARN | page-or-reason | crawled, not indexed |
 | `index-reason-discovered-not-indexed` | INFO | page-or-reason | discovered, not yet crawled |
 | `index-reason-alternate-canonical` | INFO | page-or-reason | an alternate with a proper canonical, expected |

@@ -116,3 +116,15 @@ test('probeRedirect: 301, 200 and a failure', async () => {
   const failing = routes({ 'https://brand-alias.example/': new Error('ENOTFOUND') });
   assert.equal(await probeRedirect('brand-alias.example', { fetchImpl: failing }), null);
 });
+
+test('a child sitemap on another host is never fetched and marks the read partial', async () => {
+  const map = healthy();
+  const index = readText('sitemap-index.xml').replace(PAGES, 'https://elsewhere.example/sitemap_pages_1.xml');
+  assert.ok(index.includes('elsewhere.example'));
+  map[INDEX] = { body: index };
+  const fetchImpl = routes(map);
+  const out = await liveSitemapUrls(BASE, { fetchImpl, backoff: [] });
+  assert.equal(out.partial, true);
+  assert.equal(out.urls.length, 10);
+  assert.ok(!fetchImpl.calls.some((c) => c.url.includes('elsewhere.example')));
+});
