@@ -24,9 +24,7 @@ import {
   ARTICLE_FILES,
   NON_ARTICLE_FILES,
   bodyFromFileText,
-  metaSha256,
-  sha256,
-  stripVersionQuery,
+  manifestEntryFor,
 } from './lib/articles.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -36,10 +34,28 @@ export function manifestPath(root) {
 }
 
 /**
+ * Parse one article's JSON file, naming the article when it is not JSON.
+ *
+ * A bare `JSON.parse` error says "Unexpected token } in JSON at position 212" and nothing about
+ * which of the tree's files it came from, which leaves the operator bisecting directories by hand.
+ */
+function readJson(file, label) {
+  const text = readFileSync(file, 'utf8');
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${label} is not valid JSON: ${err.message}`);
+  }
+}
+
+/**
  * The manifest the tree implies.
  *
  * Skips a directory missing any of its three files: that is `articles:check`'s refusal to report,
  * and reindex inventing an entry for a half-written article would hide it.
+ *
+ * Each entry is `manifestEntryFor`, the same function the checker compares against, so the two
+ * commands cannot disagree about what an entry should hold.
  */
 export function buildManifest(root = REPO_ROOT) {
   const dir = join(root, ...ARTICLES_DIR.split('/'));
@@ -52,15 +68,9 @@ export function buildManifest(root = REPO_ROOT) {
     if (ARTICLE_FILES.some((f) => !existsSync(join(full, f)))) continue;
 
     const body = bodyFromFileText(readFileSync(join(full, 'body.html'), 'utf8'));
-    const article = JSON.parse(readFileSync(join(full, 'article.json'), 'utf8'));
-    const images = JSON.parse(readFileSync(join(full, 'images.json'), 'utf8'));
-
-    articles[name] = {
-      bodySha256: sha256(body),
-      bodyLength: body.length,
-      metaSha256: metaSha256(article),
-      images: (Array.isArray(images.images) ? images.images : []).map((e) => stripVersionQuery(e?.url)).sort(),
-    };
+    const article = readJson(join(full, 'article.json'), `${ARTICLES_DIR}/${name}/article.json`);
+    const images = readJson(join(full, 'images.json'), `${ARTICLES_DIR}/${name}/images.json`);
+    articles[name] = manifestEntryFor(body, article, images);
   }
   return { articles };
 }
@@ -75,10 +85,29 @@ export function readManifestText(root) {
   return existsSync(file) ? readFileSync(file, 'utf8') : null;
 }
 
+export const USAGE = 'usage: node scripts/articles/reindex.mjs [--check] [--root <dir>]';
+
+/**
+ * The root a `--root` flag names, the default root, or null when the flag has no value.
+ *
+ * `resolve(undefined)` throws a TypeError that escapes main as an uncaught stack trace, which tells
+ * the operator nothing about the flag they forgot.
+ */
+function rootFrom(args) {
+  const i = args.indexOf('--root');
+  if (i === -1) return REPO_ROOT;
+  const value = args[i + 1];
+  return value === undefined || value.startsWith('--') ? null : resolve(value);
+}
+
 function main(argv) {
   const args = argv.slice(2);
-  const rootFlag = args.indexOf('--root');
-  const root = rootFlag !== -1 ? resolve(args[rootFlag + 1]) : REPO_ROOT;
+  const root = rootFrom(args);
+  if (root === null) {
+    console.error('error: --root needs a directory');
+    console.error(USAGE);
+    return 1;
+  }
   const checkOnly = args.includes('--check');
 
   let next;

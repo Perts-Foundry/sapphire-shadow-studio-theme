@@ -20,10 +20,18 @@
 import { createHash } from 'node:crypto';
 
 import { ID_RE } from '../../lib/catalogue-manifest.mjs';
-import { parseHtml } from '../../notifications/html-walk.mjs';
 import { hasEmDash } from '../../lib/prose.mjs';
 import { TITLE_MAX, DESC_MIN, DESC_MAX } from '../../lib/seo-bounds.mjs';
 import { STOREFRONT_HANDLES } from '../../policies/lib/policies.mjs';
+import {
+  ALLOWED_ELEMENTS,
+  NESTED_TABLE_REFUSED,
+  URL_ATTRIBUTE_BY_ELEMENT,
+  allowedAttributesFor,
+  decodeUrl,
+  readMarkup,
+  urlRefusal,
+} from './body-markup.mjs';
 
 /**
  * The blog every article in this repo belongs to.
@@ -66,12 +74,6 @@ export const META_FIELDS = Object.freeze([
 /** The only host an article image may be served from. */
 export const IMAGE_HOST = 'cdn.shopify.com';
 
-/** Elements that may never appear in a body, as a tag OR as an attribute name. */
-export const FORBIDDEN_ELEMENTS = Object.freeze(['script', 'iframe', 'object', 'embed', 'form', 'style', 'svg']);
-
-/** Attributes carrying a URL, each of which is checked for a dangerous scheme. */
-export const URL_ATTRIBUTES = Object.freeze(['href', 'src', 'srcset', 'xlink:href', 'formaction']);
-
 /**
  * Every rule this subsystem can refuse on.
  *
@@ -94,10 +96,15 @@ export const RULES = Object.freeze({
   PREVIOUS_HANDLE_SHAPE: 'structure/previous-handle-shape',
   PREVIOUS_HANDLE_SELF: 'structure/previous-handle-self',
   PREVIOUS_HANDLE_COLLISION: 'structure/previous-handle-collision',
+  IMAGES_MISMATCH: 'structure/images-mismatch',
+  JSON_INVALID: 'structure/json-invalid',
+  FIELD_TYPE: 'structure/field-type',
 
   // Safety, because the body renders raw
+  MALFORMED_MARKUP: 'safety/malformed-markup',
   FORBIDDEN_ELEMENT: 'safety/forbidden-element',
   FORBIDDEN_ATTRIBUTE: 'safety/forbidden-attribute',
+  DUPLICATE_ATTRIBUTE: 'safety/duplicate-attribute',
   EVENT_HANDLER: 'safety/event-handler',
   DANGEROUS_URL: 'safety/dangerous-url',
 
@@ -119,6 +126,7 @@ export const RULES = Object.freeze({
   IMAGE_HOST: 'media/image-host',
 
   // Metadata
+  TITLE_EMPTY: 'meta/title-empty',
   SUMMARY_EMPTY: 'meta/summary-empty',
   AUTHOR_EMPTY: 'meta/author-empty',
   TAG_DUPLICATE: 'meta/tag-duplicate',
@@ -198,76 +206,83 @@ export function stripVersionQuery(url) {
 // ------------------------------------------------------------------------------------------
 
 /**
- * Forbidden elements and attributes, event handlers, dangerous URLs, inline SVG.
+ * The body's elements under the strict reading, or null when the body leaves the grammar.
  *
- * Parsed rather than regexed. `parseHtml` lowercases every tag and attribute name, which is what
- * makes "no `on*` attribute in ANY case" a property of the parse rather than of a case-insensitive
- * regex that a novel spelling could slip past. The ambiguity in the plan is resolved deliberately:
- * a forbidden name is refused BOTH as an element and as an attribute, because `<div form="...">` is
- * not dangerous but is a strong signal that something generated markup nobody reviewed.
+ * EVERY element-based rule reads the body through this, and nothing reads it any other way. The
+ * version this replaced ran every rule over a lenient parser that recovers from broken markup in its
+ * own way, which is not the way a browser recovers. The fix for "the checker and a browser read the
+ * markup differently" is not a second opinion but a single reading that refuses to exist when it is
+ * ambiguous. Null means the malformed-markup refusal has already been reported by `safetyFindings`,
+ * and every other element rule then reports nothing for that body: it is refused either way, and a
+ * heading or link finding computed past the point the reading stopped would be a guess presented as
+ * a fact.
+ */
+export function bodyElements(body) {
+  const { elements, error } = readMarkup(body);
+  return error === null ? elements : null;
+}
+
+/**
+ * The strict grammar, then the element and attribute allowlists, then the URL rules.
+ *
+ * ORDER OF THE ATTRIBUTE CHECKS. A name starting `on` is an event handler whatever the element, and
+ * is reported as one: it is the case a reviewer most needs named. Otherwise a name not on the
+ * element's allowlist is a forbidden attribute. Attributes of an element that is itself refused are
+ * not examined: refusing the element refuses everything on it, and listing its attributes as well
+ * would bury the one finding that matters under several that follow from it.
+ *
+ * EVERY VALUE OF A DUPLICATED NAME IS STILL CHECKED. Browsers keep the first of two same-named
+ * attributes and a lenient walker may keep the last, so `<a href="javascript:..." href="https://...">`
+ * is exactly the disagreement this subsystem exists to refuse. The duplicate is its own finding, and
+ * the URL rule runs over both values rather than trusting either reader's pick.
  */
 export function safetyFindings(body, handle) {
+  const { elements, error } = readMarkup(body);
+  if (error !== null) {
+    return [finding(RULES.MALFORMED_MARKUP, handle, error.detail)];
+  }
   const out = [];
-  const { elements } = parseHtml(String(body ?? ''));
   for (const el of elements) {
-    if (FORBIDDEN_ELEMENTS.includes(el.tag)) {
-      out.push(finding(RULES.FORBIDDEN_ELEMENT, handle, `<${el.tag}> is not allowed in an article body`));
+    if (!ALLOWED_ELEMENTS.includes(el.tag)) {
+      out.push(finding(RULES.FORBIDDEN_ELEMENT, handle, `<${el.tag}> is not in the allowlist of elements an article body may contain`));
+      continue;
     }
-    for (const name of Object.keys(el.attrs)) {
+    if (el.nestedTable) {
+      out.push(finding(RULES.FORBIDDEN_ELEMENT, handle, NESTED_TABLE_REFUSED));
+      continue;
+    }
+    const allowed = allowedAttributesFor(el.tag);
+    const seen = new Set();
+    for (const [name, value] of el.attrs) {
+      if (seen.has(name)) {
+        out.push(finding(RULES.DUPLICATE_ATTRIBUTE, handle, `<${el.tag}> carries the attribute "${name}" more than once`));
+      }
+      seen.add(name);
       if (name.startsWith('on')) {
         out.push(finding(RULES.EVENT_HANDLER, handle, `<${el.tag}> carries the event-handler attribute "${name}"`));
         continue;
       }
-      if (FORBIDDEN_ELEMENTS.includes(name)) {
-        out.push(finding(RULES.FORBIDDEN_ATTRIBUTE, handle, `<${el.tag}> carries the attribute "${name}"`));
+      if (!allowed.includes(name)) {
+        out.push(finding(RULES.FORBIDDEN_ATTRIBUTE, handle, `<${el.tag}> carries the attribute "${name}", which is not in its allowlist`));
+        continue;
       }
-    }
-    for (const attr of URL_ATTRIBUTES) {
-      const raw = el.attrs[attr];
-      if (raw === undefined) continue;
-      for (const value of attr === 'srcset' ? splitSrcset(raw) : [raw]) {
-        const reason = dangerousUrlReason(value);
-        if (reason !== null) {
-          out.push(finding(RULES.DANGEROUS_URL, handle, `<${el.tag} ${attr}>: ${reason}`));
-        }
-      }
+      if (URL_ATTRIBUTE_BY_ELEMENT[el.tag] !== name) continue;
+      const refusal = urlRefusal(el.tag, value ?? '');
+      if (refusal === null) continue;
+      const rule = refusal.kind === 'not-https' ? RULES.EXTERNAL_NOT_HTTPS : RULES.DANGEROUS_URL;
+      out.push(finding(rule, handle, `<${el.tag} ${name}=${JSON.stringify(value ?? '')}> ${refusal.reason}`));
     }
   }
   return out;
-}
-
-/** A srcset is a comma-separated list of `url descriptor` pairs; only the URLs matter here. */
-function splitSrcset(value) {
-  return String(value)
-    .split(',')
-    .map((part) => part.trim().split(/\s+/)[0])
-    .filter(Boolean);
-}
-
-/**
- * Why a URL is dangerous, or null.
- *
- * Leading whitespace and control characters are stripped first: browsers tolerate
- * `java\tscript:alert(1)` and a naive `startsWith` does not.
- */
-export function dangerousUrlReason(value) {
-  const raw = String(value ?? '');
-  const collapsed = raw.replace(/[\s\u0000-\u001f]+/g, '').toLowerCase();
-  if (collapsed.startsWith('javascript:')) return 'a javascript: URL';
-  if (collapsed.startsWith('data:')) return 'a data: URL';
-  if (collapsed.startsWith('vbscript:')) return 'a vbscript: URL';
-  if (/^\/\/[^/]/.test(raw.trim())) return 'a protocol-relative //host URL; name the scheme';
-  return null;
 }
 
 // ------------------------------------------------------------------------------------------
 // Prose
 // ------------------------------------------------------------------------------------------
 
-/** Heading levels present in a body, in document order. */
+/** Heading levels present in a body, in document order. Empty for a body the reading refused. */
 export function headingLevels(body) {
-  const { elements } = parseHtml(String(body ?? ''));
-  return elements
+  return (bodyElements(body) ?? [])
     .filter((el) => /^h[1-6]$/.test(el.tag))
     .map((el) => Number(el.tag.slice(1)));
 }
@@ -300,8 +315,34 @@ export function headingFindings(body, handle) {
 // ------------------------------------------------------------------------------------------
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
-const PHONE_RE = /(?:\+?\d[\d\s().-]{7,}\d)/;
-const MACHINE_PATHS = Object.freeze(['/mnt/c/Users/', '/Users/', '~/repos/']);
+
+/**
+ * A North American phone number in one of the separator styles people actually type.
+ *
+ * SEPARATORS ARE REQUIRED, and that is the whole design. The first version matched any run of eight
+ * or more digits with optional punctuation, which reads a date (`2026-09-13`), a year range, a
+ * cache-busting `?v=1726012345` and a CDN path (`/0123/4567/8901/`) as phone numbers. A rule that
+ * fires on every image URL is a rule an author learns to reword around, and the rewording teaches
+ * nothing. The digit lookarounds stop a longer number being read as a phone by its middle ten
+ * digits.
+ */
+const PHONE_RE = /(?<!\d)(?:\+1[ .-]?)?(?:\(\d{3}\) ?\d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\d{3}\.\d{3}\.\d{4}|\d{3} \d{3} \d{4})(?!\d)/;
+
+/**
+ * Machine paths that carry a username, as `[label, pattern]`.
+ *
+ * `/home/` needs a name segment after it and must not be the tail of a longer path, so a storefront
+ * link such as `/pages/home/` is not a machine path. The drive letter in `C:\Users\` is matched in
+ * either case because Windows tooling prints both.
+ */
+const MACHINE_PATHS = Object.freeze([
+  ['/mnt/c/Users/', /\/mnt\/c\/Users\//],
+  ['/c/Users/', /\/c\/Users\//],
+  ['/Users/', /\/Users\//],
+  ['C:\\Users\\', /[A-Za-z]:\\Users\\/],
+  ['/home/<name>', /(?:^|[^A-Za-z0-9._/-])\/home\/[A-Za-z0-9._-]+/],
+  ['~/repos/', /~\/repos\//],
+]);
 
 /**
  * Email-shaped, phone-shaped and machine-path strings.
@@ -318,9 +359,9 @@ export function sensitiveFindings(text, handle, where) {
   if (PHONE_RE.test(s)) {
     out.push(finding(RULES.PHONE_SHAPED, handle, `${where} contains a phone-shaped string`));
   }
-  for (const p of MACHINE_PATHS) {
-    if (s.includes(p)) {
-      out.push(finding(RULES.MACHINE_PATH, handle, `${where} contains the machine path "${p}"`));
+  for (const [label, re] of MACHINE_PATHS) {
+    if (re.test(s)) {
+      out.push(finding(RULES.MACHINE_PATH, handle, `${where} contains the machine path "${label}"`));
     }
   }
   return out;
@@ -381,16 +422,37 @@ export function classifyLink(href) {
   return { kind: 'relative-unknown', path };
 }
 
-/** Every `href` in a body, in document order. */
-export function hrefsOf(body) {
-  const { elements } = parseHtml(String(body ?? ''));
-  return elements.filter((el) => el.tag === 'a' && el.attrs.href !== undefined).map((el) => el.attrs.href);
+/** The first value of a named attribute on an element from `readMarkup`, or undefined. */
+function attr(el, name) {
+  const pair = el.attrs.find(([n]) => n === name);
+  return pair === undefined ? undefined : (pair[1] ?? '');
 }
 
-/** Every `<img>` in a body, as `{ src, alt }`. */
+/**
+ * Every `href` in a body that passed the URL rules, `&amp;` decoded, in document order.
+ *
+ * An href the URL rules refused is left out rather than classified: it is already a refusal, and
+ * classifying `javascript:x` as an unknown relative root would report one mistake twice.
+ */
+export function hrefsOf(body) {
+  return (bodyElements(body) ?? [])
+    .filter((el) => el.tag === 'a' && attr(el, 'href') !== undefined)
+    .map((el) => attr(el, 'href'))
+    .filter((href) => urlRefusal('a', href) === null)
+    .map(decodeUrl);
+}
+
+/**
+ * Every `<img>` in a body, as `{ src, alt }`, with `src` decoded, or null when the URL rules refused
+ * it (for the same reason as `hrefsOf`). The alt is still returned, so the alt rules run either way.
+ */
 export function imagesOf(body) {
-  const { elements } = parseHtml(String(body ?? ''));
-  return elements.filter((el) => el.tag === 'img').map((el) => ({ src: el.attrs.src ?? '', alt: el.attrs.alt ?? '' }));
+  return (bodyElements(body) ?? [])
+    .filter((el) => el.tag === 'img')
+    .map((el) => {
+      const src = attr(el, 'src') ?? '';
+      return { src: urlRefusal('img', src) === null ? decodeUrl(src) : null, alt: attr(el, 'alt') ?? '' };
+    });
 }
 
 // ------------------------------------------------------------------------------------------
@@ -409,4 +471,122 @@ export function isHandle(value) {
 export function templateFileFor(templateSuffix) {
   if (templateSuffix === null || templateSuffix === undefined) return null;
   return `templates/article.${templateSuffix}.json`;
+}
+
+// ------------------------------------------------------------------------------------------
+// Field types
+// ------------------------------------------------------------------------------------------
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/**
+ * The type refusals for a parsed `article.json`, as detail strings. Empty means every present field
+ * has the type the format defines.
+ *
+ * WHY THIS RUNS BEFORE ANY OTHER METADATA RULE. Every rule after it reads a field as the type the
+ * format promises: `.trim()` on a title, `.length` on an seo description, iteration over tags. The
+ * first version trusted that promise, so a tag list written as a string was iterated a character
+ * at a time and a numeric seo title was quietly skipped by the length rules. A type error is its
+ * own refusal, and the checker reads nothing else from a file that failed one.
+ *
+ * ABSENT IS NOT A TYPE ERROR. A missing title, summary or author is the matching `meta/*-empty`
+ * rule's to report, and every other field is optional; `undefined` is therefore accepted here and
+ * only a present value of the wrong type is refused.
+ */
+export function articleFieldTypeErrors(article) {
+  if (!isPlainObject(article)) return ['article.json must hold a JSON object'];
+  const out = [];
+  for (const key of ['title', 'author', 'summary']) {
+    if (article[key] !== undefined && typeof article[key] !== 'string') out.push(`${key} must be a string`);
+  }
+  if (article.tags !== undefined && !isStringArray(article.tags)) out.push('tags must be an array of strings');
+  if (article.previousHandles !== undefined && !isStringArray(article.previousHandles)) {
+    out.push('previousHandles must be an array of strings');
+  }
+  for (const key of ['templateSuffix', 'image']) {
+    if (article[key] !== undefined && article[key] !== null && typeof article[key] !== 'string') {
+      out.push(`${key} must be a string or null`);
+    }
+  }
+  if (article.seo !== undefined && article.seo !== null) {
+    if (!isPlainObject(article.seo)) {
+      out.push('seo must be an object or null');
+    } else {
+      for (const key of ['title', 'description']) {
+        if (article.seo[key] !== undefined && typeof article.seo[key] !== 'string') out.push(`seo.${key} must be a string`);
+      }
+    }
+  }
+  return out;
+}
+
+/** The type refusals for a parsed `images.json`, as detail strings. Same contract as above. */
+export function imagesFieldTypeErrors(images) {
+  if (!isPlainObject(images) || !Array.isArray(images.images)) {
+    return ['images.json must hold an object with an "images" array'];
+  }
+  const out = [];
+  for (const [i, entry] of images.images.entries()) {
+    if (!isPlainObject(entry)) {
+      out.push(`images[${i}] must be an object`);
+      continue;
+    }
+    if (typeof entry.url !== 'string') out.push(`images[${i}].url must be a string`);
+    if (entry.alt !== undefined && typeof entry.alt !== 'string') out.push(`images[${i}].alt must be a string`);
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------------------------------
+// Media and the manifest
+// ------------------------------------------------------------------------------------------
+
+/**
+ * Why a recorded image URL is not on the CDN, or null.
+ *
+ * PARSED, NOT SEARCHED. The first version asked whether the URL string contained the host name,
+ * which `https://cdn.shopify.com.evil.example/`, `https://evil.example/cdn.shopify.com/` and
+ * `https://cdn.shopify.com@evil.example/` all do. What matters is the host a browser will connect
+ * to, and only a URL parser answers that.
+ */
+export function imageHostRefusal(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url ?? ''));
+  } catch {
+    return 'is not a parseable absolute URL';
+  }
+  if (parsed.protocol !== 'https:') return `uses ${parsed.protocol} rather than https:`;
+  if (parsed.username !== '' || parsed.password !== '') return 'carries credentials before the host';
+  if (parsed.hostname !== IMAGE_HOST) return `is served from ${parsed.hostname}, not ${IMAGE_HOST}`;
+  return null;
+}
+
+/**
+ * The recorded image URLs a manifest entry holds, version query stripped and sorted.
+ *
+ * Tolerant of a malformed `images.json` on purpose: this also runs inside reindex, which must write
+ * a manifest for a tree the checker then refuses with a precise finding, rather than crash first.
+ */
+export function manifestImagesFor(images) {
+  const list = Array.isArray(images?.images) ? images.images : [];
+  return list.map((e) => stripVersionQuery(e?.url)).sort();
+}
+
+/**
+ * The manifest entry one article's files imply.
+ *
+ * ONE DERIVATION, TWO CALLERS. `reindex` writes this and `articles:check` compares against it. Each
+ * used to compute the entry for itself, and the checker's copy simply never looked at `images`, so
+ * the recorded image list could drift from `images.json` with nothing refusing it. A single function
+ * is what makes "the checker and the reindexer agree" true by construction rather than by review.
+ */
+export function manifestEntryFor(body, article, images) {
+  return {
+    bodySha256: sha256(body),
+    bodyLength: body.length,
+    metaSha256: metaSha256(article),
+    images: manifestImagesFor(images),
+  };
 }

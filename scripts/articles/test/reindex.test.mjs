@@ -12,13 +12,13 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 import { buildManifest, formatManifest } from '../reindex.mjs';
-import { META_FIELDS, metaSha256 } from '../lib/articles.mjs';
+import { ARTICLE_FILES, META_FIELDS, metaSha256 } from '../lib/articles.mjs';
 import {
   HANDLE,
   TEST_DIR,
@@ -26,8 +26,8 @@ import {
   cleanup,
   madeRoots,
   readArticle,
+  readBody,
   readManifestFile,
-  writeArticle,
   writeBody,
   writeManifestFile,
 } from './helpers.mjs';
@@ -113,22 +113,29 @@ test('an absent optional field and an explicit null hash the same', () => {
   assert.equal(metaSha256(withNull), metaSha256(without));
 });
 
-test('a half-written article directory is skipped rather than invented into the manifest', () => {
-  // Reporting it is the checker's job (MISSING_FILE). If reindex minted an entry for a directory
-  // with no article.json, the checker's bijection rule would go quiet about the real problem.
-  const root = cleanRoot();
-  writeArticle(root, readArticle(root));
-  const built = buildManifest(root);
-  assert.equal(Object.keys(built.articles).length, 1);
-});
+for (const file of ARTICLE_FILES) {
+  test(`a directory missing ${file} is skipped rather than invented into the manifest`, () => {
+    // Reporting it is the checker's job (MISSING_FILE). If reindex minted an entry for a directory
+    // with no article.json, the checker's bijection rule would go quiet about the real problem.
+    // The earlier version of this test removed nothing, so it asserted the clean case twice.
+    const root = cleanRoot();
+    const target = join(root, 'marketing', 'articles', HANDLE, file);
+    rmSync(target);
+    assert.equal(existsSync(target), false);
+    assert.deepEqual(buildManifest(root).articles, {}, `an entry was built for a directory with no ${file}`);
+  });
+}
 
-test('a stale manifest is drift, and rewriting it is not', () => {
+test('a CRLF body hashes identically to the same body with LF endings', () => {
+  // Git on a Windows checkout can hand a body back with CRLF endings. The hash is taken over the
+  // canonical form, so the manifest must not read that as an edit.
   const root = cleanRoot();
-  const manifest = readManifestFile(root);
-  const handle = Object.keys(manifest.articles)[0];
-  manifest.articles[handle].bodyLength = 1;
-  writeManifestFile(root, manifest);
-  assert.notEqual(formatManifest(buildManifest(root)), `${JSON.stringify(readManifestFile(root), null, 2)}\n`);
+  const lf = buildManifest(root).articles[HANDLE];
+  writeBody(root, readBody(root).replace(/\n/g, '\r\n'));
+  assert.ok(readBody(root).includes('\r\n'), 'the mutation did not produce CRLF');
+  const crlf = buildManifest(root).articles[HANDLE];
+  assert.equal(crlf.bodySha256, lf.bodySha256);
+  assert.equal(crlf.bodyLength, lf.bodyLength);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -174,6 +181,16 @@ test('--check exits EXACTLY 2 on drift, and exactly 1 when it cannot run', () =>
   writeFileSync(join(broken, 'marketing', 'articles'), 'not a directory', 'utf8');
   const unreadable = runReindex(broken, ['--check']);
   assert.equal(unreadable.status, 1, `an unreadable tree must exit 1, not 2:\n${unreadable.stderr}`);
+});
+
+test('a write run creates manifest.json when there is none', () => {
+  const root = cleanRoot();
+  const file = join(root, 'marketing', 'articles', 'manifest.json');
+  const expected = readFileSync(file, 'utf8');
+  rmSync(file);
+  const written = runReindex(root);
+  assert.equal(written.status, 0, written.stderr);
+  assert.equal(readFileSync(file, 'utf8'), expected, 'the created manifest is not the committed one');
 });
 
 test('a write run rewrites a drifted manifest and then reports itself current', () => {

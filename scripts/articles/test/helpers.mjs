@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
-import { metaSha256, sha256, stripVersionQuery } from '../lib/articles.mjs';
+import { buildManifest, formatManifest } from '../reindex.mjs';
 
 export const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = join(TEST_DIR, '..', '..', '..');
@@ -77,20 +77,6 @@ export function writeManifestFile(root, manifest) {
   writeFileSync(join(root, 'marketing', 'articles', 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 }
 
-/**
- * Edit an article's metadata and keep the manifest in step.
- *
- * Most rule cases are about the CONTENT being wrong, not about the manifest being stale. Without
- * this the hash rules would fire alongside the rule under test and every case would trip two ids,
- * which is exactly what the "trips exactly one" assertion is there to catch.
- */
-export function mutateArticle(root, mutate) {
-  const article = readArticle(root);
-  mutate(article);
-  writeArticle(root, article);
-  return article;
-}
-
 /** Copy the repo's real catalogue into a fixture root, for the product-link cases. */
 export function withRealCatalogue(root) {
   cpSync(join(REPO_ROOT, 'catalogue.json'), join(root, 'catalogue.json'));
@@ -98,25 +84,20 @@ export function withRealCatalogue(root) {
 }
 
 /**
- * Recompute ONE manifest entry from what is on disk.
+ * Rewrite the manifest from what is on disk, with the real reindexer's own two functions.
  *
- * Several cases add a second article, and copying the first one's entry was the obvious shortcut
- * and is wrong: the copy's `metaSha256` describes a different handle, so the case trips the hash
- * rule as well as the rule under test and the "exactly one rule" assertion fails for a reason that
- * has nothing to do with what is being tested.
+ * Most cases are about content being wrong, not about the manifest being stale. Rewriting the
+ * manifest after the mutation keeps the hash rules quiet so the case under test is the only one that
+ * fires; the hash rules have their own cases, where staleness IS the subject.
+ *
+ * NOT A SECOND IMPLEMENTATION. This used to recompute the hashes itself, once here and once again in
+ * the check suite, and each copy could drift from `reindex.mjs` without any test noticing, because
+ * the checker was then being measured against the helper rather than against the tool an operator
+ * runs. Calling `buildManifest` also recomputes EVERY entry, so a case that adds a second article
+ * cannot leave it carrying the first one's hashes.
  */
-export function reindexHandle(root, handle = HANDLE) {
-  const manifest = readManifestFile(root);
-  const body = readFileSync(join(articleDir(root, handle), 'body.html'), 'utf8').replace(/\n$/, '');
-  const article = readArticle(root, handle);
-  const images = readImages(root, handle);
-  manifest.articles[handle] = {
-    bodySha256: sha256(body),
-    bodyLength: body.length,
-    metaSha256: metaSha256(article),
-    images: (Array.isArray(images.images) ? images.images : []).map((e) => stripVersionQuery(e?.url)).sort(),
-  };
-  writeManifestFile(root, manifest);
+export function reindexInPlace(root) {
+  writeFileSync(join(root, 'marketing', 'articles', 'manifest.json'), formatManifest(buildManifest(root)), 'utf8');
 }
 
 /** Add a second article directory, for the redirect-collision case. */

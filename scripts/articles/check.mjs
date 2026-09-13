@@ -24,29 +24,32 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CATALOGUE_PATH, parseCatalogue } from '../lib/catalogue-manifest.mjs';
+import { hasEmDash } from '../lib/prose.mjs';
 import {
   ARTICLES_DIR,
   ARTICLE_FILES,
   ARTICLE_KEYS,
   DESC_MAX,
   DESC_MIN,
-  IMAGE_HOST,
   NON_ARTICLE_FILES,
   POLICY_HANDLES,
   RULES,
   TITLE_MAX,
+  articleFieldTypeErrors,
+  authoredStrings,
   bodyFromFileText,
   classifyLink,
   emDashFindings,
   finding,
   headingFindings,
   hrefsOf,
+  imageHostRefusal,
+  imagesFieldTypeErrors,
   imagesOf,
   isHandle,
-  metaSha256,
+  manifestEntryFor,
   safetyFindings,
   sensitiveFindings,
-  sha256,
   stripVersionQuery,
   templateFileFor,
 } from './lib/articles.mjs';
@@ -140,11 +143,13 @@ export function plan(root = REPO_ROOT) {
   const catalogue = readCatalogue(root);
   if (catalogue === null) notes.push(`no ${CATALOGUE_PATH} at this root, so /products/ links were not resolved`);
 
-  const imageRootPresent = existsSync(p.imageRoot);
-  if (!imageRootPresent && handles.length > 0) {
+  // NOT "verified when the directory is present". An earlier note said the hashes went unverified
+  // only because article-images/ was absent, which implied a local run with the directory did verify
+  // them. Nothing in this checker compares them in either case, so the note says exactly that.
+  if (handles.length > 0) {
     notes.push(
-      `${IMAGE_ROOT_DIR}/ is absent (a fresh clone, or CI), so image byte hashes were not verified; ` +
-        'the shape and presence rules still ran',
+      `images.json image sha256 values are not compared with the local files in ${IMAGE_ROOT_DIR}/, ` +
+        'whether or not that directory is present; the shape and presence rules still ran',
     );
   }
 
@@ -164,20 +169,33 @@ export function plan(root = REPO_ROOT) {
       continue;
     }
 
-    let article;
-    let images;
-    try {
-      article = JSON.parse(readFileSync(join(dir, 'article.json'), 'utf8'));
-      images = JSON.parse(readFileSync(join(dir, 'images.json'), 'utf8'));
-    } catch (err) {
-      findings.push(finding(RULES.MISSING_FILE, handle, `could not parse a JSON file: ${err.message}`));
-      continue;
-    }
+    // Unparseable JSON is its own refusal, per file. It used to be reported as a MISSING file, which
+    // sent an operator looking for a file that was sitting right there.
+    const article = readJsonFile(join(dir, 'article.json'), 'article.json', handle, findings);
+    const images = readJsonFile(join(dir, 'images.json'), 'images.json', handle, findings);
+    if (article === INVALID || images === INVALID) continue;
 
     const rawBody = readFileSync(join(dir, 'body.html'), 'utf8');
     const body = bodyFromFileText(rawBody);
     if (rawBody !== `${body}\n`) {
       findings.push(finding(RULES.NOT_CANONICAL, handle, 'body.html is not in canonical form (BOM, CRLF, trailing whitespace, or a missing final newline)'));
+    }
+
+    // The body rules need nothing from the metadata, so they run whatever state article.json is in.
+    // The em-dash and sensitive scans read the RAW text, so they also run when the markup is
+    // malformed and every element rule has gone quiet for this body.
+    findings.push(...safetyFindings(body, handle));
+    findings.push(...headingFindings(body, handle));
+    findings.push(...emDashFindings(null, body, handle));
+    findings.push(...sensitiveFindings(body, handle, 'the body'));
+
+    const typeErrors = [
+      ...articleFieldTypeErrors(article).map((d) => `article.json: ${d}`),
+      ...imagesFieldTypeErrors(images).map((d) => `images.json: ${d}`),
+    ];
+    if (typeErrors.length) {
+      for (const detail of typeErrors) findings.push(finding(RULES.FIELD_TYPE, handle, detail));
+      continue;
     }
 
     for (const key of Object.keys(article)) {
@@ -190,20 +208,20 @@ export function plan(root = REPO_ROOT) {
       findings.push(finding(RULES.DIR_NAME_MISMATCH, handle, `article.json declares handle "${article.handle}"`));
     }
 
-    findings.push(...safetyFindings(body, handle));
-    findings.push(...headingFindings(body, handle));
-    findings.push(...emDashFindings(article, body, handle));
-    findings.push(...sensitiveFindings(body, handle, 'the body'));
-    for (const [label, value] of [
-      ['title', article.title],
-      ['summary', article.summary],
-      ['author', article.author],
-      ['seo.title', article.seo?.title],
-      ['seo.description', article.seo?.description],
-    ]) {
+    findings.push(...emDashFindings(article, '', handle));
+    for (const [label, value] of authoredStrings(article)) {
       findings.push(...sensitiveFindings(value, handle, label));
     }
+    // images.json alt text is authored prose too, and the push sends it to Shopify as the media alt,
+    // so it gets the same two sweeps as the article's own strings.
+    for (const [i, entry] of images.images.entries()) {
+      if (hasEmDash(entry.alt)) findings.push(finding(RULES.EM_DASH, handle, `images.json images[${i}].alt contains an em dash`));
+      findings.push(...sensitiveFindings(entry.alt, handle, `images.json images[${i}].alt`));
+    }
 
+    if (typeof article.title !== 'string' || article.title.trim() === '') {
+      findings.push(finding(RULES.TITLE_EMPTY, handle, 'title must be a non-empty string'));
+    }
     if (typeof article.summary !== 'string' || article.summary.trim() === '') {
       findings.push(finding(RULES.SUMMARY_EMPTY, handle, 'summary must be a non-empty string'));
     }
@@ -211,11 +229,10 @@ export function plan(root = REPO_ROOT) {
       findings.push(finding(RULES.AUTHOR_EMPTY, handle, 'author must be a non-empty string'));
     }
 
-    const tags = Array.isArray(article.tags) ? article.tags : [];
+    const tags = article.tags ?? [];
     if (new Set(tags).size !== tags.length) {
       findings.push(finding(RULES.TAG_DUPLICATE, handle, 'tags contains a duplicate'));
     }
-    for (const tag of tags) findings.push(...sensitiveFindings(tag, handle, 'a tag'));
 
     const seoTitle = article.seo?.title ?? '';
     const seoDesc = article.seo?.description ?? '';
@@ -234,13 +251,19 @@ export function plan(root = REPO_ROOT) {
       findings.push(finding(RULES.TEMPLATE_SUFFIX_UNKNOWN, handle, `templateSuffix "${article.templateSuffix}" names ${templateFile}, which does not exist`));
     }
 
-    const previous = Array.isArray(article.previousHandles) ? article.previousHandles : [];
-    for (const old of previous) {
+    for (const old of article.previousHandles ?? []) {
       if (!isHandle(old)) {
         findings.push(finding(RULES.PREVIOUS_HANDLE_SHAPE, handle, `previousHandles entry "${old}" is not a kebab-case handle`));
       }
       if (old === handle) {
         findings.push(finding(RULES.PREVIOUS_HANDLE_SELF, handle, `previousHandles lists this article's own handle`));
+        continue;
+      }
+      // A redirect from a handle another article currently LIVES at would point that article's own
+      // URL somewhere else. Shopify refuses to create it, so the push would fail halfway; refusing it
+      // here keeps that failure in review.
+      if (handles.includes(old)) {
+        findings.push(finding(RULES.PREVIOUS_HANDLE_COLLISION, handle, `previousHandles entry "${old}" is the current handle of another article`));
       }
       const claimedBy = claimedRedirects.get(old);
       if (claimedBy !== undefined && claimedBy !== handle) {
@@ -251,22 +274,23 @@ export function plan(root = REPO_ROOT) {
 
     // Media. Every recorded URL must be on the CDN, every body img must resolve to one, and every
     // recorded image must be referenced by the body or be the featured image.
-    const recorded = Array.isArray(images.images) ? images.images : [];
     const byUrl = new Map();
-    for (const entry of recorded) {
-      const url = stripVersionQuery(entry?.url);
+    for (const entry of images.images) {
+      const url = stripVersionQuery(entry.url);
       byUrl.set(url, entry);
-      if (!url.includes(IMAGE_HOST)) {
-        findings.push(finding(RULES.IMAGE_HOST, handle, `images.json records ${url}, which is not on ${IMAGE_HOST}`));
+      const refusal = imageHostRefusal(entry.url);
+      if (refusal !== null) {
+        findings.push(finding(RULES.IMAGE_HOST, handle, `images.json records ${url}, which ${refusal}`));
       }
     }
 
+    // The alt text itself was already swept for sensitive content as part of the raw body above.
     const used = new Set();
     for (const img of imagesOf(body)) {
       if (img.alt.trim() === '') {
         findings.push(finding(RULES.IMG_MISSING_ALT, handle, 'the body has an <img> with no alt text'));
       }
-      findings.push(...sensitiveFindings(img.alt, handle, 'an image alt'));
+      if (img.src === null) continue; // refused by the URL rules already
       const src = stripVersionQuery(img.src);
       if (!byUrl.has(src)) {
         findings.push(finding(RULES.IMG_SRC_UNKNOWN, handle, `the body references ${src}, which images.json does not record`));
@@ -290,38 +314,45 @@ export function plan(root = REPO_ROOT) {
       }
     }
 
-    // Links.
+    // Links. `hrefsOf` returns only hrefs the URL rules admitted, decoded, so everything here is
+    // https, mailto, a fragment, or a single-slash storefront path; `http://` was refused as
+    // link/external-not-https by the safety pass, where the raw value is still in hand.
     for (const href of hrefsOf(body)) {
       const link = classifyLink(href);
-      if (link.kind === 'external' && !link.https) {
-        findings.push(finding(RULES.EXTERNAL_NOT_HTTPS, handle, `external link ${href} is not https`));
-      }
       if (link.kind === 'relative-unknown') {
         findings.push(finding(RULES.RELATIVE_ROOT_UNKNOWN, handle, `link ${href} names no known storefront root`));
       }
       if (link.kind === 'relative' && link.root === '/policies/' && !POLICY_HANDLES.includes(link.handle)) {
         findings.push(finding(RULES.POLICY_LINK_UNKNOWN, handle, `link ${href} names no tracked shop policy`));
       }
-      if (link.kind === 'relative' && link.root === '/products/' && catalogue !== null) {
-        if (!catalogue.products.has(link.handle)) {
+      if (link.kind === 'relative' && link.root === '/products/') {
+        // An EMPTY handle is refused with or without a catalogue: `/products/` is a link to nothing
+        // whatever the census holds, so there is nothing to wait for.
+        if (link.handle === '') {
+          findings.push(finding(RULES.PRODUCT_LINK_UNKNOWN, handle, `link ${href} names no product handle`));
+        } else if (catalogue !== null && !catalogue.products.has(link.handle)) {
           findings.push(finding(RULES.PRODUCT_LINK_UNKNOWN, handle, `link ${href} names no product in ${CATALOGUE_PATH}`));
         }
       }
     }
 
     // Hashes agree. This is what makes a stale manifest a refusal rather than a silent pass, and it
-    // is why `articles:reindex --check` is deliberately NOT also wired into CI.
+    // is why `articles:reindex --check` is deliberately NOT also wired into CI. The expected entry
+    // comes from `manifestEntryFor`, the function reindex writes with, so the two cannot diverge.
     const entry = manifest.articles[handle];
     if (entry) {
-      const bodyHash = sha256(body);
-      if (entry.bodySha256 !== bodyHash) {
+      const expected = manifestEntryFor(body, article, images);
+      if (entry.bodySha256 !== expected.bodySha256) {
         findings.push(finding(RULES.BODY_SHA_MISMATCH, handle, 'manifest bodySha256 does not match body.html; run npm run articles:reindex'));
       }
-      if (entry.bodyLength !== body.length) {
+      if (entry.bodyLength !== expected.bodyLength) {
         findings.push(finding(RULES.BODY_LENGTH_MISMATCH, handle, 'manifest bodyLength does not match body.html; run npm run articles:reindex'));
       }
-      if (entry.metaSha256 !== metaSha256(article)) {
+      if (entry.metaSha256 !== expected.metaSha256) {
         findings.push(finding(RULES.META_SHA_MISMATCH, handle, 'manifest metaSha256 does not match article.json; run npm run articles:reindex'));
+      }
+      if (JSON.stringify(entry.images) !== JSON.stringify(expected.images)) {
+        findings.push(finding(RULES.IMAGES_MISMATCH, handle, 'manifest images does not match images.json; run npm run articles:reindex'));
       }
     }
   }
@@ -329,15 +360,46 @@ export function plan(root = REPO_ROOT) {
   return { findings, notes, handles };
 }
 
+/** Sentinel for a JSON file that did not parse. Distinct from any value JSON can produce. */
+const INVALID = Symbol('invalid-json');
+
+/** Parse one article JSON file, recording `structure/json-invalid` and returning INVALID on failure. */
+function readJsonFile(file, label, handle, findings) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch (err) {
+    findings.push(finding(RULES.JSON_INVALID, handle, `${label} is not valid JSON: ${err.message}`));
+    return INVALID;
+  }
+}
+
 export function check(root = REPO_ROOT) {
   const { findings, notes } = plan(root);
   return { findings, notes };
 }
 
+export const USAGE = 'usage: node scripts/articles/check.mjs [--root <dir>]';
+
+/**
+ * The root a `--root` flag names, the default root, or null when the flag has no value.
+ *
+ * `resolve(undefined)` throws a TypeError that escapes main as an uncaught stack trace, which tells
+ * the operator nothing about the flag they forgot.
+ */
+function rootFrom(args) {
+  const i = args.indexOf('--root');
+  if (i === -1) return REPO_ROOT;
+  const value = args[i + 1];
+  return value === undefined || value.startsWith('--') ? null : resolve(value);
+}
+
 function main(argv) {
-  const args = argv.slice(2);
-  const rootFlag = args.indexOf('--root');
-  const root = rootFlag !== -1 ? resolve(args[rootFlag + 1]) : REPO_ROOT;
+  const root = rootFrom(argv.slice(2));
+  if (root === null) {
+    console.error('error: --root needs a directory');
+    console.error(USAGE);
+    return 1;
+  }
   let result;
   try {
     result = check(root);
