@@ -76,13 +76,6 @@ Sections: [Product and storefront](#product-and-storefront) (merchandising / UX 
   and consider adding the blog to the footer or main menu in Admin, reading
   `docs/theme-settings-contracts.md` first.
 
-- [ ] **Delete the throwaway hidden test articles in Admin, if they are still there.** Verifying the
-  article tooling created two hidden articles in the Shift Notes blog, `test-push-end-to-end` and
-  `test-skill-end-to-end`, and both repo directories are gone. The tooling deliberately has no delete
-  path, so the operator deletes them by hand in Admin, then runs `npm run articles:pull -- --seed` so
-  this machine's observation state drops them. Until then `articles:verify -- --live` lists each as a
-  live article with no repo directory.
-
 - [ ] **Settle the article push's unexercised Admin behaviours on the first real post's edit
   cycle.** The only live push so far was a create of a table-and-tags test article. Still unproven:
   what `articleUpdate` does to an existing article at all, whether an update with a null image removes
