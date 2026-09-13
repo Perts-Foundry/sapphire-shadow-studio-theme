@@ -92,7 +92,9 @@ anything**, whether or not `article-images/` is present, and the checker says so
 run rather than implying otherwise.
 
 An uploaded file is public at its CDN URL the moment the upload succeeds, independent of whether the
-article is visible. Uploading is therefore its own gate, not a step inside publishing.
+article is visible. Uploading is therefore its own gate, not a step inside publishing, and
+`scripts/articles/upload-images.mjs` is the only supported path; `.claude/skills/articles/images.md`
+has the procedure.
 
 ## Commands
 

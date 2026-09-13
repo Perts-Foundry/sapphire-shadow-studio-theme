@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { exportFromsOf, importClosure, importsOf } from '../../lib/import-closure.mjs';
-import { MUTATION_ROOT_FIELDS } from '../lib/mutations.mjs';
+import { MUTATION_ROOT_FIELDS, UPLOAD_MUTATION_ROOT_FIELDS } from '../lib/mutations.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ARTICLES = join(REPO_ROOT, 'scripts', 'articles');
@@ -105,14 +105,17 @@ test('the hidden flag is the LITERAL false in the input builder, spelled exactly
   assert.deepEqual(planted, ['Boolean(1)']);
 });
 
-test('mutation documents live in lib/mutations.mjs and nowhere else, and name only the two reviewed operations', () => {
+test('mutation documents live in lib/mutations.mjs and nowhere else, and name only the four reviewed operations', () => {
   const modules = walk(ARTICLES)
     .filter((full) => full.endsWith('.mjs') && !rel(full).startsWith('scripts/articles/test/'))
     .map((full) => ({ path: rel(full), text: readFileSync(full, 'utf8') }));
   assert.deepEqual(mutationOffenders(modules), []);
   const own = modules.find((m) => m.path === 'scripts/articles/lib/mutations.mjs');
-  assert.equal((own.text.match(MUTATION_DOC) ?? []).length, 2, 'the scan no longer sees the two real documents, so it proves nothing');
+  assert.equal((own.text.match(MUTATION_DOC) ?? []).length, 4, 'the scan no longer sees the four real documents, so it proves nothing');
+  // Two article writes for the push, two file creates for the uploader, in separate maps so neither
+  // command's allowlist grows with the other's. No update or delete of a file exists.
   assert.deepEqual(MUTATION_ROOT_FIELDS, { ArticleCreate: 'articleCreate', ArticleUpdate: 'articleUpdate' });
+  assert.deepEqual(UPLOAD_MUTATION_ROOT_FIELDS, { ArticleImageStage: 'stagedUploadsCreate', ArticleImageCreate: 'fileCreate' });
   // Positive controls: a document in a command, in either quote style.
   const q = '`';
   assert.deepEqual(mutationOffenders([{ path: 'scripts/articles/status.mjs', text: `const D = ${q}mutation X($id: ID!) { y }${q};` }]), ['scripts/articles/status.mjs']);

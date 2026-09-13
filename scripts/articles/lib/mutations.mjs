@@ -32,8 +32,35 @@ export const ARTICLE_UPDATE = `mutation ArticleUpdate($id: ID!, $article: Articl
   }
 }`;
 
-/** Every mutation operation name, and the root field each one calls. */
+/** Every ARTICLE mutation operation name, and the root field each one calls. The push sends only these. */
 export const MUTATION_ROOT_FIELDS = Object.freeze({ ArticleCreate: 'articleCreate', ArticleUpdate: 'articleUpdate' });
+
+// THE IMAGE UPLOADER'S TWO DOCUMENTS (upload-images.mjs). Kept in this file so "what can this
+// subsystem write?" is still answered by reading one file, and kept in their own map so the push's
+// allowlist does not grow: an article write and a file create are different acts with different
+// gates. CREATES ONLY: no file update and no file delete exists anywhere in this subsystem. An
+// uploaded file is public at its CDN URL the moment the create succeeds, whatever the article's state.
+//
+// Validated against the Admin GraphQL schema (2026-07); both need `write_files`.
+
+/** Reserve a staged upload target for one file. */
+export const FILE_STAGED_UPLOADS = `mutation ArticleImageStage($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets { url resourceUrl parameters { name value } }
+    userErrors { field message }
+  }
+}`;
+
+/** Create one Files entry from a staged upload. */
+export const FILE_CREATE = `mutation ArticleImageCreate($files: [FileCreateInput!]!) {
+  fileCreate(files: $files) {
+    files { id fileStatus ... on MediaImage { image { url width height } } }
+    userErrors { field message }
+  }
+}`;
+
+/** The uploader's mutation operation names, and the root field each one calls. */
+export const UPLOAD_MUTATION_ROOT_FIELDS = Object.freeze({ ArticleImageStage: 'stagedUploadsCreate', ArticleImageCreate: 'fileCreate' });
 
 /** The SEO fields are these two metafields (verified on the 2026-09-12 spike and in the SEO docs). */
 export const SEO_METAFIELDS = Object.freeze({

@@ -4,7 +4,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArgs, matchesFilename, altFor } from '../upload-email-icons.mjs';
+import { matchesFilename } from '../../lib/shopify-files.mjs';
+import { parseArgs, altFor } from '../upload-email-icons.mjs';
 
 test('a bare run stages nothing, which is what makes it a dry run', () => {
   assert.deepEqual(parseArgs([]).upload, []);

@@ -27,6 +27,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminClient, assertScopes } from '../blank-inventory/lib/admin.mjs';
+import { matchesFilename } from '../lib/shopify-files.mjs';
 import { ICON_NAMES, ICON_LABELS } from './lib/icons.mjs';
 import { fileNameFor } from './render-email-icons.mjs';
 
@@ -78,27 +79,6 @@ export function parseArgs(argv) {
 
 function throwUserErrors(label, errors) {
   if (errors?.length) throw new Error(`${label}: ${errors.map((e) => e.message).join('; ')}`);
-}
-
-/**
- * Whether a CDN URL is the file we are about to create. Shopify keeps the uploaded filename in the
- * URL path but adds a `?v=` cache buster, and on a name collision it appends `_1`, `_2` and so on,
- * so the comparison is on the URL's basename stem and has to tolerate that suffix.
- * Pure, so the duplicate guard is testable without a store.
- * @param {string | undefined} url
- * @param {string} filename
- * @returns {boolean}
- */
-export function matchesFilename(url, filename) {
-  if (!url) return false;
-  let stem;
-  try {
-    stem = path.parse(path.basename(new URL(url).pathname)).name;
-  } catch {
-    return false;
-  }
-  const wanted = path.parse(filename).name;
-  return stem === wanted || new RegExp(`^${wanted}_\\d+$`).test(stem);
 }
 
 /**

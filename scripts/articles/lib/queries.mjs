@@ -65,6 +65,28 @@ export const ARTICLES_REDIRECTS = `query ArticlesRedirects($query: String!) {
   }
 }`;
 
+/**
+ * Files entries by filename, for the uploader's no-op path. Shopify's search is not an exact match,
+ * so the caller compares each returned URL's basename itself. A file created seconds ago may not be
+ * indexed yet, which is why the uploader's dry run says so rather than promising absence.
+ */
+export const ARTICLE_IMAGE_FILES = `query ArticleImageFiles($query: String!) {
+  files(first: 10, query: $query) {
+    nodes { id fileStatus ... on MediaImage { image { url width height } } }
+  }
+}`;
+
+/** One Files entry by GID, for polling a new upload until Shopify has processed it. */
+export const ARTICLE_IMAGE_FILE_READ = `query ArticleImageFileRead($id: ID!) {
+  node(id: $id) { id ... on MediaImage { fileStatus image { url width height } } }
+}`;
+
+/** The uploader's read names. Separate from QUERY_NAMES so the push's fake allowlist does not grow. */
+export const UPLOAD_QUERY_NAMES = Object.freeze(['ArticleImageFiles', 'ArticleImageFileRead']);
+
+/** The scope the uploader asserts. `write_files` covers the Files reads it makes too. */
+export const UPLOAD_SCOPES = Object.freeze(['write_files']);
+
 /** Every read operation name, for the recording fake's allowlist. */
 export const QUERY_NAMES = Object.freeze(['ArticlesBlogs', 'ArticlesList', 'ArticleRead', 'ArticlesCollection', 'ArticlesRedirects']);
 
