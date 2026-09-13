@@ -16,14 +16,28 @@
 //
 // THREE SPELLINGS, because any of them runs it: the npm script name, the module path, and a relative
 // import that resolves to the module. The first two are text matches. They are NOT a complete
-// defence: a command assembled at runtime from pieces (a variable holding `articles`, another
-// holding the action) contains neither literal, and no static scan can see it. That gap is known
-// and tracked; the push module refusing non-interactive callers is the answer to it, not a cleverer
-// pattern here. The third spelling is resolved rather than matched, because `import('../push.mjs')`
-// from the test directory contains no occurrence of the full module path at all.
+// defence: a command assembled at runtime from pieces contains neither literal, and no static scan
+// can see it. The push module itself refuses to run with CI present, checked from its injected
+// environment, so this scan is the second line and not the only one. The third spelling is resolved
+// rather than matched, because `import('../push.mjs')` from the test directory contains no occurrence
+// of the full module path at all.
 //
-// The only permitted occurrence in the entire repository is the script key in package.json, and its
-// value is pinned exactly, so the declaration cannot quietly grow a second command after `&&`.
+// The only permitted TEXT occurrence in the entire repository is the script key in package.json, and
+// its value is pinned exactly, so the declaration cannot quietly grow a second command after `&&`.
+//
+// THE ONE PERMITTED IMPORT: the push's own tests. Its gates are the product, and a gate nobody has
+// proved is a gate nobody knows exists, so the gate suite and the real-git integration test must
+// import the module. They are exempt from the import rule ONLY, by EXACT repo-relative path, listed in
+// EXEMPT_IMPORTERS with a reason each. The exemption cannot widen: it is an equality test against a
+// frozen list, a test pins the list's exact contents and length, and a planted control proves that
+// any other file in the same directory importing the push is still an offender. A new test file is
+// never exempt by where it lives or what it is called.
+//
+// AN EXEMPT FILE IS HELD TO MORE, NOT LESS. It may import the gate functions and `run`, and nothing
+// that reaches a real store: it must not import or call `main`, import the module as a namespace or
+// dynamically, name `createAdminClient`, read `process.env`, or call `createContext` without an
+// explicit `client:`. And the text spellings still apply to it: an exempt file spelling the npm name
+// or the module path is an offender like any other.
 //
 // A CONSEQUENCE WORTH KNOWING: documentation under these trees cannot spell the command either.
 // That is deliberate. A README line is copy-pasteable, and this guard cannot tell a person reading
@@ -66,6 +80,22 @@ const SCANNED_FILES = ['package.json', '.claude/settings.json', '.claude/setting
  */
 const NPM_NAME = ['articles', 'push'].join(':');
 const MODULE_PATH = ['scripts', 'articles', 'push.mjs'].join('/');
+
+/**
+ * The only files that may import the push module, by EXACT path. Frozen, and pinned by a test.
+ */
+export const EXEMPT_IMPORTERS = Object.freeze([
+  Object.freeze({
+    path: 'scripts/articles/test/push.test.mjs',
+    why: 'the gate suite: every gate is proved against a recording fake client and the strict git fake',
+  }),
+  Object.freeze({
+    path: 'scripts/articles/test/git-integration.test.mjs',
+    why: 'the reviewed-tree gate against real git, whose pathspecs no fake can prove',
+  }),
+]);
+
+const EXEMPT_PATHS = Object.freeze(EXEMPT_IMPORTERS.map((e) => e.path));
 
 /** Files whose imports are resolved as well as text-scanned. */
 const MODULE_EXTENSIONS = ['.mjs', '.cjs', '.js'];
@@ -124,11 +154,13 @@ function isDeclarationLine(file, line) {
 
 /** Every module specifier a source file names: static, `export ... from`, and dynamic import calls. */
 function specifiersOf(source) {
-  // importsOf and exportFromsOf cover the static forms. Neither returns the specifier of a dynamic
-  // `import('...')` call (the closure walker only detects one, to refuse it), so that form is
-  // extracted here.
   const dynamic = [...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]);
   return [...importsOf(source), ...exportFromsOf(source), ...dynamic];
+}
+
+/** Does a relative specifier, named from `path`, resolve to the push module? */
+function resolvesToPush(path, spec) {
+  return spec.startsWith('.') && posix.normalize(posix.join(posix.dirname(path), spec)) === MODULE_PATH;
 }
 
 /**
@@ -152,9 +184,10 @@ export function findOffenders(files) {
       }
     }
     if (MODULE_EXTENSIONS.some((ext) => path.endsWith(ext))) {
+      // EXACT equality against the frozen list, and for the import rule only.
+      if (EXEMPT_PATHS.includes(path)) continue;
       for (const spec of specifiersOf(text)) {
-        if (!spec.startsWith('.')) continue;
-        if (posix.normalize(posix.join(posix.dirname(path), spec)) === MODULE_PATH) {
+        if (resolvesToPush(path, spec)) {
           offenders.push(`${path}: imports ${spec}, which resolves to the article push module`);
         }
       }
@@ -163,11 +196,61 @@ export function findOffenders(files) {
   return offenders;
 }
 
+/** Comments removed, strings kept: import specifiers live in strings, and names in code. */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+}
+
+/** The argument text of every `name(` call, parentheses balanced. */
+function callArguments(code, name) {
+  const out = [];
+  const re = new RegExp(`\\b${name}\\s*\\(`, 'g');
+  for (const m of code.matchAll(re)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const start = i;
+    for (; i < code.length && depth > 0; i++) {
+      if (code[i] === '(') depth++;
+      else if (code[i] === ')') depth--;
+    }
+    out.push(code.slice(start, i - 1));
+  }
+  return out;
+}
+
+/**
+ * What an exempt importer must not do, as violation strings. Empty means it holds to the rules.
+ *
+ * @param {{path: string, text: string}} file
+ */
+export function exemptFileViolations({ path, text }) {
+  const out = [];
+  const code = stripComments(text);
+  for (const m of code.matchAll(/^import\s+([\s\S]*?)\s+from\s*['"]([^'"]+)['"];?\s*$/gm)) {
+    if (!resolvesToPush(path, m[2])) continue;
+    const clause = m[1].trim();
+    if (!clause.startsWith('{') || !clause.endsWith('}')) {
+      out.push(`${path}: imports the push module as a namespace or default (${clause}); name each gate function instead`);
+      continue;
+    }
+    const names = clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.split(/\s+as\s+/)[0]);
+    if (names.includes('main')) out.push(`${path}: imports main from the push module`);
+  }
+  for (const m of code.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (resolvesToPush(path, m[1])) out.push(`${path}: imports the push module dynamically`);
+  }
+  if (/\bmain\s*\(/.test(code)) out.push(`${path}: calls main(`);
+  if (/\bcreateAdminClient\b/.test(code)) out.push(`${path}: names createAdminClient`);
+  if (/\bprocess\s*(?:\.\s*env\b|\[)/.test(code)) out.push(`${path}: reads process.env`);
+  for (const args of callArguments(code, 'createContext')) {
+    if (!/\bclient\s*:/.test(args)) out.push(`${path}: calls createContext without an explicit client`);
+  }
+  return out;
+}
+
 test('the guard actually scans something, in every tree it claims to cover that exists', () => {
   // A guard that silently walked nothing would pass forever. Assert coverage before asserting
-  // absence, which is the same fail-closed floor the CI guards use. A tree that does not exist in
-  // this checkout (there is no .claude/hooks/ today) is not required; a tree that exists and
-  // contributes nothing is the walk failing.
+  // absence, which is the same fail-closed floor the CI guards use.
   const files = scannedFiles().map((f) => f.path);
   assert.ok(files.length > 50, `expected to scan a substantial tree, saw ${files.length} file(s)`);
   for (const dir of SCANNED_DIRS) {
@@ -182,6 +265,7 @@ test('the guard actually scans something, in every tree it claims to cover that 
   }
   assert.ok(files.includes('package.json'), 'package.json was not scanned');
   assert.ok(files.includes(SELF), 'this file was not walked, so the self-exemption is untested');
+  for (const path of EXEMPT_PATHS) assert.ok(files.includes(path), `the exempt importer ${path} was not walked`);
 });
 
 test('nothing under the scanned trees invokes the article push, by any spelling', () => {
@@ -196,22 +280,40 @@ test('nothing under the scanned trees invokes the article push, by any spelling'
 });
 
 test('package.json declares the push with exactly the pinned value', () => {
-  // The exemption is only safe if what it exempts is fixed. A declaration line reading
-  // `node <module> && something-else` would otherwise ride through on its key.
   const lines = readFileSync(join(REPO_ROOT, 'package.json'), 'utf8').split('\n').filter((l) => l.includes(NPM_NAME));
   assert.equal(lines.length, 1, 'expected exactly one package.json line naming the push');
   assert.equal(isDeclarationLine('package.json', lines[0]), true, `the declaration is not exactly the pinned value: ${lines[0].trim()}`);
 });
 
 test('the declaration exemption is exactly one line, and does not generalise', () => {
-  // The exemption is the one hole in the guard, so it is pinned: it applies to package.json alone,
-  // to a line that IS the declaration, and to nothing else.
   assert.equal(isDeclarationLine('package.json', `    "${NPM_NAME}": "node ${MODULE_PATH}",`), true);
   assert.equal(isDeclarationLine('package.json', `    "${NPM_NAME}": "node ${MODULE_PATH}"`), true);
   assert.equal(isDeclarationLine('package.json', `    "${NPM_NAME}": "node ${MODULE_PATH} && curl x",`), false);
   assert.equal(isDeclarationLine('package.json', `  run: npm run ${NPM_NAME}`), false);
   assert.equal(isDeclarationLine('.github/workflows/deploy.yml', `    "${NPM_NAME}": "node ${MODULE_PATH}",`), false);
   assert.equal(isDeclarationLine('package.json', `# see "${NPM_NAME}" below`), false);
+});
+
+test('the import exemption is exactly two pinned paths, each with a reason', () => {
+  // The exemption is the one hole in the import rule, so its contents are pinned, not just its size.
+  assert.deepEqual(EXEMPT_PATHS, ['scripts/articles/test/push.test.mjs', 'scripts/articles/test/git-integration.test.mjs']);
+  assert.equal(EXEMPT_IMPORTERS.length, 2);
+  assert.ok(Object.isFrozen(EXEMPT_IMPORTERS));
+  for (const entry of EXEMPT_IMPORTERS) {
+    assert.ok(Object.isFrozen(entry));
+    assert.ok(typeof entry.why === 'string' && entry.why.length > 20, `${entry.path} carries no reason`);
+    assert.ok(existsSync(join(REPO_ROOT, entry.path)), `${entry.path} is exempt but does not exist`);
+  }
+});
+
+test('every exempt importer holds to the rules an exempt file is held to', () => {
+  const byPath = new Map(scannedFiles().map((f) => [f.path, f]));
+  const violations = EXEMPT_PATHS.flatMap((path) => exemptFileViolations(byPath.get(path)));
+  assert.deepEqual(violations, [], violations.join('\n'));
+  // And each one really does import the module, or it should not be on the list.
+  for (const path of EXEMPT_PATHS) {
+    assert.ok(specifiersOf(byPath.get(path).text).some((s) => resolvesToPush(path, s)), `${path} is exempt but imports nothing from the push`);
+  }
 });
 
 test('the guard catches a planted invocation in each shape it is meant to stop', () => {
@@ -226,10 +328,23 @@ test('the guard catches a planted invocation in each shape it is meant to stop',
     { path: 'scripts/articles/test/x.test.mjs', text: `import { main } from '${up}/push.mjs';\n` },
     { path: 'scripts/foo/x.mjs', text: `const m = await import('${up}/articles/push.mjs');\n` },
     { path: 'scripts/articles/lib/x.mjs', text: `import {\n  main,\n} from '${up}/push.mjs';\n` },
+    // The sibling commands never import the push; shared code belongs in lib/.
+    { path: 'scripts/articles/verify.mjs', text: `import { GATES } from './push.mjs';\n` },
+    { path: 'scripts/articles/status.mjs', text: `import { run } from './push.mjs';\n` },
+    { path: 'scripts/articles/pull.mjs', text: `import { assertReviewedTree } from './push.mjs';\n` },
+    // Neighbours of an exempt path are not exempt: the list is by equality, never by pattern.
+    { path: 'scripts/articles/test/push.test.mjs.bak.mjs', text: `import { run } from './${up}/push.mjs';\n` },
+    { path: 'scripts/articles/test/sub/push.test.mjs', text: `import { run } from '${up}/${up}/push.mjs';\n` },
+    { path: 'scripts/articles/test/pushy.test.mjs', text: `import { run } from '${up}/push.mjs';\n` },
+    // An exempt file is exempt from the import rule only: spelling the command is still an offence.
+    { path: EXEMPT_PATHS[0], text: `// run it with: npm run ${NPM_NAME}\n` },
+    { path: EXEMPT_PATHS[1], text: `spawn('node', ['${MODULE_PATH}']);\n` },
   ];
   for (const file of planted) {
     assert.equal(findOffenders([file]).length > 0, true, `not caught: ${file.path}: ${file.text}`);
   }
+  // The exempt importers' ordinary import is not an offence.
+  assert.deepEqual(findOffenders([{ path: EXEMPT_PATHS[0], text: `import { run } from '${up}/push.mjs';\n` }]), []);
   // A relative import that resolves ELSEWHERE is not an offender, or every sibling import would be.
   assert.deepEqual(findOffenders([{ path: 'scripts/foo/x.mjs', text: `import { x } from './push.mjs';\n` }]), []);
   // And the declaration itself is NOT caught, or package.json could never declare the script.
@@ -237,4 +352,28 @@ test('the guard catches a planted invocation in each shape it is meant to stop',
   // The self-exemption is by exact path, not by content.
   assert.deepEqual(findOffenders([{ path: SELF, text: `npm run ${NPM_NAME}` }]), []);
   assert.equal(findOffenders([{ path: `${SELF}.copy`, text: `npm run ${NPM_NAME}` }]).length, 1);
+});
+
+test('an exempt file that reaches for a real store is caught, in each shape', () => {
+  const up = '..';
+  const path = EXEMPT_PATHS[0];
+  const planted = [
+    `import { main } from '${up}/push.mjs';\n`,
+    `import { run, main as m } from '${up}/push.mjs';\n`,
+    `import * as push from '${up}/push.mjs';\n`,
+    `import push from '${up}/push.mjs';\n`,
+    `const push = await import('${up}/push.mjs');\n`,
+    `await push.main(['node', 'x']);\n`,
+    `import { createAdminClient } from '${up}/${up}/blank-inventory/lib/admin.mjs';\n`,
+    `const domain = process.env.MYSHOPIFY_DOMAIN;\n`,
+    `const domain = process['env'].MYSHOPIFY_DOMAIN;\n`,
+    `const ctx = createContext({ repoRoot: root, env: {}, now, stateDir });\n`,
+  ];
+  for (const text of planted) {
+    assert.ok(exemptFileViolations({ path, text }).length > 0, `not caught: ${text}`);
+  }
+  // The sanctioned shapes pass.
+  assert.deepEqual(exemptFileViolations({ path, text: `import {\n  GATES,\n  run,\n} from '${up}/push.mjs';\n` }), []);
+  assert.deepEqual(exemptFileViolations({ path, text: `const ctx = createContext({ repoRoot: root, client: fake, env: {}, now, stateDir });\n` }), []);
+  assert.deepEqual(exemptFileViolations({ path, text: `// main( in a comment is not a call\nconst ref = 'origin/main';\n` }), []);
 });

@@ -153,7 +153,7 @@ expectRule('a body that is not in canonical form', RULES.NOT_CANONICAL, (root) =
 
 expectRule('an unknown key in article.json', RULES.UNKNOWN_KEY, (root) => {
   const article = readArticle(root);
-  article.publishedAt = '2026-09-13';
+  article.draftNotes = 'not a field this format defines';
   writeArticleKeepingHashes(root, article);
 });
 

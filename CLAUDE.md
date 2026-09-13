@@ -213,6 +213,17 @@ a policy body: policy bodies are Admin objects, not theme files.
 
 <!-- policies-absolutes:end -->
 
+### Blog articles
+
+`marketing/articles/` holds the blog's posts, and the article push (the live-write `articles:*` key in
+`package.json`) writes one to the live store. **The tooling only ever creates or updates hidden
+articles: making a post visible is a hand action the operator takes in Admin, and no tool, script or
+browser-automation channel, including the chrome-devtools MCP, performs it.** Never delegate the
+article push to a subagent, a background job, a `claude -p` child, a hook or a scheduled run. `CI` set
+is an absolute refusal: never unset, empty, shadow or override `CI` to get past it. Commands, gates,
+exit codes, state and recovery: `scripts/articles/README.md`. The authoring skill arrives in a later
+change.
+
 ## Shopify MCP tools and limits
 
 Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Admin API scopes change over time, so verify a scope before relying on a write capability rather than assuming a fixed set; the full gap list is `docs/shopify-mcp-notes.md`. Prefer `validate_theme_codeblocks` over guessing whether a schema, filter, or tag is valid.
