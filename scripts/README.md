@@ -82,6 +82,24 @@ Shopify CLI only pushes recognized theme directories, so nothing here reaches th
   `userErrors`, which `shopPolicyUpdate` returns with HTTP 200. Every comparison runs on the CORE
   body with the version stamp stripped from both sides. See
   [`../marketing/policies/README.md`](../marketing/policies/README.md).
+- `articles/`: check, reindex, status, pull, verify and push the store's blog posts (Shift Notes)
+  tracked at `marketing/articles/`, plus the article image uploader. **`articles:status -- --live` is
+  the entry point**: it says where each article stands against Admin and this machine's last
+  observation, and names the one next step; bare `articles:status` is offline and cannot report an
+  Admin edit. `check.mjs` is **offline and CI-safe** and proves that the repo agrees with itself and
+  every body passes the strict allowlist reader; it is green on a post merged and never pushed, and
+  says nothing about what Admin holds. `reindex.mjs` is offline and rebuilds the derived manifest.
+  `articles:pull` has **no body-overwriting mode**: exactly one of `--check` (drift, writes nothing)
+  or `--seed` (records what is live in the machine-local observation state, touches no repo file).
+  `articles:verify -- --live` compares every written field with Admin, the live template suffix,
+  collection links, CDN image URLs and redirects. The article push writes ONE **hidden** article on
+  the **live store** behind sixteen gates (listed in [`articles/README.md`](articles/README.md)),
+  never publishes, and runs only on the operator's own request from a checkout on `main`. The article
+  image uploader writes to Shopify Files, where a file is **public at once**, behind its own dry run
+  and plan-sha confirmation. Both live writes are refused anywhere under `scripts/`, the workflows and
+  the `.claude/` trees by the no-invocation guard, which is why this bullet names them rather than
+  spelling them. See [`../marketing/articles/README.md`](../marketing/articles/README.md) and
+  [`articles/README.md`](articles/README.md).
 - `email-icons/`: render the social icons the Shopify Email templates use, and upload them to
   Shopify Files. Email clients cannot render SVG, so the theme's own inline icons are copied as
   path data, rasterised to committed PNGs under `marketing/emails/assets/`, and hosted on the CDN.
@@ -130,6 +148,18 @@ clean with all three deleted from the environment. Optional, policies only: `POL
 observation state, default `~/.local/state/shop-policies-state`). Two separate overrides AND two
 sibling defaults on purpose: sharing either would let a "delete old backups" action take the
 freshness baseline with it, and nesting the state under the backups defeats it just as thoroughly.
+
+The `articles` network commands (`articles:status -- --live`, `articles:pull`,
+`articles:verify -- --live`, the article push and the article image uploader) need the same three
+Shopify variables and nothing else. The app must grant `read_content`; the article push also
+`write_online_store_pages`, and the uploader `write_files` (asserted at runtime). The `articles:*`
+commands are run by npm name and read the variables from the shell's environment, the same as
+`policies:*`: nothing in the articles tooling loads `.env` itself, for the reason in the last rule
+below. `articles:check`, `articles:reindex`, bare `articles:status` and bare `articles:verify` need
+no credentials. Optional, articles only: `ARTICLES_STATE_DIR` (the observation state, default
+`~/.local/state/sapphire-articles-state`) and `ARTICLES_BACKUP_DIR` (pre-update backups, default
+`~/.local/state/sapphire-articles`), both honouring `XDG_STATE_HOME`, siblings for the same reason
+as the policies pair.
 
 `STOREFRONT_PASSWORD` is read only by the storefront-facing tools (`site-check/probe.mjs`,
 `site-check/tools.mjs`, `seo-review/crawl.mjs`, the a11y cookie helper); they also accept

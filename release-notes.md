@@ -1,5 +1,201 @@
 # Release Notes
 
+## Blog articles as code (unreleased, 2026-09-13)
+
+The store's blog had never carried a post. The goal is regular publishing that widens the SEO
+footprint past product and collection pages, so posts now live in the repo the way the shop
+policies do: written as files, reviewed in a PR, merged, and only then written to the live store.
+It shipped in stages. #182 extracted the machine-local observation state into
+`scripts/lib/observation-state.mjs` so a second subsystem could share it without copying a live-write
+safety module (with `scripts/lib/display-path.mjs`, so the home-directory redaction exists once in a
+public repo rather than twice); #183 repointed the audit tooling at the renamed blog; #184 added the
+offline core; #185 the network commands and the push; #186 and #187 the first live push and what it
+proved; #188 the `articles` authoring skill and the image uploader. The commands, gates, exit codes
+and recovery are in `scripts/articles/README.md`, and the format in `marketing/articles/README.md`;
+this entry records why they are shaped the way they are.
+
+**The format.** One directory per post under `marketing/articles/`: `body.html` (the exact bytes sent
+to Shopify, in a canonical form), `article.json` (authored metadata), `images.json` (the CDN URL, alt
+text and dimensions of each photo, never its bytes). `manifest.json` is derived by
+`articles:reindex`. Photos live in the gitignored `article-images/`, and the tracked-media guard
+covers that directory, because this repo is public and a committed photo can carry more than its
+pixels.
+
+**The body is read strictly and accepted by allowlist, because bodies render raw.** A live spike
+confirmed Shopify stores a `<script>` in an article body verbatim and emits it into the page. The
+first checker walked bodies with the lenient parser behind the notification templates and refused a
+blocklist of dangerous names. Both bets lost, and the pre-PR gate on that code showed it before it
+merged: a lenient parser recovers from broken markup its own way, not a
+browser's, so `<!--><img src=x onerror=...>-->` was one comment to the walker and a live image to
+Chrome; and the blocklist was missing `base`, `meta`, `link`, `math` and every entity spelling of
+`javascript:`. `lib/body-markup.mjs` now refuses anything a browser would have to recover from, then
+allows only a named set of elements, attributes and URL prefixes. A list of bad names is only as good
+as the reviewer's imagination, and a checker and a browser that read the same bytes differently is
+how unsafe markup gets approved.
+
+**Hidden only.** The tooling creates and updates hidden articles and nothing else. The mutation sends
+the hidden flag explicitly rather than trusting a server default, the re-read fails loud if Admin
+reports the article visible, and the push refuses to write over an article that is already visible,
+because an update sends it hidden and would take a live post down. Making a post visible is the
+operator's hand action in Admin. The suite refuses the visibility literals anywhere under
+`scripts/articles/`, so a publish path cannot arrive as a quiet edit.
+
+**No version stamp.** The policies subsystem stamps each body with a version; articles do not. The
+repo manifest hashes the committed bytes, and the machine-local observation state holds the hash of
+what Admin actually stored, taken from the re-read after a push. Between them, "the repo changed" and
+"Admin changed" are both detectable without writing anything into the article itself.
+
+**The terminal ceremony was not copied from the policies push, on purpose.** The policies push
+refuses without a terminal unless `--operator-approved` is passed, because it writes customer-facing
+legal text that no redeploy rolls back. The article push writes a hidden, reversible object the
+operator can read, fix or delete in Admin before anyone sees it, and legal-grade ceremony on a draft
+teaches that ceremony is noise, which weakens it where it matters. The gate is the operator's own
+request in the session, the `CI` refusal, and the reviewed-tree and freshness gates. Adding any
+publish path re-adds the full policies gate. The entry below on the `CI` refusal records the other
+half of that decision.
+
+**The no-invocation guard is the credential boundary, and every exemption is pinned by exact
+path.** A test walks every workflow, composite action, `scripts/`, the
+`.claude/` trees and settings, and `package.json`, and refuses any automated invocation of either
+live write: the push by npm name, module path, relative import or built path, and the image uploader
+by module path, relative import or built path. Scoping it to one workflow would have left `deploy.yml`,
+the one workflow holding live credentials, uncovered by the mechanism built to cover it. The pinned
+exemptions are the push's `package.json` declaration, whose value is pinned; the push's own gate
+suite and real-git test as its only importers; and the uploader's own suite as its only importer.
+The text exemptions are one exact path each: `.claude/skills/articles/push.md` may spell the push's
+npm name (never its module path, in any letter case), and `.claude/skills/articles/images.md` may
+spell the uploader's module path, which is its only spelling. A "prose, not an invocation" heuristic
+was rejected because that is exactly the rule a new spelling slips past, and the doc that owns a
+procedure has to be able to state the command or an agent reading it guesses one. The guard is a
+merge gate, not leak prevention: on a public repo a change is exposed the moment it is pushed to any
+branch.
+
+**The image uploader is guarded like the push, though it was first left out.** It has no npm script,
+and the guard originally keyed on one. That was backwards: a pushed article is hidden and reversible,
+while an uploaded file is public at its CDN URL the moment it is created, whatever the article's
+state. So the uploader carries its own dry run, a `--confirm` coupled to a plan sha over every file
+name and byte hash, and a metadata assertion on the exact bytes immediately before the staged upload,
+and the no-invocation guard covers it. `scripts/README.md` names it "the article image uploader"
+rather than by path for the same reason it names "the article push".
+
+**The planned `state-writer.mjs` was deliberately not built.** The plan named it without giving it a
+job. The observation state is written only by the push and `articles:pull -- --seed`; a second
+writer would be a way around the freshness gate, which exists to stop a push over an Admin edit
+nobody has seen. Authoring progress needs no state of its own either: the branch, `articles:check`
+and `articles:status -- --live` already say where a post stands, and a separate progress file would
+be a second source of truth that goes stale.
+
+## What the live article runs proved (unreleased, 2026-09-13)
+
+The article tooling was shaped by two live runs, and the second corrected assumptions the first could
+not settle. Both are recorded because the suite runs against a fake client, and a fake only models
+what someone has already seen.
+
+**The 2026-09-12 spike** (one hidden article in the old blog, created, updated, read back, deleted)
+established the ground rules. Body normalisation is minimal and idempotent: only a `<table>` was
+rewritten, and pushing a stored body back is a no-op, which is what made byte comparison viable at
+all. A `<script>` tag is stored verbatim, which is why the checker is an allowlist. `templateSuffix`
+is not validated by the API and an unknown suffix silently falls back to the default layout, which is
+why the checker resolves it against `templates/` and `verify --live` compares the live value. Hidden
+articles return 404 anonymously and do not clear the empty-blog noindex guard, so a hidden post does
+not make the blog indexable. Admin's Preview link carries a preview key that renders a hidden post
+**without admin cookies**, so a preview link is unlisted-public and is shared like a public URL. An
+uploaded Shopify file is public at its CDN URL the moment it is created, independent of the article's
+state, which is why the uploader has its own gate. A featured image set by URL is copied to Shopify's
+own CDN path, so the live URL never equals the repo's; compared by equality, that would have made the
+no-op gate unreachable and failed every re-read, so the image compares by presence and alt text, with
+the observation remembering which repo URL the copy came from.
+
+**The 2026-09-13 end-to-end push** (a throwaway hidden `test-` article created from `main`) settled
+two more. Shopify sorts tags: sent in one order, stored in another, so comparing tags sorted is
+required rather than defensive, or every multi-tag article would read as permanently changed. The
+table normaliser works per cell, putting every row, header cell and data cell on its own line; the
+structural comparison (byte-identical outside tables, whitespace-insensitive inside them) read that
+as equal, which is what let a second run hit the no-op gate. The create path was verified end to end:
+dry run, confirmed create with `--expect-absent`, re-read of every written field with the article
+hidden, the observation recorded, and `status -- --live`, `pull -- --check` and `verify -- --live`
+all reading in sync afterwards.
+
+Still unproven, and tracked in `TODO.md`: what an update does to an existing article, whether an
+update with a null image removes the featured image, anything beyond a flat table, and the live image
+upload path.
+
+## The blog is Shift Notes, and `/blogs/news` is gone (unreleased, 2026-09-13)
+
+On 2026-09-13 the operator created a new blog in Admin, **Shift Notes** at `/blogs/shift-notes`, with
+comments closed and no articles, and deleted the old `news` blog. The empty-blog noindex guard in
+`snippets/meta-tags.liquid` is keyed to the article count rather than a handle, so it covered the new
+blog with no code change (checked live when the blog was created: the old path 404s, the new one
+serves `noindex, follow`).
+
+The repo was not so lucky. Four references still named the old handle, so every live-hitting audit
+from `main` requested a 404, and #183 repaired them: the a11y sweep's blog entry, the seo-review
+crawl's fixed paths, and the two accepted-risk rows and note that keep the empty-blog findings from
+reading as regressions. That was a repair, not housekeeping, because a stale accepted-risk key does
+not fail loudly; it stops matching, and the finding it covered comes back on a path that no longer
+exists. The rows were repointed rather than deleted, since the new blog is empty too.
+
+**The older `/blogs/news` mentions in this file are left as they are, deliberately.** They are dated
+entries describing decisions taken while the blog carried that name, and rewriting them would make the
+log misreport its own history. The articles tooling holds the blog handle in one exported constant and
+resolves the blog by handle at push time, refusing on zero or several matches, because the recreated
+blog has a new ID and anything that had memorised the old one would now point at nothing.
+
+## The photo-story article template is deferred (unreleased, 2026-09-13)
+
+The blog work planned an alternate article template, a photo story: the standard post section followed
+by image-and-text sections. It was dropped before it was built. A JSON template's section settings live
+in the template file, so the image picker on each `media-with-content` section would hold one
+photograph shared by **every** article using that suffix. Every photo-story post would show the same
+photos, and editing them in the theme editor would fight the repo-as-source model through the sync
+theme.
+
+That is the same defect that removed the planned shoppable template, where hand-picked products per
+post would have been one product list for every shoppable post. Both need a per-article source, so
+the photo-story question is folded into the article metafield spike that has to answer it for
+shoppable posts (`TODO.md`). Until then, per-post photos live in `body.html`, with their CDN URLs
+recorded in `images.json`.
+
+## Article credentials stay explicit (unreleased, 2026-09-13)
+
+An earlier draft of the articles skill had the network commands load `.env` themselves, so every
+documented command could be a plain `npm run` and the push could be written down by its npm name
+without a credentials prefix. It was dropped. `scripts/README.md` makes `--env-file` deliberately
+explicit so that a live-write tool cannot pick up credentials by accident, and an auto-loading push
+would be the one tool that could.
+
+So the `articles:*` commands run by npm name read `MYSHOPIFY_DOMAIN`, `SHOPIFY_CLIENT_ID` and
+`SHOPIFY_CLIENT_SECRET` from the shell's environment, exactly as `policies:*` do; a command run without
+them fails naming the missing variable, and that is not a gate to work around. The image uploader has
+no npm script and is run by module path with the credentials passed explicitly, like the repo's other
+upload tools. This is separate from the `CI` refusal in the entry below: that one is about which
+process may run the push at all, this one about where its credentials come from.
+
+## Rolling back an article write (unreleased, 2026-09-13)
+
+The runbook, short on purpose; the gate detail behind each step is in `scripts/articles/README.md`
+("Machine-local state and backups", "Recovery") and `.claude/skills/articles/push.md`.
+
+**An update** prints the path of a backup written before the mutation, outside the checkout, under
+`$XDG_STATE_HOME/sapphire-articles/` (default `~/.local/state/sapphire-articles/`, override
+`ARTICLES_BACKUP_DIR`) as `<handle>-<timestamp>.json`. To put the previous version back, **copy, then
+push**: copy the backup's `restore` half into the article's `body.html` and `article.json` (and the
+alt text into `images.json` if it changed), run `articles:reindex` and `articles:check`, land it
+through a PR, and run the article push for that handle again from `main`, dry run and ask included.
+There is no `--restore` flag, deliberately: a restore is a write like any other and goes through the
+same reviewed tree and freshness gates.
+
+**A create** has no backup. The operator deletes the hidden article in Admin (the tooling has no
+delete path), then `npm run articles:pull -- --seed` drops its observation.
+
+**An interrupted push** (a timeout, a killed process, an outcome the push reports as unknown) leaves an
+intent record in the observation state, under `$XDG_STATE_HOME/sapphire-articles-state/observed.json`
+(default `~/.local/state/sapphire-articles-state/`, override `ARTICLES_STATE_DIR`). The next push of
+that article refuses until it is reconciled: `npm run articles:pull -- --check` to see what Admin
+holds, then `npm run articles:pull -- --seed` once the operator agrees that is the baseline. **Never
+re-run the push to find out whether the write landed.** The state and backup directories are siblings
+so that clearing old backups cannot take the freshness baseline with them.
+
 ## The article push refuses CI, and deliberately nothing about who is calling (unreleased, 2026-09-13)
 
 A backlog entry written while the article push was planned asked for a refusal of non-interactive
