@@ -41,6 +41,13 @@
     "policies:verify": "node scripts/policies/verify.mjs",
     "policies:test": "node --test scripts/policies/test/*.test.mjs",
     "policies:coverage": "node --test --experimental-test-coverage --test-coverage-branches=80 --test-coverage-include=scripts/policies/**/*.mjs --test-coverage-exclude=scripts/policies/test/**  scripts/policies/test/*.test.mjs",
+    "articles:check": "node scripts/articles/check.mjs",
+    "articles:reindex": "node scripts/articles/reindex.mjs",
+    "articles:status": "node scripts/articles/status.mjs",
+    "articles:pull": "node scripts/articles/pull.mjs",
+    "articles:push": "node scripts/articles/push.mjs",
+    "articles:verify": "node scripts/articles/verify.mjs",
+    "articles:test": "node --test scripts/articles/test/*.test.mjs",
     "images:enhance": "node scripts/enhance-product-images.mjs",
     "add-product:test": "node --test scripts/add-product/test/*.test.mjs",
     "test:all": "node scripts/run-all-tests.mjs"

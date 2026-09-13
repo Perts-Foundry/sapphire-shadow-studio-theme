@@ -1,0 +1,14 @@
+{
+  "handle": "welcome-to-shift-notes",
+  "title": "Welcome to Shift Notes",
+  "author": "Sapphire Shadow Studio",
+  "summary": "Why this blog exists, what will be in it, and how often to expect anything.",
+  "tags": ["studio", "process"],
+  "templateSuffix": null,
+  "seo": {
+    "title": "Welcome to Shift Notes",
+    "description": "Short pieces about how the work gets made: fabric, fit, and the reasoning behind each decision."
+  },
+  "image": "https://cdn.shopify.com/s/files/1/0000/0001/files/bench-overview.jpg",
+  "previousHandles": []
+}

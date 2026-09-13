@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { parseHtml, innerText, descendants } from '../../notifications/html-walk.mjs';
+import { EM_DASH_FORMS, hasEmDash } from '../../lib/prose.mjs';
 
 /**
  * The policy types this repo tracks, in the order the manifest and every report lists them.
@@ -233,13 +234,14 @@ export function duplicateHeadingIds(headings) {
   return [...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id).sort();
 }
 
-/** The em dash, literal or entity-encoded. U+2013 (en dash) deliberately passes. */
-export const EM_DASH_FORMS = Object.freeze(['\u2014', '&mdash;', '&#8212;', '&#x2014;', '&#X2014;']);
-
-export function hasEmDash(text) {
-  const s = String(text ?? '');
-  return EM_DASH_FORMS.some((form) => s.includes(form));
-}
+// The em-dash rule moved to scripts/lib/prose.mjs when the articles subsystem needed the same
+// refusal: it is a repo-wide house rule, not a property of shop policies, and an articles checker
+// importing it from here would point the dependency arrow into this subsystem's internals.
+//
+// Re-exported as BINDINGS, not with `export ... from`, which the import-closure guard refuses
+// because its walker cannot follow that form. Every existing caller keeps importing both names
+// from here.
+export { EM_DASH_FORMS, hasEmDash };
 
 /**
  * Every fail-closed hygiene rule, as `[]` or a list of reasons. Applied to the canonical body.
