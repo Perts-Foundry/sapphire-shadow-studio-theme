@@ -484,7 +484,7 @@ choice, and every file here now says `#c9d8ea`. Only `scripts/email-icons/` read
 programmatically (it bakes `BODY` into the icon PNGs); the templates hold literal hexes, because
 Shopify Email has no `settings` object and no way to resolve anything.
 
-## The launch swap: what changed, and what still has to be done in Admin
+## The launch swap: what changed, and what to do before each re-paste
 
 This section used to be a to-do list headed "`welcome.liquid` is the prelaunch version, and has to
 be changed at launch". The five edits it described were made on 2026-09-03. It is now the record of
@@ -504,7 +504,8 @@ The five edits, for the record:
    "Made to order" and "Stitched in-house", under an eyebrow of "How we work". See the two-tile
    navy panel snippet above for the sizing, which is not a straight copy of the date form's.
    `blocks/launch-countdown.liquid` states the same instant on the password page and is still there;
-   the two should be retired together, and `TODO-list.md` now says so.
+   the prelaunch welcome that shared its date is now retired, so the countdown's own backlog item
+   stands alone.
 2. **The "A preview of what is available at launch" line went**, along with the reason it existed:
    with the gate down, the tiles reach real product pages.
 3. **"What happens next" was rewritten** for an open store: what made-to-order means for the wait,
