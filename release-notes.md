@@ -7,7 +7,10 @@ The storefront gained YouTube and Pinterest links in the previous change; the ca
 so they needed the two links by hand. `scripts/email-icons/` now renders five icons, the two new
 PNGs are committed and uploaded to Shopify Files, and `campaign-shell.liquid`,
 `launch-announcement.liquid` and `welcome-postlaunch.liquid` carry all five networks.
-`welcome-prelaunch-superseded.liquid` is left alone: it is a record of what was sent.
+`welcome-prelaunch-superseded.liquid` is deleted: its template was deleted in Admin once the
+post-launch welcome was running, so the file no longer stood for anything live, and git history
+keeps its last version. That also drops the copy count for a header, footer or social-row change
+from four files to three.
 
 **The row changed shape, not just length.** It was a shrink-wrapped table of one cell per network,
 which can never wrap, so five cells would have forced a phone to scale the footer or overflow. It is

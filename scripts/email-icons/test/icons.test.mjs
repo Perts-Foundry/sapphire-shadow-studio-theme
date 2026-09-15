@@ -63,7 +63,6 @@ test('an unknown icon name fails loudly rather than emitting an empty glyph', ()
 });
 
 // The campaign templates hardcode the social row, because Shopify Email cannot read theme settings.
-// The superseded prelaunch file is a record of what was sent and is deliberately left out.
 const CAMPAIGN_TEMPLATES = ['campaign-shell', 'launch-announcement', 'welcome-postlaunch'];
 
 test('every campaign template links every icon, in footer order, with its visible label', async () => {

@@ -11,12 +11,10 @@ custom-code editor.
 | `campaign-shell.liquid` | Reusable base. Clone it to start a new campaign. Its fill-in spots are ALL-CAPS placeholder text. |
 | `welcome-postlaunch.liquid` | Welcome automation for an open store. This is the one the "Customer signs up" automation should be running. Ready to paste as-is. |
 | `launch-announcement.liquid` | One-time launch campaign to the whole list. Ready to paste as-is. It discharges the promise the prelaunch welcome made; see the launch swap below. |
-| `welcome-prelaunch-superseded.liquid` | **Superseded, retained for history, do not paste.** The prelaunch welcome, written for a store behind the password gate. Replaced by `welcome-postlaunch.liquid`. |
 
-The filename is the warning, and that is deliberate. These files are copy-pasted into a web editor by
-hand, so a note in this table only helps if someone reads it at the moment of pasting, and nothing in
-the workflow forces that. `welcome-prelaunch-superseded.liquid` carries the warning in the one string
-that is on screen while the paste is happening.
+The prelaunch welcome, written for a store behind the password gate, was deleted on 2026-09-15 once
+the post-launch welcome was running in Admin and its template there was removed. Its last version is
+in git history as `marketing/emails/welcome-prelaunch-superseded.liquid`.
 
 ## The templates carry no comments. This file carries the documentation.
 
@@ -44,7 +42,6 @@ rather than in the file. Read the row, type the two fields, paste the template.
 |---|---|---|---|---|
 | `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | not yet |
 | `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
-| `welcome-prelaunch-superseded.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | Historical. Was the "Customer signs up" automation while the storefront was password-protected | 2026-08-21, test sends, first campaign, and the live automation |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 The two new subjects were checked against the usual filters before being written down: no capitals,
@@ -261,7 +258,7 @@ size, and many block images by default, which is why the `alt` text has to stand
 **Two-tile navy panel.** Two static tiles on a navy panel, echoing the countdown tiles on the
 password page. The shell does not carry it, because what goes in the tiles is campaign content.
 
-`welcome-prelaunch-superseded.liquid` carries the original **date** form, below: "Sep 3" over "2026"
+The deleted prelaunch welcome carried the original **date** form: "Sep 3" over "2026"
 and "9:00 AM" over "Eastern". An email cannot tick, so the tiles are hand-typed text and there is
 nothing to recalculate. The eyebrow matched `blocks/launch-countdown.liquid`'s own, so a screen
 reader heard "The studio opens Sep 3 2026 9:00 AM Eastern" as one sentence. At 375 px those two
@@ -352,8 +349,7 @@ so the whole chip is clickable. The icon is `alt=""` on purpose; see the images-
 own. Each tile is an image and a bold label inside one anchor pointing at
 `{{ shop.url }}/products/<handle>`. `welcome-postlaunch.liquid` and `launch-announcement.liquid`
 carry it, identically; copy it from one of them rather than from here, so there is only one copy to
-keep current. (`welcome-prelaunch-superseded.liquid` carries the older six-tile version, which had
-the gift card in the sixth slot and no tote. Do not copy from that one.)
+keep current.
 
 Four things about it are load-bearing:
 
@@ -422,7 +418,7 @@ to expect from a hand-maintained list of URLs that nothing compares against the 
 | Product grid, Shift Fuel Crewneck | `.../shift-fuel_crew-sweater_classic-navy_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Quarter-Zip | `.../lead2_quarter-zip_classic-navy_medic_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Vest | `.../lead2_vest_black_rn_flat-1.jpg?width=524&height=524&crop=center` |
-| Product grid, Shift Fuel Tote (not in the superseded prelaunch file) | `.../shift-fuel-tote_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Shift Fuel Tote | `.../shift-fuel-tote_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Gift Card | `.../SSS-Square-White-BG-png.png?width=500&height=500&crop=center` |
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
@@ -455,12 +451,9 @@ Each file is self-contained: no partials, no includes, no build step. The repo h
 transpiler to begin with, and Shopify Email would not resolve a partial anyway, since it takes one
 pasted document and nothing else. The header, footer, social row, and palette are therefore copied
 into every template. **A palette or footer change has to be made in every file in this directory.**
-That is now **four** files rather than two, and the launch swap is what raised the count: a change
-to the header, the footer, the social row or the palette has to be made in `campaign-shell.liquid`,
-`welcome-postlaunch.liquid`, `launch-announcement.liquid` and
-`welcome-prelaunch-superseded.liquid`. The superseded file is included on purpose: it is the record
-of what was sent, so leaving it visually stale is fine, but a palette change made in three of four
-files is the drift this paragraph exists to warn about. Decide deliberately which it is.
+That is three files: a change to the header, the footer, the social row or the palette has to be
+made in `campaign-shell.liquid`, `welcome-postlaunch.liquid` and `launch-announcement.liquid`. A
+change made in two of three is the drift this paragraph exists to warn about.
 
 The palette also lives outside this directory, in `marketing/notifications/lib/brand-style.css`, the
 stylesheet behind the 46 branded Shopify notification templates, documented in
@@ -499,12 +492,10 @@ what they were and where they landed.
 
 **The edits went into a new file, not into the old one.** `welcome.liquid` became
 `welcome-prelaunch-superseded.liquid` (a `git mv`, so its history is intact) and the post-launch
-version is `welcome-postlaunch.liquid`. Keeping the stale copy is deliberate: it is the only record
-of what every existing subscriber was actually sent. The rename is what makes that safe. Two
-near-identical files in a directory that is copy-pasted by hand is a live paste hazard, and
-`welcome-postlaunch.liquid` would have sorted immediately *before* `welcome.liquid` in a plain
-listing. The filename now carries the warning, which survives a rushed paste in a way a row in a
-table above does not.
+version is `welcome-postlaunch.liquid`. The stale copy was kept as the record
+of what existing subscribers were sent, with the warning in its filename, until 2026-09-15, when the
+post-launch welcome was running in Admin and the prelaunch template there was deleted. The file was
+deleted from the repo the same day; git history holds its last version.
 
 The five edits, for the record:
 
@@ -537,16 +528,10 @@ list, not an automation. It carries no discount and no launch offer, and no prod
 is mostly people who have never ordered, and a count is a claim that becomes false the first time a
 product is added or retired, in an email that cannot be recalled.
 
-### Still to do in Admin, and nothing here does it
+### Before each re-paste
 
-**Re-paste the "Customer signs up" automation.** Until `welcome-postlaunch.liquid` is pasted over
-it, the live automation keeps sending the prelaunch email, date panel and all, to every new
-subscriber. Nothing in this repo can see or change what that automation is running.
-
-**Re-check the seven product handles and the tote image immediately before the first paste.** A
-product added, renamed, unpublished or entirely sold out since 2026-09-03 leaves a tile pointing at
-a 404 or the catalogue looking smaller than it is. Confirm the tote asset is the final one and not a
-version the retouch work is about to supersede; a 200 answer cannot tell those apart.
+**Re-check the seven product handles and the tote image.** A product added, renamed, unpublished or
+entirely sold out leaves a tile pointing at a 404 or the catalogue looking smaller than it is.
 
 **Update the subject and preview text**, and **Last verified** in the metadata table, in the same
 sitting as each paste. Both fields belong to the campaign, not to the template, so a re-paste drops
@@ -556,7 +541,7 @@ them.
 
 **Shopify drops `lang="en"` from `<html>` on a real send**, along with emptying the whole `<head>`
 (see Shopify's contract above). A screen reader therefore loses its language hint on the delivered
-email. This already affected the live prelaunch file and affects the new ones identically; there is
+email. This affected the prelaunch welcome and affects the current templates identically; there is
 nothing template-side to change, so it is a note rather than a defect.
 
 **The five social URLs are hardcoded in every template**, because Shopify Email has no `settings`
@@ -568,7 +553,7 @@ time, so there is nothing to keep in sync.
 
 ### Why the prelaunch file named a date
 
-Kept because the reasoning outlived the file. This README used to argue that a date in a sent email
+Kept because the reasoning outlived the file, which was deleted on 2026-09-15. This README used to argue that a date in a sent email
 cannot be corrected, so no date was better than a date that slips. It changed because the date
 stopped being the email's to withhold: `blocks/launch-countdown.liquid` committed publicly to
 2026-09-03 09:00 ET, the password page ticked down to it, and the Instagram bio repeated it, so a
