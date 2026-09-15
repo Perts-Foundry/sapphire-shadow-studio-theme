@@ -1,5 +1,26 @@
 # Release Notes
 
+## The storefront links YouTube and Pinterest beside the other three channels (unreleased, 2026-09-15)
+
+The business opened a YouTube channel and a Pinterest profile, and `config/settings_data.json` now
+sets `social_youtube_link` and `social_pinterest_link`. The footer, header and About page social
+rows and the Organization `sameAs` array each go from three links to five.
+
+**The theme needed no code.** Five-platform support was built ahead of time: the settings schema
+declares both keys, both hardcoded platform lists (`social_platforms` in
+`snippets/social-links.liquid`, `social_keys` in `snippets/structured-data-organization.liquid`)
+already name them, `snippets/icon.liquid` has both glyphs and the editor labels exist. The values
+were the only gap, and the URLs are the vanity form with no trailing slash so the visible handle
+derives cleanly from the last path segment.
+
+**Four other copies of the social row are hardcoded and are not covered here.** The three campaign
+emails in `marketing/emails/` and the notification footer partial in `marketing/notifications/`
+cannot read theme settings, so each carries its own three-platform row; they move to five in
+follow-up changes, together with the email icon pipeline that renders and hosts the icons.
+
+**The Pinterest domain claim was already complete** when this landed, so the backlog item shrinks to
+installing the Pinterest for Shopify sales channel.
+
 ## The terms of service becomes linkable sections and gains Custom Orders and Use of Finished Work (unreleased, 2026-09-13)
 
 The terms body was Shopify's stock shape: one `<p>` of `<br>`-separated prose with
