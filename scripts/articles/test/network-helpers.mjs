@@ -44,7 +44,8 @@ export function madeDirs() {
 }
 
 export function cleanupDirs() {
-  for (const dir of MADE) rmSync(dir, { recursive: true, force: true });
+  // Retried: a git child (gc, maintenance) can still be writing under .git/ after execFileSync returns.
+  for (const dir of MADE) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   MADE.length = 0;
 }
 

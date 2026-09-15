@@ -1,5 +1,26 @@
 # Release Notes
 
+## The real-git test harnesses stop racing their own teardown (unreleased, 2026-09-15)
+
+A validate run failed in `npm run policies:test` on a test whose assertions all passed: the
+`finally` block's `cleanup` threw `ENOTEMPTY` removing the temp repo's `.git/`. The re-run passed.
+
+**The cause was a git child outliving `execFileSync`.** A real `git commit` can leave `gc --auto` or
+maintenance still writing under `.git/` after the call returns, and `rmSync` with the default
+`maxRetries: 0` fails hard when a directory gains an entry mid-walk. The cleanup ran milliseconds
+after the commit, so a slow runner could lose the race.
+
+**Both halves are fixed.** The shared teardown in `scripts/policies/test/helpers.mjs` and
+`cleanupDirs` in `scripts/articles/test/network-helpers.mjs` now retry transient errors
+(`maxRetries: 5, retryDelay: 100`), and both real-git harnesses turn off automatic gc and
+maintenance (`gc.auto=0`, `gc.autoDetach=false`, `maintenance.auto=false`).
+
+**Per-invocation `-c` flags are not enough when production code runs git too.** They reach only the
+harness's own commands. The articles gate runs its own `git fetch`, and a push to a local bare origin
+strips `-c` from the receiving side, so the articles harness also writes the settings into both
+repos' own config, which every git process in them reads. Any new test that runs real git in a temp
+dir should retry its teardown and disable maintenance in repo config.
+
 ## Campaign emails link YouTube and Pinterest, and the social row wraps on a phone (unreleased, 2026-09-15)
 
 The storefront gained YouTube and Pinterest links in the previous change; the campaign emails in
