@@ -40,8 +40,8 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | not yet |
-| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
+| `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | 2026-09-15, pasted as committed and test sent |
+| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | 2026-09-15, pasted as committed and test sent |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 The two new subjects were checked against the usual filters before being written down: no capitals,
