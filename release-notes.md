@@ -1,5 +1,33 @@
 # Release Notes
 
+## Campaign emails link YouTube and Pinterest, and the social row wraps on a phone (unreleased, 2026-09-15)
+
+The storefront gained YouTube and Pinterest links in the previous change; the campaign emails in
+`marketing/emails/` hardcode their own social row, because Shopify Email cannot read theme settings,
+so they needed the two links by hand. `scripts/email-icons/` now renders five icons, the two new
+PNGs are committed and uploaded to Shopify Files, and `campaign-shell.liquid`,
+`launch-announcement.liquid` and `welcome-postlaunch.liquid` carry all five networks.
+`welcome-prelaunch-superseded.liquid` is left alone: it is a record of what was sent.
+
+**The row changed shape, not just length.** It was a shrink-wrapped table of one cell per network,
+which can never wrap, so five cells would have forced a phone to scale the footer or overflow. It is
+now one full-width cell of adjacent inline-block anchors. **It wraps exactly where the rest of the
+email already reflows**: the shell becomes fluid only through the existing `max-width: 620px` media
+query, so a client that ignores that query shows one line inside a scaled-down 600 px email, like
+every other row. No markup can wrap a row inside a container that does not narrow.
+
+**Three details are load-bearing**, and the emails README says so beside the snippet: the anchors are
+adjacent in source with no whitespace between them (the alternative, `font-size: 0` on the cell, is
+mishandled by Outlook's Word engine and Yahoo); the `&nbsp;` between icon and label is the non-break
+Outlook honours, since it ignores `white-space: nowrap` and `display: inline-block`; and the
+nested three-plus-two tables with Outlook ghost cells was rejected, because it needs the same
+narrowing container and would add conditionals to markup the notification footer will copy.
+
+**The width was measured, and the first measurement changed the padding.** In headless Chrome, `4px
+6px` anchor padding gave a 498 px run: it fit the 504 px footer cell at 600 px with 6 px to spare but
+split into three rows at 375 px. `4px 4px` gives 478 px, one line at 600 px and two rows at 414, 390
+and 375 px, so the planned 24 px icon fallback was not needed.
+
 ## The storefront links YouTube and Pinterest beside the other three channels (unreleased, 2026-09-15)
 
 The business opened a YouTube channel and a Pinterest profile, and `config/settings_data.json` now

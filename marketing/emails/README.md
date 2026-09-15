@@ -231,10 +231,10 @@ Email clients are not browsers. Keep to these when editing or cloning:
   and explicit background *and* foreground colours on every element that sets either. A background
   set without its text colour is the classic dark-mode invisibility bug.
 - **An icon row carries its own visible label.** A row of bare icons is one of the ugliest
-  images-off failures there is: three broken-image boxes and no way to tell what they linked to. The
+  images-off failures there is: five broken-image boxes and no way to tell what they linked to. The
   footer's social row therefore pairs each icon with the network's name in text, and the icon itself
   is `alt=""` (decorative), because the visible label already says what the alt text would have.
-  With images blocked the row degrades to "Instagram Facebook TikTok" in the footer's own body
+  With images blocked the row degrades to "Instagram Facebook TikTok YouTube Pinterest" in the footer's own body
   colour. Do **not** try to carry the meaning in `alt` alone: a client sizes a blocked image to its
   `width`/`height` attributes and clips the alt text to that box, so a 28 px icon shows about four
   characters of it.
@@ -316,16 +316,36 @@ mobile only.
 </tr>
 ```
 
-**Social icon row.** Every template carries this at the top of the navy footer cell. One cell per
-network, one link per network, icon and label inside the same anchor so the whole chip is clickable.
-The icon is `alt=""` on purpose; see the images-off rule above.
+**Social icon row.** Every template carries this at the top of the navy footer cell: a full-width
+table with **one cell holding five adjacent inline-block anchors**, one per network (Instagram,
+Facebook, TikTok, YouTube, Pinterest, the storefront's order), icon and label inside the same anchor
+so the whole chip is clickable. The icon is `alt=""` on purpose; see the images-off rule above.
+
+- **It wraps wherever the container goes fluid, and nowhere else.** Below 620 px the
+  `.ssb-container` rule makes the shell 100% wide, the `width="100%"` social table follows it, and
+  the anchors wrap to two centred lines. A client that ignores the media query scales the whole
+  600 px email down as one picture, and the row stays one line like every other row. The old
+  one-cell-per-network, shrink-wrapped table could never wrap at all.
+- **Keep the anchors adjacent in source**, with no whitespace or newline between `</a>` and the
+  next `<a>`. Whitespace there becomes a text gap that varies by client. Do not fix it with
+  `font-size: 0` or `line-height: 0` on the cell instead: Outlook's Word engine and Yahoo mishandle
+  both.
+- **The `&nbsp;` between icon and label is the non-break that Outlook honours.** Outlook's Word
+  engine ignores `white-space: nowrap` and `display: inline-block`, so without the `&nbsp;` a wrap
+  could split an icon from its name. Never replace it with a space or a margin.
+- **Measured width** (headless Chrome, 2026-09-15): the one-line run is 478 px with `4px 4px`
+  anchor padding, inside a 504 px footer cell in the welcome and announcement templates and 536 px
+  in the shell. At 414, 390 and 375 px viewports it wraps to two rows (3 + 2, or 2 + 3 in the
+  narrowest 279 px cell). The first try, `4px 6px`, came to 498 px and split into three rows at
+  375 px. If a sixth network is ever added, measure again before shipping; shrink the icon to
+  24 px before dropping labels.
 
 ```html
-<td align="center" style="padding: 0 8px; white-space: nowrap;">
-  <a href="https://www.instagram.com/sapphire_shadow_studio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
-    <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram
-  </a>
-</td>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 0 0 18px 0;">
+  <tr>
+    <td align="center" style="padding: 0;"><a href="https://www.instagram.com/sapphire_shadow_studio" style="display: inline-block; padding: 4px 4px; font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none; white-space: nowrap;"><img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram</a><a href="...">...</a></td>
+  </tr>
+</table>
 ```
 
 **Product grid.** Seven product tiles: six two across in three rows, then a seventh centred on its
@@ -407,6 +427,8 @@ to expect from a hand-maintained list of URLs that nothing compares against the 
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
 | TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
+| YouTube icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-youtube.png` |
+| Pinterest icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-pinterest.png` |
 
 The tote image is the one uploaded on 2026-09-02, and a retouch pass on the studio's tote photography
 was still in progress when these templates were written. **A `curl` 200 cannot tell a final asset
@@ -419,7 +441,7 @@ inbox downloads a 240 px logo and a 600x400 hero rather than a 2048 px original 
 one. In the `src` attribute the `&` between transform parameters is written `&amp;`. Drop any `?v=`
 cache buster: it is not part of the file's identity.
 
-The three icons are generated, not hand-drawn. `scripts/email-icons/render-email-icons.mjs`
+The five icons are generated, not hand-drawn. `scripts/email-icons/render-email-icons.mjs`
 rasterises them from path data copied out of `snippets/icon.liquid` into 56 px PNGs (2x the 28 px
 display size) under `marketing/emails/assets/`, and
 `scripts/email-icons/upload-email-icons.mjs` uploads those committed PNGs to Shopify Files. Email
@@ -537,8 +559,8 @@ them.
 email. This already affected the live prelaunch file and affects the new ones identically; there is
 nothing template-side to change, so it is a note rather than a defect.
 
-**The social URLs are hardcoded in every template**, because Shopify Email has no `settings` object
-to read `settings.social_instagram_link` from. They duplicate the values in
+**The five social URLs are hardcoded in every template**, because Shopify Email has no `settings`
+object to read `settings.social_instagram_link` from. They duplicate the values in
 `config/settings_data.json` and nothing reconciles the two: change a profile URL in theme settings
 and every file here goes stale silently. The storefront links are the opposite case, and that is
 why they are written as `{{ shop.url }}` rather than a literal domain: Shopify resolves it at send
