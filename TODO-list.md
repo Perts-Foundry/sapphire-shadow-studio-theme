@@ -73,9 +73,9 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
   personalized product pages and in the order confirmation notification (`marketing/notifications/`),
   and decide whether a checkout acknowledgement is worth adding.
 
-- **Set up a Pinterest business account with the Pinterest for Shopify app, and claim the
-  domain.** Add the Pinterest profile to the Organization `sameAs` once it exists; read
-  `docs/structured-data.md` first.
+- **Install the Pinterest for Shopify sales channel.** The business account exists, the domain is
+  claimed and the profile is in the Organization `sameAs`; what remains is the channel install in
+  Admin, and a decision on whether the Verified Merchant Program is worth applying for.
 
 - **Turn on the Meta and TikTok channel pixels.** Install each through its Shopify sales channel
   rather than a theme snippet, so the theme carries no third-party script of its own.
