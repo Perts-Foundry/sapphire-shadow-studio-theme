@@ -1,4 +1,4 @@
-// The path data in lib/icons.mjs is a deliberate copy of three branches of snippets/icon.liquid.
+// The path data in lib/icons.mjs is a deliberate copy of five branches of snippets/icon.liquid.
 // This suite is what keeps the copy honest: if either side is edited, it fails here rather than
 // shipping an email whose icons no longer match the storefront's.
 
@@ -35,8 +35,8 @@ test('every copied path still matches snippets/icon.liquid exactly', () => {
   }
 });
 
-test('the three icons the email footer renders are all present', () => {
-  assert.deepEqual(ICON_NAMES, ['instagram', 'facebook', 'tiktok']);
+test('the five icons the email footer renders are all present', () => {
+  assert.deepEqual(ICON_NAMES, ['instagram', 'facebook', 'tiktok', 'youtube', 'pinterest']);
 });
 
 test('buildIconSvg bakes the fill in, because email has no cascade to inherit from', () => {

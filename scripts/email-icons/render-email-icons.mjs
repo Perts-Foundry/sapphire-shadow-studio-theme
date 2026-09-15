@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Rasterise the three social icons used by the Shopify Email templates into committed PNGs.
+// Rasterise the five social icons used by the Shopify Email templates into committed PNGs.
 //
 // Email clients do not render SVG, so the icon row in `marketing/emails/*.liquid` needs hosted
 // raster files. The PNGs are committed under `marketing/emails/assets/` so the repo records exactly
