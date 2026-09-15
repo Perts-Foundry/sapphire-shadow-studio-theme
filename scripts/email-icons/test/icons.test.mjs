@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { ICON_PATHS, ICON_NAMES, VIEW_BOX, buildIconSvg } from '../lib/icons.mjs';
+import { ICON_PATHS, ICON_NAMES, ICON_LABELS, VIEW_BOX, buildIconSvg } from '../lib/icons.mjs';
 import { BODY } from '../../size-chart/lib/svg-shared.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -60,4 +60,22 @@ test('the Instagram frame is a cut-out, so the fill rule has to be evenodd', () 
 
 test('an unknown icon name fails loudly rather than emitting an empty glyph', () => {
   assert.throws(() => buildIconSvg('threads'), /Unknown icon "threads"/);
+});
+
+// The campaign templates hardcode the social row, because Shopify Email cannot read theme settings.
+// The superseded prelaunch file is a record of what was sent and is deliberately left out.
+const CAMPAIGN_TEMPLATES = ['campaign-shell', 'launch-announcement', 'welcome-postlaunch'];
+
+test('every campaign template links every icon, in footer order, with its visible label', async () => {
+  for (const name of CAMPAIGN_TEMPLATES) {
+    const html = await readFile(path.join(repoRoot, 'marketing/emails', `${name}.liquid`), 'utf8');
+    const icons = [...html.matchAll(/email-icon-([a-z]+)\.png/g)].map((m) => m[1]);
+    assert.deepEqual(icons, ICON_NAMES, `${name}.liquid social row does not match ICON_NAMES`);
+    for (const icon of ICON_NAMES) {
+      assert.ok(
+        html.includes(`&nbsp;${ICON_LABELS[icon]}</a>`),
+        `${name}.liquid has no "${ICON_LABELS[icon]}" label after the ${icon} icon`
+      );
+    }
+  }
 });
