@@ -1,10 +1,11 @@
 // Raster social icons for the Shopify Email templates, which cannot render SVG or use
 // `{{ 'icon.svg' | inline_asset_content }}` the way the theme does.
 //
-// The three path strings below are COPIED from `snippets/icon.liquid` (the `when 'instagram'`,
-// `when 'facebook'` and `when 'tiktok'` branches of its `{% case %}`). Parsing Liquid at build
-// time to extract them would be worse than the duplication, so the duplication is deliberate and
-// `test/icons.test.mjs` fails if either copy drifts from the other.
+// The five path strings below are COPIED from `snippets/icon.liquid` (the `when 'instagram'`,
+// `when 'facebook'`, `when 'tiktok'`, `when 'youtube'` and `when 'pinterest'` branches of its
+// `{% case %}`). Parsing Liquid at build time to extract them would be worse than the duplication,
+// so the duplication is deliberate and `test/icons.test.mjs` fails if either copy drifts from the
+// other.
 //
 // The theme colours these with `currentColor`. Email has no cascade to inherit from, so the fill is
 // baked into the file at render time; the default is the footer body colour, so the icons sit on the
@@ -26,6 +27,10 @@ export const ICON_PATHS = Object.freeze({
     "M18 10.049C18 5.603 14.419 2 10 2c-4.419 0-8 3.603-8 8.049C2 14.067 4.925 17.396 8.75 18v-5.624H6.719v-2.328h2.03V8.275c0-2.017 1.195-3.132 3.023-3.132.874 0 1.79.158 1.79.158v1.98h-1.009c-.994 0-1.303.621-1.303 1.258v1.51h2.219l-.355 2.326H11.25V18c3.825-.604 6.75-3.933 6.75-7.951Z",
   tiktok:
     "M10.511 1.705h2.74s-.157 3.51 3.795 3.768v2.711s-2.114.129-3.796-1.158l.028 5.606A5.073 5.073 0 1 1 8.213 7.56h.708v2.785a2.298 2.298 0 1 0 1.618 2.205L10.51 1.705Z",
+  youtube:
+    "M18.16 5.87c.34 1.309.34 4.08.34 4.08s0 2.771-.34 4.08a2.125 2.125 0 0 1-1.53 1.53c-1.309.34-6.63.34-6.63.34s-5.321 0-6.63-.34a2.125 2.125 0 0 1-1.53-1.53c-.34-1.309-.34-4.08-.34-4.08s0-2.771.34-4.08a2.173 2.173 0 0 1 1.53-1.53C4.679 4 10 4 10 4s5.321 0 6.63.34a2.173 2.173 0 0 1 1.53 1.53ZM8.3 12.5l4.42-2.55L8.3 7.4v5.1Z",
+  pinterest:
+    "M10 2.01c2.124.01 4.16.855 5.666 2.353a8.087 8.087 0 0 1 1.277 9.68A7.952 7.952 0 0 1 10 18.04a8.164 8.164 0 0 1-2.276-.307c.403-.653.672-1.24.816-1.729l.567-2.2c.134.27.393.5.768.702.384.192.768.297 1.19.297.836 0 1.585-.24 2.248-.72a4.678 4.678 0 0 0 1.537-1.969c.37-.89.554-1.848.537-2.813 0-1.249-.48-2.315-1.43-3.227a5.061 5.061 0 0 0-3.65-1.374c-.893 0-1.729.154-2.478.461a5.023 5.023 0 0 0-3.236 4.552c0 .72.134 1.355.413 1.902.269.538.672.922 1.22 1.152.096.039.182.039.25 0 .066-.028.114-.096.143-.192l.173-.653c.048-.144.02-.288-.105-.432a2.257 2.257 0 0 1-.548-1.565 3.803 3.803 0 0 1 3.976-3.861c1.047 0 1.863.288 2.44.855.585.576.883 1.315.883 2.228 0 .768-.106 1.479-.317 2.122a3.813 3.813 0 0 1-.893 1.556c-.384.384-.836.576-1.345.576-.413 0-.749-.144-1.018-.451-.259-.307-.345-.672-.25-1.085.147-.514.298-1.026.452-1.537l.173-.701c.057-.25.086-.451.086-.624 0-.346-.096-.634-.269-.855-.192-.22-.451-.336-.797-.336-.432 0-.797.192-1.085.595-.288.394-.442.893-.442 1.499.005.374.063.746.173 1.104l.058.144c-.576 2.478-.913 3.938-1.037 4.36-.116.528-.154 1.153-.125 1.863A8.067 8.067 0 0 1 2 10.03c0-2.208.778-4.11 2.343-5.666A7.721 7.721 0 0 1 10 2.001v.01Z",
 });
 
 /** Icon names this module can render, in footer order. */
@@ -40,6 +45,8 @@ export const ICON_LABELS = Object.freeze({
   instagram: 'Instagram',
   facebook: 'Facebook',
   tiktok: 'TikTok',
+  youtube: 'YouTube',
+  pinterest: 'Pinterest',
 });
 
 /**

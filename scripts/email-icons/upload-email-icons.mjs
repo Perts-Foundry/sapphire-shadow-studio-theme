@@ -3,12 +3,12 @@
 // `marketing/emails/*.liquid`.
 //
 // This writes to the LIVE store, so the rails are the same shape as the rest of the repo's write
-// tooling, scaled to a job that creates at most three small files:
+// tooling, scaled to a job that creates at most five small files:
 //
 //   - A bare run is a DRY RUN. It resolves the shop, checks scopes, reports which icons already
 //     exist in Files, and uploads nothing.
 //   - A live run needs one `--upload <name>` per icon, naming each file explicitly. There is no
-//     `--all`: three flags is a cheap price for making "which files am I about to create?"
+//     `--all`: one flag per file is a cheap price for making "which files am I about to create?"
 //     unambiguous.
 //   - Duplicate-proof: Files has no content dedup and `fileCreate` will happily make a second
 //     `email-icon-instagram.png` with a different URL, silently orphaning whatever the templates
