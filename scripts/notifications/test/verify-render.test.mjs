@@ -197,11 +197,9 @@ ${cells ? `<table class="row section" style="width: 100%;" bgcolor="${P.page}">
 <table class="container" style="width: 600px; border-color: ${P.navy}; border-style: solid; border-width: 28px 32px; text-align: center;" bgcolor="${P.navy}">
 <tr>
 <td>
-<table role="presentation" class="ssb-social" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto 18px;">
+<table role="presentation" class="ssb-social" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="width: 100%; margin: 0 auto 18px;">
 <tr>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('instagram')}&nbsp;Instagram</a></td>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('facebook')}&nbsp;Facebook</a></td>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('tiktok')}&nbsp;TikTok</a></td>
+<td align="center" style="padding: 0;"><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('instagram')}&nbsp;Instagram</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('facebook')}&nbsp;Facebook</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('tiktok')}&nbsp;TikTok</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('youtube')}&nbsp;YouTube</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('pinterest')}&nbsp;Pinterest</a></td>
 </tr>
 </table>
 <p class="ssb-shop-name" style="font-size: 14px; color: ${P.shopName}; margin: 0 0 10px;" align="center">Sapphire Shadow Studio</p>

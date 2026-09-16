@@ -227,7 +227,7 @@ export const CHECKS = [
     const social = select(root, (e) => isTable(e) && hasClass(e, 'ssb-social') && inFooter(e));
     if (social.length !== 1) return `${social.length} .ssb-social tables inside .footer`;
     const icons = select(social[0], (e) => e.tag === 'img' && /email-icon-/.test(e.attrs.src || ''));
-    if (icons.length !== 3) return `${icons.length} email-icon images, expected 3`;
+    if (icons.length !== 5) return `${icons.length} email-icon images, expected 5`;
     const names = select(root, (e) => e.tag === 'p' && hasClass(e, 'ssb-shop-name') && inFooter(e));
     if (names.length !== 1) return `${names.length} .ssb-shop-name paragraphs inside .footer`;
     if (innerText(names[0]).trim() === '') return 'shop name paragraph is empty';

@@ -1,5 +1,29 @@
 # Release Notes
 
+## Notification emails link YouTube and Pinterest (unreleased, 2026-09-15)
+
+The notification footer partial, `marketing/notifications/lib/footer-social.html`, is the last
+hardcoded copy of the social row, and it now carries all five networks. It uses the campaign
+emails' row from the previous change unchanged: one full-width cell of adjacent inline-block
+anchors, `4px 4px` anchor padding, and `&nbsp;` between icon and label as the non-break Outlook
+honours. Keeping the two rows identical means one measurement and one set of load-bearing details
+covers both.
+
+**The notification shell never narrows, so this row never wraps.** Unlike the campaign shell, the
+stock notification stylesheet has no fluid-width rule: its only phone media query sets
+`table-layout: fixed` and leaves the 600 px `.container` alone. Measured in headless Chrome against
+that shell, the five-anchor run is 478 px inside a 534 px footer cell, one line at 800, 414, 390 and
+375 px viewports. A phone client scales the whole email, footer included, which is how every other
+row in these templates already behaves. The stock mobile rule `.footer .ssb-social td { padding: 0
+5px }` is left in place: on the single cell it is harmless.
+
+**The change bumped all 46 template versions, by design**: the footer partial is spliced into every
+branded template, so every generated file's core hash changed. Admin holds the previous version of
+each until they are synced. The render check now expects five `email-icon-` images in the social
+row, the brand URL allowlist holds ten URLs, and the real-derived `order_confirmation` render
+fixture and the synthetic verify-render fixture were updated to the five-anchor row, since both are
+asserted against the current checks.
+
 ## The real-git test harnesses stop racing their own teardown (unreleased, 2026-09-15)
 
 A validate run failed in `npm run policies:test` on a test whose assertions all passed: the

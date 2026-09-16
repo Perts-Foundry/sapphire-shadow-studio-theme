@@ -62,9 +62,13 @@ const SOCIAL_URLS = new Set([
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png',
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png',
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png',
+  'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-youtube.png',
+  'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-pinterest.png',
   'https://www.instagram.com/sapphire_shadow_studio',
   'https://www.facebook.com/sapphireshadowstudio',
   'https://www.tiktok.com/@sapphire_shadow_studio',
+  'https://www.youtube.com/@SapphireShadowStudio',
+  'https://www.pinterest.com/sapphireshadowstudio',
 ]);
 
 function bytesEqual(a, b) {
@@ -872,7 +876,7 @@ test('hygiene: brand-style.css rules naming disclaimer__subtext or ssb- classes 
   assert.ok(seen > 0, 'brand-style.css has no rule naming disclaimer__subtext');
 });
 
-test('hygiene: every https URL in footer-social.html is one of the six known brand URLs', () => {
+test('hygiene: every https URL in footer-social.html is one of the ten known brand URLs', () => {
   const social = readFileSync(paths(repoRoot).social, 'utf8');
   const urls = social.match(/https:\/\/[^\s"'<>]+/g) || [];
   assert.ok(urls.length > 0, 'footer-social.html has no https URLs');
