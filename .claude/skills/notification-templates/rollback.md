@@ -9,10 +9,14 @@ For a saved template that misbehaves in real mail: re-paste the last synced vers
    Never default to `seen[<id>].sha` itself: that is the version being rolled back. Extract the
    template, its manifest and its stylesheet from the source commit to the scratchpad:
    `git show <sha>:marketing/notifications/<id>.liquid > <scratch>/<id>.liquid`,
-   `git show <sha>:marketing/notifications/manifest.json > <scratch>/manifest.json` and
-   `git show <sha>:marketing/notifications/lib/brand-style.css > <scratch>/brand-style.css`. The
-   version is that manifest's entry for the id; the render check below passes that manifest and
-   stylesheet with `--manifest` and `--css`, because the checkout's carry the newer ones.
+   `git show <sha>:marketing/notifications/manifest.json > <scratch>/manifest.json`,
+   `git show <sha>:marketing/notifications/lib/brand-style.css > <scratch>/brand-style.css` and
+   `git show <sha>:marketing/notifications/lib/footer-social.html > <scratch>/footer-social.html`.
+   The version is that manifest's entry for the id; the render check below passes that manifest,
+   stylesheet and footer partial with `--manifest`, `--css` and `--social`, because the checkout's
+   carry the newer ones. The partial matters for the same reason the stylesheet does: the
+   `social-row` check derives the networks it expects from it, so rolling back to a version with a
+   different set of networks fails against the working tree's copy.
 2. **STOP** with the id, what Admin currently holds and the target. Read Admin with
    `editor-probe.js` after the browser opt-in ask (its own turn), taking `SSSSTORED` and
    `SSSSTOREDSTAMP`, never `SSSPOLL`/`SSSSTAMP`. Present the reading's length and FNV as well as
@@ -21,7 +25,8 @@ For a saved template that misbehaves in real mail: re-paste the last synced vers
 3. Run the `sync` per-id loop from its step 3 with the scratch file as the paste source and the
    scratch manifest and stylesheet passed to the render check
    (`verify-render.mjs --preview-response <file> --id <id> --version <target> --manifest
-   <scratch>/manifest.json --css <scratch>/brand-style.css`). The loop's before-document, byte
+   <scratch>/manifest.json --css <scratch>/brand-style.css --social
+   <scratch>/footer-social.html`). The loop's before-document, byte
    check, its one re-paste on a pre-Save mismatch (step 3.4, capped at two paste attempts per id),
    Save first, reload and re-verify, render check on the stored version, and restore on a failed
    render all apply. A rollback runs no `classify.mjs` and starts no `run`, so four of the

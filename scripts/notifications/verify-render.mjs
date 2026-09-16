@@ -7,7 +7,7 @@
 //   node scripts/notifications/verify-render.mjs <rendered.html> --id <id> --version <n>
 //   node scripts/notifications/verify-render.mjs --preview-response <file> --id <id> --version <n>
 //   node scripts/notifications/verify-render.mjs --dump <console-dump...> --id <id> --version <n>
-//     [--manifest <path>] [--css <path>]
+//     [--manifest <path>] [--css <path>] [--social <path>]
 //
 // --preview-response takes the saved body of the Admin editor's EmailTemplateGeneratePreview
 // GraphQL response (the chrome-devtools MCP's get_network_request writes it to a file); the
@@ -75,6 +75,16 @@ export function parsePalette(css) {
   if (!mobile || mobile.rules.length === 0) throw new Error(`brand-style.css: no @media ${MOBILE_QUERY} block`);
   palette.mobileRules = mobile.rules;
   return palette;
+}
+
+// The networks the footer partial ships, in source order, read out of the file that actually
+// generates the emails. parsePalette does the same for the hexes, and for the same reason: a
+// count or a name written down twice is a count that can drift from what gets pasted into Admin.
+// Renaming the asset scheme makes this throw rather than silently expect nothing.
+export function socialIconNames(social) {
+  const names = [...social.matchAll(/email-icon-([a-z0-9]+)\.png/g)].map((m) => m[1]);
+  if (names.length === 0) throw new Error('footer-social.html names no email-icon-<name>.png asset');
+  return names;
 }
 
 function normValue(value) {
@@ -223,11 +233,19 @@ export const CHECKS = [
     if (!list.some((e) => colorOf(e) === palette.bodyText)) return `no body paragraph is ${palette.bodyText}`;
     return null;
   }],
-  ['social-row', ({ root, palette }) => {
+  ['social-row', ({ root, palette, socialIcons }) => {
     const social = select(root, (e) => isTable(e) && hasClass(e, 'ssb-social') && inFooter(e));
     if (social.length !== 1) return `${social.length} .ssb-social tables inside .footer`;
     const icons = select(social[0], (e) => e.tag === 'img' && /email-icon-/.test(e.attrs.src || ''));
-    if (icons.length !== 5) return `${icons.length} email-icon images, expected 5`;
+    // Sequence, not count: five icons of the same network, or the right five in the wrong order,
+    // are both wrong and both used to pass a bare length check.
+    const rendered = icons.map((e) => {
+      const m = /email-icon-([a-z0-9]+)\.png/.exec(e.attrs.src || '');
+      return m ? m[1] : '?';
+    });
+    if (rendered.join(',') !== socialIcons.join(',')) {
+      return `social icons are [${rendered.join(', ')}], expected [${socialIcons.join(', ')}]`;
+    }
     const names = select(root, (e) => e.tag === 'p' && hasClass(e, 'ssb-shop-name') && inFooter(e));
     if (names.length !== 1) return `${names.length} .ssb-shop-name paragraphs inside .footer`;
     if (innerText(names[0]).trim() === '') return 'shop name paragraph is empty';
@@ -272,12 +290,13 @@ export const CHECKS = [
   }],
 ];
 
-export function verifyRender(html, { id, version, manifest, css }) {
+export function verifyRender(html, { id, version, manifest, css, social }) {
   if (typeof id !== 'string' || !/^[a-z0-9_]+$/.test(id)) throw new Error(`bad id: ${JSON.stringify(id)}`);
   if (!isValidVersion(version)) throw new Error(`bad version: ${JSON.stringify(version)}`);
   const palette = parsePalette(css);
+  const socialIcons = socialIconNames(social);
   const { root } = parseHtml(html);
-  const ctx = { html, root, id, version, manifest, palette };
+  const ctx = { html, root, id, version, manifest, palette, socialIcons };
   const results = CHECKS.map(([name, fn]) => {
     const detail = fn(ctx);
     return { name, ok: detail === null, detail: detail || '' };
@@ -327,14 +346,15 @@ function main(argv) {
   const p = paths(root);
   const manifestPath = get('--manifest') || p.manifest;
   const cssPath = get('--css') || p.css;
+  const socialPath = get('--social') || p.social;
   const dumpAt = args.indexOf('--dump');
   const previewResponse = get('--preview-response');
-  const flagsWithValue = new Set(['--id', '--version', '--root', '--manifest', '--css', '--preview-response']);
+  const flagsWithValue = new Set(['--id', '--version', '--root', '--manifest', '--css', '--social', '--preview-response']);
   const positional = args.filter((a, i) => !a.startsWith('--') && !flagsWithValue.has(args[i - 1]) && (dumpAt === -1 || i < dumpAt));
   const sources = (positional.length === 1 ? 1 : 0) + (dumpAt !== -1 ? 1 : 0) + (previewResponse ? 1 : 0);
   if (!id || !/^\d+$/.test(String(versionArg)) || sources !== 1) {
     console.error(
-      'usage: verify-render.mjs (<rendered.html> | --preview-response <file> | --dump <console-dump...>) --id <id> --version <n> [--root <dir>] [--manifest <path>] [--css <path>]',
+      'usage: verify-render.mjs (<rendered.html> | --preview-response <file> | --dump <console-dump...>) --id <id> --version <n> [--root <dir>] [--manifest <path>] [--css <path>] [--social <path>]',
     );
     return 2;
   }
@@ -355,7 +375,8 @@ function main(argv) {
   }
   const manifest = manifestPath === p.manifest ? readManifest(root) : JSON.parse(readFileSync(manifestPath, 'utf8'));
   const css = readFileSync(cssPath, 'utf8');
-  const result = verifyRender(html, { id, version, manifest, css });
+  const social = readFileSync(socialPath, 'utf8');
+  const result = verifyRender(html, { id, version, manifest, css, social });
   process.stdout.write(formatResults(result));
   return result.failed === 0 ? 0 : 1;
 }

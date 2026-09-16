@@ -108,6 +108,13 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 `header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
 (discounts, gift cards, partial fulfilment, refunds) are not exercised.
 
+Two of those checks read their expectations out of `lib/` rather than hardcoding them, so neither
+can drift from what is pasted into Admin: the palette comes from `lib/brand-style.css` via
+`parsePalette`, and `social-row` compares the rendered icon sequence to the networks named in
+`lib/footer-social.html`. Both have a flag for pointing at another copy, `--css` and `--social`,
+which is how a rollback checks a render against the version it is restoring rather than against the
+working tree.
+
 `body-paragraphs` has one branch worth knowing about. Four templates hold their whole body in
 headings and table cells and carry no **body** paragraph at all, only the two in the footer
 (`gift_card_confirmation`, `gift_card_notification`, `store_credit_issued`,
