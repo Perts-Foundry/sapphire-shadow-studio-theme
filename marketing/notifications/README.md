@@ -23,7 +23,7 @@ the repo catches up afterwards.
 |---|---|
 | `manifest.json` | The list of template ids. Each entry records the subject line, the sha256 and the length of the stock snapshot (UTF-16 code units, as `String.length` reports it, so `wc -c` disagrees on any file with non-ASCII text), the branded `version` and `brandedSha256` (see Versioning), and, where needed, an `override`. Ids come from here, never from a directory glob. |
 | `lib/brand-style.css` | The `<style>` rules that replace the stock accent-colour block. The only file that carries the palette. |
-| `lib/footer-social.html` | The social icon row and shop-name line inserted at the top of the footer. |
+| `lib/footer-social.html` | The five-network social row (Instagram, Facebook, TikTok, YouTube, Pinterest) and shop-name line inserted at the top of the footer. |
 | `lib/header.html` | The stock logo-only header table, inserted into the three templates that ship without one (the `header` override below). |
 | `stock/<id>.liquid` | Verbatim snapshot of what the Admin editor held when it was recorded. Never edited by hand. |
 | `<id>.liquid` | The generated, ready-to-paste branded template. Never edited by hand. |
@@ -107,6 +107,13 @@ version stamp: 21 named checks (`version`, `manifest-version`, `header-navy`, `f
 `subtotal-lines`, `no-accent`, `no-liquid-error`, `no-translation-missing`, `mobile-css`,
 `header-row`, `no-logosize`), one PASS/FAIL line each; the list is `CHECKS` in the file. It proves the sample-data render only: Liquid branches the preview does not take
 (discounts, gift cards, partial fulfilment, refunds) are not exercised.
+
+Two of those checks read their expectations out of `lib/` rather than hardcoding them, so neither
+can drift from what is pasted into Admin: the palette comes from `lib/brand-style.css` via
+`parsePalette`, and `social-row` compares the rendered icon sequence to the networks named in
+`lib/footer-social.html`. Both have a flag for pointing at another copy, `--css` and `--social`,
+which is how a rollback checks a render against the version it is restoring rather than against the
+working tree.
 
 `body-paragraphs` has one branch worth knowing about. Four templates hold their whole body in
 headings and table cells and carry no **body** paragraph at all, only the two in the footer
@@ -330,7 +337,7 @@ footer text `#c9d8ea`, button `#0071C2`, page surround `#e1edf5`. That makes fou
 palette lives: the two campaign files under `marketing/emails/`, that README's table, and
 `lib/brand-style.css`. A palette change means editing all four and regenerating here.
 
-The social icon URLs in `lib/footer-social.html` are the same three CDN assets listed in that
+The social icon URLs in `lib/footer-social.html` are the same five CDN assets listed in that
 README's hosted-assets table, served from Shopify Files and not behind the storefront password.
 Re-check that they return 200 to an anonymous request after changing one.
 

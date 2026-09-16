@@ -45,6 +45,9 @@ import {
   LOGO_IF_TAG,
   REPO_ROOT,
 } from '../brand.mjs';
+// The one vocabulary for the networks and how each writes its own name, already pinned to
+// snippets/icon.liquid by scripts/email-icons/test/icons.test.mjs.
+import { ICON_NAMES, ICON_LABELS } from '../../email-icons/lib/icons.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, 'fixtures');
@@ -62,9 +65,13 @@ const SOCIAL_URLS = new Set([
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png',
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png',
   'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png',
+  'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-youtube.png',
+  'https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-pinterest.png',
   'https://www.instagram.com/sapphire_shadow_studio',
   'https://www.facebook.com/sapphireshadowstudio',
   'https://www.tiktok.com/@sapphire_shadow_studio',
+  'https://www.youtube.com/@SapphireShadowStudio',
+  'https://www.pinterest.com/sapphireshadowstudio',
 ]);
 
 function bytesEqual(a, b) {
@@ -872,12 +879,37 @@ test('hygiene: brand-style.css rules naming disclaimer__subtext or ssb- classes 
   assert.ok(seen > 0, 'brand-style.css has no rule naming disclaimer__subtext');
 });
 
-test('hygiene: every https URL in footer-social.html is one of the six known brand URLs', () => {
+test('hygiene: every https URL in footer-social.html is one of the ten known brand URLs', () => {
   const social = readFileSync(paths(repoRoot).social, 'utf8');
   const urls = social.match(/https:\/\/[^\s"'<>]+/g) || [];
   assert.ok(urls.length > 0, 'footer-social.html has no https URLs');
   for (const url of urls) assert.ok(SOCIAL_URLS.has(url), `unexpected URL in footer-social.html: ${url}`);
   assert.ok(!social.includes('http://'), 'footer-social.html must not link over plain http');
+});
+
+// The test above is a subset check: it fails an URL nobody listed, and passes a partial that has
+// quietly LOST a network, which is the likelier accident and the one that ships silently to every
+// customer. Nothing else under scripts/notifications/ reads the icon list out of the partial, so
+// the count lived only in places that pinned each other. These assertions pin it to the icon
+// vocabulary that snippets/icon.liquid and the campaign emails already share.
+test('footer-social.html carries every network exactly once, in ICON_NAMES order, with its label and both URLs', () => {
+  const social = readFileSync(paths(repoRoot).social, 'utf8');
+
+  const icons = [...social.matchAll(/email-icon-([a-z0-9]+)\.png/g)].map((m) => m[1]);
+  assert.deepEqual(icons, ICON_NAMES, 'footer-social.html icon sequence must match ICON_NAMES');
+
+  for (const name of ICON_NAMES) {
+    assert.ok(
+      social.includes(`&nbsp;${ICON_LABELS[name]}</a>`),
+      `footer-social.html has no "&nbsp;${ICON_LABELS[name]}</a>" label for ${name}`,
+    );
+  }
+
+  // Turns SOCIAL_URLS from a permission list into an exact set: every known URL must be present,
+  // which is what makes a removed network fail.
+  for (const url of SOCIAL_URLS) {
+    assert.ok(social.includes(url), `footer-social.html no longer links ${url}`);
+  }
 });
 
 test('hygiene: the inserted regions of every branded file are clean and the style region has no accent reference', () => {

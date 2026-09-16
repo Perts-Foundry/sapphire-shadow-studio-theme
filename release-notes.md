@@ -1,5 +1,46 @@
 # Release Notes
 
+## Notification emails link YouTube and Pinterest (unreleased, 2026-09-15)
+
+The notification footer partial, `marketing/notifications/lib/footer-social.html`, is the last
+hardcoded copy of the social row, and it now carries all five networks. It uses the campaign
+emails' row from the previous change unchanged: one full-width cell of adjacent inline-block
+anchors, `4px 4px` anchor padding, and `&nbsp;` between icon and label as the non-break Outlook
+honours. Keeping the two rows identical means one measurement and one set of load-bearing details
+covers both.
+
+**The notification shell never narrows, so this row never wraps.** Unlike the campaign shell, the
+stock notification stylesheet has no fluid-width rule: its only phone media query sets
+`table-layout: fixed` and leaves the 600 px `.container` alone. Measured in headless Chrome against
+that shell, the five-anchor run is 478 px inside a 534 px footer cell, one line at 800, 414, 390 and
+375 px viewports. A phone client scales the whole email, footer included, which is how every other
+row in these templates already behaves. The stock mobile rule `.footer .ssb-social td { padding: 0
+5px }` is left in place, but **it no longer does the job it was written for**: it was per-network
+spacing when the row was three `<td>` elements, and now pads the one wrapper cell while the anchors
+carry their own `4px 4px`. It stays because it is harmless there and because editing
+`brand-style.css` regenerates all 46 templates, which would invalidate a render already checked
+against Admin. Rewrite it to target `.ssb-social a`, or delete it, on the next change that touches
+the stylesheet anyway.
+
+**The change bumped all 46 template versions, by design**: the footer partial is spliced into every
+branded template, so every generated file's core hash changed. Admin holds the previous version of
+each until they are synced. The render check now expects five `email-icon-` images in the social
+row, the brand URL allowlist holds ten URLs, and the real-derived `order_confirmation` render
+fixture and the synthetic verify-render fixture were updated to the five-anchor row, since both are
+asserted against the current checks.
+
+**The count used to live only in places that pinned each other, so losing a network was silent.**
+Pre-PR review demonstrated it: revert the partial to three networks, regenerate, fix the one
+version stamp the failure message points at, and the suite went green with three-network templates
+on their way to Admin. The URL hygiene test could not catch it because it is a subset check, which
+fails an URL nobody listed and passes a partial that has lost one. Two changes close it. The render
+check now derives the expected icon sequence from `lib/footer-social.html` itself, the way
+`parsePalette` already derives the hexes from `lib/brand-style.css`, and compares the sequence
+rather than counting images, so five icons of the same network no longer pass. And `brand.test.mjs`
+now asserts the partial against `ICON_NAMES` and `ICON_LABELS`, the vocabulary `snippets/icon.liquid`
+and the campaign emails already share, and requires every known URL to be present, which turns the
+allowlist from a permission list into an exact set.
+
 ## The real-git test harnesses stop racing their own teardown (unreleased, 2026-09-15)
 
 A validate run failed in `npm run policies:test` on a test whose assertions all passed: the
