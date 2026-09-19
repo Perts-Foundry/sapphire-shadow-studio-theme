@@ -27,7 +27,7 @@ npm run search-console:test
 | `--sitemap-count N` | use N as the live sitemap count instead of fetching it (per-URL checks skip) |
 | `--now <iso>` | evaluate as of that time (tests, reproducing an old run) |
 | `--print-state-dir` | print the resolved state dir (`~` for home) and exit |
-| `--template <mode>` | print a capture skeleton for `audit` or `insights` and exit: every report the mode expects, every field as a `<kind>` placeholder, optional keys with a `?` suffix, and a generated nonce; reads no state dir and writes nothing; takes no capture file |
+| `--template <mode>` | print a capture skeleton for `audit` or `insights` and exit: every report the mode expects, every field as a `<kind>` placeholder, optional keys with a `?` suffix, and a generated nonce; reads no state dir and writes nothing; takes no capture file and no other flag |
 
 Exit: `0` when there is no fresh ERROR (WARN, INFO and accepted ERRORs do not block); `1` for a
 fresh ERROR, or a capture that is not JSON or fails the schema (nothing evaluated or saved, and
@@ -94,7 +94,8 @@ agrees with clicks over impressions within 0.005; reason counts sum to `not_inde
 country impressions never exceed the total; `owners` never exceeds `users`; an enhancement's
 `warning` never exceeds its `valid` and an issue's `items` never exceeds `valid + invalid`. A key
 ending in `?` or a string value that is a whole `<...>` placeholder is a `--template` skeleton left
-unfilled, and is refused at its pointer. Every page URL is on the
+unfilled, and is refused at its pointer; a real value the page shows wholly in angle brackets is
+transcribed without them. Every page URL is on the
 property host with no query string or fragment, never on a `checkouts`, `account`, `orders` or
 `cart/c` route (whole segments, anywhere in the path, any case), and never with a token-shaped
 segment: 20 or more unbroken letters, digits or underscores including a digit or a capital, or a
@@ -139,7 +140,7 @@ findings are keyed by page, never by query.
 | `removal-active` | ERROR for a live sitemap URL, else WARN | page-or-singleton | a temporary removal hides a page from Google |
 | `removal-other-active` | INFO | singleton | outdated-content or SafeSearch requests |
 | `messages-unread` | INFO | singleton | unread Search Console messages |
-| `messages-alert-examples` | INFO | label | one per opened indexing alert: the page paths and reason label it names; a reason with no examples of its own gains a count of these in its detail |
+| `messages-alert-examples` | INFO | label | one per opened indexing alert: the page paths and reason label it names; a repeated subject gets a `#2`, `#3` suffix; a reason with no examples of its own gains a count of these in its detail, and a reason label the skill cannot map is `index-reason-unknown` |
 | `sitemap-missing` | ERROR | singleton | `/sitemap.xml` is not submitted |
 | `sitemap-error` | ERROR | page | a submitted sitemap cannot be fetched or has errors |
 | `sitemap-pending` | INFO | page | submitted, not yet read |
@@ -175,8 +176,8 @@ findings are keyed by page, never by query.
 | `cwv-no-data` | INFO | device | not enough usage data, expected on a small site |
 | `https-non-https` | ERROR | singleton | URLs not served over HTTPS |
 | `https-no-data` | INFO | singleton | the HTTPS report has no data yet |
-| `enhancement-invalid` | ERROR | enhancement-type | invalid rich-result items; the detail lists the error-level issue labels when captured |
-| `enhancement-warning` | WARN | enhancement-type | rich-result items with warnings; the detail lists the warning-level issue labels, most items first, and says `unknown` when the report showed no warning figure |
+| `enhancement-invalid` | ERROR | enhancement-type | invalid rich-result items, or a captured error-level issue row; the detail lists the error-level issue labels when captured |
+| `enhancement-warning` | WARN | enhancement-type | rich-result items with warnings, or a captured warning-level issue row; the detail lists the warning-level issue labels, most items first, and says `unknown` when the report showed no warning figure |
 | `enhancement-absent` | INFO | enhancement-type | Product snippets or Breadcrumbs absent while a product is indexed; judged only once the Enhancements report exists |
 | `enhancement-product-duplicate-evidence` | INFO | singleton | evidence for the Judge.me Product JSON-LD owner decision |
 | `enhancement-type-unknown` | INFO | enhancement-type | an enhancement type not yet known |
@@ -195,7 +196,7 @@ findings are keyed by page, never by query.
 | `surface-new` | INFO | label | a Search Console item not in `KNOWN_SURFACES` |
 | `surface-gone` | INFO | label | a known item is missing; renamed or removed |
 | `discovery-review-due` | INFO | singleton | `KNOWN_SURFACES_REVIEWED_ON` older than `DISCOVERY_REVIEW_DAYS` (90) days |
-| `anchor-missed` | INFO | label | a `wait_for` in the browser pass timed out; the subject is the view (`bell` for the Messages bell), the detail the anchors, and the fix is `browser.md` |
+| `anchor-missed` | INFO | label | a `wait_for` in the browser pass timed out; one per view (`bell` for the Messages bell), every anchor that missed on it in the detail, and the fix is `browser.md` |
 
 Brand-only and the country share also need at least `NOISE_FLOOR_IMPRESSIONS` (50) impressions.
 Browser-pass caps, quoted in the skill: `DRILLDOWN_ROWS_MAX` (14) Page indexing reason rows opened
@@ -216,8 +217,8 @@ sitemap state), `findings` (fresh) and `accepted`. An all-not-ready run is saved
 shows when each report came alive.
 
 Metrics, each null when its report is not `ok`: clicks, impressions, indexed, not_indexed,
-discovered, unread, enhancement_warning (the sum of the non-null `warning` figures; null when every
-one is null), enhancement_invalid, videos_indexed, videos_not_indexed. A metric the previous run
+discovered, unread, enhancement_warning (the sum of the `warning` figures; null when any item shows
+none, so a report that stops showing its figure never reads as a drop), enhancement_invalid, videos_indexed, videos_not_indexed. A metric the previous run
 did not record prints `(not compared)`. The skill's own message opens mark messages read, so
 `unread` falls on the next run by up to the number it opened; read a drop there as that, not as the
 operator reading them.

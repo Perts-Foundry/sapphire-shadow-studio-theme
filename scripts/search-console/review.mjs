@@ -65,6 +65,7 @@ export function parseArgs(argv) {
       case '--offline': out.offline = true; break;
       case '--print-state-dir': out.printStateDir = true; break;
       case '--template': {
+        if (out.template !== null) throw new UsageError('--template given twice');
         const v = value();
         if (!MODES.includes(v)) throw new UsageError(`--template expects one of: ${MODES.join(', ')}`);
         out.template = v;
@@ -88,9 +89,10 @@ export function parseArgs(argv) {
         out.capture = a;
     }
   }
-  if (out.template !== null && (out.capture !== null || out.printStateDir)) {
-    throw new UsageError('--template takes no capture file and no --print-state-dir');
-  }
+  // The skeleton ignores every other option, so accepting one would suggest it had an effect.
+  const others = out.capture !== null || out.printStateDir || out.full || out.noSave || out.json || out.offline
+    || out.sitemapCount !== null || out.now !== null;
+  if (out.template !== null && others) throw new UsageError('--template takes no capture file and no other flag');
   if (!out.printStateDir && out.template === null && out.capture === null) throw new UsageError('a capture file is required');
   return out;
 }

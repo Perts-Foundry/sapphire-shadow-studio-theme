@@ -384,12 +384,24 @@ function messageChecks({ okRep, add }) {
   const m = okRep('messages');
   if (!m) return;
   if (m.unread > 0) add('messages-unread', 'messages-unread', `${m.unread} unread message(s) of ${m.total}`);
-  // One finding per alert, not per URL, so several alerts do not swamp the list.
+  // One finding per alert, not per URL, so several alerts do not swamp the list. Search Console
+  // reuses a few fixed subjects for every alert, and findings are deduplicated by subject, so a
+  // repeated subject gets an ordinal (`#2`, `#3`) rather than silently replacing the first alert.
+  const seen = new Map();
   for (const alert of m.alerts ?? []) {
+    const subject = safeText(alert.subject, 110);
+    const n = (seen.get(subject) ?? 0) + 1;
+    seen.set(subject, n);
     const paths = alert.examples.map(pathOf);
     const reason = alert.reason_label ? `, reason "${safeText(alert.reason_label, 120)}"` : '';
-    add('messages-alert-examples', safeText(alert.subject, 120),
+    add('messages-alert-examples', n === 1 ? subject : `${subject} #${n}`,
       `indexing alert names ${paths.length} page(s)${paths.length ? `: ${paths.join(', ')}` : ''}${reason}`);
+    // A reason label this skill cannot map would otherwise vanish from the record; surface it the
+    // way an unknown label on the Page indexing report is surfaced.
+    if (alert.reason_label && !reasonSlugFor(alert.reason_label)) {
+      add('index-reason-unknown', safeText(alert.reason_label, 200),
+        `a reason label named in an indexing alert that this skill has not seen (${paths.length} example(s)); route it per the self-discovery loop`);
+    }
   }
 }
 
@@ -534,9 +546,11 @@ function enhancementChecks({ reports, okRep, add }) {
       const rows = (item.issues ?? []).filter((i) => i.level === level).sort((a, b) => b.items - a.items);
       return rows.length ? `: ${rows.map((i) => `"${safeText(i.label, 120)}" (${i.items})`).join(', ')}` : '';
     };
-    if (item.invalid > 0) add('enhancement-invalid', item.type, `${item.invalid} invalid item(s)${labels('error')}`);
-    const warningIssue = (item.issues ?? []).some((i) => i.level === 'warning');
-    if (item.warning > 0 || (item.warning === null && warningIssue)) {
+    // A captured issue row fires its check even when the matching count reads 0 or is not shown:
+    // the row is direct evidence, and the count is reported as the report printed it.
+    const hasIssue = (level) => (item.issues ?? []).some((i) => i.level === level);
+    if (item.invalid > 0 || hasIssue('error')) add('enhancement-invalid', item.type, `${item.invalid} invalid item(s)${labels('error')}`);
+    if (item.warning > 0 || hasIssue('warning')) {
       add('enhancement-warning', item.type, `${item.warning ?? 'unknown'} item(s) with warnings${labels('warning')}`);
     }
   }
@@ -680,9 +694,18 @@ function discoveryChecks({ okRep, add, now }) {
   for (const label of disc.reason_labels) {
     if (!reasonSlugFor(label)) add('index-reason-unknown', label, 'a reason label this skill has not seen');
   }
+  // Entries for the same view are merged: findings are deduplicated by subject, so two separate
+  // entries would otherwise keep only one set of anchors. The Overview's view path is the empty
+  // string; a subject is never empty.
+  const missed = new Map();
   for (const miss of disc.anchor_misses ?? []) {
-    // The Overview's view path is the empty string; a subject is never empty.
-    add('anchor-missed', miss.view === null ? 'bell' : miss.view || 'overview',`wait_for timed out on: ${miss.anchors.map((a) => `"${safeText(a, 80)}"`).join(', ')}; update browser.md`);
+    const view = miss.view === null ? 'bell' : miss.view || 'overview';
+    const anchors = missed.get(view) ?? [];
+    for (const a of miss.anchors) if (!anchors.includes(a)) anchors.push(a);
+    missed.set(view, anchors);
+  }
+  for (const [view, anchors] of missed) {
+    add('anchor-missed', view, `wait_for timed out on: ${anchors.map((a) => `"${safeText(a, 80)}"`).join(', ')}; update browser.md`);
   }
   for (const u of disc.unknown) {
     add('surface-new', `${u.kind}:${u.label}`, `recorded for review: ${safeText(u.note, 200)}`);

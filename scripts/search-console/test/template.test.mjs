@@ -135,12 +135,22 @@ function filledCapture(mode) {
   return t;
 }
 
-test('round trip: a template filled from its own combinators validates and evaluates', () => {
+test('round trip: a template filled from its own combinators validates and evaluates cleanly', () => {
   for (const mode of MODES) {
     const c = filledCapture(mode);
     assert.deepEqual(validateCapture(c).errors, [], mode);
-    assert.doesNotThrow(() => evaluateCapture(c, healthyOpts()), mode);
+    const findings = evaluateCapture(c, healthyOpts());
+    assert.deepEqual(findings.filter((f) => ['capture-invalid', 'capture-missing-report'].includes(f.check)), [], mode);
   }
+});
+
+test('round trip: a report marked not-ready with its fields deleted, as the skeleton says, validates', () => {
+  const c = filledCapture('audit');
+  c.reports.videos = { captured_at: c.reports.videos.captured_at, report: 'videos', status: 'not-ready' };
+  c.reports.enhancements = { captured_at: c.reports.enhancements.captured_at, report: 'enhancements', status: 'not-present' };
+  assert.deepEqual(validateCapture(c).errors, []);
+  const findings = evaluateCapture(c, healthyOpts());
+  assert.ok(findings.some((f) => f.check === 'gsc-not-ready' && f.url === 'videos'));
 });
 
 test('the envelope carries the property and a fresh, well-formed nonce', () => {

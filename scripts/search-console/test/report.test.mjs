@@ -167,14 +167,15 @@ test('METRICS prints the keys added after 2026-09-18; against an older baseline 
   assert.match(r.text, /^ {2}impressions: 2000 \(\+0\)$/m);
 });
 
-test('enhancement_warning sums only the figures the report showed; a report not ok is n/a', () => {
+test('enhancement_warning is a sum only when every item shows a figure; a report not ok is n/a', () => {
   const metricsOf = (mutate) => {
     const c = baseCapture();
     mutate(c.reports);
     return jsonOf(finish(evaluateCapture(c, healthyOpts()), c, { dir: freshDir(), json: true })).metrics.current;
   };
   assert.equal(metricsOf((r) => { r.enhancements.items[0].warning = 2; r.enhancements.items[1].warning = 3; }).enhancement_warning, 5);
-  assert.equal(metricsOf((r) => { r.enhancements.items[0].warning = 2; r.enhancements.items[1].warning = null; }).enhancement_warning, 2);
+  assert.equal(metricsOf((r) => { r.enhancements.items[0].warning = 2; r.enhancements.items[1].warning = null; }).enhancement_warning, null,
+    'a partial sum would compare as a drop');
   assert.equal(metricsOf((r) => { for (const i of r.enhancements.items) i.warning = null; }).enhancement_warning, null);
   assert.equal(metricsOf((r) => { r.enhancements.items[0].invalid = 1; }).enhancement_invalid, 1);
   const m = metricsOf((r) => { r.videos = notReady('videos'); r.messages.unread = 1; });
@@ -183,6 +184,25 @@ test('enhancement_warning sums only the figures the report showed; a report not 
   const c = baseCapture();
   c.reports.videos = notReady('videos');
   assert.match(finish(evaluateCapture(c, healthyOpts()), c, { dir: freshDir() }).text, /^ {2}videos_indexed: n\/a$/m);
+});
+
+test('the new metrics compare when both runs carry them; a figure going unshown is not a drop', () => {
+  const dir = freshDir();
+  const a = baseCapture();
+  a.reports.enhancements.items[0].warning = 2;
+  a.reports.enhancements.items[1].warning = 3;
+  finish(evaluateCapture(a, healthyOpts()), a, { dir });
+  const b = baseCapture();
+  b.reports.messages.unread = 1;
+  b.reports.enhancements.items[0].warning = 2;
+  b.reports.enhancements.items[1].warning = null;
+  b.reports.videos.not_indexed = 1;
+  const out = jsonOf(finish(evaluateCapture(b, healthyOpts()), b, { dir, json: true, now: later(1) }));
+  assert.equal(out.metrics.delta.unread, 1);
+  assert.equal(out.metrics.delta.videos_not_indexed, 1);
+  assert.equal(out.metrics.delta.enhancement_invalid, 0);
+  assert.equal(out.metrics.current.enhancement_warning, null);
+  assert.equal(out.metrics.delta.enhancement_warning, null);
 });
 
 test('a finding whose detail changed between runs is unchanged, not new', () => {

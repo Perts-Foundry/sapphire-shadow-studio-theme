@@ -284,6 +284,24 @@ test('a template placeholder or a ?-suffixed key is refused at its pointer', () 
   assert.deepEqual(errorsOf(angled), [], 'only a whole-value placeholder is refused');
 });
 
+test('fields wrapped by describe still validate: one rejection per wrapped field', () => {
+  expectError((c, r) => { r.messages.alerts = [alert({ subject: 'x'.repeat(121) })]; }, /alerts\/0\/subject$/, /longer than 120/);
+  expectError((c, r) => { r.messages.alerts = [alert({ reason_label: 'x'.repeat(201) })]; }, /alerts\/0\/reason_label$/, /longer than 200/);
+  expectError((c, r) => { r.enhancements.items[0].type = 'x'.repeat(81); }, /items\/0\/type$/, /longer than 80/);
+  expectError((c, r) => { r.enhancements.items[0].issues = [issue({ label: 'x'.repeat(121) })]; }, /issues\/0\/label$/, /longer than 120/);
+  expectError((c, r) => { r.discovery.anchor_misses = [{ view: 'bad path!', anchors: ['a'] }]; }, /anchor_misses\/0\/view$/, /view path/);
+  expectError((c, r) => { r.discovery.anchor_misses = [{ view: 'r/abcdef0123456789abcdef01', anchors: ['a'] }]; }, /anchor_misses\/0\/view$/, /token-shaped/);
+});
+
+test('the placeholder guard reaches inside arrays, and refuses any whole-value <...> string by design', () => {
+  expectError((c, r) => { r.messages.subjects[0] = '<string of at most 120 characters>'; }, /^\/reports\/messages\/subjects\/0$/, /placeholder left unfilled/);
+  expectError((c, r) => { r.messages.alerts = [alert({ examples: ['<page URL on the property host, no query or fragment>'] })]; },
+    /alerts\/0\/examples\/0$/, /placeholder left unfilled/);
+  // A real value written entirely in angle brackets is refused too: the guard cannot tell it from a
+  // skeleton slot, and such a value is rare enough that transcribing it without the brackets is the rule.
+  expectError((c, r) => { r.messages.subjects[0] = '<Search Console>'; }, /subjects\/0$/, /placeholder left unfilled/);
+});
+
 test('every committed fixture except capture-invalid still validates', () => {
   const names = fs.readdirSync(FIXTURES).filter((f) => /^capture-.*\.json$/.test(f) && f !== 'capture-invalid.json');
   assert.ok(names.includes('capture-run2.json'));

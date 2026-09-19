@@ -529,6 +529,108 @@ test('the nav entries added on 2026-09-18 are conditional: absent says nothing, 
   assert.ok(fires('surface-new', (r) => { withAll(r); r.discovery.nav.push({ label: 'Event snippets', path: 'r/events' }); }), 'an unknown rich-result report is still new');
 });
 
+// ---------------------------------------------------------------------------------------------
+// Pre-PR review follow-ups.
+
+const SUBJECT = 'New reasons prevent pages from being indexed on site sapphireshadowstudio.com';
+
+test('alerts sharing a subject each keep their own finding', () => {
+  const f = run('messages-alert-examples', (r) => {
+    r.messages.total = 3;
+    r.messages.alerts = [
+      { subject: SUBJECT, examples: [`${ORIGIN}/pages/about`] },
+      { subject: SUBJECT, examples: [`${ORIGIN}/pages/faq`] },
+      { subject: SUBJECT, examples: [] },
+    ];
+  });
+  assert.deepEqual(f.map((x) => x.url), [SUBJECT, `${SUBJECT} #2`, `${SUBJECT} #3`]);
+  assert.match(f[0].detail, /\/pages\/about/);
+  assert.match(f[1].detail, /\/pages\/faq/);
+});
+
+test('an alert reason label the skill cannot map is index-reason-unknown, not silently dropped', () => {
+  const f = run('index-reason-unknown', (r) => {
+    r.messages.alerts = [{ subject: SUBJECT, examples: [`${ORIGIN}/pages/about`], reason_label: 'Blocked by a brand new rule' }];
+  });
+  assert.deepEqual(f.map((x) => [x.url, x.severity]), [['Blocked by a brand new rule', INFO]]);
+  assert.match(f[0].detail, /indexing alert/);
+  assert.ok(!fires('index-reason-unknown', (r) => { r.messages.alerts = [{ subject: SUBJECT, examples: [], reason_label: 'Soft 404' }]; }));
+});
+
+test('anchor misses for one view merge into one finding carrying every anchor once', () => {
+  const f = run('anchor-missed', (r) => {
+    r.discovery.anchor_misses = [{ view: 'index', anchors: ['Last update:'] }, { view: 'index', anchors: ['Reason', 'Last update:'] }];
+  });
+  assert.equal(f.length, 1);
+  assert.equal(f[0].detail, 'wait_for timed out on: "Last update:", "Reason"; update browser.md');
+});
+
+test('the alert note: on the noindex remainder, summed across alerts, never on a reason with examples', () => {
+  const noindex = (examples, alerts) => (r) => {
+    r['indexing-pages'].reasons[0] = { reason: 'noindex', source: 'Website', count: 4, examples };
+    r['indexing-pages'].not_indexed = 4;
+    r.messages.total = alerts.length;
+    r.messages.alerts = alerts;
+  };
+  const named = (n) => ({ subject: SUBJECT, examples: Array.from({ length: n }, (_, i) => `${ORIGIN}/pages/p${i}`), reason_label: "Excluded by 'noindex' tag" });
+  const remainder = run('index-reason-noindex', noindex([], [named(2), named(1)]));
+  assert.equal(remainder.length, 1);
+  assert.match(remainder[0].detail, /unverified remainder; 3 example\(s\) named in a message$/);
+  const own = run('index-reason-noindex', noindex([`${ORIGIN}/blogs/shift-notes`], [named(2)]));
+  assert.ok(own.every((x) => !/named in a message/.test(x.detail)));
+});
+
+test('safeText guards every page-text interpolation', () => {
+  const dirty = 'a\n`b`';
+  const clean = (s) => !/[\n`]/.test(s);
+  const sites = [
+    ['anchor-missed', (r) => { r.discovery.anchor_misses = [{ view: 'index', anchors: [dirty] }]; }],
+    ['surface-new', (r) => { r.discovery.unknown.push({ kind: 'nav', label: 'X', path: null, note: dirty }); }],
+    ['inspect-fetch-failed', (r) => { r.inspections.items[0].page_fetch = `Failed ${dirty}`; }],
+    ['verification-method-fragile', (r) => { r.settings.method = `HTML tag ${dirty}`; }],
+    ['messages-alert-examples', (r) => { r.messages.alerts = [{ subject: SUBJECT, examples: [], reason_label: dirty }]; }],
+    ['enhancement-warning', (r) => { Object.assign(r.enhancements.items[0], { warning: 1, issues: [{ label: dirty, items: 1, level: 'warning' }] }); }],
+  ];
+  for (const [id, mutate] of sites) {
+    const f = run(id, mutate);
+    assert.ok(f.length > 0, id);
+    for (const x of f) assert.ok(clean(x.detail) && clean(x.url), `${id}: ${JSON.stringify(x)}`);
+  }
+});
+
+test('below-floor and videos: severities and wording pinned', () => {
+  const drop = (r) => { belowFloor(r.performance, 10); r.performance.pages.rows = r.performance.pages.rows.slice(1); };
+  for (const age of [PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS - 1, PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS + 100]) {
+    const f = run('perf-impressions-below-floor', drop, (o) => { o.propertyAgeDays = age; });
+    assert.equal(f[0].severity, INFO, `age ${age}`);
+    assert.equal(f[0].detail,
+      `1 indexable sitemap page(s) absent from the PAGES tab for 28d; too little data (10 impressions, NOISE_FLOOR_IMPRESSIONS ${NOISE_FLOOR_IMPRESSIONS})`);
+  }
+  const v = run('videos-not-indexed', (r) => { r.videos.not_indexed = 2; });
+  assert.deepEqual(v.map((x) => [x.severity, x.detail]), [[INFO, '2 video(s) not indexed, 1 indexed']]);
+  assert.ok(!fires('videos-not-indexed', (r) => { r.videos.not_indexed = 0; }));
+});
+
+test('a captured issue row fires its check even when the count reads 0', () => {
+  const w = run('enhancement-warning', (r) => {
+    Object.assign(r.enhancements.items[0], { warning: 0, issues: [{ label: "Missing field 'review'", items: 2, level: 'warning' }] });
+  });
+  assert.equal(w[0].detail, `0 item(s) with warnings: "Missing field 'review'" (2)`);
+  const e = run('enhancement-invalid', (r) => {
+    Object.assign(r.enhancements.items[0], { invalid: 0, issues: [{ label: "Missing field 'offers'", items: 1, level: 'error' }] });
+  });
+  assert.equal(e[0].detail, `0 invalid item(s): "Missing field 'offers'" (1)`);
+});
+
+test('secondaryDomainsFor ignores the hosts of a settings report that is not ok', () => {
+  const c = baseCapture();
+  c.reports.settings = notReady('settings');
+  assert.deepEqual(secondaryDomainsFor(c), [...SECONDARY_DOMAINS]);
+  const listed = baseCapture();
+  listed.reports.settings.secondary_domains = ['brand-alias.example'];
+  assert.deepEqual(secondaryDomainsFor(listed), [...SECONDARY_DOMAINS, 'brand-alias.example']);
+});
+
 test('capture-run2.json: the 2026-09-18 shape is known, below the floor, and missing videos', () => {
   const findings = evaluateCapture(readFixture('capture-run2.json'), { ...healthyOpts(), now: new Date('2026-09-18T16:00:00Z') });
   const of = (id) => findings.filter((f) => f.check === id);
@@ -537,5 +639,5 @@ test('capture-run2.json: the 2026-09-18 shape is known, below the floor, and mis
   assert.equal(of('perf-impressions-below-floor').length, 1);
   assert.deepEqual(of('perf-page-no-impressions'), []);
   assert.deepEqual(of('capture-missing-report').map((f) => [f.url, f.severity]), [['videos', INFO]]);
-  assert.equal(of('enhancement-warning').length, 2);
+  assert.deepEqual(of('enhancement-warning').map((f) => f.url).sort(), ['Merchant listings', 'Product snippets']);
 });

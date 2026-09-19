@@ -191,7 +191,9 @@ test('--template misuse is a usage error (2)', async () => {
   assert.equal(bogus.code, 2);
   assert.match(bogus.err, /audit, insights/);
   for (const argv of [['--template', 'audit', 'c.json'], ['--template', '--print-state-dir'], ['--template'], ['--template', '--no-save'],
-    ['--template', 'audit', '--print-state-dir']]) {
+    ['--template', 'audit', '--print-state-dir'], ['--template', 'audit', '--json'], ['--template', 'audit', '--offline'],
+    ['--template', 'audit', '--now', '2026-12-01T00:00:00Z'], ['--template', 'audit', '--full'], ['--template', 'audit', '--no-save'],
+    ['--template', 'audit', '--sitemap-count', '3'], ['--template', 'audit', '--template', 'insights']]) {
     const r = await cli(argv, w);
     assert.equal(r.code, 2, argv.join(' '));
     assert.match(r.err, /usage:/);
