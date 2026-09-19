@@ -237,8 +237,8 @@ byte-identical:
 ### Search Console
 
 The `search-console` skill audits Google Search Console and reads its reports read-only, through the
-operator's logged-in browser in an attended session, and writes nothing to Search Console, the store
-or the repo. Its browser consent STOP and its Google sign-in STOP are in
+operator's logged-in browser in an attended session. It writes nothing to the store or the repo, and
+changes nothing in Search Console except that opening an indexing alert message marks it read. Its browser consent STOP and its Google sign-in STOP are in
 `.claude/skills/search-console/SKILL.md`, so read that before opening Search Console. Commands, the
 capture schema, the check table and the state dir are in `scripts/search-console/README.md`.
 Captures and run files hold live property data and search query text, and never enter the repo.

@@ -45,6 +45,24 @@ export const SITEMAP_STALE_READ_DAYS = 14;
 export const SITEMAP_TOLERANCE = 1;
 export const DISCOVERY_REVIEW_DAYS = 90;
 
+// The second brand domain the homepage inspection showed as a referrer. It does not change between
+// runs, so it is a constant rather than a transcribed field; `review.mjs` probes the union of this
+// list and any host a capture still lists in `settings.secondary_domains`.
+export const SECONDARY_DOMAINS = Object.freeze(['sapphireshadowstudio.us']);
+
+// Browser-pass caps, quoted in browser.md and the Preflight STOP: reason rows opened on Page
+// indexing per run (the live report showed 6; Search Console lists at most about a dozen reasons),
+// and indexing alert messages opened per run, newest first. Opening a message marks it read.
+export const DRILLDOWN_ROWS_MAX = 14;
+export const ALERT_MESSAGES_MAX = 5;
+
+/** The deduplicated hosts to probe for a capture: SECONDARY_DOMAINS plus any the capture lists. */
+export function secondaryDomainsFor(capture) {
+  const s = capture?.reports?.settings;
+  const listed = s?.status === 'ok' && Array.isArray(s.secondary_domains) ? s.secondary_domains : [];
+  return [...new Set([...SECONDARY_DOMAINS, ...listed])];
+}
+
 // Paths where a noindex is deliberate. Exact paths, and prefixes (which end in `/` or name a whole
 // route family). Mirrors the intent of NOINDEX_OK in scripts/seo-review/lib/checks.mjs, by path
 // rather than by page type, because Search Console reports URLs.
@@ -116,6 +134,7 @@ const DEFS = {
   'removal-other-active': [INFO, 'singleton', 'removals'],
 
   'messages-unread': [INFO, 'singleton', 'messages'],
+  'messages-alert-examples': [INFO, 'label', 'messages'],
 
   'sitemap-missing': [ERROR, 'singleton', 'sitemaps'],
   'sitemap-error': [ERROR, 'page', 'sitemaps'],
@@ -127,6 +146,8 @@ const DEFS = {
 
   'index-count-below-sitemap': [WARN, 'singleton', 'indexing-pages'],
   'index-reason-unknown': [INFO, 'label', 'indexing-pages'],
+
+  'videos-not-indexed': [INFO, 'singleton', 'videos'],
 
   'inspect-not-indexed': [WARN, 'page', 'inspections'],
   'inspect-canonical-mismatch': [WARN, 'page', 'inspections'],
@@ -154,6 +175,7 @@ const DEFS = {
   'perf-zero-impressions': [INFO, 'singleton', 'performance'],
   'perf-brand-only': [WARN, 'singleton', 'performance'],
   'perf-page-no-impressions': [WARN, 'page', 'performance'],
+  'perf-impressions-below-floor': [INFO, 'singleton', 'performance'],
   'perf-low-ctr': [WARN, 'page', 'performance'],
   'perf-position-opportunity': [INFO, 'page', 'performance'],
   'perf-country-outside-us': [INFO, 'singleton', 'performance'],
@@ -165,6 +187,7 @@ const DEFS = {
   'surface-new': [INFO, 'label', 'discovery'],
   'surface-gone': [INFO, 'label', 'discovery'],
   'discovery-review-due': [INFO, 'singleton', 'discovery'],
+  'anchor-missed': [INFO, 'label', 'discovery'],
 };
 
 for (const slug of Object.keys(REASON_SEVERITY)) {
@@ -194,6 +217,17 @@ function clip(detail) {
   // eslint-disable-next-line no-control-regex
   const s = String(detail ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
   return s.length > DETAIL_MAX ? `${s.slice(0, DETAIL_MAX - 3)}...` : s;
+}
+
+/**
+ * Page text made safe to interpolate into a finding: newlines, backticks and control characters
+ * go, then it is clipped to `max`. Every piece of transcribed page text a detail or subject quotes
+ * passes through here.
+ */
+export function safeText(text, max = DETAIL_MAX) {
+  // eslint-disable-next-line no-control-regex
+  const s = String(text ?? '').replace(/[`\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 3)}...` : s;
 }
 
 const SEV_RANK = { [ERROR]: 0, [WARN]: 1, [INFO]: 2 };
@@ -274,7 +308,7 @@ function settingsChecks({ capture, okRep, add, opts }) {
   if (!s) return;
   if (s.verified === false) add('verification-lost', 'verification-lost', 'the Ownership verification page no longer says you are a verified owner');
   else if (/html|file|meta|tag|analytics/i.test(s.method)) {
-    add('verification-method-fragile', 'verification-method-fragile', `verified by a method a theme deploy can remove (${s.method}); DNS is sturdier`);
+    add('verification-method-fragile', 'verification-method-fragile', `verified by a method a theme deploy can remove (${safeText(s.method, 120)}); DNS is sturdier`);
   }
   if (s.owners === 1) add('owner-single', 'owner-single', 'one verified owner; losing that account loses the property');
   if (s.users > s.owners + 1) add('users-unexpected', 'users-unexpected', `${s.users} users for ${s.owners} owner(s); review who has access`);
@@ -284,7 +318,7 @@ function settingsChecks({ capture, okRep, add, opts }) {
   if (s.ai_control === 'exclude') add('ai-control-exclude', 'ai-control-exclude', 'Search generative AI is set to Exclude; the store is removed from AI Overviews and AI Mode');
   if (s.email_notifications === false) add('email-notifications-off', 'email-notifications-off', 'Search Console email notifications are off; critical issues would go unseen');
 
-  for (const host of s.secondary_domains ?? []) {
+  for (const host of secondaryDomainsFor(capture)) {
     if (!opts.redirectProbes || !(host in opts.redirectProbes)) continue; // offline: skipped
     const probe = opts.redirectProbes[host];
     if (probe === null) {
@@ -348,7 +382,25 @@ function removalChecks({ okRep, add, live }) {
 
 function messageChecks({ okRep, add }) {
   const m = okRep('messages');
-  if (m && m.unread > 0) add('messages-unread', 'messages-unread', `${m.unread} unread message(s) of ${m.total}`);
+  if (!m) return;
+  if (m.unread > 0) add('messages-unread', 'messages-unread', `${m.unread} unread message(s) of ${m.total}`);
+  // One finding per alert, not per URL, so several alerts do not swamp the list.
+  for (const alert of m.alerts ?? []) {
+    const paths = alert.examples.map(pathOf);
+    const reason = alert.reason_label ? `, reason "${safeText(alert.reason_label, 120)}"` : '';
+    add('messages-alert-examples', safeText(alert.subject, 120),
+      `indexing alert names ${paths.length} page(s)${paths.length ? `: ${paths.join(', ')}` : ''}${reason}`);
+  }
+}
+
+/** Per reason slug, how many example URLs the indexing alert messages name. */
+function alertExamplesByReason(okRep) {
+  const counts = new Map();
+  for (const alert of okRep('messages')?.alerts ?? []) {
+    const slug = alert.reason_label ? reasonSlugFor(alert.reason_label) : null;
+    if (slug && alert.examples.length) counts.set(slug, (counts.get(slug) ?? 0) + alert.examples.length);
+  }
+  return counts;
 }
 
 function sitemapChecks({ okRep, add, live, now }) {
@@ -388,6 +440,7 @@ function indexingChecks({ okRep, add, live }) {
       add('index-count-below-sitemap', 'index-count-below-sitemap', `${ix.indexed} indexed vs ${expected} ${what}`, early || countOnly ? INFO : WARN);
     }
   }
+  const fromMessages = alertExamplesByReason(okRep);
   for (const r of ix.reasons) {
     if (r.count === 0) continue;
     if (r.reason === 'unknown') {
@@ -400,12 +453,16 @@ function indexingChecks({ okRep, add, live }) {
       const flagged = r.examples.filter((u) => !isNoindexOk(pathOf(u)));
       for (const u of flagged) add(id, u, `noindex on a page outside NOINDEX_OK (${r.count} page(s)${source})`, ERROR);
       if (flagged.length === 0 && r.count > r.examples.length) {
-        add(id, r.reason, `${r.count} noindex page(s), ${r.examples.length} example(s) all in NOINDEX_OK; unverified remainder`, WARN);
+        const named = r.examples.length === 0 ? fromMessages.get(r.reason) : 0;
+        const note = named ? `; ${named} example(s) named in a message` : '';
+        add(id, r.reason, `${r.count} noindex page(s), ${r.examples.length} example(s) all in NOINDEX_OK; unverified remainder${note}`, WARN);
       }
       continue;
     }
     if (r.examples.length === 0) {
-      add(id, r.reason, `${r.count} page(s)${source}; no examples captured`, r.reason === 'not-found' ? INFO : REASON_SEVERITY[r.reason]);
+      const named = fromMessages.get(r.reason);
+      const note = named ? `; ${named} example(s) named in a message` : '';
+      add(id, r.reason, `${r.count} page(s)${source}; no examples captured${note}`, r.reason === 'not-found' ? INFO : REASON_SEVERITY[r.reason]);
       continue;
     }
     for (const u of r.examples) {
@@ -431,7 +488,7 @@ function inspectionChecks({ okRep, add, live, now }) {
     if (!exempt && inSitemap && (item.crawl_allowed === false || item.indexing_allowed === false)) {
       add('inspect-crawl-blocked', item.url, item.crawl_allowed === false ? 'crawl not allowed on a sitemap URL' : 'indexing not allowed on a sitemap URL');
     }
-    if (item.page_fetch && !/success/i.test(item.page_fetch)) add('inspect-fetch-failed', item.url, `page fetch: ${item.page_fetch}`);
+    if (item.page_fetch && !/success/i.test(item.page_fetch)) add('inspect-fetch-failed', item.url, `page fetch: ${safeText(item.page_fetch, 60)}`);
     if (item.verdict === 'on-google') {
       const rule = EXPECTED_RICH_RESULTS.find((r) => new RegExp(r.match).test(p));
       const missing = rule ? rule.require.filter((group) => !group.some((t) => has(item.rich_results, t))) : [];
@@ -472,8 +529,16 @@ function enhancementChecks({ reports, okRep, add }) {
   const items = en.items;
   for (const item of items) {
     if (!has(ENHANCEMENT_TYPES, item.type)) add('enhancement-type-unknown', item.type, 'an enhancement type this skill has not seen');
-    if (item.invalid > 0) add('enhancement-invalid', item.type, `${item.invalid} invalid item(s)`);
-    if (item.warning > 0) add('enhancement-warning', item.type, `${item.warning} item(s) with warnings`);
+    // Without `issues` the details are exactly what they were before issue labels were captured.
+    const labels = (level) => {
+      const rows = (item.issues ?? []).filter((i) => i.level === level).sort((a, b) => b.items - a.items);
+      return rows.length ? `: ${rows.map((i) => `"${safeText(i.label, 120)}" (${i.items})`).join(', ')}` : '';
+    };
+    if (item.invalid > 0) add('enhancement-invalid', item.type, `${item.invalid} invalid item(s)${labels('error')}`);
+    const warningIssue = (item.issues ?? []).some((i) => i.level === 'warning');
+    if (item.warning > 0 || (item.warning === null && warningIssue)) {
+      add('enhancement-warning', item.type, `${item.warning ?? 'unknown'} item(s) with warnings${labels('warning')}`);
+    }
   }
   const types = items.map((i) => i.type);
   if (has(types, 'Product snippets') && has(types, 'Merchant listings')) {
@@ -487,6 +552,11 @@ function enhancementChecks({ reports, okRep, add }) {
       if (!has(types, t)) add('enhancement-absent', t, 'absent while a product URL inspects as indexed');
     }
   }
+}
+
+function videoChecks({ okRep, add }) {
+  const v = okRep('videos');
+  if (v && v.not_indexed > 0) add('videos-not-indexed', 'videos-not-indexed', `${v.not_indexed} video(s) not indexed, ${v.indexed} indexed`);
 }
 
 function safetyChecks({ okRep, add }) {
@@ -546,10 +616,16 @@ function performanceChecks({ okRep, add, age, live, opts }) {
 
   if (live.urls && !perf.pages.truncated) {
     const seen = new Set(perf.pages.rows.map((r) => pathOf(r.url)));
-    const late = age !== null && age >= PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS;
-    for (const u of live.urls) {
-      const p = pathOf(u);
-      if (!seen.has(p) && !isNoindexOk(p)) add('perf-page-no-impressions', u, `in the live sitemap, absent from the PAGES tab for ${perf.period}`, late ? WARN : INFO);
+    const absent = live.urls.filter((u) => !seen.has(pathOf(u)) && !isNoindexOk(pathOf(u)));
+    if (total < NOISE_FLOOR_IMPRESSIONS) {
+      // Below the floor a missing page says nothing about that page: one finding for the lot.
+      if (absent.length) {
+        add('perf-impressions-below-floor', 'perf-impressions-below-floor',
+          `${absent.length} indexable sitemap page(s) absent from the PAGES tab for ${perf.period}; too little data (${total} impressions, NOISE_FLOOR_IMPRESSIONS ${NOISE_FLOOR_IMPRESSIONS})`);
+      }
+    } else {
+      const late = age !== null && age >= PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS;
+      for (const u of absent) add('perf-page-no-impressions', u, `in the live sitemap, absent from the PAGES tab for ${perf.period}`, late ? WARN : INFO);
     }
   }
 }
@@ -604,8 +680,12 @@ function discoveryChecks({ okRep, add, now }) {
   for (const label of disc.reason_labels) {
     if (!reasonSlugFor(label)) add('index-reason-unknown', label, 'a reason label this skill has not seen');
   }
+  for (const miss of disc.anchor_misses ?? []) {
+    // The Overview's view path is the empty string; a subject is never empty.
+    add('anchor-missed', miss.view === null ? 'bell' : miss.view || 'overview',`wait_for timed out on: ${miss.anchors.map((a) => `"${safeText(a, 80)}"`).join(', ')}; update browser.md`);
+  }
   for (const u of disc.unknown) {
-    add('surface-new', `${u.kind}:${u.label}`, `recorded for review: ${u.note}`);
+    add('surface-new', `${u.kind}:${u.label}`, `recorded for review: ${safeText(u.note, 200)}`);
   }
 }
 
@@ -644,6 +724,7 @@ export function evaluateCapture(capture, opts = {}) {
   inspectionChecks(ctx);
   experienceChecks(ctx);
   enhancementChecks(ctx);
+  videoChecks(ctx);
   safetyChecks(ctx);
   linkChecks(ctx);
   performanceChecks(ctx);

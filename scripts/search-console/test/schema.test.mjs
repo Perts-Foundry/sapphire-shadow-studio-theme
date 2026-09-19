@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   validateCapture, propertyHost, onPropertyHost, isSensitivePath, REPORTS, REQUIRED_REPORTS_BY_MODE,
   EXPECTED_REPORTS_BY_MODE, KNOWN_REASONS, REASON_LABELS,
 } from '../lib/schema.mjs';
 import { normaliseCapture } from '../lib/normalise.mjs';
-import { baseCapture, readFixture, ORIGIN, notReady } from './harness.mjs';
+import { baseCapture, readFixture, ORIGIN, notReady, FIXTURES } from './harness.mjs';
 
 const errorsOf = (capture) => validateCapture(capture).errors;
 
@@ -207,4 +208,87 @@ test('a capture that is not an object, a bad property and a non-object reports a
   assert.deepEqual(validateCapture(null).errors.map((e) => e.path), ['']);
   expectError((c) => { c.property = 'not a property'; }, /^\/property$/);
   expectError((c) => { c.reports = []; }, /^\/reports$/, /expected an object/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fields added after the run of 2026-09-18.
+
+const ENH = /^\/reports\/enhancements\/items\/0/;
+const issue = (over = {}) => ({ label: "Missing field 'name'", items: 1, level: 'warning', ...over });
+
+test('enhancement issues: level enum, the 20-row cap, and items against valid plus invalid', () => {
+  expectError((c, r) => { r.enhancements.items[0].issues = [issue({ level: 'critical' })]; }, /issues\/0\/level$/, /expected one of/);
+  const withIssues = (n) => {
+    const c = baseCapture();
+    c.reports.enhancements.items[0].issues = Array.from({ length: n }, (_, i) => issue({ label: `Issue ${i}` }));
+    return errorsOf(c);
+  };
+  assert.deepEqual(withIssues(20), []);
+  assert.ok(withIssues(21).some((e) => /\/issues$/.test(e.path) && /longer than 20/.test(e.message)));
+  const atCap = baseCapture();
+  const item = atCap.reports.enhancements.items[0];
+  item.invalid = 1;
+  item.issues = [issue({ items: item.valid + item.invalid })];
+  assert.deepEqual(errorsOf(atCap), []);
+  expectError((c, r) => {
+    const it = r.enhancements.items[0];
+    it.issues = [issue({ items: it.valid + it.invalid + 1 })];
+  }, /issues\/0\/items$/, /exceed valid plus invalid/);
+});
+
+test('enhancement warning: null is accepted, above valid is rejected', () => {
+  const c = baseCapture();
+  c.reports.enhancements.items[0].warning = null;
+  assert.deepEqual(errorsOf(c), []);
+  expectError((c2, r) => { r.enhancements.items[0].warning = r.enhancements.items[0].valid + 1; }, new RegExp(`${ENH.source}/warning$`), /exceeds valid/);
+});
+
+const alert = (over = {}) => ({ subject: 'New reasons prevent pages from being indexed', examples: [], ...over });
+
+test('message alerts: empty examples accepted; count, report status and URL shape enforced', () => {
+  const c = baseCapture();
+  c.reports.messages.alerts = [alert()];
+  assert.deepEqual(errorsOf(c), []);
+  expectError((c2, r) => { r.messages.alerts = [alert(), alert()]; }, /^\/reports\/messages\/alerts$/, /more alerts than messages/);
+  expectError((c2, r) => { r.messages = { ...notReady('messages', 'not-present'), alerts: [alert()] }; }, /^\/reports\/messages\/alerts$/, /carries no data fields/);
+  expectError((c2, r) => { r.messages.alerts = [alert({ examples: [`${ORIGIN}/pages/faq?x=1`] })]; }, /alerts\/0\/examples\/0$/, /query string/);
+  expectError((c2, r) => { r.messages.alerts = [alert({ examples: ['https://other-shop.example/pages/faq'] })]; }, /alerts\/0\/examples\/0$/, /not on the property host/);
+});
+
+test('anchor misses: caps on entries and anchors; a null view is the bell', () => {
+  const miss = (anchors = ['Last update:'], view = 'index') => ({ view, anchors });
+  const c = baseCapture();
+  c.reports.discovery.anchor_misses = [miss(['Messages'], null)];
+  assert.deepEqual(errorsOf(c), []);
+  expectError((c2, r) => { r.discovery.anchor_misses = Array.from({ length: 31 }, () => miss()); }, /\/anchor_misses$/, /longer than 30/);
+  expectError((c2, r) => { r.discovery.anchor_misses = [miss(Array.from({ length: 11 }, (_, i) => `a${i}`))]; }, /\/anchor_misses\/0\/anchors$/, /longer than 10/);
+});
+
+test('videos: counts are non-negative; not-ready carries none; insights may carry one', () => {
+  expectError((c, r) => { r.videos.not_indexed = -1; }, /^\/reports\/videos\/not_indexed$/, /non-negative integer/);
+  const c = baseCapture();
+  c.reports.videos = notReady('videos');
+  assert.deepEqual(errorsOf(c), []);
+  assert.ok(EXPECTED_REPORTS_BY_MODE.audit.includes('videos'));
+  assert.ok(!EXPECTED_REPORTS_BY_MODE.insights.includes('videos'));
+  const { capture: insights } = normaliseCapture(readFixture('capture-insights.json'));
+  insights.reports.videos = { ...notReady('videos', 'ok'), indexed: 0, not_indexed: 0 };
+  assert.deepEqual(errorsOf(insights), []);
+});
+
+test('a template placeholder or a ?-suffixed key is refused at its pointer', () => {
+  expectError((c, r) => { r.links['top_linking_sites?'] = 1; }, /^\/reports\/links\/top_linking_sites\?$/, /`\?` suffix/);
+  expectError((c, r) => { r.settings.method = '<int>'; }, /^\/reports\/settings\/method$/, /placeholder left unfilled/);
+  const angled = baseCapture();
+  angled.reports.settings.method = 'Domain name provider <DNS>';
+  assert.deepEqual(errorsOf(angled), [], 'only a whole-value placeholder is refused');
+});
+
+test('every committed fixture except capture-invalid still validates', () => {
+  const names = fs.readdirSync(FIXTURES).filter((f) => /^capture-.*\.json$/.test(f) && f !== 'capture-invalid.json');
+  assert.ok(names.includes('capture-run2.json'));
+  for (const name of names) {
+    const { capture, errors } = normaliseCapture(readFixture(name));
+    assert.deepEqual([...errors, ...errorsOf(capture)], [], name);
+  }
 });

@@ -72,6 +72,7 @@
       ]
     },
     "indexing-pages": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "indexing-pages", "status": "not-ready" },
+    "videos": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "videos", "status": "not-ready" },
     "inspections": { "captured_at": "2026-09-13T15:00:00-05:00", "report": "inspections", "status": "not-ready" },
     "cwv": {
       "captured_at": "2026-09-13T15:00:00-05:00",

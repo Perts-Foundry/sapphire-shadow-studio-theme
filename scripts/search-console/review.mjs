@@ -20,6 +20,7 @@
 //   node scripts/search-console/review.mjs <capture.json> [--full] [--no-save] [--json]
 //        [--offline] [--sitemap-count N] [--now <iso>]
 //   node scripts/search-console/review.mjs --print-state-dir
+//   node scripts/search-console/review.mjs --template <audit|insights>
 //
 // EXIT: 0 no fresh ERROR (WARN, INFO and accepted ERRORs do not block); 1 a fresh ERROR, or a
 // capture that is not JSON or fails the schema; 2 usage error, unreadable file, or a state dir
@@ -31,20 +32,25 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normaliseCapture } from './lib/normalise.mjs';
 import { validateCapture } from './lib/schema.mjs';
-import { evaluateCapture, invalidFindings, PROPERTY_HOST } from './lib/checks.mjs';
+import { evaluateCapture, invalidFindings, secondaryDomainsFor, PROPERTY_HOST } from './lib/checks.mjs';
 import { liveSitemapUrls, probeRedirect } from './lib/sitemap.mjs';
-import { stateDir, repoRoots, assertOutsideRepo, loadLatestComparable } from './lib/baseline.mjs';
+import { stateDir, repoRoots, assertOutsideRepo, loadLatestComparable, MODES } from './lib/baseline.mjs';
 import { finishRun, loadAcceptedRisks } from './lib/report.mjs';
+import { buildTemplate } from './lib/template.mjs';
 import { displayPath } from '../lib/display-path.mjs';
 
 const USAGE = `usage:
   node scripts/search-console/review.mjs <capture.json> [--full] [--no-save] [--json] [--offline] [--sitemap-count N] [--now <iso>]
-  node scripts/search-console/review.mjs --print-state-dir`;
+  node scripts/search-console/review.mjs --print-state-dir
+  node scripts/search-console/review.mjs --template <${MODES.join('|')}>`;
 
 class UsageError extends Error {}
 
 export function parseArgs(argv) {
-  const out = { capture: null, full: false, noSave: false, json: false, offline: false, sitemapCount: null, now: null, printStateDir: false };
+  const out = {
+    capture: null, full: false, noSave: false, json: false, offline: false, sitemapCount: null, now: null, printStateDir: false,
+    template: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => {
@@ -58,6 +64,12 @@ export function parseArgs(argv) {
       case '--json': out.json = true; break;
       case '--offline': out.offline = true; break;
       case '--print-state-dir': out.printStateDir = true; break;
+      case '--template': {
+        const v = value();
+        if (!MODES.includes(v)) throw new UsageError(`--template expects one of: ${MODES.join(', ')}`);
+        out.template = v;
+        break;
+      }
       case '--sitemap-count': {
         const v = value();
         if (!/^\d+$/.test(v)) throw new UsageError('--sitemap-count expects a non-negative integer');
@@ -76,7 +88,10 @@ export function parseArgs(argv) {
         out.capture = a;
     }
   }
-  if (!out.printStateDir && out.capture === null) throw new UsageError('a capture file is required');
+  if (out.template !== null && (out.capture !== null || out.printStateDir)) {
+    throw new UsageError('--template takes no capture file and no --print-state-dir');
+  }
+  if (!out.printStateDir && out.template === null && out.capture === null) throw new UsageError('a capture file is required');
   return out;
 }
 
@@ -100,6 +115,13 @@ export async function run(argv, {
     err(`search-console: ${e.message}`);
     err(USAGE);
     return 2;
+  }
+
+  // The skeleton reads no state and writes nothing, so it needs no state dir; this branch sits
+  // above the state-dir check and never replaces it.
+  if (args.template) {
+    out(JSON.stringify(buildTemplate(args.template), null, 2));
+    return 0;
   }
 
   const home = env.HOME?.trim() || os.homedir();
@@ -169,9 +191,8 @@ export async function run(argv, {
   }
 
   const redirectProbes = {};
-  const settings = capture.reports.settings;
-  if (!args.offline && settings?.status === 'ok') {
-    for (const host of settings.secondary_domains ?? []) redirectProbes[host] = await probeRedirect(host, { fetchImpl });
+  if (!args.offline && capture.reports.settings?.status === 'ok') {
+    for (const host of secondaryDomainsFor(capture)) redirectProbes[host] = await probeRedirect(host, { fetchImpl });
   }
 
   const previousPeriod = loadLatestComparable(dir, capture.mode, 'performance')?.period ?? null;

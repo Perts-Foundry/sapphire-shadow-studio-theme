@@ -14,6 +14,7 @@ Read-only. It never opens a browser, never writes a capture, and never writes in
 ```
 node scripts/search-console/review.mjs <capture.json> [--full] [--no-save] [--json] [--offline] [--sitemap-count N] [--now <iso>]
 node scripts/search-console/review.mjs --print-state-dir
+node scripts/search-console/review.mjs --template <audit|insights>
 npm run search-console:test
 ```
 
@@ -26,6 +27,7 @@ npm run search-console:test
 | `--sitemap-count N` | use N as the live sitemap count instead of fetching it (per-URL checks skip) |
 | `--now <iso>` | evaluate as of that time (tests, reproducing an old run) |
 | `--print-state-dir` | print the resolved state dir (`~` for home) and exit |
+| `--template <mode>` | print a capture skeleton for `audit` or `insights` and exit: every report the mode expects, every field as a `<kind>` placeholder, optional keys with a `?` suffix, and a generated nonce; reads no state dir and writes nothing; takes no capture file |
 
 Exit: `0` when there is no fresh ERROR (WARN, INFO and accepted ERRORs do not block); `1` for a
 fresh ERROR, or a capture that is not JSON or fails the schema (nothing evaluated or saved, and
@@ -45,6 +47,7 @@ Order: read, parse, `normaliseCapture` (converts "3.2%", "1,234", "<0.1%", reaso
 | `lib/normalise.mjs` | page text to schema values; idempotent; runs before validation |
 | `lib/checks.mjs` | every check id, its severity, subject kind and report, every threshold constant, `evaluateCapture` |
 | `lib/known-surfaces.mjs` | `KNOWN_SURFACES`, the Search Console vocabulary already met |
+| `lib/template.mjs` | the `--template` skeleton, rendered from the same `REPORT_FIELDS` the validator uses |
 | `lib/sitemap.mjs` | anonymous node fetch of the live sitemap; the unfollowed redirect probe |
 | `lib/baseline.mjs` | state dir, the inside-the-repo refusal, run files, comparable-run lookup |
 | `lib/report.mjs` | accepted risks, per-report diffs, metric deltas, printing, exit code |
@@ -68,26 +71,30 @@ finding, not a rejection, so a run the Login STOP cut short still saves.
 
 | Report | Fields when `ok` |
 |---|---|
-| `settings` | `property_type` (`domain` or `url-prefix`), `verified`, `method`, `owners`, `users`, `unused_tokens`, `ownership_events`, `change_of_address_set`, `bulk_export_configured`, `ai_control` (`include` or `exclude`), `email_notifications`, optional `secondary_domains` (hosts) |
+| `settings` | `property_type` (`domain` or `url-prefix`), `verified`, `method`, `owners`, `users`, `unused_tokens`, `ownership_events`, `change_of_address_set`, `bulk_export_configured`, `ai_control` (`include` or `exclude`), `email_notifications`, optional `secondary_domains` (hosts; the skill no longer transcribes it, since `SECONDARY_DOMAINS` is probed every run) |
 | `associations` | `services` (`analytics`, `merchant-center`, `youtube`, `ads`, or `other:<text>`), `pending` |
 | `crawl-stats` | `robots_state` (`not-seen`, `fetched`, `error`), `host_status` (`ok`, `issues`, `no-data`), `requests`, `share_5xx`, `share_4xx` (each nullable) |
 | `removals` | `temporary_active`, `outdated_active`, `safesearch_active`, optional `temporary_urls` |
-| `messages` | `unread`, `total`, `subjects` (each at most 120 characters) |
+| `messages` | `unread`, `total`, `subjects` (each at most 120 characters), optional `alerts[]` (at most 10, never more than `total`) of `{ subject, examples, reason_label? }`, where `examples` is at most 5 page URLs and may be empty |
 | `sitemaps` | `rows[]`: `path`, `type`, `status` (`Success`, `Couldn't fetch`, `Has errors`, `Pending`), `discovered_pages`, `discovered_videos`, `submitted`, `last_read` |
 | `indexing-pages` | `indexed`, `not_indexed`, `reasons[]`: `reason` (slug), optional `label`, `source`, `count`, `examples` (at most 5 URLs) |
+| `videos` | `indexed`, `not_indexed` |
 | `inspections` | `items[]` (at most 8): `url`, `verdict` (`on-google`, `not-on-google`), `indexed`, `user_canonical`, `google_canonical`, `last_crawl`, `crawled_as`, `crawl_allowed`, `page_fetch`, `indexing_allowed`, `discovery`, `videos`, `sections`, `rich_results` |
 | `cwv` | `mobile`, `desktop`: each `{ good, needs_improvement, poor }` or `"no-data"` |
 | `https` | `https_urls`, `non_https_urls` |
-| `enhancements` | `items[]`: `type`, `valid`, `invalid`, `warning` |
+| `enhancements` | `items[]`: `type`, `valid`, `invalid` (the two partition the items), `warning` (the report's own "with warnings" figure, a subset of `valid`, or `null` when the report shows none; never derived), optional `issues[]` (at most 20) of `{ label, items, level }` with `level` `warning` or `error` |
 | `security-manual` | `manual_actions`, `security_issues` (`none` or `present`), `text` |
 | `links` | `top_linking_sites`, `top_linked_pages[]` and `internal_top[]` of `{ url, links }` |
 | `performance` | `period` (`24h` to `16mo`), `data_freshness`, `search_type`, `totals`, `queries`, `pages`, `countries` (each `{ rows[], truncated }`), `devices` (`desktop`, `mobile`, `tablet`), optional `search_appearance` and `days` |
-| `discovery` | `nav[]` of `{ label, path }`, `settings_rows`, `user_settings_rows`, `performance_tabs`, `performance_controls`, `removals_tabs`, `inspection_sections`, `enhancement_types`, `reason_labels`, `unknown[]` of `{ kind, label, path, note }` |
+| `discovery` | `nav[]` of `{ label, path }`, `settings_rows`, `user_settings_rows`, `performance_tabs`, `performance_controls`, `removals_tabs`, `inspection_sections`, `enhancement_types`, `reason_labels`, `unknown[]` of `{ kind, label, path, note }`, optional `anchor_misses[]` (at most 30) of `{ view, anchors }`, `view` null for the Messages bell, at most 10 anchors |
 
 Rules: unknown keys are rejected at every depth; integers are non-negative; rates are 0 to 1;
 positions are 1 to 100, or 0 only with zero impressions; clicks never exceed impressions; a ctr
 agrees with clicks over impressions within 0.005; reason counts sum to `not_indexed`; device and
-country impressions never exceed the total; `owners` never exceeds `users`. Every page URL is on the
+country impressions never exceed the total; `owners` never exceeds `users`; an enhancement's
+`warning` never exceeds its `valid` and an issue's `items` never exceeds `valid + invalid`. A key
+ending in `?` or a string value that is a whole `<...>` placeholder is a `--template` skeleton left
+unfilled, and is refused at its pointer. Every page URL is on the
 property host with no query string or fragment, never on a `checkouts`, `account`, `orders` or
 `cart/c` route (whole segments, anywhere in the path, any case), and never with a token-shaped
 segment: 20 or more unbroken letters, digits or underscores including a digit or a capital, or a
@@ -121,7 +128,7 @@ findings are keyed by page, never by query.
 | `bulk-export-configured` | INFO | singleton | needs a Cloud project the operator declined |
 | `ai-control-exclude` | WARN | singleton | removes the store from AI Overviews and AI Mode |
 | `email-notifications-off` | WARN | singleton | critical issues would arrive unseen |
-| `secondary-domain-redirect` | WARN, INFO when a permanent redirect to the canonical host | host | a second brand domain must redirect, not serve |
+| `secondary-domain-redirect` | WARN, INFO when a permanent redirect to the canonical host | host | a second brand domain must redirect, not serve; every host in `SECONDARY_DOMAINS` (["sapphireshadowstudio.us"]) plus any the capture lists |
 | `robots-not-seen` | WARN, INFO within `ROBOTS_GRACE_DAYS` (7) days | singleton | Search Console has not fetched robots.txt |
 | `robots-fetch-error` | WARN | singleton | robots.txt fetch failed |
 | `crawl-host-issues` | WARN | singleton | Crawl stats host status reports issues |
@@ -132,6 +139,7 @@ findings are keyed by page, never by query.
 | `removal-active` | ERROR for a live sitemap URL, else WARN | page-or-singleton | a temporary removal hides a page from Google |
 | `removal-other-active` | INFO | singleton | outdated-content or SafeSearch requests |
 | `messages-unread` | INFO | singleton | unread Search Console messages |
+| `messages-alert-examples` | INFO | label | one per opened indexing alert: the page paths and reason label it names; a reason with no examples of its own gains a count of these in its detail |
 | `sitemap-missing` | ERROR | singleton | `/sitemap.xml` is not submitted |
 | `sitemap-error` | ERROR | page | a submitted sitemap cannot be fetched or has errors |
 | `sitemap-pending` | INFO | page | submitted, not yet read |
@@ -154,6 +162,7 @@ findings are keyed by page, never by query.
 | `index-reason-forbidden` | WARN | page-or-reason | 403 on crawl |
 | `index-reason-other-4xx` | WARN | page-or-reason | another 4xx on crawl |
 | `index-reason-unknown` | INFO | label | a reason label not yet in `KNOWN_REASONS` |
+| `videos-not-indexed` | INFO | singleton | videos Google found and did not index |
 | `inspect-not-indexed` | WARN | page | a spot-checked URL is not on Google |
 | `inspect-canonical-mismatch` | WARN | page | user and Google canonicals differ |
 | `inspect-stale-crawl` | INFO | page | last crawl more than `STALE_CRAWL_DAYS` (30) days ago |
@@ -166,8 +175,8 @@ findings are keyed by page, never by query.
 | `cwv-no-data` | INFO | device | not enough usage data, expected on a small site |
 | `https-non-https` | ERROR | singleton | URLs not served over HTTPS |
 | `https-no-data` | INFO | singleton | the HTTPS report has no data yet |
-| `enhancement-invalid` | ERROR | enhancement-type | invalid rich-result items |
-| `enhancement-warning` | WARN | enhancement-type | rich-result items with warnings |
+| `enhancement-invalid` | ERROR | enhancement-type | invalid rich-result items; the detail lists the error-level issue labels when captured |
+| `enhancement-warning` | WARN | enhancement-type | rich-result items with warnings; the detail lists the warning-level issue labels, most items first, and says `unknown` when the report showed no warning figure |
 | `enhancement-absent` | INFO | enhancement-type | Product snippets or Breadcrumbs absent while a product is indexed; judged only once the Enhancements report exists |
 | `enhancement-product-duplicate-evidence` | INFO | singleton | evidence for the Judge.me Product JSON-LD owner decision |
 | `enhancement-type-unknown` | INFO | enhancement-type | an enhancement type not yet known |
@@ -175,7 +184,8 @@ findings are keyed by page, never by query.
 | `security-issue` | ERROR | singleton | a security issue is listed |
 | `perf-zero-impressions` | INFO | singleton | no impressions in the period |
 | `perf-brand-only` | WARN, INFO before `BRAND_ONLY_MIN_AGE_DAYS` (60) days | singleton | every captured query is a brand query |
-| `perf-page-no-impressions` | WARN, INFO before `PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS` (28) days | page | an indexable sitemap page with no impressions |
+| `perf-page-no-impressions` | WARN, INFO before `PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS` (28) days | page | an indexable sitemap page with no impressions, at or above `NOISE_FLOOR_IMPRESSIONS` (50) total |
+| `perf-impressions-below-floor` | INFO | singleton | below `NOISE_FLOOR_IMPRESSIONS` (50) total impressions: one finding counting the sitemap pages absent from the PAGES tab, in place of the per-page findings |
 | `perf-low-ctr` | WARN | page | at least `CTR_MIN_IMPRESSIONS` (100) impressions, ctr under `CTR_MIN` (0.02), position at or better than `CTR_MAX_POSITION` (10) |
 | `perf-position-opportunity` | INFO | page | position inside `OPPORTUNITY_POSITIONS` ([4, 15]) with at least `OPPORTUNITY_MIN_IMPRESSIONS` (20) impressions |
 | `perf-country-outside-us` | INFO | singleton | more than `COUNTRY_OUTSIDE_US_SHARE` (0.1) of impressions outside the US |
@@ -185,8 +195,11 @@ findings are keyed by page, never by query.
 | `surface-new` | INFO | label | a Search Console item not in `KNOWN_SURFACES` |
 | `surface-gone` | INFO | label | a known item is missing; renamed or removed |
 | `discovery-review-due` | INFO | singleton | `KNOWN_SURFACES_REVIEWED_ON` older than `DISCOVERY_REVIEW_DAYS` (90) days |
+| `anchor-missed` | INFO | label | a `wait_for` in the browser pass timed out; the subject is the view (`bell` for the Messages bell), the detail the anchors, and the fix is `browser.md` |
 
 Brand-only and the country share also need at least `NOISE_FLOOR_IMPRESSIONS` (50) impressions.
+Browser-pass caps, quoted in the skill: `DRILLDOWN_ROWS_MAX` (14) Page indexing reason rows opened
+per run, and `ALERT_MESSAGES_MAX` (5) indexing alert messages opened per run.
 `NOINDEX_OK` is `/blogs/shift-notes`, `/cart`, `/search`, and everything under `/policies/`,
 `/account` and `/checkouts/`.
 
@@ -198,9 +211,16 @@ checkout (lexically, through a symlink either way, or by its nearest existing an
 with exit 2.
 
 Each valid run writes `<mode>-<ISO stamp>-<NN>.json` holding `generated`, `mode`,
-`capture_basename`, `report_status` (per report), `metrics` (clicks, impressions, indexed,
-not_indexed, discovered), `period`, `meta` (nonce, captured_at, sitemap state), `findings` (fresh)
-and `accepted`. An all-not-ready run is saved too, so the history shows when each report came alive.
+`capture_basename`, `report_status` (per report), `metrics`, `period`, `meta` (nonce, captured_at,
+sitemap state), `findings` (fresh) and `accepted`. An all-not-ready run is saved too, so the history
+shows when each report came alive.
+
+Metrics, each null when its report is not `ok`: clicks, impressions, indexed, not_indexed,
+discovered, unread, enhancement_warning (the sum of the non-null `warning` figures; null when every
+one is null), enhancement_invalid, videos_indexed, videos_not_indexed. A metric the previous run
+did not record prints `(not compared)`. The skill's own message opens mark messages read, so
+`unread` falls on the next run by up to the number it opened; read a drop there as that, not as the
+operator reading them.
 
 Each report is diffed only against the newest run of the same mode in which that report was `ok`;
 a report that is not `ok` now is listed as not compared, never as resolved. Performance is compared

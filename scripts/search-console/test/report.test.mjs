@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { finishRun, acceptedRiskProblems } from '../lib/report.mjs';
 import { evaluateCapture } from '../lib/checks.mjs';
-import { loadLatest } from '../lib/baseline.mjs';
+import { loadLatest, saveRun } from '../lib/baseline.mjs';
 import { baseCapture, healthyOpts, readFixture, notReady, NOW, PREINDEX_NOW, ORIGIN } from './harness.mjs';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'search-console-report-'));
@@ -149,6 +149,52 @@ test('a period mismatch leaves performance and its metrics uncompared', () => {
   assert.ok(!out.resolved.some((f) => f.check === 'perf-position-opportunity'), 'a different period is not a resolution');
   assert.equal(out.metrics.delta.impressions, null);
   assert.equal(out.metrics.delta.indexed, 0, 'other metrics still compare');
+});
+
+test('METRICS prints the keys added after 2026-09-18; against an older baseline they are not compared', () => {
+  const dir = freshDir();
+  const capture = baseCapture();
+  // A baseline written before the new keys existed: every report ok, only the original metrics.
+  const reportStatus = Object.fromEntries(Object.keys(capture.reports).map((id) => [id, 'ok']));
+  saveRun(dir, {
+    mode: 'audit', now: new Date(NOW.getTime() - 60_000), reportStatus, period: '28d', findings: [],
+    metrics: { clicks: 40, impressions: 2000, indexed: 16, not_indexed: 1, discovered: 17 },
+  });
+  const r = finish(evaluateCapture(capture, healthyOpts()), capture, { dir });
+  for (const key of ['unread', 'enhancement_warning', 'enhancement_invalid', 'videos_indexed', 'videos_not_indexed']) {
+    assert.match(r.text, new RegExp(`^  ${key}: \\d+ \\(not compared\\)$`, 'm'), key);
+  }
+  assert.match(r.text, /^ {2}impressions: 2000 \(\+0\)$/m);
+});
+
+test('enhancement_warning sums only the figures the report showed; a report not ok is n/a', () => {
+  const metricsOf = (mutate) => {
+    const c = baseCapture();
+    mutate(c.reports);
+    return jsonOf(finish(evaluateCapture(c, healthyOpts()), c, { dir: freshDir(), json: true })).metrics.current;
+  };
+  assert.equal(metricsOf((r) => { r.enhancements.items[0].warning = 2; r.enhancements.items[1].warning = 3; }).enhancement_warning, 5);
+  assert.equal(metricsOf((r) => { r.enhancements.items[0].warning = 2; r.enhancements.items[1].warning = null; }).enhancement_warning, 2);
+  assert.equal(metricsOf((r) => { for (const i of r.enhancements.items) i.warning = null; }).enhancement_warning, null);
+  assert.equal(metricsOf((r) => { r.enhancements.items[0].invalid = 1; }).enhancement_invalid, 1);
+  const m = metricsOf((r) => { r.videos = notReady('videos'); r.messages.unread = 1; });
+  assert.equal(m.videos_indexed, null);
+  assert.equal(m.unread, 1);
+  const c = baseCapture();
+  c.reports.videos = notReady('videos');
+  assert.match(finish(evaluateCapture(c, healthyOpts()), c, { dir: freshDir() }).text, /^ {2}videos_indexed: n\/a$/m);
+});
+
+test('a finding whose detail changed between runs is unchanged, not new', () => {
+  const dir = freshDir();
+  const a = baseCapture();
+  a.reports.enhancements.items[0].warning = 2;
+  finish(evaluateCapture(a, healthyOpts()), a, { dir });
+  const b = baseCapture();
+  Object.assign(b.reports.enhancements.items[0], { warning: 2, issues: [{ label: "Missing field 'review'", items: 2, level: 'warning' }] });
+  const out = jsonOf(finish(evaluateCapture(b, healthyOpts()), b, { dir, json: true, now: later(1) }));
+  assert.ok(!out.added.some((f) => f.check === 'enhancement-warning'));
+  assert.ok(out.unchanged.some((f) => f.check === 'enhancement-warning'));
 });
 
 test('--json emits exactly the documented shape', () => {
