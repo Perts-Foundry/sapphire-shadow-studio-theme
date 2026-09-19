@@ -1,5 +1,64 @@
 # Release Notes
 
+## Search Console skill: what the second full pass could not capture (unreleased, 2026-09-18)
+
+The first full `/search-console` browser pass against a property with data succeeded, but it could
+not record several things it could see, spent two 30-second waits on anchors that never render,
+and flagged six ordinary reports as discoveries. This change closes those gaps. Everything below is
+in `.claude/skills/search-console/` and `scripts/search-console/`.
+
+**Why two waits timed out.** The Page indexing heading renders `Why pages aren’t indexed` with a
+curly apostrophe (U+2019), and `browser.md` anchored on the straight-quote form, so `wait_for`
+never matched. On the Overview, `Unread messages` is the bell's accessible name, not rendered text.
+Neither is an anchor now, and a timed-out `wait_for` is no longer silent: the capture records it in
+`discovery.anchor_misses[]` and `review.mjs` reports it as `anchor-missed`, so the next wrong
+anchor gets fixed in `browser.md` instead of costing the same wait every run.
+
+**The Performance tab is read by URL, not by clicking column toggles.** CTR and Position are hidden
+by default and their toggles were never allowlisted. The run found that the `breakdown=` and
+`metrics=` URL parameters select the tab and reveal all four columns by plain navigation, so
+`browser.md` navigates once per tab and the toggles stay off the allowlist, with no click fallback.
+
+**Two new clicks, one of them with a side effect the STOP now names.** Every noindex and
+robots.txt finding read "no examples captured" forever because no allowlisted click reached the
+examples. The reason rows on Page indexing are now clickable (at most `DRILLDOWN_ROWS_MAX` per run),
+and the drilldown's Examples table fills `examples`. Indexing alert messages, which almost certainly
+name the pages behind those counts, may now be opened (at most `ALERT_MESSAGES_MAX` per run).
+Opening one marks it read and the skill cannot undo that, so the Preflight STOP says so and consent
+covers it; `messages.unread` is transcribed before any message is opened, and the skill's own opens
+lower the next run's `unread`. What an alert names is its own finding, and counts onto the matching
+reason when that reason has no examples of its own.
+
+**Six expected surfaces stopped being discoveries.** `KNOWN_SURFACES` was seeded before the property
+had data, so Videos, the Shopping heading and the four rich-result reports all fired `surface-new`.
+They are known now, each with `conditional: true`: rich-result reports come and go with data, so a
+report Google removes is deliberately never reported as `surface-gone`. Videos is also a report of
+its own (`videos`, surface 25).
+
+**Enhancement issue labels are data, and `warning` may be null.** The missing-field warnings were
+visible on each report page but the schema held only counts, so they survived only in prose. Each
+item now carries `issues[]`, and the warning and invalid findings quote the labels. `warning` is
+the report's own "with warnings" figure or `null` when the page shows none; it is never derived
+from the issue rows, because an item can carry several issues and the sum would overcount.
+
+**A skeleton instead of mid-pass code reads.** The pass read the schema seven times to learn field
+shapes, and once copied values from the previous capture. `review.mjs --template <mode>` now prints
+every field of every expected report as a `<kind>` placeholder rendered from the validator's own
+combinators, with optional keys `?`-suffixed and a generated nonce; the validator refuses a leftover
+placeholder or `?` key, so a half-filled skeleton cannot evaluate as a clean run. Preflight now
+reads all four docs before the STOP (the STOP gates the browser, not the files), and a prior capture
+may supply `property_added` and nothing else.
+
+**Smaller fixes.** The second brand domain is a constant (`SECONDARY_DOMAINS`), probed every run,
+instead of a field transcribed every run. Below the impressions noise floor the per-page
+no-impressions findings collapse into one `perf-impressions-below-floor`, because on a six-day
+property with single-digit impressions eight "new" per-page findings said nothing about any page.
+Unread messages, enhancement warning and invalid counts, and video counts gained metric deltas. An
+unreachable MCP server at Preflight now has a recovery path (`/mcp`, then `retry`), which re-runs
+that one check and never answers the STOP. And the report gains `## Recommended next` and
+`## Leave alone`, so the ranked take the operator had to ask for is part of every report, with
+`insights.md` holding it to hypotheses, repo-or-Admin owners and no live-write commands.
+
 ## Notification emails link YouTube and Pinterest (unreleased, 2026-09-15)
 
 The notification footer partial, `marketing/notifications/lib/footer-social.html`, is the last

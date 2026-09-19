@@ -16,7 +16,7 @@
 
 export const REPORTS = Object.freeze([
   'settings', 'associations', 'crawl-stats', 'removals', 'messages', 'sitemaps',
-  'indexing-pages', 'inspections', 'cwv', 'https', 'enhancements', 'security-manual', 'links',
+  'indexing-pages', 'videos', 'inspections', 'cwv', 'https', 'enhancements', 'security-manual', 'links',
   'performance', 'discovery',
 ]);
 
@@ -159,59 +159,69 @@ export function isSensitivePath(pathname) {
 
 // ---------------------------------------------------------------------------------------------
 // Validator combinators. Each is (value, pointer, ctx) and pushes { path, message } on failure.
+//
+// Each also describes itself, so `lib/template.mjs` can print a capture skeleton from
+// REPORT_FIELDS instead of the transcriber reading this file mid-pass: `type` is the machine tag,
+// `kind` the human text a placeholder shows, and the structural combinators expose what they wrap
+// (`inner`, `max`, `shape`, `optional`, `values`). `describe` replaces the text where a field name
+// alone does not say what goes in it.
 
 const esc = (key) => String(key).replace(/~/g, '~0').replace(/\//g, '~1');
 const at = (p, key) => `${p}/${esc(key)}`;
 const fail = (ctx, path, message) => ctx.errors.push({ path, message });
+const tag = (fn, props) => Object.assign(fn, props);
 
-const int = (v, p, ctx) => {
+/** A copy of a combinator whose placeholder text is `text` instead of its generic kind. */
+export const describe = (inner, text) => tag((v, p, ctx) => inner(v, p, ctx), { ...inner, kind: text });
+
+const int = tag((v, p, ctx) => {
   if (!Number.isInteger(v) || v < 0) fail(ctx, p, 'expected a non-negative integer');
-};
-const num = (v, p, ctx) => {
+}, { type: 'int', kind: 'int' });
+const num = tag((v, p, ctx) => {
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) fail(ctx, p, 'expected a non-negative number');
-};
-const rate = (v, p, ctx) => {
+}, { type: 'number', kind: 'number' });
+const rate = tag((v, p, ctx) => {
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) fail(ctx, p, 'expected a rate between 0 and 1');
-};
-const bool = (v, p, ctx) => {
+}, { type: 'rate', kind: 'rate 0..1' });
+const bool = tag((v, p, ctx) => {
   if (typeof v !== 'boolean') fail(ctx, p, 'expected a boolean');
-};
-const str = (max) => (v, p, ctx) => {
+}, { type: 'bool', kind: 'bool' });
+const str = (max) => tag((v, p, ctx) => {
   if (typeof v !== 'string' || v.length === 0) fail(ctx, p, 'expected a non-empty string');
   else if (v.length > max) fail(ctx, p, `string longer than ${max} characters`);
-};
-const date = (v, p, ctx) => {
+}, { type: 'str', kind: `string of at most ${max} characters`, max });
+const date = tag((v, p, ctx) => {
   if (typeof v !== 'string' || !DATE_RE.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`))) {
     fail(ctx, p, 'expected a YYYY-MM-DD date');
   }
-};
-const isoOffset = (v, p, ctx) => {
+}, { type: 'date', kind: 'YYYY-MM-DD' });
+const isoOffset = tag((v, p, ctx) => {
   if (typeof v !== 'string' || !ISO_OFFSET_RE.test(v) || Number.isNaN(Date.parse(v))) {
     fail(ctx, p, 'expected an ISO 8601 timestamp with an offset');
   }
-};
-const dateOrIso = (v, p, ctx) => {
+}, { type: 'iso', kind: 'ISO 8601 with offset' });
+const dateOrIso = tag((v, p, ctx) => {
   if (typeof v === 'string' && DATE_RE.test(v)) return date(v, p, ctx);
   return isoOffset(v, p, ctx);
-};
-const oneOf = (values) => (v, p, ctx) => {
+}, { type: 'dateOrIso', kind: 'YYYY-MM-DD or ISO 8601' });
+const oneOf = (values) => tag((v, p, ctx) => {
   if (!values.includes(v)) fail(ctx, p, `expected one of: ${values.join(', ')}`);
-};
-const nullable = (inner) => (v, p, ctx) => {
+}, { type: 'oneOf', kind: values.join(' | '), values });
+const nullable = (inner) => tag((v, p, ctx) => {
   if (v !== null) inner(v, p, ctx);
-};
-const host = (v, p, ctx) => {
+}, { type: 'nullable', kind: `${inner.kind} | null`, inner });
+const host = tag((v, p, ctx) => {
   if (typeof v !== 'string' || !HOST_RE.test(v)) fail(ctx, p, 'expected a bare lowercase host');
-};
-const viewPath = (v, p, ctx) => {
+}, { type: 'host', kind: 'bare lowercase host' });
+const viewPath = tag((v, p, ctx) => {
   if (typeof v !== 'string' || !VIEW_PATH_RE.test(v)) fail(ctx, p, 'expected a Search Console view path');
   else if (v.split('/').some(isTokenSegment)) fail(ctx, p, 'view path carries a token-shaped segment');
-};
-const service = (v, p, ctx) => {
+}, { type: 'viewPath', kind: 'view path under /search-console/' });
+const service = tag((v, p, ctx) => {
   if (SERVICES.includes(v)) return;
   if (typeof v === 'string' && /^other:.{1,60}$/.test(v)) return;
   fail(ctx, p, `expected one of: ${SERVICES.join(', ')}, or other:<text>`);
-};
+}, { type: 'service', kind: `${SERVICES.join(' | ')} | other:text` });
 
 function urlShape(v, p, ctx) {
   if (typeof v !== 'string') {
@@ -236,24 +246,24 @@ function urlShape(v, p, ctx) {
 }
 
 /** A storefront page URL: on the property host, no query, no fragment, no token-shaped path. */
-const pageUrl = (v, p, ctx) => {
+const pageUrl = tag((v, p, ctx) => {
   const u = urlShape(v, p, ctx);
   if (u && ctx.property && !onPropertyHost(u.host, ctx.property)) fail(ctx, p, 'URL is not on the property host');
-};
+}, { type: 'pageUrl', kind: 'page URL on the property host, no query or fragment' });
 /** A canonical: any host (a canonical pointing at another host is a finding, not a typo). */
-const anyUrl = (v, p, ctx) => {
+const anyUrl = tag((v, p, ctx) => {
   urlShape(v, p, ctx);
-};
+}, { type: 'anyUrl', kind: 'URL' });
 
-const arrayOf = (inner, { max = 1000 } = {}) => (v, p, ctx) => {
+const arrayOf = (inner, { max = 1000 } = {}) => tag((v, p, ctx) => {
   if (!Array.isArray(v)) return fail(ctx, p, 'expected an array');
   if (v.length > max) fail(ctx, p, `array longer than ${max} entries`);
   v.forEach((item, i) => inner(item, at(p, i), ctx));
-};
+}, { type: 'array', kind: 'array', inner, max });
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-const obj = (shape, optional = {}) => (v, p, ctx) => {
+const obj = (shape, optional = {}) => tag((v, p, ctx) => {
   if (!isPlainObject(v)) return fail(ctx, p, 'expected an object');
   for (const key of Object.keys(v)) {
     if (!(key in shape) && !(key in optional)) fail(ctx, at(p, key), 'unknown key');
@@ -265,12 +275,13 @@ const obj = (shape, optional = {}) => (v, p, ctx) => {
   for (const [key, check] of Object.entries(optional)) {
     if (key in v) check(v[key], at(p, key), ctx);
   }
-};
+}, { type: 'object', kind: 'object', shape, optional });
 
-const cwvDevice = (v, p, ctx) => {
+const cwvCounts = obj({ good: int, needs_improvement: int, poor: int });
+const cwvDevice = tag((v, p, ctx) => {
   if (v === 'no-data') return;
-  obj({ good: int, needs_improvement: int, poor: int })(v, p, ctx);
-};
+  cwvCounts(v, p, ctx);
+}, { type: 'cwvDevice', kind: "'no-data', or an object of int good, needs_improvement, poor", inner: cwvCounts });
 
 const metrics = { clicks: int, impressions: int, ctr: rate, position: num };
 const tab = (keyField, keyCheck) => obj({
@@ -299,7 +310,16 @@ export const REPORT_FIELDS = Object.freeze({
     required: { temporary_active: int, outdated_active: int, safesearch_active: int },
     optional: { temporary_urls: arrayOf(pageUrl, { max: 50 }) },
   },
-  messages: { required: { unread: int, total: int, subjects: arrayOf(str(120), { max: 100 }) } },
+  // `unread` is read before any alert message is opened; opening one marks it read.
+  messages: {
+    required: { unread: int, total: int, subjects: arrayOf(str(120), { max: 100 }) },
+    optional: {
+      alerts: arrayOf(obj(
+        { subject: describe(str(120), 'message subject, at most 120 characters'), examples: arrayOf(pageUrl, { max: 5 }) },
+        { reason_label: describe(str(200), 'the Page indexing reason label the message names') },
+      ), { max: 10 }),
+    },
+  },
   sitemaps: {
     required: {
       rows: arrayOf(obj({
@@ -317,6 +337,7 @@ export const REPORT_FIELDS = Object.freeze({
       ), { max: 50 }),
     },
   },
+  videos: { required: { indexed: int, not_indexed: int } },
   inspections: {
     required: {
       items: arrayOf(obj({
@@ -330,8 +351,21 @@ export const REPORT_FIELDS = Object.freeze({
   },
   cwv: { required: { mobile: cwvDevice, desktop: cwvDevice } },
   https: { required: { https_urls: int, non_https_urls: int } },
+  // `valid` and `invalid` partition the items. `warning` is the report's own "with warnings" figure,
+  // a subset of `valid`; null means the report showed no such figure, and it is never derived.
+  // `issues[].items` is that issue's own item count. Invariants: `warning` at most `valid`; each
+  // `issues[].items` at most `valid + invalid`.
   enhancements: {
-    required: { items: arrayOf(obj({ type: str(80), valid: int, invalid: int, warning: int }), { max: 30 }) },
+    required: {
+      items: arrayOf(obj(
+        { type: describe(str(80), 'rich-result type as the report names it'), valid: int, invalid: int, warning: nullable(int) },
+        {
+          issues: arrayOf(obj({
+            label: describe(str(120), 'issue label as the report table shows it'), items: int, level: oneOf(['warning', 'error']),
+          }), { max: 20 }),
+        },
+      ), { max: 30 }),
+    },
   },
   'security-manual': {
     required: {
@@ -359,6 +393,12 @@ export const REPORT_FIELDS = Object.freeze({
       removals_tabs: arrayOf(str(80), { max: 20 }), inspection_sections: arrayOf(str(80), { max: 50 }),
       enhancement_types: arrayOf(str(80), { max: 50 }), reason_labels: arrayOf(str(200), { max: 50 }),
       unknown: arrayOf(obj({ kind: str(40), label: str(80), path: nullable(viewPath), note: str(200) }), { max: 50 }),
+    },
+    optional: {
+      anchor_misses: arrayOf(obj({
+        view: describe(nullable(viewPath), 'view path whose wait_for timed out, or null for the Messages bell'),
+        anchors: arrayOf(str(80), { max: 10 }),
+      }), { max: 30 }),
     },
   },
 });
@@ -413,6 +453,26 @@ function invariants(capture, ctx) {
   if (messages && Number.isInteger(messages.unread) && Number.isInteger(messages.total) && messages.unread > messages.total) {
     fail(ctx, '/reports/messages/unread', 'unread exceeds total');
   }
+  if (messages && Array.isArray(messages.alerts) && Number.isInteger(messages.total) && messages.alerts.length > messages.total) {
+    fail(ctx, '/reports/messages/alerts', 'more alerts than messages');
+  }
+
+  const en = okRep('enhancements');
+  if (en && Array.isArray(en.items)) {
+    en.items.forEach((item, i) => {
+      if (!isPlainObject(item) || !Number.isInteger(item.valid)) return;
+      if (Number.isInteger(item.warning) && item.warning > item.valid) {
+        fail(ctx, `/reports/enhancements/items/${i}/warning`, 'warning exceeds valid');
+      }
+      if (Array.isArray(item.issues) && Number.isInteger(item.invalid)) {
+        item.issues.forEach((issue, j) => {
+          if (Number.isInteger(issue?.items) && issue.items > item.valid + item.invalid) {
+            fail(ctx, `/reports/enhancements/items/${i}/issues/${j}/items`, 'issue items exceed valid plus invalid');
+          }
+        });
+      }
+    });
+  }
 
   const idx = okRep('indexing-pages');
   if (idx && Array.isArray(idx.reasons) && Number.isInteger(idx.not_indexed)) {
@@ -460,7 +520,24 @@ function scanEmails(value, p, ctx) {
   }
 }
 
-const ENVELOPE_KEYS = ['schema', 'mode', 'property', 'property_added', 'captured_at', 'nonce', 'reports'];
+// `review.mjs --template` prints optional keys with a `?` suffix and every value as `<kind>`. A
+// skeleton left partly unfilled must never evaluate as a clean run, so either form is refused.
+const PLACEHOLDER_RE = /^<[^>]*>$/;
+
+function scanPlaceholders(value, p, ctx) {
+  if (typeof value === 'string') {
+    if (PLACEHOLDER_RE.test(value)) fail(ctx, p, 'template placeholder left unfilled');
+  } else if (Array.isArray(value)) {
+    value.forEach((v, i) => scanPlaceholders(v, at(p, i), ctx));
+  } else if (isPlainObject(value)) {
+    for (const [k, v] of Object.entries(value)) {
+      if (k.endsWith('?')) fail(ctx, at(p, k), 'template key left with its `?` suffix; rename or delete it');
+      scanPlaceholders(v, at(p, k), ctx);
+    }
+  }
+}
+
+const ENVELOPE_KEYS =['schema', 'mode', 'property', 'property_added', 'captured_at', 'nonce', 'reports'];
 
 /**
  * Validate a normalised capture. Every error is aggregated; no value is echoed back.
@@ -473,6 +550,7 @@ export function validateCapture(capture) {
     fail(ctx, '', 'expected a JSON object');
     return { errors: ctx.errors };
   }
+  scanPlaceholders(capture, '', ctx);
   for (const key of Object.keys(capture)) {
     if (!ENVELOPE_KEYS.includes(key)) fail(ctx, at('', key), 'unknown key');
   }

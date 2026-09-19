@@ -8,13 +8,15 @@
 // a run; a new item lands through a reviewed PR that also adds its audit.md entry and a fixture,
 // and the contract test refuses one without the other.
 //
-// Seeded from a live walk of the property on 2026-09-13. `conditional: true` marks an item that is
-// present only once data exists, so its absence is not reported as `surface-gone`.
+// Seeded from a live walk of the property on 2026-09-13 and brought up to date after the run of
+// 2026-09-18, once the property had data. `conditional: true` marks an item that is present only
+// once data exists, so its absence is not reported as `surface-gone`; rich-result reports come and
+// go with data, so their removal by Google is deliberately never reported.
 
 import { KNOWN_REASONS, ENHANCEMENT_TYPES, INSPECTION_SECTIONS } from './schema.mjs';
 
 /** The day this vocabulary was last reviewed against the live product (see discovery-review-due). */
-export const KNOWN_SURFACES_REVIEWED_ON = '2026-09-13';
+export const KNOWN_SURFACES_REVIEWED_ON = '2026-09-18';
 
 export const KNOWN_SURFACES = Object.freeze({
   // Left navigation: links carry their view path; buttons and section headings carry null.
@@ -25,12 +27,18 @@ export const KNOWN_SURFACES = Object.freeze({
     { label: 'URL inspection', path: null },
     { label: 'Indexing', path: null },
     { label: 'Pages', path: 'index' },
+    { label: 'Videos', path: 'video-index', conditional: true },
     { label: 'Sitemaps', path: 'sitemaps' },
     { label: 'Removals', path: 'removals' },
     { label: 'Experience', path: null },
     { label: 'Core Web Vitals', path: 'core-web-vitals' },
     { label: 'HTTPS', path: null, conditional: true },
+    { label: 'Shopping', path: null, conditional: true },
+    { label: 'Product snippets', path: 'r/product', conditional: true },
+    { label: 'Merchant listings', path: 'r/merchant-listings', conditional: true },
     { label: 'Enhancements', path: null, conditional: true },
+    { label: 'Breadcrumbs', path: 'r/breadcrumbs', conditional: true },
+    { label: 'Review snippets', path: 'r/review-snippet', conditional: true },
     { label: 'Security & Manual Actions', path: null },
     { label: 'Manual actions', path: 'manual-actions' },
     { label: 'Security issues', path: 'security-issues' },
@@ -39,11 +47,12 @@ export const KNOWN_SURFACES = Object.freeze({
     { label: 'Settings', path: 'settings' },
   ].map((entry) => Object.freeze(entry))),
 
-  // Pages reached from Settings or the user menu, not from the left navigation.
+  // Pages reached from Settings, the user menu or a report row, not from the left navigation.
   subpages: Object.freeze([
     'ownership', 'users', 'users/permission-history', 'users/leftover-tokens', 'settings/associations',
     'settings/change-address', 'settings/bulk-data-export', 'settings/search-gen-ai', 'user-settings',
-    'user-settings/email-preferences', 'user-settings/performance-on-search',
+    'user-settings/email-preferences', 'user-settings/performance-on-search', 'settings/crawl-stats',
+    'index/drilldown',
   ]),
 
   settings_rows: Object.freeze([
@@ -54,6 +63,7 @@ export const KNOWN_SURFACES = Object.freeze({
   performance_tabs: Object.freeze(['QUERIES', 'PAGES', 'COUNTRIES', 'DEVICES', 'SEARCH APPEARANCE', 'DAYS']),
   performance_controls: Object.freeze([
     'EXPORT', 'Search type', 'Add filter', 'Customize your Performance report using AI', 'More time ranges',
+    'Reset filters',
   ]),
   time_ranges: Object.freeze(['24 hours', '7 days', '28 days', '3 months']),
   search_types: Object.freeze(['Web', 'Image', 'Video', 'News']),

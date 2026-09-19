@@ -1,9 +1,9 @@
 # Search Console audit checklist
 
 The surfaces a run visits, in visit order, with what healthy and failing look like, which checks
-each feeds, who fixes it, and which capture report it fills. Anchor text is quoted as observed on
-the live property on 2026-09-13; a day-one property shows "Processing data" or "No data" almost
-everywhere, and that is `not-ready`, not a failure.
+each feeds, who fixes it, and which capture report it fills: 25 surfaces. Anchor text is quoted as
+observed on the live property on 2026-09-13 and 2026-09-18; a day-one property shows "Processing
+data" or "No data" almost everywhere, and that is `not-ready`, not a failure.
 
 Severities are named by their constant in `scripts/search-console/lib/checks.mjs`
 (`SEVERITY['<check id>']`, or `REASON_SEVERITY['<slug>']` for the page indexing reasons), never as
@@ -40,6 +40,7 @@ View paths are relative to `https://search.google.com/search-console/`, and ever
 | 22 Performance | performance |
 | 23 Insights page and Achievements | none |
 | 24 Discovery inventory | discovery |
+| 25 Videos | videos |
 
 ## Run-level checks
 
@@ -70,9 +71,11 @@ These are about the capture itself rather than a surface:
 ### 2. Second brand domain
 
 - **Where**: URL inspection of the homepage (the header combobox) lists a referring page on a
-  second brand domain, a `.us` host; `review.mjs` probes that host with one unfollowed node request.
+  second brand domain. The host is a constant, `SECONDARY_DOMAINS` (["sapphireshadowstudio.us"]) in
+  `lib/checks.mjs`; `review.mjs` probes each host with one unfollowed node request, plus any host in
+  the optional `settings.secondary_domains`.
 - **Healthy**: the probe answers 301 or 308 to the canonical host, so no separate property is
-  needed. Record the host in `settings.secondary_domains`.
+  needed. Nothing is transcribed: the host is static, so leave `settings.secondary_domains` out.
 - **Failure**: the host answers 200 (a duplicate site) or redirects somewhere else.
 - **Checks**: `secondary-domain-redirect` (`SEVERITY['secondary-domain-redirect']`; informational
   when the redirect is permanent and to the canonical host; skipped with `--offline`).
@@ -156,7 +159,8 @@ These are about the capture itself rather than a surface:
 
 ### 10. Crawl stats
 
-- **Where**: the Crawling section of `settings`, row `Crawl stats`.
+- **Where**: the Crawling section of `settings`, row `Crawl stats`, which opens view
+  `settings/crawl-stats`.
 - **Healthy**: host status with no issues; 5xx share at or under `CRAWL_5XX_SHARE` (0.01); the
   "Other client error (4xx)" bucket, where 429s land because Search Console does not break them
   out, at or under `CRAWL_4XX_SHARE` (0.05). "No data available yet" is host status no-data inside an
@@ -194,11 +198,16 @@ These are about the capture itself rather than a surface:
 
 ### 13. Messages
 
-- **Where**: the Messages bell in the header ("Unread messages: N").
+- **Where**: the Messages bell in the header ("Unread messages: N"). `messages.unread` is read before any
+  message is opened. Then, newest first, up to `ALERT_MESSAGES_MAX` (5) indexing alert messages
+  are opened (which marks them read) and each fills one `alerts[]` entry: its subject, the reason
+  label it names, and up to five example URLs.
 - **Healthy**: nothing unread. Record the unread count, the total and each subject (120 characters
-  each); open no message.
+  each); `alerts[]` holds what each opened indexing alert names, and is omitted when none was opened.
 - **Failure**: unread messages, which may be a manual action or a coverage alert.
-- **Checks**: `messages-unread` (`SEVERITY['messages-unread']`).
+- **Checks**: `messages-unread` (`SEVERITY['messages-unread']`), `messages-alert-examples`
+  (`SEVERITY['messages-alert-examples']`; the URLs an alert names are also counted onto the
+  matching Page indexing reason when that reason has no examples of its own).
 - **Fix owner**: operator reads them.
 - **Marker**: capture: messages
 
@@ -220,7 +229,8 @@ These are about the capture itself rather than a surface:
 
 ### 15. Page indexing
 
-- **Where**: `Indexing` > `Pages`, view `index`.
+- **Where**: `Indexing` > `Pages`, view `index`. Each reason row opens `index/drilldown`, whose
+  Examples table fills that reason's `reasons[].examples`, at most `DRILLDOWN_ROWS_MAX` (14) rows per run.
 - **Healthy**: indexed count at or above the live sitemap count less its `NOINDEX_OK` paths; every
   "Why pages aren't indexed" row is expected (the noindexed blog listing, redirects). Record each
   reason with its count, its Source column (Website or Google systems) and up to five example URLs,
@@ -295,8 +305,13 @@ These are about the capture itself rather than a surface:
 
 ### 19. Enhancements
 
-- **Where**: the `Enhancements` section of the left navigation, present only once a rich-result
-  type is detected (absent on 2026-09-13).
+- **Where**: the `Shopping` and `Enhancements` headings of the left navigation, present only once a
+  rich-result type is detected (absent on 2026-09-13, present on 2026-09-18). Under `Shopping`:
+  `Product snippets`, view `r/product`, and `Merchant listings`, view `r/merchant-listings`. Under
+  `Enhancements`: `Breadcrumbs`, view `r/breadcrumbs`, and `Review snippets`, view
+  `r/review-snippet`. Each report fills one of `items[]`: valid and invalid partition its items,
+  `items[].warning` is the report's own "with warnings" figure or null when it shows none (never
+  derived), and `items[].issues[]` holds each issue row's label, item count and level.
 - **Healthy**: per type (Product snippets, Merchant listings, Breadcrumbs, and any other), zero
   invalid and zero warning items. This is the evidence source for the Judge.me Product JSON-LD
   owner decision in `TODO-list.md`: when both Product snippets and Merchant listings report items,
@@ -336,15 +351,20 @@ These are about the capture itself rather than a surface:
 
 ### 22. Performance
 
-- **Where**: `Performance`, view `performance/search-analytics` opened with `num_of_days=28`.
+- **Where**: `Performance`, view `performance/search-analytics` opened with `num_of_days=28`, and
+  once per tab with `breakdown=` and `metrics=` so every column shows without a click (`browser.md`).
 - **Healthy**: per `insights.md`: impressions growing, non-brand queries present, indexable
   sitemap pages appearing in the PAGES tab, click-through normal for position.
 - **Failure**: zero impressions on an established property; brand-only queries after
   `BRAND_ONLY_MIN_AGE_DAYS` (60) days; low click-through at a good position; indexable pages with no
-  impressions; a search type never seen before.
+  impressions; a search type never seen before. Below `NOISE_FLOOR_IMPRESSIONS` (50) total
+  impressions a missing page says nothing about that page, so the condition is informational by
+  design and reported once for all pages.
 - **Checks**: `perf-zero-impressions` (`SEVERITY['perf-zero-impressions']`), `perf-brand-only`
   (`SEVERITY['perf-brand-only']`, age-gated), `perf-page-no-impressions`
-  (`SEVERITY['perf-page-no-impressions']`, age-gated), `perf-low-ctr` (`SEVERITY['perf-low-ctr']`),
+  (`SEVERITY['perf-page-no-impressions']`, age-gated, at or above the floor only),
+  `perf-impressions-below-floor` (`SEVERITY['perf-impressions-below-floor']`, below the floor in
+  place of the per-page findings), `perf-low-ctr` (`SEVERITY['perf-low-ctr']`),
   `perf-position-opportunity` (`SEVERITY['perf-position-opportunity']`), `perf-country-outside-us`
   (`SEVERITY['perf-country-outside-us']`), `search-type-new` (`SEVERITY['search-type-new']`),
   `period-mismatch` (`SEVERITY['period-mismatch']`).
@@ -368,9 +388,23 @@ These are about the capture itself rather than a surface:
 - **Healthy**: every navigation label and view path, `Settings` row, user settings row, Performance
   tab and control, Removals tab, inspection section, enhancement type and reason label is already
   in `KNOWN_SURFACES`.
-- **Failure**: none; an unknown item is information, routed per `SKILL.md` > Self-discovery.
+- **Failure**: none; an unknown item is information, routed per `SKILL.md` > Self-discovery. A
+  `wait_for` that timed out is recorded in `anchor_misses[]` with its view and anchors, so the
+  anchor text in `browser.md` gets corrected instead of costing the same wait every run.
 - **Checks**: `surface-new` (`SEVERITY['surface-new']`), `surface-gone` (`SEVERITY['surface-gone']`),
   `discovery-review-due` (`SEVERITY['discovery-review-due']`, once `KNOWN_SURFACES_REVIEWED_ON` is
-  more than `DISCOVERY_REVIEW_DAYS` (90) days old).
-- **Fix owner**: repo (a reviewed PR extending `KNOWN_SURFACES`, this file and a fixture).
+  more than `DISCOVERY_REVIEW_DAYS` (90) days old), `anchor-missed` (`SEVERITY['anchor-missed']`).
+- **Fix owner**: repo (a reviewed PR extending `KNOWN_SURFACES`, this file and a fixture; for an
+  anchor miss, `browser.md`).
 - **Marker**: capture: discovery
+
+### 25. Videos
+
+- **Where**: `Indexing` > `Videos`, view `video-index`, present in the left navigation only once
+  Google has found a video (present on 2026-09-18). An absent item makes the report not-present.
+- **Healthy**: every video on a product page indexed, zero not indexed.
+- **Failure**: videos Google found and did not index.
+- **Checks**: `videos-not-indexed` (`SEVERITY['videos-not-indexed']`).
+- **Fix owner**: repo (product media and the templates that render it) or Shopify Admin (the media
+  itself).
+- **Marker**: capture: videos
