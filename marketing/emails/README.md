@@ -11,12 +11,10 @@ custom-code editor.
 | `campaign-shell.liquid` | Reusable base. Clone it to start a new campaign. Its fill-in spots are ALL-CAPS placeholder text. |
 | `welcome-postlaunch.liquid` | Welcome automation for an open store. This is the one the "Customer signs up" automation should be running. Ready to paste as-is. |
 | `launch-announcement.liquid` | One-time launch campaign to the whole list. Ready to paste as-is. It discharges the promise the prelaunch welcome made; see the launch swap below. |
-| `welcome-prelaunch-superseded.liquid` | **Superseded, retained for history, do not paste.** The prelaunch welcome, written for a store behind the password gate. Replaced by `welcome-postlaunch.liquid`. |
 
-The filename is the warning, and that is deliberate. These files are copy-pasted into a web editor by
-hand, so a note in this table only helps if someone reads it at the moment of pasting, and nothing in
-the workflow forces that. `welcome-prelaunch-superseded.liquid` carries the warning in the one string
-that is on screen while the paste is happening.
+The prelaunch welcome, written for a store behind the password gate, was deleted on 2026-09-15 once
+the post-launch welcome was running in Admin and its template there was removed. Its last version is
+in git history as `marketing/emails/welcome-prelaunch-superseded.liquid`.
 
 ## The templates carry no comments. This file carries the documentation.
 
@@ -42,9 +40,8 @@ rather than in the file. Read the row, type the two fields, paste the template.
 
 | Template | Subject | Preview text | Automation / segment | Last verified |
 |---|---|---|---|---|
-| `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | not yet |
-| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | not yet |
-| `welcome-prelaunch-superseded.liquid` | Welcome to Sapphire Shadow Studio! | The studio opens September 3 at 9:00 AM Eastern. | Historical. Was the "Customer signs up" automation while the storefront was password-protected | 2026-08-21, test sends, first campaign, and the live automation |
+| `welcome-postlaunch.liquid` | Welcome to Sapphire Shadow Studio | Made to order, stitched in-house, by the two of us. | "Customer signs up" welcome automation, all new email subscribers | 2026-09-15, pasted as committed and test sent |
+| `launch-announcement.liquid` | The store is open | Everything we have been stitching is live now. | One-time campaign, the whole email list | 2026-09-15, pasted as committed and test sent |
 | `campaign-shell.liquid` | n/a, clone it | n/a, clone it | n/a | n/a |
 
 The two new subjects were checked against the usual filters before being written down: no capitals,
@@ -231,10 +228,10 @@ Email clients are not browsers. Keep to these when editing or cloning:
   and explicit background *and* foreground colours on every element that sets either. A background
   set without its text colour is the classic dark-mode invisibility bug.
 - **An icon row carries its own visible label.** A row of bare icons is one of the ugliest
-  images-off failures there is: three broken-image boxes and no way to tell what they linked to. The
+  images-off failures there is: five broken-image boxes and no way to tell what they linked to. The
   footer's social row therefore pairs each icon with the network's name in text, and the icon itself
   is `alt=""` (decorative), because the visible label already says what the alt text would have.
-  With images blocked the row degrades to "Instagram Facebook TikTok" in the footer's own body
+  With images blocked the row degrades to "Instagram Facebook TikTok YouTube Pinterest" in the footer's own body
   colour. Do **not** try to carry the meaning in `alt` alone: a client sizes a blocked image to its
   `width`/`height` attributes and clips the alt text to that box, so a 28 px icon shows about four
   characters of it.
@@ -261,7 +258,7 @@ size, and many block images by default, which is why the `alt` text has to stand
 **Two-tile navy panel.** Two static tiles on a navy panel, echoing the countdown tiles on the
 password page. The shell does not carry it, because what goes in the tiles is campaign content.
 
-`welcome-prelaunch-superseded.liquid` carries the original **date** form, below: "Sep 3" over "2026"
+The deleted prelaunch welcome carried the original **date** form: "Sep 3" over "2026"
 and "9:00 AM" over "Eastern". An email cannot tick, so the tiles are hand-typed text and there is
 nothing to recalculate. The eyebrow matched `blocks/launch-countdown.liquid`'s own, so a screen
 reader heard "The studio opens Sep 3 2026 9:00 AM Eastern" as one sentence. At 375 px those two
@@ -316,24 +313,43 @@ mobile only.
 </tr>
 ```
 
-**Social icon row.** Every template carries this at the top of the navy footer cell. One cell per
-network, one link per network, icon and label inside the same anchor so the whole chip is clickable.
-The icon is `alt=""` on purpose; see the images-off rule above.
+**Social icon row.** Every template carries this at the top of the navy footer cell: a full-width
+table with **one cell holding five adjacent inline-block anchors**, one per network (Instagram,
+Facebook, TikTok, YouTube, Pinterest, the storefront's order), icon and label inside the same anchor
+so the whole chip is clickable. The icon is `alt=""` on purpose; see the images-off rule above.
+
+- **It wraps wherever the container goes fluid, and nowhere else.** Below 620 px the
+  `.ssb-container` rule makes the shell 100% wide, the `width="100%"` social table follows it, and
+  the anchors wrap to two centred lines. A client that ignores the media query scales the whole
+  600 px email down as one picture, and the row stays one line like every other row. The old
+  one-cell-per-network, shrink-wrapped table could never wrap at all.
+- **Keep the anchors adjacent in source**, with no whitespace or newline between `</a>` and the
+  next `<a>`. Whitespace there becomes a text gap that varies by client. Do not fix it with
+  `font-size: 0` or `line-height: 0` on the cell instead: Outlook's Word engine and Yahoo mishandle
+  both.
+- **The `&nbsp;` between icon and label is the non-break that Outlook honours.** Outlook's Word
+  engine ignores `white-space: nowrap` and `display: inline-block`, so without the `&nbsp;` a wrap
+  could split an icon from its name. Never replace it with a space or a margin.
+- **Measured width** (headless Chrome, 2026-09-15): the one-line run is 478 px with `4px 4px`
+  anchor padding, inside a 504 px footer cell in the welcome and announcement templates and 536 px
+  in the shell. At 414, 390 and 375 px viewports it wraps to two rows (3 + 2, or 2 + 3 in the
+  narrowest 279 px cell). The first try, `4px 6px`, came to 498 px and split into three rows at
+  375 px. If a sixth network is ever added, measure again before shipping; shrink the icon to
+  24 px before dropping labels.
 
 ```html
-<td align="center" style="padding: 0 8px; white-space: nowrap;">
-  <a href="https://www.instagram.com/sapphire_shadow_studio" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none;">
-    <img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram
-  </a>
-</td>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 0 0 18px 0;">
+  <tr>
+    <td align="center" style="padding: 0;"><a href="https://www.instagram.com/sapphire_shadow_studio" style="display: inline-block; padding: 4px 4px; font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 28px; color: #c9d8ea; text-decoration: none; white-space: nowrap;"><img src="https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png" alt="" width="28" height="28" style="border: 0; vertical-align: middle;">&nbsp;Instagram</a><a href="...">...</a></td>
+  </tr>
+</table>
 ```
 
 **Product grid.** Seven product tiles: six two across in three rows, then a seventh centred on its
 own. Each tile is an image and a bold label inside one anchor pointing at
 `{{ shop.url }}/products/<handle>`. `welcome-postlaunch.liquid` and `launch-announcement.liquid`
 carry it, identically; copy it from one of them rather than from here, so there is only one copy to
-keep current. (`welcome-prelaunch-superseded.liquid` carries the older six-tile version, which had
-the gift card in the sixth slot and no tote. Do not copy from that one.)
+keep current.
 
 Four things about it are load-bearing:
 
@@ -402,11 +418,13 @@ to expect from a hand-maintained list of URLs that nothing compares against the 
 | Product grid, Shift Fuel Crewneck | `.../shift-fuel_crew-sweater_classic-navy_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Quarter-Zip | `.../lead2_quarter-zip_classic-navy_medic_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Lead II Vest | `.../lead2_vest_black_rn_flat-1.jpg?width=524&height=524&crop=center` |
-| Product grid, Shift Fuel Tote (not in the superseded prelaunch file) | `.../shift-fuel-tote_flat-1.jpg?width=524&height=524&crop=center` |
+| Product grid, Shift Fuel Tote | `.../shift-fuel-tote_flat-1.jpg?width=524&height=524&crop=center` |
 | Product grid, Gift Card | `.../SSS-Square-White-BG-png.png?width=500&height=500&crop=center` |
 | Instagram icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-instagram.png` |
 | Facebook icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-facebook.png` |
 | TikTok icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-tiktok.png` |
+| YouTube icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-youtube.png` |
+| Pinterest icon | `https://cdn.shopify.com/s/files/1/0958/0874/9868/files/email-icon-pinterest.png` |
 
 The tote image is the one uploaded on 2026-09-02, and a retouch pass on the studio's tote photography
 was still in progress when these templates were written. **A `curl` 200 cannot tell a final asset
@@ -419,7 +437,7 @@ inbox downloads a 240 px logo and a 600x400 hero rather than a 2048 px original 
 one. In the `src` attribute the `&` between transform parameters is written `&amp;`. Drop any `?v=`
 cache buster: it is not part of the file's identity.
 
-The three icons are generated, not hand-drawn. `scripts/email-icons/render-email-icons.mjs`
+The five icons are generated, not hand-drawn. `scripts/email-icons/render-email-icons.mjs`
 rasterises them from path data copied out of `snippets/icon.liquid` into 56 px PNGs (2x the 28 px
 display size) under `marketing/emails/assets/`, and
 `scripts/email-icons/upload-email-icons.mjs` uploads those committed PNGs to Shopify Files. Email
@@ -433,12 +451,9 @@ Each file is self-contained: no partials, no includes, no build step. The repo h
 transpiler to begin with, and Shopify Email would not resolve a partial anyway, since it takes one
 pasted document and nothing else. The header, footer, social row, and palette are therefore copied
 into every template. **A palette or footer change has to be made in every file in this directory.**
-That is now **four** files rather than two, and the launch swap is what raised the count: a change
-to the header, the footer, the social row or the palette has to be made in `campaign-shell.liquid`,
-`welcome-postlaunch.liquid`, `launch-announcement.liquid` and
-`welcome-prelaunch-superseded.liquid`. The superseded file is included on purpose: it is the record
-of what was sent, so leaving it visually stale is fine, but a palette change made in three of four
-files is the drift this paragraph exists to warn about. Decide deliberately which it is.
+That is three files: a change to the header, the footer, the social row or the palette has to be
+made in `campaign-shell.liquid`, `welcome-postlaunch.liquid` and `launch-announcement.liquid`. A
+change made in two of three is the drift this paragraph exists to warn about.
 
 The palette also lives outside this directory, in `marketing/notifications/lib/brand-style.css`, the
 stylesheet behind the 46 branded Shopify notification templates, documented in
@@ -469,7 +484,7 @@ choice, and every file here now says `#c9d8ea`. Only `scripts/email-icons/` read
 programmatically (it bakes `BODY` into the icon PNGs); the templates hold literal hexes, because
 Shopify Email has no `settings` object and no way to resolve anything.
 
-## The launch swap: what changed, and what still has to be done in Admin
+## The launch swap: what changed, and what to do before each re-paste
 
 This section used to be a to-do list headed "`welcome.liquid` is the prelaunch version, and has to
 be changed at launch". The five edits it described were made on 2026-09-03. It is now the record of
@@ -477,12 +492,10 @@ what they were and where they landed.
 
 **The edits went into a new file, not into the old one.** `welcome.liquid` became
 `welcome-prelaunch-superseded.liquid` (a `git mv`, so its history is intact) and the post-launch
-version is `welcome-postlaunch.liquid`. Keeping the stale copy is deliberate: it is the only record
-of what every existing subscriber was actually sent. The rename is what makes that safe. Two
-near-identical files in a directory that is copy-pasted by hand is a live paste hazard, and
-`welcome-postlaunch.liquid` would have sorted immediately *before* `welcome.liquid` in a plain
-listing. The filename now carries the warning, which survives a rushed paste in a way a row in a
-table above does not.
+version is `welcome-postlaunch.liquid`. The stale copy was kept as the record
+of what existing subscribers were sent, with the warning in its filename, until 2026-09-15, when the
+post-launch welcome was running in Admin and the prelaunch template there was deleted. The file was
+deleted from the repo the same day; git history holds its last version.
 
 The five edits, for the record:
 
@@ -491,7 +504,8 @@ The five edits, for the record:
    "Made to order" and "Stitched in-house", under an eyebrow of "How we work". See the two-tile
    navy panel snippet above for the sizing, which is not a straight copy of the date form's.
    `blocks/launch-countdown.liquid` states the same instant on the password page and is still there;
-   the two should be retired together, and `TODO-list.md` now says so.
+   the prelaunch welcome that shared its date is now retired, so the countdown's own backlog item
+   stands alone.
 2. **The "A preview of what is available at launch" line went**, along with the reason it existed:
    with the gate down, the tiles reach real product pages.
 3. **"What happens next" was rewritten** for an open store: what made-to-order means for the wait,
@@ -515,16 +529,10 @@ list, not an automation. It carries no discount and no launch offer, and no prod
 is mostly people who have never ordered, and a count is a claim that becomes false the first time a
 product is added or retired, in an email that cannot be recalled.
 
-### Still to do in Admin, and nothing here does it
+### Before each re-paste
 
-**Re-paste the "Customer signs up" automation.** Until `welcome-postlaunch.liquid` is pasted over
-it, the live automation keeps sending the prelaunch email, date panel and all, to every new
-subscriber. Nothing in this repo can see or change what that automation is running.
-
-**Re-check the seven product handles and the tote image immediately before the first paste.** A
-product added, renamed, unpublished or entirely sold out since 2026-09-03 leaves a tile pointing at
-a 404 or the catalogue looking smaller than it is. Confirm the tote asset is the final one and not a
-version the retouch work is about to supersede; a 200 answer cannot tell those apart.
+**Re-check the seven product handles and the tote image.** A product added, renamed, unpublished or
+entirely sold out leaves a tile pointing at a 404 or the catalogue looking smaller than it is.
 
 **Update the subject and preview text**, and **Last verified** in the metadata table, in the same
 sitting as each paste. Both fields belong to the campaign, not to the template, so a re-paste drops
@@ -534,11 +542,11 @@ them.
 
 **Shopify drops `lang="en"` from `<html>` on a real send**, along with emptying the whole `<head>`
 (see Shopify's contract above). A screen reader therefore loses its language hint on the delivered
-email. This already affected the live prelaunch file and affects the new ones identically; there is
+email. This affected the prelaunch welcome and affects the current templates identically; there is
 nothing template-side to change, so it is a note rather than a defect.
 
-**The social URLs are hardcoded in every template**, because Shopify Email has no `settings` object
-to read `settings.social_instagram_link` from. They duplicate the values in
+**The five social URLs are hardcoded in every template**, because Shopify Email has no `settings`
+object to read `settings.social_instagram_link` from. They duplicate the values in
 `config/settings_data.json` and nothing reconciles the two: change a profile URL in theme settings
 and every file here goes stale silently. The storefront links are the opposite case, and that is
 why they are written as `{{ shop.url }}` rather than a literal domain: Shopify resolves it at send
@@ -546,7 +554,7 @@ time, so there is nothing to keep in sync.
 
 ### Why the prelaunch file named a date
 
-Kept because the reasoning outlived the file. This README used to argue that a date in a sent email
+Kept because the reasoning outlived the file, which was deleted on 2026-09-15. This README used to argue that a date in a sent email
 cannot be corrected, so no date was better than a date that slips. It changed because the date
 stopped being the email's to withhold: `blocks/launch-countdown.liquid` committed publicly to
 2026-09-03 09:00 ET, the password page ticked down to it, and the Instagram bio repeated it, so a

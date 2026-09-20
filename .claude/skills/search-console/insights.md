@@ -36,7 +36,8 @@ on-page copy for the page, or a blog topic that targets the same need (`marketin
 
 **Sitemap pages with no impressions.** `perf-page-no-impressions` lists indexable sitemap URLs
 absent from an untruncated PAGES tab; informational before `PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS` (28)
-days. Propose internal links, collection membership, or a blog mention for those pages. Check the
+days, and replaced by one `perf-impressions-below-floor` below `NOISE_FLOOR_IMPRESSIONS` (50) total
+impressions. Propose internal links, collection membership, or a blog mention for those pages. Check the
 Page indexing reasons for the same URL first: a page Google has not indexed cannot earn impressions.
 
 **Devices and countries.** When mobile carries most impressions, Core Web Vitals work is mobile
@@ -51,11 +52,46 @@ reviewed product (the item details in each Enhancements report, and the inspecti
 rows) and whether the theme's node and the app's node disagree on price, availability or rating.
 That is the evidence the `TODO-list.md` decision item waits on; the decision itself is the operator's.
 
+**Enhancement issue labels.** `enhancement-warning` and `enhancement-invalid` name the issue rows
+the report listed. A missing offer field on Merchant listings (a return policy, shipping details)
+can be filled in the Product JSON-LD, but only as a commitment to keep those values tracking the
+shop policies in `marketing/policies/` whenever a policy changes: propose it with that caveat, and
+never apply it from this skill. A missing `aggregateRating` or `review` on a product with no
+reviews yet is expected, not a gap; it clears when the first Judge.me review is live.
+
 **Links.** Once `links-none` stops firing, propose outreach and blog distribution around the pages
 that already earn links. The second brand domain appearing as a referrer is the redirect working,
 not a link to chase (`secondary-domain-redirect`).
 
 **Nothing yet.** `perf-zero-impressions` on a young property is expected. Say so and stop.
+`perf-impressions-below-floor` is the same signal one step later: some impressions, too few to say
+anything about a single page.
+
+## Recommended next
+
+The report's `## Recommended next` section answers "what is your take?" before the operator has to
+ask. Its rules:
+
+- At most three items.
+- Ordered by confidence that the finding is real, then by cost to act; never by predicted gain.
+- Each item states the observable expected to change and the re-run window at which it would be
+  visible, as a hypothesis ("if this is the cause, the noindex count should fall by the next run
+  after the change").
+- Each names its owner as "repo" or "Admin", never a person.
+- No item names a live-write command (`policies:push`, `articles:*`, any Admin write), and none
+  constitutes authorization: the section opens with "Findings are proposals; nothing here
+  authorizes a change."
+- Below `NOISE_FLOOR_IMPRESSIONS` (50) total impressions, only data-collection and correctness
+  items may appear (a missing example URL, a noindex outside `NOINDEX_OK`, a structured-data
+  error). Everything else goes to `## Leave alone`.
+
+## Leave alone
+
+`## Leave alone` lists what the data cannot yet support, so the operator does not act on noise:
+performance-shaped findings below the floor, age-gated findings before their gate, and anything
+whose only evidence is a count with no examples. State the re-run window once, as the earlier of
+`PAGE_NO_IMPRESSIONS_MIN_AGE_DAYS` (28) days of property age or `NOISE_FLOOR_IMPRESSIONS` (50)
+impressions.
 
 ## Language rules
 

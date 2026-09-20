@@ -92,16 +92,32 @@ function currentMetrics(capture) {
       return false;
     }
   });
+  const msg = ok('messages');
+  const en = ok('enhancements');
+  const vid = ok('videos');
+  // A null `warning` is a figure the report did not show. A sum over only the shown figures would
+  // compare across runs as a drop whenever one report stopped showing its figure, so the metric is
+  // null unless every item shows one.
+  const warnings = en ? en.items.map((i) => i.warning) : [];
   return {
     clicks: perf ? perf.totals.clicks : null,
     impressions: perf ? perf.totals.impressions : null,
     indexed: idx ? idx.indexed : null,
     not_indexed: idx ? idx.not_indexed : null,
     discovered: index ? index.discovered_pages : null,
+    unread: msg ? msg.unread : null,
+    enhancement_warning: warnings.length && warnings.every((w) => w !== null) ? warnings.reduce((s, w) => s + w, 0) : null,
+    enhancement_invalid: en ? en.items.reduce((s, i) => s + i.invalid, 0) : null,
+    videos_indexed: vid ? vid.indexed : null,
+    videos_not_indexed: vid ? vid.not_indexed : null,
   };
 }
 
-const METRIC_REPORT = { clicks: 'performance', impressions: 'performance', indexed: 'indexing-pages', not_indexed: 'indexing-pages', discovered: 'sitemaps' };
+const METRIC_REPORT = {
+  clicks: 'performance', impressions: 'performance', indexed: 'indexing-pages', not_indexed: 'indexing-pages', discovered: 'sitemaps',
+  unread: 'messages', enhancement_warning: 'enhancements', enhancement_invalid: 'enhancements', videos_indexed: 'videos',
+  videos_not_indexed: 'videos',
+};
 const SEV_ORDER = { [ERROR]: 0, [WARN]: 1, [INFO]: 2 };
 const bySeverity = (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || a.check.localeCompare(b.check) || a.url.localeCompare(b.url);
 

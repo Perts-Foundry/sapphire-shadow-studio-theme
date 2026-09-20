@@ -19,13 +19,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { assertReviewedTree } from '../push.mjs';
 import { assertBodiesClean, run as pullRun } from '../pull.mjs';
 import { fileTextFor } from '../lib/policies.mjs';
 import { BODIES, cleanup, liveFrom, makeClient, makeRoot, makeStateDir, policiesDir, seedState } from './helpers.mjs';
+
+/**
+ * No gc and no maintenance, per invocation: a commit otherwise can leave a detached child still
+ * writing under .git/ after execFileSync returns, racing the teardown. Signing and hooks are off
+ * only to match the articles harness; the /dev/null global and system config already rules them out.
+ */
+const NO_BACKGROUND_CONFIG = [
+  '-c', 'gc.auto=0',
+  '-c', 'gc.autoDetach=false',
+  '-c', 'maintenance.auto=false',
+  '-c', 'commit.gpgsign=false',
+  '-c', 'core.hooksPath=/dev/null',
+];
 
 /**
  * A real git repository at `root`, with everything committed and `origin/main` pointing at HEAD.
@@ -37,7 +50,7 @@ import { BODIES, cleanup, liveFrom, makeClient, makeRoot, makeStateDir, policies
 function initRepo(root) {
   // real-git-not-a-fake: this shells out to the actual binary, so it can answer nothing by default.
   const git = (...args) =>
-    execFileSync('git', args, {
+    execFileSync('git', [...NO_BACKGROUND_CONFIG, ...args], {
       cwd: root,
       encoding: 'utf8',
       env: {
@@ -121,7 +134,7 @@ test('pull\'s dirty gate refuses against real git, and its pathspec is scoped to
     );
   } finally {
     cleanup(root);
-    rmSync(stateDir, { recursive: true, force: true });
+    cleanup(stateDir);
   }
 });
 

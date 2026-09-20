@@ -107,7 +107,8 @@ export function titleFor(type) {
 }
 
 export function cleanup(root) {
-  rmSync(root, { recursive: true, force: true });
+  // Retried: a git child (gc, maintenance) can still be writing under .git/ after execFileSync returns.
+  rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 export function policiesDir(root) {

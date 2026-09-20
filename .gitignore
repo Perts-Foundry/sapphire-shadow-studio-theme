@@ -1,10 +1,13 @@
 # Claude AI generated files. Everything under .claude/ is local-only EXCEPT
 # .claude/skills/ and .claude/rules/, which are version-controlled so shared skills and
-# path-scoped rules travel with the repo.
+# path-scoped rules travel with the repo. The one other tracked file is
+# .claude/chrome-devtools-guard.allow, the operator's committed opt-in that lets the global
+# chrome-devtools guard hook accept initScript probes and file: URLs in this repo.
 # Memory (.claude/projects/) stays ignored: it may hold real operator/merchant context.
 .claude/*
 !.claude/skills/
 !.claude/rules/
+!.claude/chrome-devtools-guard.allow
 
 # Admin API credentials. `.env` is the standard secrets file every script here reads via
 # `node --env-file=.env ...` (SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, MYSHOPIFY_DOMAIN).

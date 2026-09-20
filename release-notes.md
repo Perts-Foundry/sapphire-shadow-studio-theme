@@ -1,5 +1,178 @@
 # Release Notes
 
+## Search Console skill: what the second full pass could not capture (unreleased, 2026-09-18)
+
+The first full `/search-console` browser pass against a property with data succeeded, but it could
+not record several things it could see, spent two 30-second waits on anchors that never render,
+and flagged six ordinary reports as discoveries. This change closes those gaps. Everything below is
+in `.claude/skills/search-console/` and `scripts/search-console/`.
+
+**Why two waits timed out.** The Page indexing heading renders `Why pages aren’t indexed` with a
+curly apostrophe (U+2019), and `browser.md` anchored on the straight-quote form, so `wait_for`
+never matched. On the Overview, `Unread messages` is the bell's accessible name, not rendered text.
+Neither is an anchor now, and a timed-out `wait_for` is no longer silent: the capture records it in
+`discovery.anchor_misses[]` and `review.mjs` reports it as `anchor-missed`, so the next wrong
+anchor gets fixed in `browser.md` instead of costing the same wait every run.
+
+**The Performance tab is read by URL, not by clicking column toggles.** CTR and Position are hidden
+by default and their toggles were never allowlisted. The run found that the `breakdown=` and
+`metrics=` URL parameters select the tab and reveal all four columns by plain navigation, so
+`browser.md` navigates once per tab and the toggles stay off the allowlist, with no click fallback.
+
+**Two new clicks, one of them with a side effect the STOP now names.** Every noindex and
+robots.txt finding read "no examples captured" forever because no allowlisted click reached the
+examples. The reason rows on Page indexing are now clickable (at most `DRILLDOWN_ROWS_MAX` per run),
+and the drilldown's Examples table fills `examples`. Indexing alert messages, which almost certainly
+name the pages behind those counts, may now be opened (at most `ALERT_MESSAGES_MAX` per run).
+Opening one marks it read and the skill cannot undo that, so the Preflight STOP says so and consent
+covers it; `messages.unread` is transcribed before any message is opened, and the skill's own opens
+lower the next run's `unread`. What an alert names is its own finding, and counts onto the matching
+reason when that reason has no examples of its own.
+
+**Six expected surfaces stopped being discoveries.** `KNOWN_SURFACES` was seeded before the property
+had data, so Videos, the Shopping heading and the four rich-result reports all fired `surface-new`.
+They are known now, each with `conditional: true`: rich-result reports come and go with data, so a
+report Google removes is deliberately never reported as `surface-gone`. Videos is also a report of
+its own (`videos`, surface 25).
+
+**Enhancement issue labels are data, and `warning` may be null.** The missing-field warnings were
+visible on each report page but the schema held only counts, so they survived only in prose. Each
+item now carries `issues[]`, and the warning and invalid findings quote the labels. `warning` is
+the report's own "with warnings" figure or `null` when the page shows none; it is never derived
+from the issue rows, because an item can carry several issues and the sum would overcount.
+
+**A skeleton instead of mid-pass code reads.** The pass read the schema seven times to learn field
+shapes, and once copied values from the previous capture. `review.mjs --template <mode>` now prints
+every field of every expected report as a `<kind>` placeholder rendered from the validator's own
+combinators, with optional keys `?`-suffixed and a generated nonce; the validator refuses a leftover
+placeholder or `?` key, so a half-filled skeleton cannot evaluate as a clean run. Preflight now
+reads all four docs before the STOP (the STOP gates the browser, not the files), and a prior capture
+may supply `property_added` and nothing else.
+
+**Smaller fixes.** The second brand domain is a constant (`SECONDARY_DOMAINS`), probed every run,
+instead of a field transcribed every run. Below the impressions noise floor the per-page
+no-impressions findings collapse into one `perf-impressions-below-floor`, because on a six-day
+property with single-digit impressions eight "new" per-page findings said nothing about any page.
+Unread messages, enhancement warning and invalid counts, and video counts gained metric deltas. An
+unreachable MCP server at Preflight now has a recovery path (`/mcp`, then `retry`), which re-runs
+that one check and never answers the STOP. And the report gains `## Recommended next` and
+`## Leave alone`, so the ranked take the operator had to ask for is part of every report, with
+`insights.md` holding it to hypotheses, repo-or-Admin owners and no live-write commands.
+
+## Notification emails link YouTube and Pinterest (unreleased, 2026-09-15)
+
+The notification footer partial, `marketing/notifications/lib/footer-social.html`, is the last
+hardcoded copy of the social row, and it now carries all five networks. It uses the campaign
+emails' row from the previous change unchanged: one full-width cell of adjacent inline-block
+anchors, `4px 4px` anchor padding, and `&nbsp;` between icon and label as the non-break Outlook
+honours. Keeping the two rows identical means one measurement and one set of load-bearing details
+covers both.
+
+**The notification shell never narrows, so this row never wraps.** Unlike the campaign shell, the
+stock notification stylesheet has no fluid-width rule: its only phone media query sets
+`table-layout: fixed` and leaves the 600 px `.container` alone. Measured in headless Chrome against
+that shell, the five-anchor run is 478 px inside a 534 px footer cell, one line at 800, 414, 390 and
+375 px viewports. A phone client scales the whole email, footer included, which is how every other
+row in these templates already behaves. The stock mobile rule `.footer .ssb-social td { padding: 0
+5px }` is left in place, but **it no longer does the job it was written for**: it was per-network
+spacing when the row was three `<td>` elements, and now pads the one wrapper cell while the anchors
+carry their own `4px 4px`. It stays because it is harmless there and because editing
+`brand-style.css` regenerates all 46 templates, which would invalidate a render already checked
+against Admin. Rewrite it to target `.ssb-social a`, or delete it, on the next change that touches
+the stylesheet anyway.
+
+**The change bumped all 46 template versions, by design**: the footer partial is spliced into every
+branded template, so every generated file's core hash changed. Admin holds the previous version of
+each until they are synced. The render check now expects five `email-icon-` images in the social
+row, the brand URL allowlist holds ten URLs, and the real-derived `order_confirmation` render
+fixture and the synthetic verify-render fixture were updated to the five-anchor row, since both are
+asserted against the current checks.
+
+**The count used to live only in places that pinned each other, so losing a network was silent.**
+Pre-PR review demonstrated it: revert the partial to three networks, regenerate, fix the one
+version stamp the failure message points at, and the suite went green with three-network templates
+on their way to Admin. The URL hygiene test could not catch it because it is a subset check, which
+fails an URL nobody listed and passes a partial that has lost one. Two changes close it. The render
+check now derives the expected icon sequence from `lib/footer-social.html` itself, the way
+`parsePalette` already derives the hexes from `lib/brand-style.css`, and compares the sequence
+rather than counting images, so five icons of the same network no longer pass. And `brand.test.mjs`
+now asserts the partial against `ICON_NAMES` and `ICON_LABELS`, the vocabulary `snippets/icon.liquid`
+and the campaign emails already share, and requires every known URL to be present, which turns the
+allowlist from a permission list into an exact set.
+
+## The real-git test harnesses stop racing their own teardown (unreleased, 2026-09-15)
+
+A validate run failed in `npm run policies:test` on a test whose assertions all passed: the
+`finally` block's `cleanup` threw `ENOTEMPTY` removing the temp repo's `.git/`. The re-run passed.
+
+**The cause was a git child outliving `execFileSync`.** A real `git commit` can leave `gc --auto` or
+maintenance still writing under `.git/` after the call returns, and `rmSync` with the default
+`maxRetries: 0` fails hard when a directory gains an entry mid-walk. The cleanup ran milliseconds
+after the commit, so a slow runner could lose the race.
+
+**Both halves are fixed.** The shared teardown in `scripts/policies/test/helpers.mjs` and
+`cleanupDirs` in `scripts/articles/test/network-helpers.mjs` now retry transient errors
+(`maxRetries: 5, retryDelay: 100`), and both real-git harnesses turn off automatic gc and
+maintenance (`gc.auto=0`, `gc.autoDetach=false`, `maintenance.auto=false`).
+
+**Per-invocation `-c` flags are not enough when production code runs git too.** They reach only the
+harness's own commands. The articles gate runs its own `git fetch`, and a push to a local bare origin
+strips `-c` from the receiving side, so the articles harness also writes the settings into both
+repos' own config, which every git process in them reads. Any new test that runs real git in a temp
+dir should retry its teardown and disable maintenance in repo config.
+
+## Campaign emails link YouTube and Pinterest, and the social row wraps on a phone (unreleased, 2026-09-15)
+
+The storefront gained YouTube and Pinterest links in the previous change; the campaign emails in
+`marketing/emails/` hardcode their own social row, because Shopify Email cannot read theme settings,
+so they needed the two links by hand. `scripts/email-icons/` now renders five icons, the two new
+PNGs are committed and uploaded to Shopify Files, and `campaign-shell.liquid`,
+`launch-announcement.liquid` and `welcome-postlaunch.liquid` carry all five networks.
+`welcome-prelaunch-superseded.liquid` is deleted: its template was deleted in Admin once the
+post-launch welcome was running, so the file no longer stood for anything live, and git history
+keeps its last version. That also drops the copy count for a header, footer or social-row change
+from four files to three.
+
+**The row changed shape, not just length.** It was a shrink-wrapped table of one cell per network,
+which can never wrap, so five cells would have forced a phone to scale the footer or overflow. It is
+now one full-width cell of adjacent inline-block anchors. **It wraps exactly where the rest of the
+email already reflows**: the shell becomes fluid only through the existing `max-width: 620px` media
+query, so a client that ignores that query shows one line inside a scaled-down 600 px email, like
+every other row. No markup can wrap a row inside a container that does not narrow.
+
+**Three details are load-bearing**, and the emails README says so beside the snippet: the anchors are
+adjacent in source with no whitespace between them (the alternative, `font-size: 0` on the cell, is
+mishandled by Outlook's Word engine and Yahoo); the `&nbsp;` between icon and label is the non-break
+Outlook honours, since it ignores `white-space: nowrap` and `display: inline-block`; and the
+nested three-plus-two tables with Outlook ghost cells was rejected, because it needs the same
+narrowing container and would add conditionals to markup the notification footer will copy.
+
+**The width was measured, and the first measurement changed the padding.** In headless Chrome, `4px
+6px` anchor padding gave a 498 px run: it fit the 504 px footer cell at 600 px with 6 px to spare but
+split into three rows at 375 px. `4px 4px` gives 478 px, one line at 600 px and two rows at 414, 390
+and 375 px, so the planned 24 px icon fallback was not needed.
+
+## The storefront links YouTube and Pinterest beside the other three channels (unreleased, 2026-09-15)
+
+The business opened a YouTube channel and a Pinterest profile, and `config/settings_data.json` now
+sets `social_youtube_link` and `social_pinterest_link`. The footer, header and About page social
+rows and the Organization `sameAs` array each go from three links to five.
+
+**The theme needed no code.** Five-platform support was built ahead of time: the settings schema
+declares both keys, both hardcoded platform lists (`social_platforms` in
+`snippets/social-links.liquid`, `social_keys` in `snippets/structured-data-organization.liquid`)
+already name them, `snippets/icon.liquid` has both glyphs and the editor labels exist. The values
+were the only gap, and the URLs are the vanity form with no trailing slash so the visible handle
+derives cleanly from the last path segment.
+
+**Four other copies of the social row are hardcoded and are not covered here.** The three campaign
+emails in `marketing/emails/` and the notification footer partial in `marketing/notifications/`
+cannot read theme settings, so each carries its own three-platform row; they move to five in
+follow-up changes, together with the email icon pipeline that renders and hosts the icons.
+
+**The Pinterest domain claim was already complete** when this landed, so the backlog item shrinks to
+installing the Pinterest for Shopify sales channel.
+
 ## The terms of service becomes linkable sections and gains Custom Orders and Use of Finished Work (unreleased, 2026-09-13)
 
 The terms body was Shopify's stock shape: one `<p>` of `<br>`-separated prose with

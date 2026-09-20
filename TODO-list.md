@@ -73,9 +73,9 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
   personalized product pages and in the order confirmation notification (`marketing/notifications/`),
   and decide whether a checkout acknowledgement is worth adding.
 
-- **Set up a Pinterest business account with the Pinterest for Shopify app, and claim the
-  domain.** Add the Pinterest profile to the Organization `sameAs` once it exists; read
-  `docs/structured-data.md` first.
+- **Install the Pinterest for Shopify sales channel.** The business account exists, the domain is
+  claimed and the profile is in the Organization `sameAs`; what remains is the channel install in
+  Admin, and a decision on whether the Verified Merchant Program is worth applying for.
 
 - **Turn on the Meta and TikTok channel pixels.** Install each through its Shopify sales channel
   rather than a theme snippet, so the theme carries no third-party script of its own.
@@ -171,19 +171,6 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
   (the `sss-dark-scheme` defaults in `layout/password.liquid`, `sections/password.liquid` and
   `sections/password-footer.liquid`); it only renders while the gate is on. No locale files are
   involved, so there is nothing to unwind there.
-
-- **Retire the prelaunch welcome email, once the launch send is done.** Two halves, and the
-  second is the one that reaches a customer. In Admin, paste `marketing/emails/welcome-postlaunch.liquid`
-  over the "Customer signs up" automation's template and set its subject and preview text from the
-  metadata table in `marketing/emails/README.md`; **until that happens the automation keeps sending
-  the prelaunch email**, date panel and all, to every new subscriber, and nothing in this repo can
-  see that it is doing so. Then in the repo, decide whether
-  `marketing/emails/welcome-prelaunch-superseded.liquid` still earns its place: it is the only record
-  of what existing subscribers were sent, so keeping it is defensible, but it is also a fourth
-  self-contained copy of the header, footer, social row and palette, which is the drift cost the
-  "Branding is duplicated on purpose" section warns about. Pairs with the countdown item above: the
-  countdown block and that file's date panel state the same instant, and both go stale on the same
-  day, so retire them together.
 
 - **Scheduled live-drift detection for the shop policies.** `npm run policies:check` is offline
   and proves only that the repo agrees with itself; nothing automated notices when someone edits a
@@ -318,7 +305,11 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
 - **blog-shift-notes-repair-1** (security-review, 2026-09-12): the empty-blog accepted-risk row matches with a null path, which the matcher treats as a wildcard, so it suppresses that check for every blog in the shop rather than the one it was written for -> give the row an explicit key, or make the matcher require one for that check.
 - **agent-af8da37f263b91dad-2** (test-engineer, 2026-09-13): images.json records a sha256 per image but nothing compares it with the local processed file, even when the gitignored image directory is present -> implement the comparison when the directory exists, which needs the format to record the local filename.
 - **agent-af8da37f263b91dad-3** (test-engineer, 2026-09-13): the clean fixture holds a single article, so manifest key ordering across entries and cross-article rules run only against synthetic mutations -> add a second article to the committed fixture.
-- **search-console-skill-1** (test-engineer, 2026-09-13): the search-console contract test compares only check-id sets and backticked constant values, so README severities, subject kinds, schema field lists, the NOINDEX_OK list, the required-report sentence and the browser.md capture example can drift unnoticed -> parse those README tables and sentences against the exported registries, and validate the browser.md example capture.
 - **search-console-skill-2** (test-engineer, 2026-09-13): a required report (settings for audit, performance for insights) that is present but not-ready passes validation, so an insights run on a brand-new property succeeds on no performance data -> decide whether that is intended, then pin the choice with a test either way.
 - **search-console-skill-3** (test-engineer, 2026-09-13): adding a previously open finding to accepted-risks.json makes the next run list it as resolved, because runs save only unaccepted findings -> decide whether acceptance should read as resolved or as its own transition, then pin it with a test.
 - **search-console-skill-4** (test-engineer, 2026-09-13): the evaluateCapture de-duplication keeps the most severe finding per key, but no natural capture produces one key at two severities, so the rule is untested -> export the de-duplication step or find a fixture that reaches it, and assert the kept severity.
+- **search-console-run2-gaps-1** (doc-sync-checker, 2026-09-18): the remainder of an earlier contract-test item; the browser.md example capture it named is gone (the --template skeleton replaced it and is round-trip tested), but README severities, subject kinds, schema field lists, the NOINDEX_OK list and the required-report sentence can still drift unnoticed -> parse those README tables and sentences against the exported registries.
+- **search-console-run2-gaps-2** (test-engineer, 2026-09-18): an anchor-miss entry with an empty anchors list validates and yields a finding naming no anchor -> require at least one anchor in the schema, with a rejection test.
+- **search-console-run2-gaps-3** (test-engineer, 2026-09-18): the truncation test hard-codes the detail length and never checks a string exactly at the limit -> export the detail-length constant, use it in the test, and add an at-limit case that is not cut.
+- **search-console-run2-gaps-4** (code-review, 2026-09-18): the search-console checks carry two near-identical text sanitisers, one for details and one for page text, that differ only in stripping backticks -> fold them into one helper with an option, keeping details byte-identical.
+- **notification-social-five-1** (test-engineer, 2026-09-15): the two miniature footer fixtures under the notifications test dir still carry the pre-branch shape, one cell per network with nowrap, so they no longer read as miniatures of the partial they stand in for -> rebuild them as one cell of adjacent inline-block anchors. Nothing breaks today; the generator is a pure text inserter and ignores the shape.

@@ -54,6 +54,19 @@ const mut = (fn) => () => {
   return { capture, opts };
 };
 
+/**
+ * Shrink the healthy performance report to `impressions` total, keeping the invariants: one click
+ * (none at zero impressions), every impression from the US on mobile. Page rows are left alone.
+ */
+export function belowFloor(perf, impressions) {
+  const clicks = impressions > 0 ? 1 : 0;
+  const m = { clicks, impressions, ctr: impressions > 0 ? clicks / impressions : 0, position: impressions > 0 ? 12.4 : 0 };
+  const zero = { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+  perf.totals = { ...m };
+  perf.countries.rows = impressions > 0 ? [{ country: 'United States', ...m }] : [];
+  perf.devices = { desktop: { ...zero }, mobile: { ...m }, tablet: { ...zero } };
+}
+
 const reason = (slug) => mut((r) => {
   r['indexing-pages'].reasons.push({ reason: slug, source: 'Website', count: 1, examples: [`${ORIGIN}/pages/faq`] });
   r['indexing-pages'].not_indexed += 1;
@@ -99,6 +112,9 @@ export const FIXTURE_FOR = Object.freeze({
   'removal-other-active': mut((r) => { r.removals.outdated_active = 1; }),
 
   'messages-unread': mut((r) => { r.messages.unread = 1; }),
+  'messages-alert-examples': mut((r) => {
+    r.messages.alerts = [{ subject: 'New reasons prevent pages from being indexed', examples: [`${ORIGIN}/pages/about`] }];
+  }),
 
   'sitemap-missing': mut((r) => { r.sitemaps.rows = []; }),
   'sitemap-error': mut((r) => { r.sitemaps.rows[0].status = "Couldn't fetch"; }),
@@ -129,7 +145,9 @@ export const FIXTURE_FOR = Object.freeze({
   'index-reason-forbidden': reason('forbidden'),
   'index-reason-other-4xx': reason('other-4xx'),
 
-  'inspect-not-indexed': mut((r) => { r.inspections.items[1].verdict = 'not-on-google'; r.inspections.items[1].indexed = false; }),
+  'videos-not-indexed': mut((r) => { r.videos.not_indexed = 1; }),
+
+  'inspect-not-indexed':mut((r) => { r.inspections.items[1].verdict = 'not-on-google'; r.inspections.items[1].indexed = false; }),
   'inspect-canonical-mismatch': mut((r) => { r.inspections.items[1].google_canonical = `${ORIGIN}/products/lead-ii-crewneck`; }),
   'inspect-stale-crawl': mut((r) => { r.inspections.items[0].last_crawl = '2026-09-20T00:00:00Z'; }),
   'inspect-crawl-blocked': mut((r) => { r.inspections.items[2].indexing_allowed = false; }),
@@ -157,6 +175,7 @@ export const FIXTURE_FOR = Object.freeze({
   'perf-zero-impressions': mut((r) => { r.performance.totals = { clicks: 0, impressions: 0, ctr: 0, position: 0 }; }),
   'perf-brand-only': mut((r) => { r.performance.queries.rows = r.performance.queries.rows.slice(0, 1); }),
   'perf-page-no-impressions': mut((r) => { r.performance.pages.rows = r.performance.pages.rows.slice(1); }),
+  'perf-impressions-below-floor': mut((r) => { belowFloor(r.performance, 10); r.performance.pages.rows = r.performance.pages.rows.slice(1); }),
   'perf-low-ctr': mut((r) => {
     r.performance.pages.rows[1] = { url: `${ORIGIN}/products/lead-ii-vest-womens`, clicks: 1, impressions: 150, ctr: 0.0067, position: 5 };
   }),
@@ -172,6 +191,7 @@ export const FIXTURE_FOR = Object.freeze({
   'discovery-review-due': mut((r, o) => {
     o.now = new Date(Date.parse(`${KNOWN_SURFACES_REVIEWED_ON}T00:00:00Z`) + (DISCOVERY_REVIEW_DAYS + 1) * DAY_MS);
   }),
+  'anchor-missed': mut((r) => { r.discovery.anchor_misses = [{ view: 'index', anchors: ['Last update:'] }]; }),
 });
 
 /** A writable stream stand-in that collects text. */

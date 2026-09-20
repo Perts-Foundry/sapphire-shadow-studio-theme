@@ -6,13 +6,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchesFilename } from '../../lib/shopify-files.mjs';
 import { parseArgs, altFor } from '../upload-email-icons.mjs';
+import { ICON_NAMES, ICON_LABELS } from '../lib/icons.mjs';
 
 test('a bare run stages nothing, which is what makes it a dry run', () => {
   assert.deepEqual(parseArgs([]).upload, []);
 });
 
 test('each file to upload has to be named, and the order is the order given', () => {
-  assert.deepEqual(parseArgs(['--upload', 'tiktok', '--upload=instagram']).upload, ['tiktok', 'instagram']);
+  assert.deepEqual(parseArgs(['--upload', 'pinterest', '--upload=youtube']).upload, ['pinterest', 'youtube']);
 });
 
 test('a repeated name is not a second upload', () => {
@@ -52,4 +53,11 @@ test('the duplicate guard does not match a different file, or a missing one', ()
 test('Files alt text uses each network\'s own capitalisation', () => {
   assert.equal(altFor('tiktok'), 'TikTok icon for email footers');
   assert.equal(altFor('instagram'), 'Instagram icon for email footers');
+  assert.equal(altFor('youtube'), 'YouTube icon for email footers');
+  assert.equal(altFor('pinterest'), 'Pinterest icon for email footers');
+});
+
+test('every icon has a label, so no upload gets "undefined" alt text', () => {
+  assert.deepEqual(Object.keys(ICON_LABELS), ICON_NAMES);
+  for (const name of ICON_NAMES) assert.ok(!altFor(name).includes('undefined'), name);
 });

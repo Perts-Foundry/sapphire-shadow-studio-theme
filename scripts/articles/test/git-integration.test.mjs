@@ -26,10 +26,18 @@ import { cleanupDirs, madeDirs, tempDir } from './network-helpers.mjs';
 const OTHER = 'second-article';
 const RENAMED = 'welcome-renamed';
 
-/** Identity, no signing, no hooks: per invocation, so a developer's global config cannot interfere. */
+/**
+ * Identity, no signing, no hooks, no gc or maintenance: per invocation, so a developer's global
+ * config cannot interfere and no harness command leaves a git child running to race the teardown.
+ * The gate's own fetch and the bare origin's receive-pack never see these flags; `disableMaintenance`
+ * covers them.
+ */
 const SETUP_CONFIG = [
   '-c', 'user.name=Test',
   '-c', 'user.email=test@example.com',
+  '-c', 'gc.auto=0',
+  '-c', 'gc.autoDetach=false',
+  '-c', 'maintenance.auto=false',
   '-c', 'commit.gpgsign=false',
   '-c', 'core.hooksPath=/dev/null',
   '-c', 'init.defaultBranch=main',
@@ -44,17 +52,29 @@ after(() => {
   cleanupDirs();
 });
 
+/**
+ * Written into each repo's own config, so it also reaches the production gate's `fetch` (which runs
+ * without `SETUP_CONFIG`) and the push's receive-pack in the bare origin (which git strips `-c` from).
+ */
+function disableMaintenance(repo) {
+  git(repo, 'config', 'gc.auto', '0');
+  git(repo, 'config', 'gc.autoDetach', 'false');
+  git(repo, 'config', 'maintenance.auto', 'false');
+}
+
 /** A working repository holding two committed articles, pushed to a bare origin. */
 function makeRepos() {
   const base = tempDir('articles-git-');
   const origin = join(base, 'origin.git');
   const work = join(base, 'work');
   git(base, 'init', '--quiet', '--bare', origin);
+  disableMaintenance(origin);
   cpSync(CLEAN_FIXTURE, work, { recursive: true });
   addSecondArticle(work, OTHER);
   reindexInPlace(work);
   writeFileSync(join(work, '.gitignore'), '/article-images/\n/.claude/worktrees/\n', 'utf8');
   git(work, 'init', '--quiet');
+  disableMaintenance(work);
   git(work, 'add', '--all');
   git(work, 'commit', '--quiet', '-m', 'articles');
   git(work, 'remote', 'add', 'origin', origin);

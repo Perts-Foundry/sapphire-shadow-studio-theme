@@ -24,6 +24,7 @@ const fixtures = path.join(here, 'fixtures');
 const repoRoot = path.resolve(here, '../../..');
 const script = path.join(here, '..', 'verify-render.mjs');
 const css = readFileSync(paths(repoRoot).css, 'utf8');
+const social = readFileSync(paths(repoRoot).social, 'utf8');
 const palette = parsePalette(css);
 const EM_DASH = '\u2014';
 
@@ -197,11 +198,9 @@ ${cells ? `<table class="row section" style="width: 100%;" bgcolor="${P.page}">
 <table class="container" style="width: 600px; border-color: ${P.navy}; border-style: solid; border-width: 28px 32px; text-align: center;" bgcolor="${P.navy}">
 <tr>
 <td>
-<table role="presentation" class="ssb-social" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto 18px;">
+<table role="presentation" class="ssb-social" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="width: 100%; margin: 0 auto 18px;">
 <tr>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('instagram')}&nbsp;Instagram</a></td>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('facebook')}&nbsp;Facebook</a></td>
-<td align="center" style="padding: 0 8px; white-space: nowrap;"><a href="#" style="color: ${P.footerText}; text-decoration: none;">${ICON('tiktok')}&nbsp;TikTok</a></td>
+<td align="center" style="padding: 0;"><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('instagram')}&nbsp;Instagram</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('facebook')}&nbsp;Facebook</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('tiktok')}&nbsp;TikTok</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('youtube')}&nbsp;YouTube</a><a href="#" style="display: inline-block; padding: 4px 4px; color: ${P.footerText}; text-decoration: none; white-space: nowrap;">${ICON('pinterest')}&nbsp;Pinterest</a></td>
 </tr>
 </table>
 <p class="ssb-shop-name" style="font-size: 14px; color: ${P.shopName}; margin: 0 0 10px;" align="center">Sapphire Shadow Studio</p>
@@ -221,7 +220,7 @@ ${stampLine}<p class="disclaimer__subtext" style="color: ${P.footerText}; line-h
 }
 
 function run(html, opts) {
-  return verifyRender(html, { manifest, css, ...opts });
+  return verifyRender(html, { manifest, css, social, ...opts });
 }
 
 function assertAllPass(result, label) {
@@ -296,6 +295,10 @@ const mutations = [
   ['accent-reference', 'no-accent', base, (h) => mutate(h, 'We are getting your order ready.', '{{ shop.email_accent_color }}', 'accent-reference')],
   ['body-disclaimer-light', 'body-disclaimer', anchored, (h) => mutate(h, `<p class="disclaimer__subtext" style="color: ${P.bodyText}; font-size: 12px;">Tracking`, `<p class="disclaimer__subtext" style="color: ${P.footerText}; font-size: 12px;">Tracking`, 'body-disclaimer-light')],
   ['social-icon-count', 'social-row', base, (h) => mutate(h, ICON('facebook'), '', 'social-icon-count')],
+  // The removal case above fails a bare length check from below only. These two pin the directions
+  // a count could never see: a sixth icon, and the right number of icons naming the wrong network.
+  ['social-icon-added', 'social-row', base, (h) => mutate(h, ICON('pinterest'), ICON('pinterest') + ICON('pinterest'), 'social-icon-added')],
+  ['social-icon-wrong-network', 'social-row', base, (h) => mutate(h, ICON('instagram'), ICON('youtube'), 'social-icon-wrong-network')],
   ['social-shop-name-missing', 'social-row', base, (h) => mutate(h, 'class="ssb-shop-name"', 'class="ssb-shop-name-x"', 'social-shop-name-missing')],
   ['footer-container-white', 'footer-navy', base, (h) => h.replace(/(<table class="row footer"[\s\S]*?<table class="container"[^>]*)bgcolor="[^"]*"/, '$1bgcolor="#ffffff"')],
   ['header-container-white', 'header-navy', base, (h) => h.replace(/(<table class="header row"[\s\S]*?<table class="container"[^>]*)bgcolor="[^"]*"/, '$1bgcolor="#ffffff"')],
@@ -447,7 +450,7 @@ const realFixture = path.join(fixtures, 'render.order_confirmation.html');
 test('the real-derived fixture passes every check against the real manifest and stylesheet', () => {
   const html = readFileSync(realFixture, 'utf8');
   const real = readManifest(repoRoot);
-  const r = verifyRender(html, { id: 'order_confirmation', version: real.templates.order_confirmation.version, manifest: real, css });
+  const r = verifyRender(html, { id: 'order_confirmation', version: real.templates.order_confirmation.version, manifest: real, css, social });
   assertAllPass(r, 'render.order_confirmation.html');
 });
 

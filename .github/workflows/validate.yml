@@ -745,7 +745,7 @@ jobs:
       # ── email-icons tooling tests ──────────────────────────────
       # `scripts/email-icons/` renders the social icons the Shopify Email
       # templates point at. Two invariants are worth CI: the icon path data is a
-      # hand copy of three branches of snippets/icon.liquid, and the PNGs under
+      # hand copy of five branches of snippets/icon.liquid, and the PNGs under
       # marketing/emails/assets/ are the record of what was uploaded to Shopify
       # Files. Both drift silently otherwise, in a surface nothing else covers
       # (theme-check ignores marketing/**). Unit-only: the upload script's live

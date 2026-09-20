@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { run, parseArgs } from '../review.mjs';
+import { SECONDARY_DOMAINS } from '../lib/checks.mjs';
+import { validateCapture } from '../lib/schema.mjs';
 import { FIXTURES, REPO_ROOT, SC_ROOT, SITEMAP_URLS, sink } from './harness.mjs';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'search-console-cli-')));
@@ -54,11 +56,11 @@ test('--offline makes no network call, even with a secondary domain to probe', a
   assert.match(r.out, /capture: ~\/capture\.json/);
 });
 
-test('--sitemap-count replaces the sitemap fetch', async () => {
+test('--sitemap-count replaces the sitemap fetch; only the SECONDARY_DOMAINS probe goes out', async () => {
   const w = world();
   const r = await cli([fixture('capture-healthy.json'), '--sitemap-count', '17', '--now', '2026-12-01T15:00:00Z'], w);
   assert.equal(r.code, 0, r.out + r.err);
-  assert.deepEqual(w.calls, []);
+  assert.deepEqual(w.calls, SECONDARY_DOMAINS.map((h) => `https://${h}/`));
 });
 
 test('without --offline the live sitemap is fetched from the property host', async () => {
@@ -69,15 +71,12 @@ test('without --offline the live sitemap is fetched from the property host', asy
     'https://sapphireshadowstudio.com/sitemap.xml': index,
     'https://sapphireshadowstudio.com/sitemap_pages_1.xml': child,
   };
-  const calls = [];
-  const fetchImpl = async (url) => {
-    calls.push(url);
-    return { status: bodies[url] ? 200 : 404, url, headers: new Headers(), text: async () => bodies[url] ?? '' };
-  };
+  const fetchImpl = liveFetch(bodies, aliasRedirects());
   const r = await cli([fixture('capture-healthy.json'), '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
   assert.equal(r.code, 0, r.out + r.err);
-  assert.deepEqual(calls.sort(), Object.keys(bodies).sort());
-  assert.deepEqual(JSON.parse(r.out).fresh, []);
+  assert.deepEqual([...fetchImpl.calls].sort(), [...Object.keys(bodies), ...SECONDARY_DOMAINS.map((h) => `https://${h}/`)].sort());
+  const fresh = JSON.parse(r.out).fresh;
+  assert.deepEqual(fresh.map((f) => [f.check, f.url, f.severity]), SECONDARY_DOMAINS.map((h) => ['secondary-domain-redirect', h, 'INFO']));
 });
 
 test('--print-state-dir prints the resolved dir with HOME collapsed and exits 0', async () => {
@@ -160,7 +159,59 @@ test('a fresh ERROR exits 1', async () => {
 test('parseArgs defaults', () => {
   assert.deepEqual(parseArgs(['c.json']), {
     capture: 'c.json', full: false, noSave: false, json: false, offline: false, sitemapCount: null, now: null, printStateDir: false,
+    template: null,
   });
+});
+
+test('--template prints a parseable skeleton per mode and touches no state dir', async () => {
+  for (const mode of ['audit', 'insights']) {
+    const w = world();
+    const r = await cli(['--template', mode], w);
+    assert.equal(r.code, 0, r.err);
+    const t = JSON.parse(r.out);
+    assert.equal(t.mode, mode);
+    assert.equal(fs.existsSync(w.state), false, 'the template creates nothing');
+    assert.deepEqual(w.calls, []);
+  }
+});
+
+test('--template runs before the state-dir check, which it neither needs nor weakens', async () => {
+  const w = world();
+  const inside = path.join(SC_ROOT, 'test', 'fixtures', 'state-should-not-exist');
+  const r = await cli(['--template', 'audit'], { ...w, env: { ...w.env, SEARCH_CONSOLE_STATE_DIR: inside } });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(fs.existsSync(inside), false);
+  const refused = await cli([fixture('capture-healthy.json'), '--offline'], { ...w, env: { ...w.env, SEARCH_CONSOLE_STATE_DIR: inside } });
+  assert.equal(refused.code, 2, 'a capture run is still refused a state dir inside the repo');
+});
+
+test('--template misuse is a usage error (2)', async () => {
+  const w = world();
+  const bogus = await cli(['--template', 'bogus'], w);
+  assert.equal(bogus.code, 2);
+  assert.match(bogus.err, /audit, insights/);
+  for (const argv of [['--template', 'audit', 'c.json'], ['--template', '--print-state-dir'], ['--template'], ['--template', '--no-save'],
+    ['--template', 'audit', '--print-state-dir'], ['--template', 'audit', '--json'], ['--template', 'audit', '--offline'],
+    ['--template', 'audit', '--now', '2026-12-01T00:00:00Z'], ['--template', 'audit', '--full'], ['--template', 'audit', '--no-save'],
+    ['--template', 'audit', '--sitemap-count', '3'], ['--template', 'audit', '--template', 'insights']]) {
+    const r = await cli(argv, w);
+    assert.equal(r.code, 2, argv.join(' '));
+    assert.match(r.err, /usage:/);
+  }
+});
+
+test('a saved --template skeleton fails review as capture-invalid naming placeholders', async () => {
+  const w = world();
+  const t = await cli(['--template', 'audit'], w);
+  const file = path.join(w.home, 'skeleton.json');
+  fs.writeFileSync(file, t.out);
+  const r = await cli([file, '--offline', '--json'], w);
+  assert.equal(r.code, 1);
+  const fresh = JSON.parse(r.out).fresh;
+  assert.ok(fresh.every((f) => f.check === 'capture-invalid'));
+  assert.ok(fresh.some((f) => /placeholder left unfilled/.test(f.detail)));
+  assert.ok(fresh.some((f) => /\? suffix|`\?` suffix/.test(f.detail)), 'an optional key left with its ? suffix is named');
+  assert.ok(validateCapture(JSON.parse(t.out)).errors.length > 0);
 });
 
 test('spawn smoke: the CLI runs as a process with no shell', () => {
@@ -191,6 +242,10 @@ function liveFetch(bodies, handlers = {}) {
   impl.calls = calls;
   return impl;
 }
+/** Handlers answering a permanent redirect to the property for each secondary host. */
+const aliasRedirects = (extra = []) => Object.fromEntries([...SECONDARY_DOMAINS, ...extra].map((h) => [
+  `https://${h}/`, (url) => ({ status: 301, url, headers: new Headers({ location: `${HOST}/` }), text: async () => '' }),
+]));
 const healthySitemap = () => ({
   [`${HOST}/sitemap.xml`]: `<sitemapindex><sitemap><loc>${HOST}/sitemap_pages_1.xml</loc></sitemap></sitemapindex>`,
   [`${HOST}/sitemap_pages_1.xml`]: urlset(SITEMAP_URLS),
@@ -236,14 +291,21 @@ test('an index that answers 500 is reported as unreachable', async () => {
 test('a secondary domain is probed unfollowed, and a permanent redirect to the property is INFO', async () => {
   const w = world();
   const file = writeCapture(w, 'capture-alias.json', (c) => { c.reports.settings.secondary_domains = ['brand-alias.example']; });
-  const fetchImpl = liveFetch(healthySitemap(), {
-    'https://brand-alias.example/': (url) => ({ status: 301, url, headers: new Headers({ location: `${HOST}/` }), text: async () => '' }),
-  });
+  const fetchImpl = liveFetch(healthySitemap(), aliasRedirects(['brand-alias.example']));
   const r = await cli([file, '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
   assert.equal(r.code, 0, r.out + r.err);
   assert.ok(fetchImpl.calls.includes('https://brand-alias.example/'));
   const probe = JSON.parse(r.out).fresh.filter((f) => f.check === 'secondary-domain-redirect');
-  assert.deepEqual(probe.map((f) => [f.url, f.severity]), [['brand-alias.example', 'INFO']]);
+  assert.deepEqual(probe.map((f) => [f.url, f.severity]).sort(), [...SECONDARY_DOMAINS, 'brand-alias.example'].map((h) => [h, 'INFO']).sort());
+});
+
+test('a capture listing a SECONDARY_DOMAINS host probes it once', async () => {
+  const w = world();
+  const file = writeCapture(w, 'capture-dup.json', (c) => { c.reports.settings.secondary_domains = [...SECONDARY_DOMAINS]; });
+  const fetchImpl = liveFetch(healthySitemap(), aliasRedirects());
+  const r = await cli([file, '--json', '--now', '2026-12-01T15:00:00Z'], w, { fetchImpl });
+  assert.equal(r.code, 0, r.out + r.err);
+  for (const h of SECONDARY_DOMAINS) assert.equal(fetchImpl.calls.filter((u) => u === `https://${h}/`).length, 1);
 });
 
 test('a malformed or unparseable accepted-risks file exits 2', async () => {
