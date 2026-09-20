@@ -136,18 +136,18 @@
             endif
             assign option_name_id = 'VariantOptionName-' | append: block.id | append: '-' | append: fieldset_index
           -%}
+          {%- comment -%}
+            A `<legend>` IS the fieldset's accessible name, so the size-guide link nested inside it
+            would otherwise make this group announce as "Size Size guide". aria-labelledby wins
+            over the legend (accname-1.2 resolves it first), pointing the name at the option name
+            alone. Applied ONLY on the option that carries the link, so every other option's
+            accessible name stays exactly as it was.
+          {%- endcomment -%}
           <fieldset
             class="variant-option variant-option--buttons{% if variant_style == 'swatch' %} variant-option--swatches{% else %} variant-option--{{ settings.variant_button_width }}{% endif %}"
             data-fieldset-index="{{ fieldset_index }}"
             ref="fieldsets[]"
             {{ option_id_attribute }}
-            {%- comment -%}
-              A <legend> IS the fieldset's accessible name, so the size-guide link nested inside it
-              would otherwise make this group announce as "Size Size guide". aria-labelledby wins
-              over the legend (accname-1.2 resolves it first), pointing the name at the option name
-              alone. Applied ONLY on the option that carries the link, so every other option's
-              accessible name stays exactly as it was.
-            {%- endcomment -%}
             {% if is_size_option %}
               aria-labelledby="{{ option_name_id }}"
             {% endif %}
