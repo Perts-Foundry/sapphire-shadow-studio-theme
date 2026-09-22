@@ -245,7 +245,7 @@ Captures and run files hold live property data and search query text, and never 
 
 ## Shopify MCP tools and limits
 
-Two Shopify MCP servers may be registered: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Admin API scopes change over time, so verify a scope before relying on a write capability rather than assuming a fixed set; the full gap list is `docs/shopify-mcp-notes.md`. Prefer `validate_theme_codeblocks` over guessing whether a schema, filter, or tag is valid.
+Two Shopify MCP servers are attached through `.claude/orchestrate.json`: `shopify-dev` (docs search + code validation) and `shopify` (Admin data). Admin API scopes change over time, so verify a scope before relying on a write capability rather than assuming a fixed set; the full gap list is `docs/shopify-mcp-notes.md`. Prefer `validate_theme_codeblocks` over guessing whether a schema, filter, or tag is valid.
 
 ## Shopify best practices
 
