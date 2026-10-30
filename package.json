@@ -54,9 +54,9 @@
     "test:all": "node scripts/run-all-tests.mjs"
   },
   "devDependencies": {
-    "@shopify/cli": "4.8.4",
+    "@shopify/cli": "4.9.4",
     "heic-decode": "2.1.0",
-    "pa11y-ci": "4.1.1",
+    "pa11y-ci": "5.0.0",
     "sharp": "0.35.5"
   }
 }
