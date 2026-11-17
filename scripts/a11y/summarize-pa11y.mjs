@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Turn `pa11y-ci --json` output into a bounded, sanitised PR-comment body.
+// Turn the audit report scripts/a11y/run-audit.mjs writes (the same JSON shape
+// `pa11y-ci --json` wrote) into a bounded, sanitised PR-comment body.
 //
 // Four jobs, all of them safety rather than presentation:
 //
-//   FAIL CLOSED ON ZERO. pa11y-ci exits 0 when it audited nothing. A config
+//   FAIL CLOSED ON ZERO. A runner exits 0 when it audited nothing. A config
 //   that lost its URLs, a run that died before starting, an empty results
 //   object: all of them look like "no accessibility errors". Auditing zero
 //   pages is a failure here, never a pass. This is why the URL count is read
@@ -20,9 +21,8 @@
 //   the per-rule count is what tells you when a rule is safe to delete.
 //
 //   SANITISE. Every issue message, selector and context snippet is page-derived
-//   text, and on a config error pa11y can echo the config itself, which holds a
-//   session cookie. None of it may reach a PR comment as markup, as a fence
-//   break, or verbatim.
+//   text, and so is a load error the runner records for a URL. None of it may
+//   reach a PR comment as markup, as a fence break, or verbatim.
 //
 //   BOUND. GitHub rejects a comment over 65536 characters. An audit finding
 //   hundreds of issues would produce a body that fails to post, and a failed
@@ -112,17 +112,18 @@ export function sanitize(text, max = 300) {
  * @property {number} warnings    non-gating needs-review findings (axe could
  *                                not measure, e.g. text over an image); counted
  *                                and disclosed so they can be tracked over time
- * @property {number} malformed   result entries pa11y-ci recorded for a URL it
- *                                could not test at all (a load failure or a
- *                                Chrome crash serialises as a bare `{}`)
+ * @property {number} malformed   result entries the runner recorded for a URL it
+ *                                could not test at all: a load failure, a
+ *                                Chrome crash, or run-audit.mjs's wrong-theme
+ *                                entry, none of which carries a `type`
  * @property {string} reason
  * @property {string} body        markdown, already bounded and sanitised
  */
 
 /**
- * @param {unknown} raw parsed `pa11y-ci --json` output
+ * @param {unknown} raw parsed audit report (run-audit.mjs, pa11y-ci's JSON shape)
  * @param {object} [opts]
- * @param {number|null} [opts.exitCode] pa11y-ci's own exit code, when known
+ * @param {number|null} [opts.exitCode] the runner's own exit code, when known
  * @param {string[]} [opts.baseline] axe rule ids to suppress; defaults to none,
  *   so a caller that forgets to pass one over-reports rather than under-reports
  * @returns {Summary}
@@ -131,20 +132,20 @@ export function sanitize(text, max = 300) {
  */
 export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
   if (!raw || typeof raw !== 'object') {
-    return fail('pa11y-ci produced no parseable JSON (it probably failed to start)');
+    return fail('the audit produced no parseable JSON (it probably failed to start)');
   }
 
   const results = raw.results && typeof raw.results === 'object' ? raw.results : null;
-  if (!results) return fail('pa11y-ci JSON has no `results` object');
+  if (!results) return fail('the audit JSON has no `results` object');
 
   const urls = Object.keys(results);
   // THE fail-closed floor. Nothing below this point can turn zero URLs green.
   if (urls.length === 0) {
-    return fail('pa11y-ci audited 0 URLs. The config lost its URL list, or the run died before the first page.');
+    return fail('the audit audited 0 URLs. The config lost its URL list, or the run died before the first page.');
   }
 
   const total = typeof raw.total === 'number' ? raw.total : urls.length;
-  if (total === 0) return fail('pa11y-ci reported total=0 URLs audited');
+  if (total === 0) return fail('the audit reported total=0 URLs audited');
 
   const baselined = new Set(baseline.map((c) => String(c).toLowerCase()));
 
@@ -158,8 +159,9 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
     // no longer discriminates. Fail closed instead.
     const raw = results[url];
     const entries = Array.isArray(raw) ? raw : [{ __untested: raw === undefined ? 'missing' : typeof raw }];
-    // pa11y-ci stores a caught exception as the URL's whole result array, and
-    // an Error serialises to `{}`. Such an entry has no `type`, so the old
+    // The runner stores a caught exception as the URL's whole result array
+    // (pa11y-ci's Error serialised to `{}`; run-audit.mjs writes
+    // `{ message }`). Such an entry has no `type`, so the old
     // `type === 'error'` filter counted that URL as a clean pass. It is now a
     // hard failure: a page that never loaded is not a page that passed.
     const malformed = entries.filter((e) => !e || typeof e !== 'object' || typeof e.type !== 'string');
@@ -222,7 +224,7 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
   }
 
   if (malformed > 0) {
-    lines.push(`❌ **${malformed} URL result(s) could not be tested at all** (page load failure or a Chrome crash); see the job log. These are counted as failures, not passes.`);
+    lines.push(`❌ **${malformed} URL result(s) could not be tested at all** (page load failure, a Chrome crash, or a page not served by the preview theme); the \`run-audit:\` lines in the job log name which. These are counted as failures, not passes.`);
     lines.push('');
   }
 
@@ -285,22 +287,21 @@ export function summarize(raw, { exitCode = null, baseline = [] } = {}) {
   if (malformed > 0) {
     return {
       ok: false, total, passes, errors, suppressed, warnings, malformed, body,
-      reason: `${malformed} URL(s) could not be tested (load failure or crash)`,
+      reason: `${malformed} URL(s) could not be tested (load failure, crash, or wrong theme)`,
     };
   }
 
-  // A non-zero pa11y-ci exit with nothing parsed out means it failed for some
+  // A non-zero runner exit with nothing parsed out means it failed for some
   // other reason (a page that would not load, a Chrome crash). Do not green it.
-  // This net only fires when the report is otherwise empty: pa11y-ci counts
-  // EVERY issue it reports toward a URL's pass/fail, so with the baseline
-  // applied HERE rather than in the runner it legitimately exits non-zero on
-  // any baselined finding, and with includeWarnings it does the same on any
-  // needs-review warning. The per-URL `malformed` check above is the primary
-  // crash detector now.
+  // This net only fires when the report is otherwise empty: run-audit.mjs
+  // exits 2 when any URL has an error-typed or untyped entry, so with the
+  // baseline applied HERE rather than in the runner it legitimately exits
+  // non-zero on any baselined finding. A warnings-only run exits 0. The
+  // per-URL `malformed` check above is the primary crash detector now.
   if (errors === 0 && suppressed === 0 && warnings === 0 && exitCode !== null && exitCode !== 0) {
     return {
       ok: false, total, passes, errors, suppressed, warnings, malformed, body,
-      reason: `pa11y-ci exited ${exitCode} but reported no accessibility findings at all; the run itself failed`,
+      reason: `the audit runner exited ${exitCode} but reported no accessibility findings at all; the run itself failed`,
     };
   }
 

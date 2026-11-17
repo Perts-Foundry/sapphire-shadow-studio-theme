@@ -196,7 +196,7 @@ jobs:
     if: always() && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     # 15 was the pre-a11y budget; the dynamic audit adds an authenticated
-    # pa11y-ci pass over every storefront path in scripts/a11y/paths.json.
+    # pa11y pass over every storefront path in scripts/a11y/paths.json.
     timeout-minutes: 25
     permissions:
       contents: read
@@ -206,8 +206,9 @@ jobs:
       # and skip ANSI escape sequences entirely. Any tool that ignores it
       # is still defended by the per-step `sed -E ...` strip in capture.
       NO_COLOR: "1"
-      # puppeteer (a pa11y-ci dependency) would otherwise try to download its
-      # own Chromium. `npm ci --ignore-scripts` already blocks that; this makes
+      # puppeteer (a pa11y-ci dependency, loaded by scripts/a11y/run-audit.mjs)
+      # would otherwise try to download its own Chromium.
+      # `npm ci --ignore-scripts` already blocks that; this makes
       # the intent explicit and covers any non-lifecycle download path. pa11y
       # is pointed at the runner's preinstalled Chrome instead.
       PUPPETEER_SKIP_DOWNLOAD: "1"
@@ -1185,7 +1186,7 @@ jobs:
       #
       # `contrast:lint` is the STATIC layer: it reads config/settings_data.json
       # directly and needs no network, no storefront password, and no preview
-      # theme. The DYNAMIC layer (pa11y-ci against the deployed preview theme)
+      # theme. The DYNAMIC layer (pa11y against the deployed preview theme)
       # is the "A11y audit" steps further down, which depend on the
       # deploy-preview job having pushed a rendered theme first.
       #
@@ -1475,7 +1476,7 @@ jobs:
             echo "GHEOF"
           } >> "$GITHUB_OUTPUT"
 
-      # ── Dynamic a11y audit (pa11y-ci against the preview theme) ─
+      # ── Dynamic a11y audit (pa11y against the preview theme) ───
       # The dynamic half of the two-layer accessibility check; the static half
       # is the contrast lint above. This covers what colour maths cannot: real
       # DOM, real font sizes, real focus order, real overlay schemes composited
@@ -1484,6 +1485,15 @@ jobs:
       # comment and the same required `validate / validate` context as every
       # other check; `needs: deploy-preview` is what guarantees the theme it
       # audits exists and matches this head SHA.
+      #
+      # Flow: get-auth-cookie.mjs proves the preview with Node fetch and
+      # prints the session cookie; the config step writes it to a 0600 file
+      # in RUNNER_TEMP; scripts/a11y/run-audit.mjs puts it in each Chrome
+      # context's cookie jar, runs pa11y, and checks per page that the theme
+      # pa11y audited is the preview theme. A page served by any other theme
+      # fails the audit. pa11y-ci is no longer called: it passed the cookie as
+      # a header, which pa11y applies to the first request only, and the
+      # audit ran against the live theme without anything noticing.
       #
       # Three preview states, decided here and threaded through the report:
       #   success -> authenticate, build the config, audit.
@@ -1508,6 +1518,7 @@ jobs:
           THEME_ID: ${{ needs.deploy-preview.outputs.theme_id }}
           CONFIG_PATH: ${{ runner.temp }}/pa11yci.json
           CANONICAL_BASE_URL_FILE: ${{ runner.temp }}/canonical-base-url
+          COOKIE_FILE: ${{ runner.temp }}/a11y-cookie
         run: |
           set +e
           if [ "$PREVIEW_RESULT" = "skipped" ]; then
@@ -1540,6 +1551,17 @@ jobs:
           if [ -n "$COOKIE" ]; then
             echo "::add-mask::$COOKIE"
           fi
+          # The cookie reaches the audit step through a file only it reads,
+          # owner-only. Written even when empty, so PUBLIC mode hands the
+          # runner a deterministic input rather than a missing file.
+          ( umask 077; printf '%s' "$COOKIE" > "$COOKIE_FILE" )
+          COOKIE_WRITE_RC=$?
+          unset COOKIE
+          if [ "$COOKIE_WRITE_RC" -ne 0 ]; then
+            echo "::error::Could not write the session cookie file."
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           # Build against the origin the store CANONICALISED to, not the one we
           # started from. `vars.SHOPIFY_FLAG_STORE` is the *.myshopify.com host,
@@ -1552,12 +1574,11 @@ jobs:
           CANONICAL="${CANONICAL:-$BASE_URL}"
           echo "Auditing origin: $CANONICAL"
 
-          # The config file embeds the cookie. It goes to RUNNER_TEMP and is
-          # never uploaded as an artifact or printed.
-          COOKIE="$COOKIE" BASE_URL="$CANONICAL" node scripts/a11y/build-pa11yci.mjs > "$CONFIG_PATH"
+          # The config carries no cookie; run-audit.mjs reads COOKIE_FILE.
+          BASE_URL="$CANONICAL" node scripts/a11y/build-pa11yci.mjs > "$CONFIG_PATH"
           BUILD_RC=$?
           if [ "$BUILD_RC" -ne 0 ]; then
-            echo "::error::Failed to build the pa11y-ci config."
+            echo "::error::Failed to build the pa11y config."
             echo "exit_code=$BUILD_RC" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1575,17 +1596,24 @@ jobs:
             exit 0
           fi
           echo "Built pa11y config with ${URL_COUNT} URL(s)."
+          # canonical_base_url is a public storefront origin, not a secret. The
+          # runner scopes the cookies to it.
           {
             echo "config_path=$CONFIG_PATH"
+            echo "canonical_base_url=$CANONICAL"
             echo "url_count=$URL_COUNT"
             echo "exit_code=0"
           } >> "$GITHUB_OUTPUT"
 
       - name: A11y audit
         id: a11y
-        # No secret env here by design; the config file carries the cookie.
+        # No secret env here by design; the 0600 cookie file carries the
+        # session, and run-audit.mjs never logs a cookie value.
         env:
           CONFIG_PATH: ${{ steps.a11y-config.outputs.config_path }}
+          THEME_ID: ${{ needs.deploy-preview.outputs.theme_id }}
+          BASE_URL: ${{ steps.a11y-config.outputs.canonical_base_url }}
+          COOKIE_FILE: ${{ runner.temp }}/a11y-cookie
           REPORT_PATH: ${{ runner.temp }}/pa11y-report.json
           CONFIG_RC: ${{ steps.a11y-config.outputs.exit_code }}
           PREVIEW_STATE: ${{ steps.a11y-config.outputs.preview_state }}
@@ -1616,15 +1644,17 @@ jobs:
           if [ "${CONFIG_RC:-1}" != "0" ]; then
             echo "Skipped: the config step failed."
             echo "exit_code=1" >> "$GITHUB_OUTPUT"
-            write_summary "Could not authenticate against the preview theme; pa11y-ci did not run."
+            write_summary "Could not authenticate against the preview theme; the audit did not run."
             exit 0
           fi
 
-          npx pa11y-ci --config "$CONFIG_PATH" --json > "$REPORT_PATH" 2>/tmp/pa11y.err
+          # stdout (one line per URL: document theme id, page theme id and
+          # role, verdict) goes straight to the log; it is the record of which
+          # theme each page was audited on. The report goes to REPORT_PATH.
+          node scripts/a11y/run-audit.mjs 2>/tmp/pa11y.err
           PA11Y_RC=$?
-          # stderr only. stdout is the JSON report, and pa11y can echo the
-          # config (which holds the session cookie) into stderr on a config
-          # error, so this is capped rather than dumped.
+          # stderr carries page-derived error text, so it is capped rather
+          # than dumped.
           head -c 2000 /tmp/pa11y.err || true
 
           SUMMARY=$(node scripts/a11y/summarize-pa11y.mjs "$REPORT_PATH" --exit-code "$PA11Y_RC")
@@ -1638,10 +1668,10 @@ jobs:
             process.stdin.on("data", (d) => { s += d; }).on("end", () => {
               let o;
               try { o = JSON.parse(s); } catch {
-                console.error("pa11y-ci: summary unavailable (unparseable)");
+                console.error("pa11y: summary unavailable (unparseable)");
                 process.exit(1);
               }
-              console.error(`pa11y-ci: ${o.reason} (${o.total} URL(s), ${o.errors} error(s))`);
+              console.error(`pa11y: ${o.reason} (${o.total} URL(s), ${o.errors} error(s))`);
               process.stdout.write(o.body || "");
             });')
           BODY_RC=$?
@@ -1955,7 +1985,7 @@ jobs:
               `|:------|:-----|:------:|`,
               `| **Theme Check** | \`shopify theme check --fail-level error\` | ${status(themeCheck)} |`,
               `| **Reconcile** | \`git cherry HEAD origin/shopify-sync\` | ${status(reconcile)} |`,
-              `| **A11y audit** | \`pa11y-ci\` (axe, WCAG 2.1 AA) vs preview theme | ${a11yState === 'skipped' ? '⏭️ (no preview)' : status(a11y)} |`,
+              `| **A11y audit** | \`pa11y\` (axe, WCAG 2.1 AA) vs preview theme, theme id checked per page | ${a11yState === 'skipped' ? '⏭️ (no preview)' : status(a11y)} |`,
               '',
               '### Tooling',
               '',
@@ -2010,7 +2040,7 @@ jobs:
             const details = [
               { title: 'Theme Check', tool: 'shopify theme check', out: themeCheckOut, exit: themeCheck },
               { title: 'Reconcile', tool: 'git cherry', out: reconcileOut, exit: reconcile },
-              { title: 'A11y audit', tool: 'pa11y-ci against the preview theme', out: a11ySummary, exit: a11y, raw: true },
+              { title: 'A11y audit', tool: 'pa11y against the preview theme, theme id checked per page', out: a11ySummary, exit: a11y, raw: true },
               { title: 'Size chart', tool: 'npm run size-chart:test', out: sizeChartOut, exit: sizeChart },
               { title: 'Product images', tool: 'npm run lib:test + npm run images:test', out: productImagesOut, exit: productImages },
               { title: 'Blank inventory', tool: 'npm run blank-inventory:test', out: blankInventoryOut, exit: blankInventory },

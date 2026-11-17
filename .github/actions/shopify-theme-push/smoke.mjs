@@ -300,7 +300,7 @@ export function summarize(results) {
 // `updateJar`, `cookieHeader`, `BROWSER_HEADERS` above and
 // `authenticateStorefront` below are exported for
 // scripts/a11y/get-auth-cookie.mjs, which drives the same storefront password
-// flow to obtain a cookie for pa11y-ci. They are exported rather than copied so
+// flow to obtain a cookie for the pa11y audit. They are exported rather than copied so
 // the two callers cannot drift: this store is behind Cloudflare bot management,
 // and the exact header set and manual-redirect cookie handling here are what
 // was found to get through it. Nothing else about smoke.mjs is shared.

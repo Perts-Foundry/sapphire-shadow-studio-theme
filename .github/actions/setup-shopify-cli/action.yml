@@ -29,8 +29,9 @@ runs:
       #              get their platform binaries from `optionalDependencies`
       #              (per-platform packages npm resolves at install time), not
       #              from a postinstall download.
-      #   puppeteer  transitive dep of `pa11y-ci` (the accessibility audit in
-      #              preview.yml). Its install script downloads a Chromium
+      #   puppeteer  transitive dep of `pa11y-ci`, loaded through it by
+      #              `scripts/a11y/run-audit.mjs` (the accessibility audit in
+      #              validate.yml). Its install script downloads a Chromium
       #              build. Blocking it is DELIBERATE and load-bearing: the
       #              a11y job points pa11y at the runner's preinstalled
       #              `/usr/bin/google-chrome` instead, and also sets

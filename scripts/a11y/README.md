@@ -1,8 +1,20 @@
 # scripts/a11y/
 
-pa11y-ci against the PR's deployed preview theme. This is the dynamic half of the two-layer
+pa11y against the PR's deployed preview theme. This is the dynamic half of the two-layer
 accessibility check; the static half is `scripts/contrast/`, which lints colour schemes inside the
 required `validate / validate` context.
+
+The flow, one step per file:
+
+1. `get-auth-cookie.mjs` gets through the storefront password with Node `fetch`, pins the session
+   to the preview theme, proves the pin from the `server-timing` header, and prints the session
+   cookie.
+2. The workflow writes that cookie to an owner-only file in `$RUNNER_TEMP`.
+3. `build-pa11yci.mjs` builds the pa11y config: the URL list, each URL pinned with
+   `?preview_theme_id=`, and the WCAG 2.1 AA defaults. It carries no cookie.
+4. `run-audit.mjs` puts the cookie into each Chrome context's cookie jar, runs pa11y on each URL,
+   checks which theme the audited page came from, and writes the report.
+5. `summarize-pa11y.mjs` turns the report into the CI Report comment and the pass/fail verdict.
 
 These scripts are driven by the "A11y audit" steps of the `validate` job in
 `.github/workflows/validate.yml`, which `needs: deploy-preview` so the theme it audits is known to
@@ -42,6 +54,47 @@ So `get-auth-cookie.mjs` fetches the preview URL and reads the theme id back out
 catches a Cloudflare interstitial, which returns something that is not a rendered storefront at all.
 Nothing is printed unless that assertion passes.
 
+That proves Node's session, not Chrome's. Chrome is a separate client with its own cookie jar, so
+`run-audit.mjs` checks the theme again, on every audited page; see the next section.
+
+## The theme-identity check in run-audit.mjs
+
+pa11y-ci used to run the audit, with the cookie passed as a `Cookie` header. pa11y applies
+`headers` by intercepting requests and overriding the **first request only**. Redirect hops,
+subresources and in-page fetches went out with Chrome's own jar, which never held the preview pin.
+The audit ran against the live theme, and nothing noticed. pa11y-ci also gives no hook into the
+page after the audit, so nothing could have checked.
+
+`run-audit.mjs` drives pa11y's own API instead. For each URL it:
+
+- opens a fresh browser context and puts the cookies into its jar with `setCookie`, scoped by URL
+  so they are host-only, like the ones Shopify sets. It never passes `headers`, so pa11y never
+  intercepts requests, and Shopify's own `Set-Cookie` preview pin lands in the jar the way it does
+  for a person following a preview link;
+- records the `server-timing` theme id of each main-frame document response (the last one is the
+  final redirect hop);
+- after pa11y finishes, reads `window.Shopify.theme` (`id`, `role`) from the page pa11y audited.
+
+When the page's theme id is not the preview theme, or the document was served by another theme,
+the URL's findings are discarded and replaced with one entry naming both ids. That entry has no
+`type`, so the summariser counts it as an untested URL and fails the audit. A page with no
+`Shopify.theme` at all (not a rendered storefront page) fails the same way. A final document with
+no theme id in `server-timing` does not fail on its own; the page's own global decides.
+
+The job log has one line per URL from the runner, for example:
+
+```
+run-audit: /products/x: doc theme 123, page theme 123 (unpublished): ok
+run-audit: /cart: doc theme 456, page theme 456 (main): WRONG THEME
+```
+
+A `WRONG THEME` line means Chrome rendered a theme other than the PR's preview on that page: the
+session was not pinned. `page theme -` means the page had no `Shopify.theme`. Neither is an
+accessibility finding, and rerunning will not fix it; the preview session handoff needs looking at.
+
+For a one-off diagnosis, set `SCREEN_CAPTURE_DIR` and the runner saves one full-page screenshot per
+URL there.
+
 ## Verified against the live store, 2026-08-16
 
 The activation mechanism was the plan's flagged load-bearing assumption, so it was checked
@@ -74,16 +127,18 @@ falling back to an unauthenticated audit of the password page.
 
 ## Secret handling
 
-- `STOREFRONT_PASSWORD` is scoped to the auth STEP, never the job. The pa11y step launches
+- `STOREFRONT_PASSWORD` is scoped to the auth STEP, never the job. The audit step launches
   `--no-sandbox` Chrome that executes third-party page JavaScript, and the password must not be in
   that process's environment.
 - Inputs are environment-only, never argv: a password in a process argument is world-readable in
   `/proc` on the runner.
 - The emitted cookie is a live authenticated session. The job masks it with `::add-mask::` before
   anything else can emit it.
-- The generated pa11y config embeds that cookie. It is written to `$RUNNER_TEMP` and must never be
-  uploaded as an artifact or printed. pa11y can echo its config into stderr on a config error,
-  which is why the job caps stderr rather than dumping it.
+- The cookie reaches the audit step through one file, `$RUNNER_TEMP/a11y-cookie`, written with
+  `umask 077` and read only by `run-audit.mjs`. It must never be uploaded as an artifact or printed.
+  The pa11y config carries no cookie, and `build-pa11yci.mjs` refuses a `headers` key in
+  `paths.json` defaults. `run-audit.mjs` logs no cookie name or value, and the job caps
+  its stderr, which carries page-derived error text.
 
 ## Chrome
 
@@ -121,7 +176,7 @@ unbaselined and reports everything; the filter runs in the summariser, which pub
 list and a per-rule count of what each entry hid on that run. A rule showing **0** hid nothing and
 should be deleted; an entry that outlives its debt hides the next regression behind it.
 
-Consequence to know when reading the logs: pa11y-ci now exits non-zero on any run that has a
+Consequence to know when reading the logs: `run-audit.mjs` exits 2 on any run that has a
 baselined finding, so its exit code is no longer a crash signal. See below.
 
 The list is empty as of the burn-down and should stay that way; the mechanism remains for the next
@@ -140,25 +195,31 @@ unmeasurable text landed and deserves a manual look.
 
 ## Fail-closed behaviour
 
-pa11y-ci exits 0 when it audited nothing. A config that lost its URLs, or a run that died before
-the first page, looks exactly like "no accessibility errors". `summarize-pa11y.mjs` therefore reads
+A runner that audited nothing exits 0 (pa11y-ci did, and `run-audit.mjs` does on an empty URL
+list). A config that lost its URLs, or a run that died before the first page, looks exactly like
+"no accessibility errors". `summarize-pa11y.mjs` therefore reads
 the URL count out of the JSON rather than grepping pa11y's prose, and treats zero URLs as a
 failure.
 
-A page pa11y could not load at all is the other silent pass. pa11y-ci stores the caught exception
-as that URL's whole result array, and an `Error` serialises to `{}`, so a `type === 'error'` filter
-counted the page as clean. The exit code used to catch it; with the baseline applied in the
+A page pa11y could not load at all is the other silent pass. The runner stores the caught exception
+as that URL's whole result array (pa11y-ci did too, and its `Error` serialised to `{}`; the runner
+stores `{ message }`), so a `type === 'error'` filter counted the page as clean. The exit code used to catch it; with the baseline applied in the
 summariser that no longer works, so the summariser detects such an entry structurally and fails the
-run, naming the URL. The exit-code net is kept as a last resort for a run that reported nothing at
-all.
+run, naming the URL. The theme-identity check uses the same path: a wrong-theme page becomes one
+such entry. The exit-code net is kept as a last resort for a run that reported nothing at all.
+
+A browser that will not launch makes `run-audit.mjs` exit 1 without writing a report, which the
+summariser reads as a failed audit. pa11y-ci retried one launch; the runner does not, so a rerun
+of the job is the recovery.
 
 ## Layout
 
 | File | Role |
 | --- | --- |
 | `get-auth-cookie.mjs` | Password flow, preview-theme pin, and the theme-id assertion |
-| `build-pa11yci.mjs` | `paths.json` + base URL + theme id + cookie into a pa11y config |
+| `build-pa11yci.mjs` | `paths.json` + base URL + theme id into a pa11y config (no cookie, no `headers`) |
+| `run-audit.mjs` | Cookies into Chrome's jar, pa11y per URL, per-page theme-identity check, the JSON report |
 | `summarize-pa11y.mjs` | Baseline filter + disclosure; sanitised, length-bounded PR-comment body; fail-closed verdict |
 | `paths.json` | The audited path list, one per template |
 | `baseline.json` | Audit-wide known-debt axe rules, read by `summarize-pa11y.mjs` |
-| `test/` | `node --test` suites; fully offline, with an injected fetch |
+| `test/` | `node --test` suites; fully offline, with an injected fetch, pa11y and browser |

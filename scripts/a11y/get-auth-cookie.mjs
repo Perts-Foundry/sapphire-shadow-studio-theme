@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Obtain a Cookie header that lets pa11y-ci reach a PREVIEW theme.
+// Obtain a Cookie header that lets the pa11y audit reach a PREVIEW theme.
 //
 // Two gates stand between a CI runner and a renderable preview page:
 //
@@ -34,7 +34,12 @@
 //   CANONICAL_BASE_URL_FILE  optional; path to write the resolved origin to
 //
 // stdout: the Cookie header value (possibly empty). Diagnostics go to stderr so
-// stdout can be captured directly.
+// stdout can be captured directly. The workflow writes it to an owner-only
+// file, and scripts/a11y/run-audit.mjs puts it into each Chrome context's
+// cookie jar with `setCookie`. It is never a pa11y `headers` value: pa11y
+// applies those to the first request only, so a session pinned that way never
+// reaches redirect hops or subresources. What this script proves is Node's
+// session; run-audit.mjs proves Chrome's, per page.
 // Exit 0 on success, 1 on any failure to reach the preview theme.
 
 import { writeFileSync } from 'node:fs';
@@ -366,7 +371,7 @@ async function main() {
   }
 
   // stdout carries the cookie and nothing else. The caller masks it before it
-  // can reach a log; see the a11y-audit job in preview.yml.
+  // can reach a log; see the "A11y audit config" step in validate.yml.
   process.stdout.write(cookie);
 }
 

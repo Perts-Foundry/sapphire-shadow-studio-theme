@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Storefront paths pa11y-ci audits against the PR's preview theme.",
+    "Storefront paths scripts/a11y/run-audit.mjs audits against the PR's preview theme.",
     "",
     "The list is committed rather than crawled so a PR that breaks a page cannot",
     "shrink the audit's own coverage. Selection rule: one path per distinct",
@@ -51,7 +51,10 @@
     "Top-level `defaults` is the same escape hatch applied to EVERY audited URL.",
     "build-pa11yci.mjs spreads it under the committed pa11y defaults, so it can",
     "add an option but never weaken the standard, the runners, or the Chrome",
-    "flags. Reach for a per-entry option first; use this only when the offending",
+    "flags. It cannot set `headers` at all (buildConfig refuses it, and",
+    "run-audit.mjs drops `headers`, `method` and `postData`), since any of them",
+    "turns on pa11y's request interception. Reach for a per-entry option",
+    "first; use this only when the offending",
     "DOM is injected on every page."
   ],
   "defaults": {

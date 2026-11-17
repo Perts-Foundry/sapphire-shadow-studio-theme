@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Build the pa11y-ci config for one preview theme, on stdout.
+// Build the pa11y config for one preview theme, on stdout. It keeps the
+// pa11y-ci config shape ({ defaults, urls }); scripts/a11y/run-audit.mjs reads it.
 //
 // Defaults are borrowed from perts-foundry-website/.pa11yci, the sibling repo
 // where pa11y-ci already runs as a hard WCAG 2.1 AA gate. What does NOT port is
@@ -7,11 +8,13 @@
 // whereas this theme's only rendered HTML lives behind a password-gated
 // storefront, so every URL here is an authenticated remote request.
 //
-// The config is written to disk with a session cookie in it. It must never be
-// uploaded as an artifact or echoed into a log; preview.yml writes it to
-// $RUNNER_TEMP and reads it once.
+// The config carries no session cookie and no `headers` object. The cookie
+// reaches Chrome through scripts/a11y/run-audit.mjs, which puts it in each
+// browser context's jar. A `headers` entry here would make pa11y intercept
+// requests and override only the first one, which is how the audit once ran
+// against the live theme.
 //
-// Usage: BASE_URL=... THEME_ID=... [COOKIE=...] node scripts/a11y/build-pa11yci.mjs
+// Usage: BASE_URL=... THEME_ID=... node scripts/a11y/build-pa11yci.mjs
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -121,18 +124,16 @@ export const CHROME_PATH = '/usr/bin/google-chrome';
  * @param {object} o
  * @param {string} o.baseUrl
  * @param {string} o.themeId
- * @param {string} [o.cookie]   Cookie header; empty in PUBLIC mode
  * @param {object} [o.paths]    parsed paths.json; defaults to the committed file
  * @param {number} [o.timeout]
  * @param {number} [o.concurrency]
- * @returns {object} a pa11y-ci config object
+ * @returns {object} a pa11y config object, read by scripts/a11y/run-audit.mjs
  * @example
- *   buildConfig({ baseUrl: 'https://x.example', themeId: '1', cookie: 'a=b' })
+ *   buildConfig({ baseUrl: 'https://x.example', themeId: '1' })
  */
 export function buildConfig({
   baseUrl,
   themeId,
-  cookie = '',
   // The committed file with its products marker already expanded. A caller may inject an
   // already-resolved object instead; `resolvePaths` is exported so a test can drive the derivation
   // on its own, against a hand-authored manifest, without going through this.
@@ -150,13 +151,10 @@ export function buildConfig({
 
   const entries = paths?.paths;
   if (!Array.isArray(entries) || entries.length === 0) {
-    // Fail closed: a config with no URLs makes pa11y-ci exit 0 having audited
+    // Fail closed: a config with no URLs makes run-audit.mjs exit 0 having audited
     // nothing, which would read as a green accessibility check.
     throw new Error('paths.json contains no paths');
   }
-
-  const headers = {};
-  if (cookie) headers.Cookie = cookie;
 
   // NOTE: the audit-wide known-debt baseline (scripts/a11y/baseline.json) is
   // deliberately NOT applied here. pa11y's `ignore` drops matching findings
@@ -164,7 +162,7 @@ export function buildConfig({
   // the PR comment claimed a WCAG 2.1 AA pass over rules it had not gated. The
   // filter now lives in scripts/a11y/summarize-pa11y.mjs, which sees every
   // finding and can disclose the suppressed-rule list with a per-rule count.
-  // A second consequence, relied on there: pa11y-ci now exits non-zero on any
+  // A second consequence, relied on there: run-audit.mjs exits non-zero on any
   // run with baselined findings, so its exit code is no longer a crash signal
   // and the summariser detects an untestable URL structurally instead.
   //
@@ -187,6 +185,11 @@ export function buildConfig({
     // the summariser could not disclose what had been hidden. Per-PATH `ignore`
     // is fine and stays supported; this one is not.
     throw new Error('paths.json defaults must not set `ignore` (see baseline.json)');
+  }
+  if ('headers' in fileDefaults) {
+    // Any `headers` turns on pa11y's request interception, which overrides the
+    // first request only; see the file-top comment. run-audit.mjs strips it too.
+    throw new Error('paths.json defaults must not set `headers` (cookies go through run-audit.mjs)');
   }
 
   return {
@@ -212,7 +215,6 @@ export function buildConfig({
       includeWarnings: true,
       levelCapWhenNeedsReview: 'warning',
       timeout,
-      headers,
       chromeLaunchConfig: {
         args: ['--no-sandbox', '--disable-dev-shm-usage'],
         executablePath: CHROME_PATH,
@@ -245,8 +247,7 @@ export function buildConfig({
 function main() {
   const baseUrl = (process.env.BASE_URL || '').replace(/\/+$/, '');
   const themeId = process.env.THEME_ID || '';
-  const cookie = process.env.COOKIE || '';
-  process.stdout.write(`${JSON.stringify(buildConfig({ baseUrl, themeId, cookie }), null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(buildConfig({ baseUrl, themeId }), null, 2)}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

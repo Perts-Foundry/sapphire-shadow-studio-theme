@@ -1,5 +1,41 @@
 # Release Notes
 
+## The pa11y audit proves, per page, that it audited the preview theme (unreleased, 2026-11-17)
+
+The dynamic accessibility audit was meant to audit each PR's `pr-N-preview` theme, and it was
+auditing the live theme. It was noticed on PR #214: pa11y's own screenshot of the crewneck page
+showed the vacation popup that PR had turned off, and no preview bar.
+
+**The corrected mistake.** `get-auth-cookie.mjs` proved the preview with Node `fetch` and handed
+its cookies to `build-pa11yci.mjs`, which put them in the pa11y-ci config as
+`defaults.headers.Cookie`. pa11y applies `headers` by intercepting requests and overriding the
+headers of the **first request only**. Redirect hops, subresources and in-page fetches went out with
+Chrome's own cookie jar, and a header override never fills that jar. So the preview pin never
+reached Chrome's session. The theme-id assertion in `get-auth-cookie.mjs` was real, but it proved
+Node's session, not the browser's, and nothing checked the browser. pa11y-ci gives no hook into the
+page after the audit, so nothing could have.
+
+**What replaced it.** `scripts/a11y/run-audit.mjs` drives pa11y's own API in place of
+`npx pa11y-ci`. It puts the cookies into each browser context's jar with `setCookie`, scoped by URL
+so they are host-only like Shopify's, and never passes `headers`, so pa11y never intercepts
+requests. After pa11y finishes a URL, the runner reads `window.Shopify.theme` from the same page
+and the `server-timing` theme id of the final document. Either one naming another theme turns that
+URL into an untested entry, which the summariser already fails. The audit cannot go green on the
+wrong theme now, and the job log names the theme each page came from.
+
+**Constraints worth keeping.**
+
+- The config must carry no `headers` at all; `build-pa11yci.mjs` refuses one in `paths.json`
+  defaults and the runner strips it. Even an unrelated header turns interception back on.
+- Cookies are scoped by `url`, never `domain`. A domain cookie would sit beside Shopify's
+  host-only cookie of the same name, Chrome would send both, and the storefront could read the
+  injected one.
+- pa11y and puppeteer still come from pa11y-ci's install, so `package.json` names one package and
+  Dependabot bumps it. The runner gives up pa11y-ci's single browser relaunch after a crash; a
+  rerun of the job is the recovery.
+- The cookie now reaches the audit step through an owner-only file in `$RUNNER_TEMP`, and the pa11y
+  config file no longer holds a secret.
+
 ## Search Console skill: what the second full pass could not capture (unreleased, 2026-09-18)
 
 The first full `/search-console` browser pass against a property with data succeeded, but it could
