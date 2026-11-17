@@ -57,7 +57,7 @@
   "defaults": {
     "_comment": [
       "Markup this theme cannot reach, hidden from the accessibility tree the",
-      "audit walks. Both entries are other people's DOM, which is the ONLY",
+      "audit walks. Every entry is other people's DOM, which is the ONLY",
       "thing that belongs here: a finding in a file this repo owns gets fixed,",
       "never hidden.",
       "",
@@ -75,9 +75,17 @@
       "renders a block reference, not the HTML, so there is no version of this",
       "repo in which they can be fixed. Matched on class AND id because the",
       "widgets carry the prefix on both and the offending nodes are not all",
-      "inside one container."
+      "inside one container.",
+      "",
+      "shopify-chat is the Shopify chat app embed: a floating 'Need help?'",
+      "button fixed near the bottom right of the window, injected by the app,",
+      "not by any template. In pa11y's default 1280x1024 window (no viewport is",
+      "set in this directory) it sat within 24px",
+      "of the shift-fuel-crewneck Size guide link before any scroll, failing",
+      "target-size on a position a shopper scrolls past. Hiding it removes only",
+      "the app's button; the Size guide link is still measured."
     ],
-    "hideElements": "#PBarNextFrame, [class*=\"jdgm-\"], [id*=\"jdgm-\"]"
+    "hideElements": "#PBarNextFrame, [class*=\"jdgm-\"], [id*=\"jdgm-\"], shopify-chat"
   },
   "productOverrides": {},
   "paths": [
