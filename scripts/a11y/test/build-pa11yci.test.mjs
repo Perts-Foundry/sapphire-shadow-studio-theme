@@ -160,14 +160,21 @@ test('a per-entry hideElements adds to the audit-wide one instead of replacing i
 
 test('the committed paths.json hides the DOM this theme cannot reach', () => {
   // frame-title / frame-tested were baselined audit-wide for the preview-bar
-  // iframe, two more rules for Judge.me's app blocks, and target-size for the
-  // chat app's floating button; dropping any selector resurrects findings no
-  // change to this repo could fix. Asserted as substrings so adding another
-  // does not fail the test for the wrong reason.
+  // iframe, and two more rules for Judge.me's app blocks; dropping either
+  // selector resurrects findings no change to this repo could fix. Asserted as
+  // substrings so adding a third does not fail the test for the wrong reason.
   const { hideElements } = buildConfig(base).defaults;
   assert.match(hideElements, /#PBarNextFrame/);
   assert.match(hideElements, /jdgm-/);
-  assert.match(hideElements, /shopify-chat/);
+});
+
+test('the committed crewneck override reaches pa11y as a target-size ignore, and only that', () => {
+  // Temporary bypass tracked in TODO-list.md; when it is removed this test goes with it. Only the
+  // escape-hatch keys are copied onto a built URL, so the override's comment key never reaches pa11y.
+  const entry = buildConfig(base).urls.find((u) => u.url.includes('/products/shift-fuel-crewneck'));
+  assert.ok(entry, 'the crewneck page is audited');
+  assert.deepEqual(entry.ignore, ['target-size']);
+  assert.ok(!Object.keys(entry).some((k) => k.startsWith('_')), 'no note key reaches pa11y');
 });
 
 test('per-path ignore is a different thing and still reaches pa11y', () => {
@@ -265,7 +272,11 @@ test('MATCHES PRODUCTION: the resolved product entries equal the six the file us
   const baseline = JSON.parse(
     readFileSync(join(REPO_ROOT, 'scripts/catalogue/test/fixtures/pre-migration-baseline.json'), 'utf8')
   ).a11yProductEntries;
-  const derived = resolvedPaths().paths.filter((e) => e.path.startsWith('/products/'));
+  // Projected to the three derived fields, matching what the baseline capture records: pa11y options
+  // merged in from productOverrides are not part of the derivation and have their own test above.
+  const derived = resolvedPaths()
+    .paths.filter((e) => e.path.startsWith('/products/'))
+    .map(({ path, label, template }) => ({ path, label, template }));
   const addedPaths = new Set(ADDED_SINCE_BASELINE.map((e) => e.path));
   assert.equal(JSON.stringify(derived.filter((e) => !addedPaths.has(e.path))), JSON.stringify(baseline));
   assert.deepEqual(derived.filter((e) => addedPaths.has(e.path)), ADDED_SINCE_BASELINE);

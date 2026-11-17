@@ -46,9 +46,26 @@ This is the single backlog for the whole repo; there are no per-directory to-do 
   that no main-menu or footer link reaches; a blog found only through the sitemap earns little crawl
   attention and no visitor path.
 
+- **Make the pa11y audit test the PR's preview theme, not the live one.** On PR #214 (2026-11-17)
+  pa11y's own screenshot of the crewneck page showed live content (the vacation popup the preview
+  had turned off) and no preview bar. `get-auth-cookie.mjs` proves the preview with its own fetch,
+  but pa11y then sends that cookie as a fixed `Cookie` header on every request, which likely
+  replaces the preview cookie Shopify sets from `?preview_theme_id`, so the page falls back to live.
+  Confirm with pa11y's `screenCapture` on one URL, fix it, and add a check that fails the audit when
+  the page pa11y loads is not the preview theme (the theme id is in `Shopify.theme` on the page).
+  Until then a green audit says little about the PR's own changes.
+
 ## Product and storefront
 
 - **Fix the low stock alert flow to handle gift cards. Gift card should be excluded.**
+
+- **Stop the chat button covering the crewneck's Size guide link, then remove the audit bypass.**
+  Shopify's chat app button ("Need help?") sits over the Size guide link on
+  `/products/shift-fuel-crewneck` in a 1280x1024 window before any scroll; other product pages have
+  more above the Size row and clear it. Move or offset the button in the chat app's settings in
+  Admin, check the page at that size, then delete the `shift-fuel-crewneck` entry under
+  `productOverrides` in `scripts/a11y/paths.json`, which ignores `target-size` on that page until
+  then. Do this after the preview-theme audit item above, or the re-check is again against live.
 
 - **Update the huddle crew next and state that the appliqué fabrics are available in the image gallery toward the end for viewing. We want people to understand where to go to lay eyes on that.**
 
