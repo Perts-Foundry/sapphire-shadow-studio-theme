@@ -31,10 +31,18 @@ test('paths are resolved against the base URL without losing their query', () =>
   assert.equal(url.searchParams.get('preview_theme_id'), '12345');
 });
 
-test('the cookie is carried as a default header, and omitted when empty', () => {
-  assert.equal(buildConfig({ ...base, cookie: 'a=b; c=d' }).defaults.headers.Cookie, 'a=b; c=d');
-  // PUBLIC mode after the storefront password is removed: no cookie, still valid.
-  assert.deepEqual(buildConfig({ ...base, cookie: '' }).defaults.headers, {});
+test('the config never carries a Cookie header or a headers object', () => {
+  // Any `headers` makes pa11y intercept requests and override only the first
+  // one, so redirect hops and subresources leave without the preview pin; that
+  // is how the audit once ran against the live theme. The cookie goes into the
+  // browser's jar through run-audit.mjs instead.
+  const config = buildConfig(base);
+  assert.ok(!('headers' in config.defaults));
+  assert.ok(!JSON.stringify(config).includes('Cookie'));
+  assert.throws(
+    () => buildConfig({ ...base, paths: { defaults: { headers: { Cookie: 'a=b' } }, paths: [{ path: '/' }] } }),
+    /headers/
+  );
 });
 
 test('defaults match the WCAG2AA gate the sibling repo already runs', () => {
@@ -86,7 +94,7 @@ test('per-entry pa11y escape hatches pass through, and nothing else does', () =>
 });
 
 test('the committed config is JSON-serialisable and has no undefined leaks', () => {
-  const json = JSON.stringify(buildConfig({ ...base, cookie: 'x=y' }));
+  const json = JSON.stringify(buildConfig(base));
   assert.ok(!json.includes('undefined'));
   assert.deepEqual(JSON.parse(json).urls.length, paths.paths.length);
 });
