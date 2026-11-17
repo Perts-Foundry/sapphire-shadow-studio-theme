@@ -8,6 +8,11 @@
   Deliberately not rendered from layout/password.liquid: the password page has
   no orders to delay.
 
+  Toggling vacation mode on the Admin sync theme changes nothing for customers
+  until a deploy pushes main to the live theme. A shopify-sync reconcile PR
+  merged by hand skips that deploy, so live keeps the old value; let the
+  auto-deploy merge it, or comment `deploy` on any PR that touches a theme file.
+
   @example
     {% render 'vacation-popup' %}
 {%- enddoc -%}

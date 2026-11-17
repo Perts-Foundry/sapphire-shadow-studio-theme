@@ -48,8 +48,8 @@ export function resolvedPaths() {
  * turn on, and it is the reason the manifest carries `template` at all.
  *
  * Per-product pa11y options live in paths.json's `productOverrides`, keyed by handle, and are
- * merged onto the derived entry. It ships empty: a product later needing an `ignore` has somewhere
- * to put it without this becoming a follow-up item.
+ * merged onto the derived entry, so a product needing an `ignore` has somewhere to put it without
+ * this becoming a follow-up item. Each entry there should name why it exists and when it goes.
  *
  * @param {object} paths - the parsed paths.json
  * @param {object} manifest

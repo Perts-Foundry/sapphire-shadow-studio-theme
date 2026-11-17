@@ -19,7 +19,7 @@
     "throws, so the audit cannot quietly run over every page except the products.",
     "",
     "Per-product pa11y options go in top-level `productOverrides`, keyed by",
-    "product handle, and are merged onto the derived entry. It ships empty. An",
+    "product handle, and are merged onto the derived entry. Keep it short. An",
     "override naming a product catalogue.json does not declare is a typo and",
     "throws rather than silently applying to nothing.",
     "",
@@ -79,7 +79,20 @@
     ],
     "hideElements": "#PBarNextFrame, [class*=\"jdgm-\"], [id*=\"jdgm-\"]"
   },
-  "productOverrides": {},
+  "productOverrides": {
+    "shift-fuel-crewneck": {
+      "_ignore_comment": [
+        "TEMPORARY, tracked in TODO-list.md. Shopify's chat app button ('Need",
+        "help?', a shopify-chat element the app injects) sits over this page's",
+        "Size guide link in pa11y's default 1280x1024 window, failing",
+        "target-size. That is a real overlap on the live storefront, not theme",
+        "markup, and hideElements cannot help: pa11y only drops issues found",
+        "INSIDE a hidden element, it does not remove the element from the page.",
+        "Remove this override once the chat button no longer overlaps the link."
+      ],
+      "ignore": ["target-size"]
+    }
+  },
   "paths": [
     {
       "path": "/",
